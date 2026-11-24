@@ -1539,6 +1539,13 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_map", vgd_map);
   v.view("vgd_mr", vgd_mr);
   v.value("vgd_wint", vgd_wint);
+  v.value("vgd_wsym", vgd_wsym);
+  v.value("vgd_wsx", vgd_wsx);
+  v.value("vgd_wsw", vgd_wsw);
+  v.view("vgd_mir", vgd_mir);
+  v.value("vgd_wst", vgd_wst);
+  v.value("vgd_wtw", vgd_wtw);
+  v.view("vgd_mirz", vgd_mirz);
   v.value("vgd_lg", vgd_lg);
   v.view("vgd_m3", vgd_m3);
   v.view("vgd_w3", vgd_w3);

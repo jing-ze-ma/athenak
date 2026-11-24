@@ -3862,6 +3862,18 @@ class RadiationM1 {
   // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
   // nearest same-branch directions with weights (m, k, j, d, 3)
   bool vgd_wint = false;
+  // vet_gd_wall_sym (read only when named, default false; needs vet_gd_wall_interp):
+  // the set turned so that a mirror plane is the wedge mid-plane, phi-wall ghosts linear
+  // in azimuth on their ring (VgdMirPick): phi-symmetric on any wedge width
+  bool vgd_wsym = false;
+  bool vgd_wsx = false;       // and its phi wall map inexact: both-frame seam faces
+  Real vgd_wsw = 0.0;         // the phi period W
+  DvceArray1D<int> vgd_mir;   // (n): the mirror image of each direction
+  // vet_gd_theta_seam_sym (read only when named, default false; needs
+  // vet_gd_wall_interp): the clean scheme's theta seam faces in both frames (paired)
+  bool vgd_wst = false;
+  Real vgd_wtw = 0.0;         // the theta period
+  DvceArray1D<int> vgd_mirz;  // (n): the equatorial mirror image of each direction
   VgdLG vgd_lg;   // the vet_gd sweep geometry from the global index
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;

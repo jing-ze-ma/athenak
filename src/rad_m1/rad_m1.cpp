@@ -2479,6 +2479,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_sym")) {
+      vgd_wsym = pin->GetBoolean("rad_m1","vet_gd_wall_sym");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_theta_seam_sym")) {
+      vgd_wst = pin->GetBoolean("rad_m1","vet_gd_theta_seam_sym");
+    }
     // vet_gd_theta_wall (read only when named): periodic (default, the old
     // theta periodicity of the sweep) | mirror (specular theta walls) | vacuum (no
     // incoming intensity at a physical theta wall) | extrap (zero gradient); vetgd.cpp

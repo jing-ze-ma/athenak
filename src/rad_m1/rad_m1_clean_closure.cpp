@@ -2140,6 +2140,60 @@ void RadiationM1::CleanGdFaceSums() {
     }
     return f*v;
   };
+  // vet_gd_wall_sym (an inexact phi wall) / vet_gd_theta_seam_sym: a seam face's sums q
+  // (local basis e, vector area a, area ar) also in the frame of the wall's other side,
+  // turned by the period about z (phi) or about phi_hat (theta): there its own beams
+  // exact, the incoming ones through the mirror image of this side's wall map; q the
+  // mean of the two (mirror-paired, one face for both sides)
+  const bool wsx = vgd_wsx, wst = vgd_wst;
+  const Real wsc = cos(vgd_wsw), wss = sin(vgd_wsw);
+  const Real wtc = cos(vgd_wtw), wts = sin(vgd_wtw);
+  auto mi_ = vgd_mir;
+  auto mz_ = vgd_mirz;
+  auto seam2 = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
+                                    const int i, const Real a[3], const Real e[3][3],
+                                    const Real ar, Real q[4]) {
+    const CleanArgs &x = *px;
+    const int p = (dir == 2) ? 1 : 0;
+    if (!(p ? wsx : wst) || (p ? (k != ks) : (j != js)) ||
+        x.mbc(m, p ? 4 : 2) != BoundaryFlag::periodic ||
+        wl_(m,k-p+ok,j-1+p+og) == 0) {return;}
+    // the turn (Rodrigues about u = phi_hat at the cell for theta; about z exactly)
+    const Real u0 = -sin(x3v(m,k)), u1 = cos(x3v(m,k));
+    auto turn = [&](const Real v[3], Real o[3]) {
+      if (p) {
+        o[0] = wsc*v[0] - wss*v[1];
+        o[1] = wss*v[0] + wsc*v[1];
+        o[2] = v[2];
+        return;
+      }
+      const Real uv = (1.0 - wtc)*(u0*v[0] + u1*v[1]);
+      o[0] = wtc*v[0] + wts*u1*v[2] + uv*u0;
+      o[1] = wtc*v[1] - wts*u0*v[2] + uv*u1;
+      o[2] = wtc*v[2] + wts*(u0*v[1] - u1*v[0]);
+    };
+    Real b[3], eb[3][3], s[4] = {0.0}, qb[4];
+    turn(a, b);
+    for (int t = 0; t < 3; ++t) turn(e[t], eb[t]);
+    const int kl = k - p, jl = j - 1 + p;
+    for (int d = 0; d < n; ++d) {
+      const Real f = dir_(d,0)*b[0] + dir_(d,1)*b[1] + dir_(d,2)*b[2];
+      const int dm = p ? mi_(d) : mz_(d);
+      Real v = (f > 0.0) ? inten(m, d, kl, jl, i) : 0.0;
+      for (int t = 0; t < 3 && !(f > 0.0); ++t) {
+        const int r = m3_(m,kl+ok,jl+og,dm,t);
+        v += w3_(m,kl+ok,jl+og,dm,t)*inten(m, p ? mi_(r) : mz_(r), k, j, i);
+      }
+      const Real w = dir_(d,3)*f*v;
+      s[0] += w;
+      for (int t = 0; t < 3; ++t) s[1+t] += w*dir_(d,t);
+    }
+    for (int t = 0; t < 4; ++t) {
+      qb[t] = (t == 0) ? s[0]/ar
+                       : (eb[t-1][0]*s[1] + eb[t-1][1]*s[2] + eb[t-1][2]*s[3])/ar;
+      q[t] = 0.5*(q[t] + qb[t]);
+    }
+  };
   // sums of the beams of every direction through the face (local basis e, area ar), per
   // unit area (the face's geometry once per face, not per direction: the same numbers)
   auto add = [=] KOKKOS_FUNCTION (const Real e[3][3], const Real ar, const int d,
@@ -2205,6 +2259,7 @@ void RadiationM1::CleanGdFaceSums() {
           addc(d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), sc);
         }
         proj(e, ar, sc, q);
+        if (!bd && !up) {seam2(dir, m, kf, jf, i, a, e, ar, q);}
         for (int c = 0; c < 4; ++c) cs(m,(up ? CLN_FH + 4*(dir - 1) : nf)+c,k,j,i) = q[c];
       }
     });
@@ -2295,9 +2350,11 @@ void RadiationM1::CleanGdFaceSums() {
       if (cl) {
         face(1, m, k, j, i, a1, e);
         proj(e, x.area[1](m,k,j,i), s1, q);
+        if (!b1) {seam2(1, m, k, j, i, a1, e, x.area[1](m,k,j,i), q);}
         for (int c = 0; c < 4; ++c) cs(m,CLN_F2+c,k,j,i) = q[c];
         face(2, m, k, j, i, a2, e);
         proj(e, x.area[2](m,k,j,i), s2, q);
+        if (!b2) {seam2(2, m, k, j, i, a2, e, x.area[2](m,k,j,i), q);}
         for (int c = 0; c < 4; ++c) cs(m,CLN_F3+c,k,j,i) = q[c];
       }
       if (rb) {

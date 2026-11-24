@@ -973,6 +973,14 @@ void RadiationM1::VetGdInit() {
     }
   };
   raw_halo();
+  // (vet_gd_wall_sym / vet_gd_theta_seam_sym name one deck value on every mesh: without
+  // a phi wall (cubed sphere, polar boundary, 2-D, the full 2 pi) or a theta seam (theta
+  // not periodic) there is nothing to symmetrise, and the key does nothing)
+  const bool sp3 = !vgd_csg && !vgd_pol && pm->three_d;
+  vgd_wsym = vgd_wsym && sp3 &&
+             pm->mesh_size.x3max - pm->mesh_size.x3min < 2.0*M_PI - 1.0e-12;
+  vgd_wst = vgd_wst && sp3 &&
+            pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic;
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
@@ -980,12 +988,76 @@ void RadiationM1::VetGdInit() {
     // (no walls on the cubed sphere, nphi >= 4 only)
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double m = per*vgd_gl_nphi/(2.0*M_PI);
-    if (vgd_gl_nphi < 4 || (!vgd_csg && std::fabs(m - std::round(m)) > 1.0e-9)) {
+    if (vgd_gl_nphi < 4 ||
+        (!vgd_csg && !vgd_wsym && std::fabs(m - std::round(m)) > 1.0e-9)) {
       VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
-               "the wedge (exact wall maps)");
+               "the wedge (exact wall maps), or vet_gd_wall_sym = true");
     }
   }
   VgdBuildSet(vgd_base);
+  // the set's image under (x, y, z) -> (c x - t s y, s x + t c y, tz z): a turn about z
+  // (t = 1), a mirror in a meridian plane (t = -1) or in the equator (tz = -1); the
+  // direction each one maps to, -1 where it is not in the set
+  const size_t nb = vgd_base.size()/4;
+  auto img = [&](const double c, const double s, const double t, const double tz) {
+    std::vector<int> p(nb, -1);
+    for (size_t q = 0; q < nb; ++q) {
+      const double *u = &vgd_base[4*q];
+      const double mx = c*u[0] - t*s*u[1], my = s*u[0] + t*c*u[1];
+      for (size_t r = 0; r < nb && p[q] < 0; ++r) {
+        const double *v = &vgd_base[4*r];
+        if (mx*v[0] + my*v[1] + tz*u[2]*v[2] > 1.0 - 1.0e-12 &&
+            std::fabs(v[3] - u[3]) <= 1.0e-12*u[3]) {p[q] = static_cast<int>(r);}
+      }
+    }
+    return p;
+  };
+  auto dev = [&](const std::vector<int> &p, const char *nm) {
+    if (*std::min_element(p.begin(), p.end()) < 0) {
+      VgdFatal(std::string(nm) + ": the set is not mirror-symmetric about the wedge "
+               "mid-plane");
+    }
+    DvceArray1D<int> v(std::string(nm), nb);
+    auto h = Kokkos::create_mirror_view(v);
+    for (size_t q = 0; q < nb; ++q) {h(q) = p[q];}
+    Kokkos::deep_copy(v, h);
+    return v;
+  };
+  if (vgd_wsym) {
+    // vet_gd_wall_sym: turn the set about z by the least angle that puts one of its
+    // mirror planes (GL k pi/nphi, the octahedral sets k pi/4) on the wedge mid-plane
+    if (!vgd_wint || VgdRotOn()) {
+      VgdFatal("vet_gd_wall_sym needs vet_gd_wall_interp = true and no set rotation");
+    }
+    const double pc = 0.5*(pm->mesh_size.x3min + pm->mesh_size.x3max);
+    const double pp = (vgd_gl_nmu > 0) ? M_PI/vgd_gl_nphi : 0.25*M_PI;
+    const double da = pc - pp*std::round(pc/pp);
+    const double ca = std::cos(da), sa = std::sin(da);
+    if (std::fabs(da) > 1.0e-12) {
+      for (size_t q = 0; q < nb; ++q) {
+        const double x = vgd_base[4*q], y = vgd_base[4*q+1];
+        vgd_base[4*q] = ca*x - sa*y;
+        vgd_base[4*q+1] = sa*x + ca*y;
+      }
+    }
+    vgd_mir = dev(img(std::cos(2.0*pc), std::sin(2.0*pc), -1.0, 1.0), "vet_gd_wall_sym");
+    // an inexact phi wall map (the turn by the period W is not a set map): the clean
+    // scheme's seam faces in both frames (CleanGdFaceSums)
+    vgd_wsw = pm->mesh_size.x3max - pm->mesh_size.x3min;
+    const std::vector<int> pw = img(std::cos(vgd_wsw), std::sin(vgd_wsw), 1.0, 1.0);
+    vgd_wsx = *std::min_element(pw.begin(), pw.end()) < 0;
+  }
+  if (vgd_wst) {
+    // vet_gd_theta_seam_sym: the clean scheme's theta seam faces in both frames, with the
+    // equatorial mirror (a theta wedge centred on the equator)
+    vgd_wtw = pm->mesh_size.x2max - pm->mesh_size.x2min;
+    if (!vgd_wint || VgdRotOn() ||
+        std::fabs(pm->mesh_size.x2min + pm->mesh_size.x2max - M_PI) > 1.0e-12) {
+      VgdFatal("vet_gd_theta_seam_sym needs a theta wedge centred on the equator, "
+               "vet_gd_wall_interp = true and no set rotation");
+    }
+    vgd_mirz = dev(img(1.0, 0.0, 1.0, -1.0), "vet_gd_theta_seam_sym");
+  }
   // the moments of the set, as built and after a fixed random 3-D rotation
   if (global_variable::my_rank == 0) {
     double e[4], er[4];
@@ -2018,7 +2090,11 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
             const double mt = nx*st*cp + ny*st*sp + nz*ct;   // target branch n.r_hat
             int r3[3] = {best, best, best};
             double w3[3] = {1.0, 0.0, 0.0};
-            if (bd <= 1.0 - 1.0e-12) {
+            if (vgd_wsym && thw == th) {
+              // vet_gd_wall_sym, a phi wall: VgdMirPick, i.e. (M n_q on n_q's ring)
+              // linear in azimuth between its ring neighbours: positive, mirror-paired
+              VgdMirPick(d, n, mx, my, mz, sw*cpw, sw*spw, cw, true, r3, w3);
+            } else if (bd <= 1.0 - 1.0e-12) {
               double b3[3] = {-2.0, -2.0, -2.0};
               for (int r = 0; r < n; ++r) {
                 const double br = d[4*r]*sw*cpw + d[4*r+1]*sw*spw + d[4*r+2]*cw;
