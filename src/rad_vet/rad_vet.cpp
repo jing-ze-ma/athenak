@@ -228,8 +228,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
-    const char *pdb = std::getenv("M1_PCR_DB");   // (CleanStagLineSolve)
-    if (pdb != nullptr) cln_pcrdb = std::atoi(pdb);
     // clean_stag_opac_update (default on for a fresh run, every mesh) and clean_face_opac
     // (default harmonic on a fresh run), USER 11-21, recorded; a restart file without a
     // key keeps the old default (echoed)
