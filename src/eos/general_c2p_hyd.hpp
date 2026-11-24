@@ -294,7 +294,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     const Real etf = eos.EnergyFromTemperature(w.d, eos.tfloor);
     const Real ek3 = eos.ekin_keep_x3 ? 0.5*di*SQR(u.mz) : 0.0;
     if (u.e - e_k < etf && u.e - ek3 >= etf && e_k > ek3) {
-      e_k = EkinScaleTo(eos.ekin_keep_x3, di, u.e - etf, e_k, u, w);
+      e_k = EkinScaleTo(eos.ekin_keep_x3, di, fmax(u.e - etf, ek3), e_k, u, w);
       mom_scaled = true;
     }
   }
