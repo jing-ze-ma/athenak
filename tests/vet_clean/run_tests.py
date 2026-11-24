@@ -440,7 +440,8 @@ def t_floor_pay(c):
     floor energy over the run (floor_audit).  The ekin run: hydro/floor_from_ekin = true
     with a velocity ceiling below the shell's speeds (vceil 1.2e-2): the ceiling's kinetic
     energy becomes heat, phi momentum kept (L_z): ekin_dE, ekin_dM, ekin_dLz as
-    conservation_sp."""
+    conservation_sp.  worst_lines / worst_bitwise: the same run with
+    hydro/floor_audit_worst prints its cells and leaves the history bitwise."""
     g = {'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
          'units/time_cgs': 1.0}
     d = c.run('shell_sp.athinput', 'run', dict(g, **{
@@ -455,6 +456,14 @@ def t_floor_pay(c):
     out = dict(dE=rel_drift(e), dE0=float(abs(e[1] - e[0])/e[0]),
                paid=sum(p[0] for p in pay), unpaid=sum(p[1] for p in pay),
                warnings=vett.warnings(log))
+    o = dict(g, **{'hydro/tfloor': 1.00001e-4, 'hydro/floor_pay': 'rad_column',
+                   'hydro/floor_pay_skip': 'true', 'hydro/dfloor_flux_limit': 'true',
+                   'hydro/floor_audit': 1, 'hydro/floor_audit_worst': 'true'})
+    dw = c.run('shell_sp.athinput', 'worst', o)
+    out['worst_lines'] = open(os.path.join(dw, 'run.log')).read().count('floor_audit_worst')
+    out['worst_bitwise'] = all(open(os.path.join(d, f), 'rb').read() ==
+                               open(os.path.join(dw, f), 'rb').read()
+                               for f in ('sp.user.hst', 'sp.hydro.hst'))
     d = c.run('shell_sp.athinput', 'ekin', dict(g, **{
         'time/nlim': 16, 'hydro/floor_from_ekin': 'true', 'hydro/vceil': 1.2e-2}))
     out.update({'ekin_' + k: v for k, v in am_budget(d, 'sp').items() if k != 'dLz_gr'})

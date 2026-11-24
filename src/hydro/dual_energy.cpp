@@ -71,6 +71,9 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
   }
   retest = Named(pin, blk, "fofc_retest") && pin->GetBoolean(blk, "fofc_retest");
   if (Named(pin, blk, "floor_audit")) report = pin->GetInteger(blk, "floor_audit");
+  worst = Named(pin, blk, "floor_audit_worst") &&
+          pin->GetBoolean(blk, "floor_audit_worst");
+  if (worst && report <= 0) Fatal("<" + blk + ">/floor_audit_worst needs floor_audit");
   if (Named(pin, blk, "dual_energy_eta")) eta = pin->GetReal(blk, "dual_energy_eta");
   any = on || pay || retest || (report > 0);
   if (!any) return;
@@ -299,8 +302,76 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   hc[b + DC_FLR_RDE] += s[13];
   hc[b + DC_SKIP_DE] += s[14];
   hc[b + DC_SKIP_DM] += s[15];
+  if (worst && (pp->pmesh->ncycle % report) == 0) Worst(pp, u0, w0);
   armed = false;
   if (on) valid = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void DualEnergy::Worst
+//! \brief floor_audit_worst: this rank's active cell of the largest energy the inversion
+//! (floors, ceiling, selection) gave, (E_after - E_before) x vol, with its state before
+//! and after: density, total and internal energy, the kinetic energy by component
+
+void DualEnergy::Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
+                       const DvceArray5D<Real> &w0) {
+  auto &indcs = pp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = u0.extent_int(0), nji = nx2*nx1, nkji = nx3*nji;
+  const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
+  auto vol_ = curv ? pp->pcoord->volume : DvceArray4D<Real>("duale_v", 1, 1, 1, 1);
+  auto &size = pp->pmb->mb_size;
+  auto pre_ = pre;
+  using ML = Kokkos::MaxLoc<Real, int>;
+  ML::value_type mx;
+  Kokkos::parallel_reduce("duale_worst", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nkji),
+  KOKKOS_LAMBDA(const int &idx, ML::value_type &v) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+    const Real vol = curv ? vol_(m,k,j,i)
+                          : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+    const Real de = (u0(m,IEN,k,j,i) - pre_(m,0,k,j,i))*vol;
+    if (de > v.val) {v.val = de; v.loc = idx;}
+  }, ML(mx));
+  if (!(mx.val > 0.0)) return;
+  const int m = mx.loc/nkji, k = (mx.loc - m*nkji)/nji + ks;
+  const int j = (mx.loc - m*nkji - (k - ks)*nji)/nx1 + js, i = mx.loc%nx1 + is;
+  auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(u0, m,
+            Kokkos::ALL, k, j, i));
+  auto hw = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(w0, m,
+            Kokkos::ALL, k, j, i));
+  auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(pre_, m,
+            Kokkos::ALL, k, j, i));
+  auto x1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x1v);
+  auto x2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x2v);
+  auto x3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x3v);
+  // (the cell centre's coordinates where the grid has them: not on the cubed sphere)
+  auto X = [=](const decltype(x1) &x, const int n) {
+    return (x.extent_int(0) > m && x.extent_int(1) > n) ? x(m,n) : 0.0;
+  };
+  Real ph = 0.0;
+  if (phi.extent_int(0) > 0) {
+    auto hph = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(phi,
+               m, k, j, i));
+    ph = hph();
+  }
+  const Real d0 = hp(1), d1 = hu(IDN);
+  Real k0[3], k1[3];
+  for (int n = 0; n < 3; ++n) {
+    k0[n] = 0.5*SQR(hp(2+n))/d0;
+    k1[n] = 0.5*SQR(hu(IM1+n))/d1;
+  }
+  std::printf("<%s> floor_audit_worst cycle %d %s rank %d gid %d kji %d %d %d r %.6e "
+              "th %.6e ph %.6e dE %.4e rho %.4e -> %.4e E %.4e -> %.4e eint_pre %.4e "
+              "eint %.4e KE123 %.4e %.4e %.4e -> %.4e %.4e %.4e Phi %.4e\n", blk.c_str(),
+              pp->pmesh->ncycle, armed ? "[update]" : "[refresh]",
+              global_variable::my_rank, pp->pmb->mb_gid.h_view(m), k, j, i, X(x1, i),
+              X(x2, j), X(x3, k), mx.val, d0, d1, hp(0), hu(IEN),
+              hp(0) - k0[0] - k0[1] - k0[2], hw(IEN), k0[0], k0[1], k0[2], k1[0], k1[1],
+              k1[2], ph);
+  std::fflush(stdout);
 }
 
 //----------------------------------------------------------------------------------------

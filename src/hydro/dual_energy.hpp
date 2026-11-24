@@ -45,6 +45,9 @@
 //!    cells with E - KE <= 0, KE-dominated, below e(rho, tfloor), below the EOS table
 //!    edge, dual selected, floored (metric-correct on the cubed sphere), and the volume
 //!    integrated energies.  Diagnostic only.
+//!  floor_audit_worst = true (needs floor_audit): with each report, every rank prints
+//!    its active cell of the largest (E_after - E_before) x vol of the inversion, with
+//!    the cell's state before and after.  Diagnostic only.
 //!  fofc_retest = true (hydro): FOFC re-tests every flagged trial cell with the
 //!    metric-correct internal energy (and the dual selection) and unflags those no floor
 //!    would touch (the cubed-sphere ConsToPrim test uses an ORTHONORMAL kinetic energy).
@@ -79,6 +82,7 @@ struct DualEnergy {
   bool pretry = false;  // <blk>/floor_pay_retry: unpaid energy fails the cycle (dt_retry)
   bool pskip = false;   // <blk>/floor_pay_skip: the density floor / velocity ceiling too
   bool retest = false;  // <blk>/fofc_retest
+  bool worst = false;   // <blk>/floor_audit_worst
   bool any = false;     // Pre/Post bookkeeping active
   bool armed = false;   // a hydro update evolved the slots since the last Post
   bool valid = false;   // the slots hold a resynced state
@@ -106,6 +110,7 @@ struct DualEnergy {
   void Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
             DvceArray5D<Real> &wder, DvceArray4D<Real> &wtemp, const EOS_Data &eos);
   void Report(MeshBlockPack *pp);
+  void Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0, const DvceArray5D<Real> &w0);
   // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment and counts go
   // (Mark, at the step's start before the checkpoint, reports first: a report closes the
   // steps before, and a retried attempt, which does not mark, reports nothing again)
