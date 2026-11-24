@@ -21,7 +21,7 @@ Rules (each reproduces the AG Car E1 production value; constants in spec.DEFAULT
   he_ic_balance_rmax balance_rmax_rel R_ph                        (E1: 342/388.3 = 0.8808)
   mlt_ramp_start / _time  start_turnovers / time_turnovers x t_Fe, t_Fe = H_p/v_MLT (textbook
                      alpha_MLT bubble speed) at the Fe opacity peak     (E1: 2 and 10 x 2.016e6 s)
-  implicit_flux_x1min = the column's F_r at x1min, log-linear in r (= he_star_m1.cpp's fine-grid
+  implicit_flux_x1min = the column's F_r at x1min, log-linear in r (= he_star_vet.cpp's fine-grid
                      interpolation; the code fatals if they differ by > 1e-3).
 """
 import numpy as np
@@ -159,7 +159,7 @@ def r_at_hp_below(r, Hp, r_base, n_hp):
 
 
 def flux_at(col, r0):
-    """he_star_m1 fine-grid interpolation of F_r: log-linear in r"""
+    """he_star_vet fine-grid interpolation of F_r: log-linear in r"""
     r, F = col['r'], col['Fr']
     k = max(0, min(np.searchsorted(r, r0) - 1, r.size - 2))
     w = (r0 - r[k])/(r[k+1] - r[k])

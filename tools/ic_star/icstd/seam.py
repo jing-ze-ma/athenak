@@ -3,7 +3,7 @@
 (1) Scaffold TAPER: the frozen F_MLT/F of the column is multiplied by a smoothstep in ln tau,
     1 at tau >= tau_hi (30), 0 at tau <= tau_lo (3); F_r = F (1 - F_MLT/F) keeps F_r + F_MLT =
     L exactly.  Why tau 30 -> 3: he_ic_rad = sph1d replaces T by the radiative-equilibrium T
-    with weight w = 1 for tau < he_ic_rad_taua = 30 (he_star_m1.cpp ~821), i.e. above tau 30 the
+    with weight w = 1 for tau < he_ic_rad_taua = 30 (he_star_vet.cpp ~821), i.e. above tau 30 the
     code's IC is RE with the column's F_r; a scaffold that is still ~0.5 F there (He giant) or
     ends abruptly at the column's photosphere (the hg145/BSG gate failures) is inconsistent
     with it.  Tapering inside the full-RE zone hands the whole flux to radiation by tau 3, the
@@ -116,7 +116,7 @@ def code_pass(cfg, colfile, dumpfile, wdir, log):
     """0-cycle run of the binary on the deck with the column; -> rph0, rph1, stdout path"""
     os.makedirs(wdir, exist_ok=True)
     keys = ['problem/he_ic_file=%s' % colfile, 'problem/he_ic_rad_dump=%s' % dumpfile,
-            'time/nlim=0', 'problem/he_ic_equil=false', 'rad_m1/ic_rad=none',
+            'time/nlim=0', 'problem/he_ic_equil=false', 'rad_vet/ic_rad=none',
             'problem/he_ic_rad_atm_force=continuum'] + list(cfg.get('overrides', []))
     deck = deck_with(cfg['deck'], keys, os.path.join(wdir, 'pass.athinput'))
     cmd = list(cfg.get('launcher', [])) + [cfg['binary'], '-i', deck, '-d', wdir]

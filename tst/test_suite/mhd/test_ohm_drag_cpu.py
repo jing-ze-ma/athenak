@@ -22,7 +22,7 @@ The thresholds below carry the values measured on stswall-1029 c306af525 +
 ohmdrag-1029 (viper login node, MPI build) in the comments, with a modest margin.
 
 The binary is built here with -D PROBLEM=ohm_drag (and MPI when mpirun exists, as
-rad_m1/m1_common.py does); the runs use up to 12 ranks.
+rad_vet/vet_common.py does); the runs use up to 12 ranks.
 """
 
 import os

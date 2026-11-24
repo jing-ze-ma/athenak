@@ -172,7 +172,7 @@ def derive(base, spec, cache, log):
                 'tools/ic_star %s; MESA kap_data %s (md5 %s); X %g Z %g; join log T %s; base '
                 '%s (md5 %s)' % (VERSION, mk['kap_data'], kh, mk['X'], mk['Z'],
                                  key['join'], base['ross'], key['base']),
-                'Read with he_opac_table (he_star_m1).'])
+                'Read with he_opac_table (he_star_vet).'])
         json.dump(key, open(os.path.join(od, 'provenance.json'), 'w'), indent=1)
     return dict(base, ross=fn, mesa_kap=dict(key, hash=h),
                 note=base.get('note', '') + '; mesa_kap splice %s' % od)

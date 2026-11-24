@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""remap_r.py (s3grid-1017): AthenaK restart (he_star_m1 + rad_m1, general EOS, spherical polar, ONE MeshBlock radially)
+"""remap_r.py (s3grid-1017): AthenaK restart (he_star_vet + rad_vet, general EOS, spherical polar, ONE MeshBlock radially)
 -> the same state on a NEW RADIAL GRID (same x1min/x1max, same lateral grid) as a problem/he_ic_remap_file start
-(pgen he_star_m1, e1remap-1014 path; file format of remap_e1w.py).
+(pgen he_star_vet, e1remap-1014 path; file format of remap_e1w.py).
 
 usage: python3 remap_r.py PARENT_RST PARENT_X1GRID CHILD_TEMPLATE_RST CHILD_X1GRID CHILD_DECK OUTDIR [--name NAME]
   PARENT_RST           the state to remap (e.g. S3 rst 00046, t = 3.0e7)
@@ -123,7 +123,7 @@ def main():
     P('  parent faces incl. ghosts %.6e .. %.6e (%d cells); child %.6e .. %.6e (%d cells)' % (pf[0], pf[-1], n1p, cf[0], cf[-1],
                                                                                             n1c))
     hyd = gather(R, 'hyd', R['nh'])[:5]
-    m1 = gather(R, 'm1', 4)
+    m1 = gather(R, 'vet', 4)
     f01 = gather(R, 'f0x1', 1, face1=True)[0]
     eint = gather(R, 'eint', 1)[0]
     rho = hyd[0]
@@ -140,7 +140,7 @@ def main():
     # parent Phi interpolated to child centroids, for the energy report
     phi_pc = np.interp(cv, pv, phi_p)
     out = {}
-    names = ['rho', 'm1', 'm2', 'm3', 'eint', 'E', 'F1', 'F2', 'F3']
+    names = ['rho', 'vet', 'm2', 'm3', 'eint', 'E', 'F1', 'F2', 'F3']
     src = [rho, hyd[1], hyd[2], hyd[3], eint, m1[0], m1[1], m1[2], m1[3]]
     for nm, q in zip(names, src):
         out[nm] = remap_cells(q, pf, pv, cf)
@@ -156,7 +156,7 @@ def main():
           (nm, float(np.max(np.abs(sc - sp)) / max(float(np.max(np.abs(sp))), 1e-300))))
     if out['rho'].min() <= 0 or out['eint'].min() <= 0 or out['E'].min() <= 0:
         raise SystemExit('non-positive rho/eint/E after the remap')
-    kec = 0.5 * (out['m1'] ** 2 + out['m2'] ** 2 + out['m3'] ** 2) / out['rho']
+    kec = 0.5 * (out['vet'] ** 2 + out['m2'] ** 2 + out['m3'] ** 2) / out['rho']
     out['ET'] = out['eint'] + kec + out['rho'] * phi_c
     dEpot = float(((out['rho'] * (phi_c - phi_pc))[..., ac_] * Vc[ac_]).sum())
     Etot_p = float((hyd[4][..., ap_] * Vp[ap_]).sum())
@@ -164,7 +164,7 @@ def main():
     P('  total energy (lateral factor omitted): parent %.10e child %.10e (rel %.3e); of which rho (Phi_c - Phi_p) %.3e (rel %.3e)'
       % (Etot_p, Etot_c, Etot_c / Etot_p - 1, dEpot, dEpot / Etot_p))
     P('  min rho %.3e eint %.3e E %.3e; max |v_r| %.3e km/s' % (out['rho'].min(), out['eint'].min(), out['E'].min(),
-                                                               np.abs(out['m1'] / out['rho']).max() / 1e5))
+                                                               np.abs(out['vet'] / out['rho']).max() / 1e5))
     # shell-mean density at a few radii, parent vs child (sanity)
     for x in (0.9, 1.0, 1.05, 1.1, 1.12, 1.15, 1.2):
         r = x * 2.7025e13
@@ -185,7 +185,7 @@ def main():
         f.write(hdr)
         f.write(struct.pack('<Q', len(pg)))
         f.write(pg)
-        for nm in ('rho', 'm1', 'm2', 'm3', 'ET', 'E', 'F1', 'F2', 'F3'):
+        for nm in ('rho', 'vet', 'm2', 'm3', 'ET', 'E', 'F1', 'F2', 'F3'):
             f.write(np.ascontiguousarray(padlat(out[nm]), dtype='<f8').tobytes())
         f.write(np.ascontiguousarray(padlat(out['f0x1']), dtype='<f8').tobytes())
     md5 = hashlib.md5(open(fn, 'rb').read()).hexdigest()

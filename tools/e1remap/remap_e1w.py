@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""remap_e1w.py (e1remap-1014): AthenaK restart (he_star_m1 + rad_m1, general EOS, spherical polar) ->
-2x-lateral narrow-wedge initial state for problem/he_ic_remap_file (pgen he_star_m1, branch e1remap-1014).
+"""remap_e1w.py (e1remap-1014): AthenaK restart (he_star_vet + rad_vet, general EOS, spherical polar) ->
+2x-lateral narrow-wedge initial state for problem/he_ic_remap_file (pgen he_star_vet, branch e1remap-1014).
 
 usage: python3 remap_e1w.py RST TEMPLATE_DECK OUTDIR [--x2min A --x2max B] [--dphi D] [--phi0 auto|IDX]
                             [--refine 2] [--blend W] [--name NAME]
@@ -125,7 +125,7 @@ def read_rst(fn):
     o = 0
     off = {}
     off['hyd'] = o; o += nh * nc
-    off['m1'] = o; o += 4 * nc
+    off['vet'] = o; o += 4 * nc
     off['f0x1'] = o; o += n3 * n2 * (n1 + 1)
     o += f2 * n3 * (n2 + 1) * n1 + f3 * (n3 + 1) * n2 * n1
     off['wtemp'] = o; o += nc
@@ -269,7 +269,7 @@ def main():
     if dk.get('problem/he_ic_equil', 'false').lower() in ('true', '1') and pg[-8:] != b'HSDICE01':
         raise SystemExit('child deck has he_ic_equil = true but the parent rst carries no he_ic_equil a_ref trailer')
     for k in ('problem/mlt_ramp_start', 'problem/mlt_ramp_time', 'problem/he_gm', 'problem/he_ic_file',
-              'rad_m1/implicit_flux_x1min', 'problem/he_sponge_r0', 'hydro/wb_rmax'):
+              'rad_vet/implicit_flux_x1min', 'problem/he_sponge_r0', 'hydro/wb_rmax'):
         if par.get(k) != dk.get(k):
             P('  NOTE key differs parent -> child deck: %s: %s -> %s' % (k, par.get(k), dk.get(k)))
     # radial grid identical
@@ -318,7 +318,7 @@ def main():
 
     # ---- parent arrays
     hyd = gather(R, 'hyd', R['nh'])[:5]
-    m1 = gather(R, 'm1', 4)
+    m1 = gather(R, 'vet', 4)
     f01 = gather(R, 'f0x1', 1, face1=True)[0]
     eint = gather(R, 'eint', 1)[0]
     rho = hyd[0]
@@ -326,7 +326,7 @@ def main():
         b2, b3 = R['mb'][1], R['mb'][2]
         isl0 = slice(R['ng'], R['ng'] + R['mesh'][0])
         for nm, q in (('rho', rho), ('eint', None), ('E', None)):
-            q = rho if nm == 'rho' else (gather(R, 'eint', 1)[0] if nm == 'eint' else gather(R, 'm1', 1)[0])
+            q = rho if nm == 'rho' else (gather(R, 'eint', 1)[0] if nm == 'eint' else gather(R, 'vet', 1)[0])
             q = q[:, :, isl0]
             out = []
             for ax, b in ((1, b2), (0, b3)):
@@ -436,7 +436,7 @@ def main():
     for n in (1, 2, 3):
         vb, vl = dv[n]
         ch['m%d' % n] = rc * (vb + up(alpha) * vl)
-    kec = 0.5 * (ch['m1'] ** 2 + ch['m2'] ** 2 + ch['m3'] ** 2) / rc
+    kec = 0.5 * (ch['vet'] ** 2 + ch['m2'] ** 2 + ch['m3'] ** 2) / rc
     dke = (ke_s * vp - coarsen(kec)) / vp  # = -alpha^2 dKE1 (<= 0) up to round-off
     ch['eint'] = ch['eint'] + up(dke)
     P('  velocity slopes: KE added by the sub-cell velocity structure taken from eint, capped at %.3g eint_p: max %.3e of eint_p;'
@@ -455,36 +455,36 @@ def main():
         sc = coarsen(xc).sum(axis=(0, 1))
         sp_ = (xp * vp).sum(axis=(0, 1))
         return float(np.max(np.abs(sc - sp_) / np.maximum(np.abs(sp_), 1e-300)))
-    psub = {'rho': rho, 'ET': hyd[4], 'E': m1[0], 'eint': eint, 'm1': hyd[1], 'F1': m1[1], 'f0x1': f01}
+    psub = {'rho': rho, 'ET': hyd[4], 'E': m1[0], 'eint': eint, 'vet': hyd[1], 'F1': m1[1], 'f0x1': f01}
     for nm in ('rho', 'ET', 'E', 'eint', 'f0x1'):
         P('  prolongation conservation per shell (max rel over all radial cells) %-5s %.3e' %
           (nm, relerr_shell(ch[nm], psub[nm][np.ix_(kidx[1:-1], jidx[1:-1])])))
     # seams before
     msl = slice(ng, ng + NX1)
     pre = {}
-    for nm in ('rho', 'ET', 'E', 'm1'):
+    for nm in ('rho', 'ET', 'E', 'vet'):
         pre[nm] = (seam_metric(ch[nm], 0, msl)[0], seam_metric(ch[nm], 1, msl)[0])
-    vr0 = ch['m1'] / ch['rho']
+    vr0 = ch['vet'] / ch['rho']
     pre['vr'] = (seam_metric(vr0, 0, msl)[0], seam_metric(vr0, 1, msl)[0])
     # ---- blend seams (conservative)
     W = a.blend
-    shell0 = {nm: (ch[nm] * vc).sum(axis=(0, 1)) for nm in ('rho', 'ET', 'E', 'm1', 'f0x1')}
-    for nm in ('rho', 'm1', 'm2', 'm3', 'ET', 'E', 'F1', 'F2', 'F3', 'f0x1'):
+    shell0 = {nm: (ch[nm] * vc).sum(axis=(0, 1)) for nm in ('rho', 'ET', 'E', 'vet', 'f0x1')}
+    for nm in ('rho', 'vet', 'm2', 'm3', 'ET', 'E', 'F1', 'F2', 'F3', 'f0x1'):
         blend_axis(ch[nm], 0, W)
         blend_axis(ch[nm], 1, W)
-    for nm in ('rho', 'ET', 'E', 'm1', 'f0x1'):
+    for nm in ('rho', 'ET', 'E', 'vet', 'f0x1'):
         s1 = (ch[nm] * vc).sum(axis=(0, 1))
         P('  blend conservation per shell %-5s max rel %.3e' %
           (nm, float(np.max(np.abs(s1 - shell0[nm]) / np.maximum(np.abs(shell0[nm]), 1e-300)))))
-    kec = 0.5 * (ch['m1'] ** 2 + ch['m2'] ** 2 + ch['m3'] ** 2) / ch['rho']
+    kec = 0.5 * (ch['vet'] ** 2 + ch['m2'] ** 2 + ch['m3'] ** 2) / ch['rho']
     eic = ch['ET'] - kec - ch['rho'] * up(phi_s)
     P('  after blend: min eint %.4e (min eint/parent-min %.3f), min rho %.4e, min E %.4e' %
       (eic.min(), eic.min() / eint.min(), ch['rho'].min(), ch['E'].min()))
     if eic.min() <= 0:
         raise SystemExit('non-positive eint after the blend')
-    vr1 = ch['m1'] / ch['rho']
+    vr1 = ch['vet'] / ch['rho']
     P('  seam metric = rms(seam jump)/rms(adjacent jump), active radial cells: [phi seam, theta seam] before -> after (W=%d)' % W)
-    for nm in ('rho', 'ET', 'E', 'm1'):
+    for nm in ('rho', 'ET', 'E', 'vet'):
         post = (seam_metric(ch[nm], 0, msl)[0], seam_metric(ch[nm], 1, msl)[0])
         P('    %-4s [%.3f, %.3f] -> [%.2e, %.2e]' % (nm, pre[nm][0], pre[nm][1], post[0], post[1]))
     post = (seam_metric(vr1, 0, msl)[0], seam_metric(vr1, 1, msl)[0])
@@ -511,7 +511,7 @@ def main():
         f.write(hdr)
         f.write(struct.pack('<Q', len(pg)))
         f.write(pg)
-        for nm in ('rho', 'm1', 'm2', 'm3', 'ET'):
+        for nm in ('rho', 'vet', 'm2', 'm3', 'ET'):
             f.write(np.ascontiguousarray(padlat(ch[nm]), dtype='<f8').tobytes())
         for nm in ('E', 'F1', 'F2', 'F3'):
             f.write(np.ascontiguousarray(padlat(ch[nm]), dtype='<f8').tobytes())

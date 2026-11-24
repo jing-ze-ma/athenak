@@ -1,0 +1,133 @@
+# Linear radiation-hydrodynamic wave (absorption opacity 0.1, c = 10, Cartesian, periodic),
+# run for one wave period; the space ladder doubles mesh/nx1 (dt follows the CFL). Used by: order_space,
+# momentum_box (8^3 3-D box along the xyz diagonal, see run_tests.py).
+#
+# The <rad_vet> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = rw
+
+<mesh>
+layout_invariant = true
+nghost = 2
+nx1 = 128
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 128
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.8
+nlim = -1
+tlim = 0.78540321427322368
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+time2_k1_redist = 0
+time2_tableau = sdirk2
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+time2_gtime_mom = true
+time2_k1_stiff = 0
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_kpat = false
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+scheme = clean
+clean_cs_lz_abs = 2
+clean_stag_csvec_radial = true
+c_light = 10
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 0.10000000000000001
+kappa_e = 0.10000000000000001
+kappa_f = 0.10000000000000001
+kappa_s = 0.0
+arad = 0.99999899999999997
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 3.9270160713661184
+implicit_maxit = 200
+implicit_lin_maxit = 400
+time_scheme = hesdirk2
+vet_gd_rotate_dt = 0
+vet_x1_ptol = 1e-14
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 134
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = radwave
+radwave_dir = x1
+radwave_amp = 0.001
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.032155385993023734
+radwave_eig_e_re = 0.018340471605928423
+radwave_eig_f_im = -0.043031774358025882
+radwave_eig_f_re = -0.0105636070755267
+radwave_eig_t_im = -0.20649942415320247
+radwave_eig_t_re = 0.61384761086627249
+radwave_eig_v_im = -0.082219710533449439
+radwave_eig_v_re = 1.2732313566164284
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 1.0e30
+
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 1.0e30

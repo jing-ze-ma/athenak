@@ -595,7 +595,7 @@ class RadiationVet {
   int nstage{};                 // stages per substep: M1_NSTAGE explicit, 1 implicit
   Real impl_cfl{};              // <rad_vet>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
   DvceArray1D<Real> opn_nskip_d;
-  // m1-positivity (default true on a fresh run, off on a restart whose file lacks them):
+  // vet-positivity (default true on a fresh run, off on a restart whose file lacks them):
   //  implicit_pos_gas: energy-conserving positivity limiter of the written-back gas eint
   //  implicit_pos_floor: the E floor takes the added energy from the gas (conserving)
   // pos_cnt_d: device counters (M1_POS_*), pos_cnt the all-rank totals at the report

@@ -1354,7 +1354,7 @@ void RadiationVet::ImplicitReport() {
   }
   MRReport();
   if (pos) {
-    std::cout << "<rad_vet> m1-positivity: implicit_pos_gas=" << impl_pos_gas << " (frac "
+    std::cout << "<rad_vet> vet-positivity: implicit_pos_gas=" << impl_pos_gas << " (frac "
               << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
               << " energy moved rad->gas=" << pos_cnt[M1_POS_GAS_DE]
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]

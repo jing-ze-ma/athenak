@@ -119,7 +119,7 @@ def run_log_checks(run, slurm_log):
 
 def load(run, kap, rph_cli, tsat):
     fh = sorted(glob.glob(os.path.join(run, 'bin', '*.hydro_w.*.bin')))
-    fm = sorted(glob.glob(os.path.join(run, 'bin', '*.m1.*.bin')))
+    fm = sorted(glob.glob(os.path.join(run, 'bin', '*.vet.*.bin')))
     n = min(len(fh), len(fm))
     T, V, D, E = [], [], [], []
     for a, b in zip(fh[:n], fm[:n]):
@@ -134,7 +134,7 @@ def load(run, kap, rph_cli, tsat):
         T.append(float(h['Time'])/DAY)
         D.append(ms/w.sum(axis=(0, 1)))
         V.append((rho*np.asarray(h['velx'], float)*w).sum(axis=(0, 1))/ms/1e5)
-        E.append((np.asarray(mm['m1_e'], float)*w).sum(axis=(0, 1))/w.sum(axis=(0, 1)))
+        E.append((np.asarray(mm['vet_e'], float)*w).sum(axis=(0, 1))/w.sum(axis=(0, 1)))
     T, V, D, E = np.array(T), np.array(V), np.array(D), np.array(E)
     r = np.asarray(h['x1v'], float)
     rf = np.asarray(h['x1f'], float)

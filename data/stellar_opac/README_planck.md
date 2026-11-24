@@ -1,4 +1,4 @@
-# Planck-mean opacity tables (for the `<rad_m1>` energy-exchange term)
+# Planck-mean opacity tables (for the `<rad_vet>` energy-exchange term)
 
 Same file format and grid as the Rosseland tables here (`ReadOpacityTable`,
 `RosselandTable`): header `nT nD lTmin dlT lDmin dlD` = `217 281 2.6 0.025 -14 0.05`,
@@ -13,7 +13,7 @@ then `log10 kappa_P [cm^2/g]`, T slowest, second axis `log10 rho` (`table_rho`).
 Produced 2026-09-21 with `planck_tools/` (`fetch_tops.py` queries
 https://aphysics2.lanl.gov by script; `convert_ferguson.py` reads the Wichita State
 `f05.g98.pl.tar.gz` set, interpolating in log Z for Z=0.014; raw downloads are kept in
-`bench/m1_opac/`, not in the repository).  TOPS data are valid for log T 3.76-7.07 and
+`bench/vet_opac/`, not in the repository).  TOPS data are valid for log T 3.76-7.07 and
 are edge-filled outside.
 
 Checks: the same source's Rosseland mean agrees with the Rosseland tables used so far to
@@ -28,7 +28,7 @@ extinction.  It is line dominated and non-monotonic at low density; densities be
 ~1e-8 g/cc may lie under the tabulated minimum for some elements (LANL FAQ).
 
 The tables themselves are fetched/built, not tracked (the `.gitignore` policy of this
-directory, see `PROVENANCE.md`); master copies are in `bench/m1_opac/` on viper.  md5:
+directory, see `PROVENANCE.md`); master copies are in `bench/vet_opac/` on viper.  md5:
 
 ```
 19ff20de3bf3067e7325328e405e6657  planck_gs98_x0.7_z0.014.txt

@@ -2,7 +2,7 @@
 
 Emits every star/IC key and the IC-chain/background keys of the AG Car E1 standard
 (/raven/ptmp/jinma/overlap_1015/decks/e1_prod_rol2u.athinput md5 552f8769).  Keys NOT emitted
-(they are the run's, not the star's): the radial grid (nx1, f_stretch_*), the <rad_m1> solver
+(they are the run's, not the star's): the radial grid (nx1, f_stretch_*), the <rad_vet> solver
 set, outputs, tlim (long-tlim rule), vet_gd_rotate_dt (~20 dt).  Paste the blocks into a copy of
 the E1 deck (each key replaces the deck's line of the same name in the same block).
 """
@@ -28,7 +28,7 @@ def block(v):
     k('hydro', 'eos_h2', 'false', 'H2 OFF (see regime flags if Teff < 5000 K)')
     k('hydro', 'eos_ionization', 'true', '')
     k('hydro', 'eos_metal_ionization', 'false', '')
-    k('hydro', 'eos_radiation', 'false', 'MANDATORY with <rad_m1>')
+    k('hydro', 'eos_radiation', 'false', 'MANDATORY with <rad_vet>')
     k('hydro', 'eos_xh', repr(c['X']), '')
     k('hydro', 'eos_yhe', repr(c['Y']), 'Z = %g' % c['Z'])
     k('hydro', 'eos_a_metal', repr(c['a_metal']), 'inert-metal mean weight (E1 default 16)')
@@ -43,12 +43,12 @@ def block(v):
     k('hydro', 'pfloor', '%.1e' % c['pfloor'], c['why_pfloor'])
     k('hydro', 'dfloor_keep_velocity', 'true', '')
     k('hydro', 'vceil', '%.1e' % c['vceil'], c['why_vceil'])
-    k('rad_m1', 'implicit_bc_x1min', 'flux', '')
-    k('rad_m1', 'implicit_flux_x1min', '%.12e' % c['F_rin'],
-      'column F_r(x1min), log-linear (he_star_m1 check 1e-3); L/(4 pi x1min^2) = %.12e'
+    k('rad_vet', 'implicit_bc_x1min', 'flux', '')
+    k('rad_vet', 'implicit_flux_x1min', '%.12e' % c['F_rin'],
+      'column F_r(x1min), log-linear (he_star_vet check 1e-3); L/(4 pi x1min^2) = %.12e'
       % c['F_L_rin'])
-    k('rad_m1', 'implicit_bc_x1max', 'marshak', '')
-    k('rad_m1', 'implicit_flux_x1max', '0.0', '')
+    k('rad_vet', 'implicit_bc_x1max', 'marshak', '')
+    k('rad_vet', 'implicit_flux_x1max', '0.0', '')
     p = 'problem'
     k(p, 'he_gm', g(c['GM']), c['gm_src'])
     if c.get('gm_column'):
@@ -109,7 +109,7 @@ def block(v):
         b_, kv_ = kv.split('/', 1)
         k(b_, kv_.split('=')[0], kv_.split('=', 1)[1], 'spec deck_extra')
     out = ['# ---- tools/ic_star deck block for %s (spec %s)' % (c['name'], c['spec']),
-           '# ---- star/IC keys of the standard; grid (nx1, f_stretch_*), <rad_m1> solver set,'
+           '# ---- star/IC keys of the standard; grid (nx1, f_stretch_*), <rad_vet> solver set,'
            ' outputs, tlim, he_seed amplitude/k band from the E1 deck']
     cur = None
     for blk, key, val, com in L:

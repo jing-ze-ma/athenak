@@ -29,7 +29,7 @@ seam:
   overrides: ['problem/he_ic_rad_gamma_cap=0.3']
 # 10-16: without a cap the code's own sph1d + re_atm + HSE startup does not converge for this star
 # (super-Eddington RE photosphere on the He/H opacity cliff; RESULTS sect. 6).  With the opt-in
-# startup cap he_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, he_star_m1) the radiative flux
+# startup cap he_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, he_star_vet) the radiative flux
 # is capped at 0.3 c g/kappa per cell and the excess goes into the frozen scaffold (as MESA's
 # convection there); the standard top (Hopf) and taper (tau 30 -> 3) are used.
 deck_extra: ['problem/he_ic_rad_gamma_cap=0.3']

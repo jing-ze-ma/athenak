@@ -4,7 +4,7 @@ Numerically IDENTICAL (same expressions, same operation order) to the AG Car bui
   * TableEOS  = make_ic_mlt_star_ge.TableEOS (Viper lbv_1008/agcar/geos/scripts; the code's
     gas-only general-EOS table dump, bicubic RectBivariateSpline of log10 e/rho and log10 p/rho,
     (log T, log rho) CLAMPED to the dumped grid, clamp counter);
-  * read_ross = the he_star_m1 table reader + the pgen's he_opac_logd_min extension
+  * read_ross = the he_star_vet table reader + the pgen's he_opac_logd_min extension
     (log kappa continued below the grid with the first interval's slope clamped to [0, 1]);
     bilinear (kx = ky = 1) in (log T, log rho), as the pgen lookup;
   * Star.thermo / Star.mlt_gradient = make_ic_mlt_star_ge.Star (gas EOS + radiation, local
@@ -82,7 +82,7 @@ class TableEOS:
 
 
 def read_ross_raw(fn):
-    """(nT, nD, lT0, dlT, lD0, dlD, values[nT, nD]) of a he_star_m1 table"""
+    """(nT, nD, lT0, dlT, lD0, dlD, values[nT, nD]) of a he_star_vet table"""
     with open(fn) as fh:
         for ln in fh:
             if ln.startswith('# ') and len(ln.split()) == 7 and ln.split()[1].isdigit():
@@ -93,7 +93,7 @@ def read_ross_raw(fn):
 
 
 def read_ross(fn, ld_ext=None):
-    """he_star_m1 table format; ld_ext: HsReadOpacityTable's extension to low rho
+    """he_star_vet table format; ld_ext: HsReadOpacityTable's extension to low rho
     (log10 kappa continued in log rho with the first interval's slope clamped to [0, 1])"""
     nT, nD, lT0, dlT, lD0, dlD, v = read_ross_raw(fn)
     if ld_ext is not None and ld_ext < lD0 - 1e-9*dlD:

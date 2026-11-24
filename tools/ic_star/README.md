@@ -1,4 +1,4 @@
-# tools/ic_star: the standard initial condition for he_star_m1 envelope runs
+# tools/ic_star: the standard initial condition for he_star_vet envelope runs
 
 ONE pipeline and ONE in-code IC chain for every stellar-envelope run (BSG, He giants, AG Car /
 LBVs, future stars). There are two input modes:
@@ -176,7 +176,7 @@ The standard now removes it:
      run kappa_R);
    - F_r = F (1 - F_MLT/F), so F_r + F_MLT = L holds exactly.
    - Why 30 -> 3: sph1d sets T to radiative equilibrium with weight 1 for tau < he_ic_rad_taua =
-     30 (he_star_m1.cpp ~821). The taper therefore lives entirely in the code's full-RE zone, and
+     30 (he_star_vet.cpp ~821). The taper therefore lives entirely in the code's full-RE zone, and
      radiation carries the whole flux by the Hopf join at tau 3, as it does in the RE atmosphere.
 2. **Code-consistent atmosphere** (`seam: {deck, binary, tol_cells 0.1, maxit 8}`): the column
    is passed through the code's OWN startup solve:
@@ -226,7 +226,7 @@ RESULTS sect. 9).** Options A-C below are kept for the record; A was tried (RESU
 branch ic-gammacap-1016) and does not converge.
 
 
-**What fails.** he_star_m1.cpp ~813-1125 runs an outer Picard loop of two steps:
+**What fails.** he_star_vet.cpp ~813-1125 runs an outer Picard loop of two steps:
 - (i) the E solve at fixed rho (HsSph1dPass VET passes, T = (E/a)^1/4 in the RE zone tau <
   taua);
 - (ii) the HSE march at fixed T, with g_eff = g - kt F_r/c. Where Gamma = kt F_r/(c g) >
@@ -372,7 +372,7 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
   - TOPS raw: `opacity.tops_hi/lo` copied into `<cache>/raw/tops/<hash>_{hi,lo}.dat`, or
     fetched (planck_tools/fetch_tops.py: hi 0.0005-1 keV x 1e-14..1 (71), lo 1e-21..1e-14
     (36)). **LANL was down on 10-15.** Without 'lo', the extension starts at log rho -14.
-  - Ferguson raw: `<cache>/raw/ferguson05/{ross,planck}` (from Viper bench/m1_opac).
+  - Ferguson raw: `<cache>/raw/ferguson05/{ross,planck}` (from Viper bench/vet_opac).
   - Checks:
     - X 0.36 Z 0.02 rebuilt = E1 rosseland_ext2 b28e97c5 and planck_ext2 dc482452, every
       value (E1's planck_ext2orion 493f9d01 differs in 4462/91357 values, the Orion low-rho
@@ -406,7 +406,7 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
 | wb_rmax | 1.1 R_ph | |
 | he_ic_balance_rmax | 0.8808 R_ph | 342 Rsun |
 | mlt_ramp_start / _time | 2 / 10 x t_Fe = H_p/v_MLT at the Fe opacity peak | 4.0297e6 / 2.0149e7 (E1 4.032e6 / 2.016e7) |
-| implicit_flux_x1min | the column's F_r(x1min), log-linear in r (= he_star_m1's fine grid; the code fatals if the two differ by > 1e-3, he_star_m1.cpp ~1552) | 8.1426e12 |
+| implicit_flux_x1min | the column's F_r(x1min), log-linear in r (= he_star_vet's fine grid; the code fatals if the two differ by > 1e-3, he_star_vet.cpp ~1552) | 8.1426e12 |
 | he_gm (+ he_gm_column) | global: GM point mass; mesa: G m(x1min) of the column + he_gm_column true | |
 
 **Caveats for big, cool stars (RGs, RSGs).** These rules are tuned on hot, compact-ish
@@ -432,7 +432,7 @@ super-Eddington layers, x1max > 5 R_ph). These are flags only.
   - eos_xh, eos_yhe, eos_a_metal, eos_logd_min -21, eos_logd_max, eos_logt_min, eos_logt_max,
     eos_dlog;
   - wb_rmax, dfloor, tfloor_kelvin, pfloor, dfloor_keep_velocity, vceil.
-- **<rad_m1>**: implicit_bc_x1min flux, **implicit_flux_x1min = F_r(x1min) of the column**,
+- **<rad_vet>**: implicit_bc_x1min flux, **implicit_flux_x1min = F_r(x1min) of the column**,
   implicit_bc_x1max marshak, implicit_flux_x1max 0.
 - **<problem>**:
   - he_gm (+ he_gm_column in mode mesa), he_ic_file, he_opac_table, he_planck_table,

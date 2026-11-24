@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""reblock_identity.py (fastfloor-1109) RST DECK OUTDIR NAME : identity remap (same grid) of an AthenaK he_star_m1 + rad_m1 restart into a
+"""reblock_identity.py (fastfloor-1109) RST DECK OUTDIR NAME : identity remap (same grid) of an AthenaK he_star_vet + rad_vet restart into a
 problem/he_ic_remap_file (HSREMAP1) fresh start, so the SAME state can start on any MeshBlock layout.
 Arrays copied verbatim from the restart (u0 hydro incl. rho*Phi, M1 u0, f0x1), lateral ghosts = periodic images,
 x1 ghosts = the restart's.  Writes NAME.remap and NAME.athinput (DECK + start_time + he_ic_remap_file); the
@@ -19,7 +19,7 @@ print('rst t=%.17g cycle %d nmb %d mesh %s mb %s ng %d nh %d counts %s' % (
     R['time'], R['ncycle'], R['nmb'], R['mesh'], R['mb'], R['ng'], R['nh'], R['counts']))
 NX1, NX2, NX3 = R['mesh']; ng = R['ng']; par = R['params']
 hyd = gather(R, 'hyd', R['nh'])[:5]
-m1 = gather(R, 'm1', 4)
+m1 = gather(R, 'vet', 4)
 f0 = gather(R, 'f0x1', 1, face1=True)[0]
 pg = R['blocks'].get(b'PGENST01', b'')
 

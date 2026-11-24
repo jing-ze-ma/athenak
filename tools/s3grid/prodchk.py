@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""prodchk.py (s3grid-1017): READ-ONLY surface/background check of an AG Car (he_star_m1) run, the BGDIAG metrics.
+"""prodchk.py (s3grid-1017): READ-ONLY surface/background check of an AG Car (he_star_vet) run, the BGDIAG metrics.
 
 usage: python3 prodchk.py --run DIR [--stdout 'GLOB'] [--bins 'GLOB'] [--dstride 5e6] [--win 2e7] [--rph 2.7025e13]
                           [--dmax 2e-16] [--out PREFIX]
@@ -10,7 +10,7 @@ Writes PREFIX_hst.txt (per window), PREFIX_dump.txt (per dump), PREFIX_sum.txt; 
 Metrics (definitions as NOTE rol2u_safety_1015 BGDIAG):
  hst  : L_top/L_in, Mdot_top, P_sponge/L_top, budget residual Bres = Etot - int(L_in - L_top + P_esrc - P_sponge) dt
         (window slope erg/s), M_tot.
- log  : m1_pos_un (E-floor energy created, cumulative per link; resets at restart handled), m1_pos_flr, vceil_de, eos_tfloor,
+ log  : vet_pos_un (E-floor energy created, cumulative per link; resets at restart handled), vet_pos_flr, vceil_de, eos_tfloor,
         eos_efloor, eos_vceil (per-row counts).
  stdout: steps, share of steps with 'hesdirk2 stage 1 NOT ADMISSIBLE' (-> backward Euler), DT_RETRY cuts, NON-CONVERGED.
  dumps: r_surf = outermost r/R_ph with sin-weighted shell <rho> > 1e-12; steps = (first cell with rho < 1e-12 outside
@@ -161,11 +161,11 @@ def main():
             et = np.interp(ecy, cy, ct, left=np.nan, right=np.nan)
         else:   # fallback: event-log rows every output dt (1e5 s) from the first hst time
             et = t[0] + 1e5 * np.arange(1, len(ecy) + 1)
-        dun = incr_cum(E['m1_pos_un']) if 'm1_pos_un' in E else None
-        dfl = incr_cum(E['m1_pos_flr']) if 'm1_pos_flr' in E else None
+        dun = incr_cum(E['vet_pos_un']) if 'vet_pos_un' in E else None
+        dfl = incr_cum(E['vet_pos_flr']) if 'vet_pos_flr' in E else None
         P('sum', '  event log %s: %d rows (cycle %d -> %d)' % (lf, len(ecy), ecy[0], ecy[-1]))
-    P('hst', '# window [t0,t1] | L_top/L_in  Mdot_top g/s  P_spg/L_top | Bres slope erg/s (/L_top) | logged m1_pos_un rate erg/s'
-      ' | m1_pos_flr  vceil_de  tfloor efloor vceil (per window) | steps  BE share  DT_RETRY  NC')
+    P('hst', '# window [t0,t1] | L_top/L_in  Mdot_top g/s  P_spg/L_top | Bres slope erg/s (/L_top) | logged vet_pos_un rate erg/s'
+      ' | vet_pos_flr  vceil_de  tfloor efloor vceil (per window) | steps  BE share  DT_RETRY  NC')
     ed = np.arange(np.floor(t[0] / a.win) * a.win, t[-1] + a.win, a.win)
     for t0, t1 in zip(ed[:-1], ed[1:]):
         w = (t >= t0) & (t < t1)
@@ -198,7 +198,7 @@ def main():
       % (H['L_top'][t < t[0] + 2e6].mean() / H['L_in'][t < t[0] + 2e6].mean(), H['L_top'][t > t[-1] - 2e6].mean() /
          H['L_in'][t > t[-1] - 2e6].mean(), B[-1], B[-1] / (t[-1] - t[0]), H['Mdot_top'][t > t[-1] - 2e6].mean()))
     if E is not None and dun is not None:
-        P('sum', '  logged m1_pos_un total %.3e erg -> Bres / logged = %.3f' % (np.nansum(dun), B[-1] / max(np.nansum(dun), 1e-30)))
+        P('sum', '  logged vet_pos_un total %.3e erg -> Bres / logged = %.3f' % (np.nansum(dun), B[-1] / max(np.nansum(dun), 1e-30)))
     if a.nodumps:
         return
     import bin_convert as bc

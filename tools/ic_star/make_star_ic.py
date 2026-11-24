@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """make_star_ic.py SPEC [--out DIR] [--compare REF] [--no-png]
 
-THE standard initial condition for he_star_m1 stellar-envelope runs (BSG, He giants, AG Car /
+THE standard initial condition for he_star_vet stellar-envelope runs (BSG, He giants, AG Car /
 LBVs, future stars): spec (YAML/JSON) -> tables (cached) -> IC column + provenance header ->
 deck block -> diagnostics (text + PNG).  The method is the AG Car one (make_ic_agcar_ge.py):
 see README.md and icstd/column.py.
@@ -308,7 +308,7 @@ def main():
     spec_line = json.dumps({k: v for k, v in s.items() if not k.startswith('_')},
                            sort_keys=True, default=str)
     with open(fn, 'w') as fh:
-        fh.write('# he_star_m1 IC (tools/ic_star make_star_ic.py, mode %s, scheme '
+        fh.write('# he_star_vet IC (tools/ic_star make_star_ic.py, mode %s, scheme '
                  '%s; he_ic_cols = 5): %s; L %.8e GM %.8e R_ph %.8e Teff %.2f; alpha_MLT %g, '
                  'MLT++ pp_alpha %g f1 %g f2 %g; x1min %.10e; column floor %.1e\n'
                  % (mode, col['scheme'], name, L, GM, col['rph'],
@@ -392,7 +392,7 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
     e = s['eos']
     ok = (lt.max() <= e['logt_max'] and lr.min() >= e['logd_min'] and
           lr.max() <= e['logd_max'] and lt.min() >= e['logt_min'])
-    log('  deck EOS range (eos_logt %.2f..%.2f, eos_logd %.1f..%.1f): column %s (he_star_m1 '
+    log('  deck EOS range (eos_logt %.2f..%.2f, eos_logd %.1f..%.1f): column %s (he_star_vet '
         'fatals outside)' % (e['logt_min'], e['logt_max'], e['logd_min'], e['logd_max'],
                              'inside' if ok else 'OUTSIDE'))
     t0, t1, d0, d1 = st.ross_lims
@@ -469,7 +469,7 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
     i0 = int(np.argmin(abs(r - x1min)))
     log('  at x1min: T %.4e rho %.4e nabla_rad/nabla_ad %.4f F_MLT/F %.2e tau %.4e'
         % (T[i0], rho[i0], pr['nrad'][i0]/pr['nad'][i0], col['fmlt'][i0], pr['tau'][i0]))
-    log('  ghost margin: the column starts %.4f Rsun below x1min; he_star_m1 needs it to cover '
+    log('  ghost margin: the column starts %.4f Rsun below x1min; he_star_vet needs it to cover '
         'x1min - 3 dx1(wall) - 2 dx1 -> the grid must have dx1(wall) < ~%.4f Rsun'
         % ((x1min - r[0])/RSUN, (x1min - r[0])/5.5/RSUN))
     log('  implicit_flux_x1min = F_r(x1min) %.12e; L/(4 pi x1min^2) %.12e (ratio %.8f)'
@@ -829,7 +829,7 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
     def fm0_of(r):
         return np.interp(r, r0, fm0)
     cur = c0
-    cfg['overrides'] = ov + ['rad_m1/implicit_flux_x1min=%.12e' % AN.flux_at(col, x1min)]
+    cfg['overrides'] = ov + ['rad_vet/implicit_flux_x1min=%.12e' % AN.flux_at(col, x1min)]
     fin, hist = SM.fixed_point(cfg, None, fm0_of, L, st.kap, x1max, hdr, cur, log,
                                tp['tau_lo'] if tp['enable'] else None, tp['tau_hi'],
                                tp.get('extend', False))

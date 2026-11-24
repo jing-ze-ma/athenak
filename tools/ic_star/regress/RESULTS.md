@@ -271,7 +271,7 @@ of the code EOS + radiation, G m(r)):
   (production) vs an M1/Eddington-factor closure in the optically thin layer, keeping the IC chain
   (ic_rad needs vet_gd/vet_col: the worker's e1 run FATALed with vet_gd off).
 - A clean test needs a key that switches only the closure above tau ~1 after the startup, e.g.
-  `rad_m1/closure_thin = m1` applied for tau < 1 from cycle 1.
+  `rad_vet/closure_thin = m1` applied for tau < 1 from cycle 1.
 - Interpretation:
   - if the oscillation persists at the same 1.4-1.5 d period with an M1 thin closure, it is the
     hydrodynamic atmospheric resonance (physical, set by the cut-off frequency of this
@@ -350,7 +350,7 @@ excited at the photosphere and steepens in the falling density.
 
 ### 8b. Option A: problem/he_ic_rad_gamma_cap (branch ic-gammacap-1016, commit 843ce3e4, from b16b66db)
 
-Implementation: src/pgen/he_star_m1.cpp, about 60 lines in the sph1d block.
+Implementation: src/pgen/he_star_vet.cpp, about 60 lines in the sph1d block.
 - The key is read only when named.
 - Inside the HSE outer loop, after kt and the march gravity are known, the column's F_r is capped
   at cap c g/kt per fine cell above r_b, and the excess goes into the frozen scaffold:
@@ -576,7 +576,7 @@ Run (sbatch small, 381 s): /raven/ptmp/jinma/ic_star_runs/hegiant_14p5M_anchor, 
   - BSG (mode mesa, taper + seam on) built with 3c3c3107 and with this branch: IC data and deck
     identical (the seam passes included);
   - only the new diag Gamma_rad line is added.
-  No he_star_m1 change, so E1/BSG/HG decks run the same binary.
+  No he_star_vet change, so E1/BSG/HG decks run the same binary.
 
 ### 9e. Gate (a'): FAIL (regress/gate_aprime.py; runs/hg704, hg1408; 9 d, seed 0, 16x16)
 Deck /raven/ptmp/jinma/hg145_mscaf_1017/decks/hg145_anchor.athinput (md5 915c1d80 = hg145e1 + tool block):
@@ -592,7 +592,7 @@ Deck /raven/ptmp/jinma/hg145_mscaf_1017/decks/hg145_anchor.athinput (md5 915c1d8
 - [5] PASS: NC 0, 0 retries, rc 0.
 
 What happens (scripts/prof.py):
-- the <rad_m1> ic_rad relaxation already drops L_top to **0.595 L_IC (704)**, 0.769 (1408);
+- the <rad_vet> ic_rad relaxation already drops L_top to **0.595 L_IC (704)**, 0.769 (1408);
 - 4x4 lateral resolution runs (2 d): 0.595 (704), 0.774 (2816), 0.895 (5632);
 - MESA-like kappa: 0.906 (704).
 - The deficit sits at the join (113.7-114.1 Rsun, the tau 3-5 layer). There the frozen
@@ -616,7 +616,7 @@ What happens (scripts/prof.py):
 
 Arms (704, 9 d, seed 0, 16x16, the sect. 9 IC/deck). he_base_heat is removed from the deck for the closures that
 need mlt_closure != frozen (it acts only once the ramp starts, at 14.8 d, i.e. after the run).
-- **(a) scaffold frozen in pressure**: new opt-in `problem/mlt_closure = pressure` (he_star_m1, mltp-1017).
+- **(a) scaffold frozen in pressure**: new opt-in `problem/mlt_closure = pressure` (he_star_vet, mltp-1017).
   - F_sub = fm_IC(ln P_face) F_tot,IC(face), with P_face the shell-mean P_gas + E/3;
   - relaxed over mlt_relax_time (1500 s), every cycle;
   - the adaptive closure's restart state is reused.
