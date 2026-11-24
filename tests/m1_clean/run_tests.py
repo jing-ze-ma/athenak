@@ -279,6 +279,43 @@ def t_wb_cs(c):
 
 
 # ---------------------------------------------------------------------------------------
+# linear momentum: a report, not a pass / fail criterion
+
+def t_momentum_box(c):
+    """periodic 3-D Cartesian box (8^3, the radwave along the xyz diagonal, amplitude 1e-3,
+    8 cycles): total linear momentum = gas (hydro_u, cell sums) + radiation (the face
+    momenta F_f / c^2 of the m1_face dump; each cell's left faces = every face once in a
+    periodic box), every cycle.  dP_cyc: per cycle, the largest component of |P - P_0| /
+    sum |p_gas| at t = 0.  The scheme does not conserve P in general (see README): the
+    numbers are reported; the test passes when the run completes with finite numbers and
+    no CLEAN WARNING."""
+    n, cl = 8, 10.0
+    o = {'mesh/nghost': 3, 'mesh/nx1': n, 'mesh/nx2': n, 'mesh/nx3': n,
+         'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n, 'mesh/x3max': 1.0,
+         'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8,
+         'time/tlim': 1e30, 'time/nlim': 8, 'problem/radwave_dir': 'xyz',
+         'problem/radwave_amp': 1e-3, 'problem/radwave_eig': 'false',
+         'output1/variable': 'm1_face', 'output1/dcycle': 1,
+         'output2/variable': 'hydro_u', 'output2/dcycle': 1}
+    d = c.run('wave_cart.athinput', 'run', o)
+    dv = 1.0/n**3
+    P, s0 = {}, None   # by cycle (the final dump repeats the last cycle)
+    for fa, fh in zip(m1t.bins(d, 'm1_face'), m1t.bins(d, 'hydro_u')):
+        A, H = m1t.read_bin(fa), m1t.read_bin(fh)
+        pr = np.array([A['m1_fx%d' % k].sum() for k in (1, 2, 3)])*dv/cl**2
+        pg = np.array([H['mom%d' % k].sum() for k in (1, 2, 3)])*dv
+        if s0 is None:
+            s0 = sum(np.abs(H['mom%d' % k]).sum() for k in (1, 2, 3))*dv
+        P[A['cycle']] = pg + pr
+    P = [P[k] for k in sorted(P)]
+    dp = [float(np.abs(p - P[0]).max()/s0) for p in P[1:]]
+    if len(dp) != o['time/nlim'] or not np.all(np.isfinite(dp)):
+        raise RuntimeError('momentum_box: %d cycles read, dP %s' % (len(dp), dp))
+    w = m1t.warnings(open(os.path.join(d, 'run.log')).read())
+    return dict(dP_max=max(dp), dP_cyc=dp, warnings=w)
+
+
+# ---------------------------------------------------------------------------------------
 
 TESTS = [  # name, function, in --quick
     ('conservation_sp', t_conservation_sp, True),
@@ -294,6 +331,7 @@ TESTS = [  # name, function, in --quick
     ('thermal_eq', t_thermal_eq, False),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
+    ('momentum_box', t_momentum_box, True),
 ]
 
 
@@ -350,7 +388,7 @@ def one(a, name, fn):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
-    p.add_argument('--quick', action='store_true', help='the short subset (8 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (9 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')

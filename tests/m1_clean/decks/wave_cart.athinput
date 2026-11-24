@@ -1,5 +1,6 @@
 # Linear radiation-hydrodynamic wave (absorption opacity 0.1, c = 10, Cartesian, periodic),
-# run for one wave period; the space ladder doubles mesh/nx1 (dt follows the CFL). Used by: order_space.
+# run for one wave period; the space ladder doubles mesh/nx1 (dt follows the CFL). Used by: order_space,
+# momentum_box (8^3 3-D box along the xyz diagonal, see run_tests.py).
 #
 # The <rad_m1> block starts with the scheme keys that production pins (the values of the
 # production star decks); the rest are this test's physics, grid and solver set-up.

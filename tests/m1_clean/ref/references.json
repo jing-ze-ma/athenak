@@ -111,5 +111,11 @@
   "max": {
    "vmax_over_cs": 1e-08
   }
+ },
+ "momentum_box": {
+  "_about": "a report: dP_max / dP_cyc are recorded, not bounded; the test passes when the run completes with finite dP and no CLEAN WARNING",
+  "equal": {
+   "warnings": 0
+  }
  }
 }

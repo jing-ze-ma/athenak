@@ -38,6 +38,7 @@ is a FAIL with the path of its `run.log`.
 | `nlte_eps1e-1`, `nlte_eps1e-4` | `nlte_eps*` | two-level-atom non-LTE atmosphere (Jiang 2021, ApJS 253, 49, sec. 4.5): J vs the exact transport solution (`ref/nlte_exact_eps*.txt`) | L1 within 5 % of the reference value |
 | `thermal_eq` | `thermal_eq` | uniform gas + radiation relaxing to equilibrium (Jiang 2021, sec. 4.1) vs the exact ODE | max relative error of E(t), T(t) <= bound |
 | `wb_sp`, `wb_cs` | `rhse_sp`, `rhse_cs` | grey scattering envelope in hydrostatic and radiative equilibrium (spherical polar 2-D, cubed sphere) | max over the run of max |v| / c_s <= 1e-8 |
+| `momentum_box` | `wave_cart` (8^3, periodic 3-D) | total linear momentum, gas (`hydro_u`) + radiation (face momenta of `m1_face` / c^2), every cycle for 8 cycles; radiation wave along the xyz diagonal, amplitude 1e-3, `radwave_eig = false`, `nghost = 3`, tile 8: `dP_cyc` = largest component of \|P - P_0\| / Σ\|p_gas\| per cycle, `dP_max` its maximum (quick and full, ~10 s) | **a report, not a criterion**: passes when the run completes, the numbers are finite and there is no `CLEAN WARNING` |
 
 Notes on the results of this release (512cf768a):
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
@@ -55,12 +56,23 @@ Notes on the results of this release (512cf768a):
   per-MeshBlock F line solves; bitwise with the F-join fix of the next release), and 2 x 2
   by 4.5e-10: splitting theta puts ray walls inside the mesh, which is outside the tile
   guarantee. The test therefore bounds the difference instead of requiring 0.
+- **Linear momentum.** The scheme does not conserve linear momentum (gas + radiation) in
+  general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone` with
+  `clean_stag_fcone_gas = false`), the well-balancing residual (`clean_stag_fwb`) and the
+  floor velocity rules (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling) change it
+  and are not booked. Where none of them acts the momentum exchange is exact; at amplitude
+  1e-3 in `momentum_box` none acts and dP is round-off (5.8e-17; per cycle 5.4-5.8e-17, measured at 69bfe5d04).
+  In a non-linear box (amplitude 0.1) the cut changes P by up to ~4e-3 of Σ|p_gas| per
+  cycle. `momentum_box` therefore reports dP (printed, and kept with `--record`) and does
+  not bound it; on spherical polar and cubed-sphere meshes Cartesian P is not a discrete
+  invariant at all (local bases), so the test is Cartesian only.
 - **Order.** Deck D reaches second order only as dt -> 0: successive orders 1.57, 1.61,
   1.84 (E) over the five time steps. The criterion is on the finest pair.
 
 The reference values and tolerances are in `ref/references.json` (measured with commit
 512cf768a, CPU, GCC 13, `-ffp-contract=off`). Bitwise tests (restart, dt_retry, layout) need
-no reference: they compare two runs of the same binary.
+no reference: they compare two runs of the same binary. `momentum_box` has only
+`"equal": {"warnings": 0}`: its dP is recorded, not bounded.
 
 `references.json` format, per test: `"max": {name: bound}`, `"min": {name: bound}`,
 `"equal": {name: value}`, `"near": {name: [reference, relative tolerance]}`; `"last": true`
