@@ -27,3 +27,8 @@
 
 ## m35mms decision: SWITCH (FS1 clean, restart bitwise, dt back to 11-12, Lz/Etot drift = the no-spin run's)
 - Keys: the current production keys + rad_vet/floorcap_lz_spin=true. **Also rad_vet/floorcap_mesh_vol=true** (your FS1 line named it, and the FS1 validation ran with it; the production deck has floorcap_mesh_vol = 0), plus floorcap_v=3e7 floorcap_rho=1e-14 as in FS1. Say if you want mesh_vol back to 0.
+
+## m35mms (11-24 03:39): switched to floorcap_lz_spin on athena_ia123rc3fcs_6f2973dc8
+- pre-switch (log.3): 1.3110 s/cyc (c12150-12400), dt 4.057265e+00. Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/m35mms.00008.rst.pre-spin.
+- relaunch: `2026-11-24 03:37:17 chunk 4 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3fcs_6f2973dc8 md5=7cd2856ec083818cc35742d6cd668550 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_m35mms.athinput md5=ae635` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/floorcap_lz=true rad_vet/floorcap_lz_spin=true rad_vet/floorcap_mesh_vol=true rad_vet/floorcap_v=3e7 rad_vet/floorcap_rho=1e-14
+- log echo (log.4): (no mg_levels line yet) | <hydro>: fofc_retest 1
