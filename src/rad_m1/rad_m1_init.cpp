@@ -61,7 +61,7 @@ namespace radm1 {
 bool g_t2_reset_on = false;
 DvceArray4D<Real> g_t2_reset;
 double g_t2_reset_nskip = 0.0;
-static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin);   // (below)
+static int M1HaloDepth(MeshBlockPack *pp, ParameterInput *pin);   // (below)
 // DEBUG <rad_m1>/dbg_eint_cells (file scope so the class
 // layout is unchanged): 0 = off
 static int g_dbg_eint_n = 0;
@@ -2587,7 +2587,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","zalesak_converge")) {
     zl_conv = pin->GetBoolean("rad_m1","zalesak_converge");
   }
-  zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
   if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
     fmm_rowsel = pin->GetBoolean("rad_m1","implicit_face_mmat_rowsel");
   }
@@ -2783,7 +2782,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (!clean) {Kokkos::realloc(thw, nmb, M1_NHALO_T, ncells3, ncells2, ncells1);}
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
+    pbval_th->exch_depth = M1HaloDepth(pmy_pack, pin);
     impl_hdepth = pbval_th->exch_depth;   // G5: also the halo_mpi cell lists
     if (!clean) {pbval_th->InitializeBuffers(M1_NHALO_T);}   // (clean: with thw)
     // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
@@ -2811,7 +2810,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(thq, 0.0);
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
+    pbval_tq->exch_depth = M1HaloDepth(pmy_pack, pin);
     if (!clean) {pbval_tq->InitializeBuffers(M1_NHALO_Q);}   // (clean: with thq)
     pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
     // the deep interior of the scratch arrays is neither read by a send nor written by a
@@ -2821,16 +2820,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // skip it.  SMR/AMR is already a fatal above.
     halo_shell = !(pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere ||
                    pmy_pack->pmesh->use_polar_boundary);
-    // (test switch, env M1_CS_HALO_SHELL=1): the shell copy on the cubed
-    // sphere too (the seam resample and the corner fill read the outermost ng active
-    // cells only, which the shell holds; gate bitwise before use)
-    {
-      const char *e = std::getenv("M1_CS_HALO_SHELL");
-      if (e != nullptr && std::atoi(e) != 0 && pmy_pack->pmesh->use_cubed_sphere &&
-          !pmy_pack->pmesh->multilevel && !pmy_pack->pmesh->use_polar_boundary) {
-        halo_shell = true;
-      }
-    }
     {
       // ONE more exchange object, for the single Krylov vector the operator application
       // needs in its ghost zones -- and for the one-component exchange of E alone, which
@@ -2845,7 +2834,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(krw, 0.0);
       Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
       pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-      pbval_kr->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
+      pbval_kr->exch_depth = M1HaloDepth(pmy_pack, pin);
     pbval_kr->InitializeBuffers(1);
       pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
@@ -2856,7 +2845,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(vmw, 0.0);
         Kokkos::realloc(vmw_c, nmb, M1_NVIMP_X, 1, 1, 1);
         pbval_vm = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-        pbval_vm->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
+        pbval_vm->exch_depth = M1HaloDepth(pmy_pack, pin);
     pbval_vm->InitializeBuffers(M1_NVIMP_X);
         // (DV2, DV3) is the tangential pair; the nine per-direction Jacobian rows P are
         // treated as scalars (their proper curvilinear treatment is a later stage)
@@ -2869,7 +2858,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(d3w, 0.0);
         Kokkos::realloc(d3w_c, nmb, 3, 1, 1, 1);
         pbval_d3 = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-        pbval_d3->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
+        pbval_d3->exch_depth = M1HaloDepth(pmy_pack, pin);
         pbval_d3->InitializeBuffers(3);
         pbval_d3->SetVectorPairs(3, {{1, 2}});
         pbval_d3->cs_noresample = true;
@@ -3148,7 +3137,7 @@ void RadiationM1::ImplicitPartitionInit() {
 
 // the depth of the implicit scratch exchanges on the cubed sphere,
 // <rad_m1>/implicit_halo_depth (default 2; 0 or >= ng = all ng layers, the old
-// behaviour), env M1_HALO_DEPTH overrides.  The implicit kernels read 2 ghost layers
+// behaviour).  The implicit kernels read 2 ghost layers
 // (the vimp enthalpy stencil +-2; poisoned-ghost gate M1_POISON_GHOST: NaN beyond depth
 // 2 leaves the outputs identical, beyond depth 1 does not), so depth 2 sends the same
 // values that are read with 2/3 of the bytes (RSG 2-node loop -2.5 %, bitwise).
@@ -3157,7 +3146,7 @@ void RadiationM1::ImplicitPartitionInit() {
 // 2 ghost rows next to the pole; poisoned-ghost gate incl. the polar rows) when x1 is
 // one MeshBlock (the gate poisons x2/x3 ghosts only; every sp production is x1-unsplit);
 // not on Cartesian meshes (the old behaviour, all ng layers).
-static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin) {
+static int M1HaloDepth(MeshBlockPack *pp, ParameterInput *pin) {
   Mesh *pm = pp->pmesh;
   const bool sp = pm->use_spherical_polar && (pm->mesh_indcs.nx1 == pm->mb_indcs.nx1);
   if (!pm->use_cubed_sphere && !sp) {return 0;}
@@ -3165,8 +3154,6 @@ static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin) {
   if (pin != nullptr && pin->DoesParameterExist("rad_m1", "implicit_halo_depth")) {
     d = pin->GetInteger("rad_m1", "implicit_halo_depth");
   }
-  const char *e = std::getenv("M1_HALO_DEPTH");
-  if (e != nullptr) {d = std::atoi(e);}
   return d;
 }
 
@@ -3214,15 +3201,12 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
   const bool pack_ = topack;
   auto iw_ = iw;
   auto sc_ = sc;
-  // test switches (env): M1_HCOPY_CELL=1 the one-thread-per-cell copy for
-  // every exchange (the same copies); M1_POISON_GHOST=1 (gate only, NOT a run mode): on
-  // the way back, every ghost cell more than ONE cell outside the active range in x2 or
-  // x3 is set to NaN (if the outputs stay identical, no implicit kernel reads those
-  // layers of the exchanged components)
-  static int s_hcell = -1, s_poison = -1;
-  if (s_hcell < 0) {
-    const char *e = std::getenv("M1_HCOPY_CELL");
-    s_hcell = (e != nullptr) ? std::atoi(e) : 0;
+  // test switch (env M1_POISON_GHOST=1; gate only, NOT a run mode): on the way back,
+  // every ghost cell more than ONE cell outside the active range in x2 or x3 is set to
+  // NaN (if the outputs stay identical, no implicit kernel reads those layers of the
+  // exchanged components)
+  static int s_poison = -1;
+  if (s_poison < 0) {
     const char *f = std::getenv("M1_POISON_GHOST");
     s_poison = (f != nullptr) ? std::atoi(f) : 0;
   }
@@ -3230,7 +3214,7 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
   const int pd = s_poison;   // M1_POISON_GHOST=D: the ghost layers beyond depth D
   const int pjs = indcs.js, pje = indcs.je, pks = indcs.ks, pke = indcs.ke;
   const bool p2 = (indcs.nx2 > 1), p3 = (indcs.nx3 > 1);
-  if (impl_halo_direct || s_hcell != 0 || poi) {
+  if (impl_halo_direct || poi) {
     // implicit_halo_direct on a mesh whose neighbours are not all on this rank: the
     // same shell copy with ONE thread per cell (coalesced along i) instead of one per
     // row -- the row loop runs ~13k threads with strided rows on the 3-D box.
@@ -3238,14 +3222,8 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
     // (HIP): one 64-lane vector per (m,n,k,j) row, 4 rows per team, i.e.
     // the same cells, each copied by the same assignment, with the index division paid
     // per row instead of per cell (rocprofv3, HG small cs deck: m1_impl_hcpyf 0.40 s,
-    // 7466 launches, ~2.6 TB/s).  Bitwise (plain copies).  Env M1_HCOPY_TEAM=0 restores
-    // the flat launch.
-    static int s_hteam = -1;
-    if (s_hteam < 0) {
-      const char *e = std::getenv("M1_HCOPY_TEAM");
-      s_hteam = (e != nullptr) ? std::atoi(e) : 1;
-    }
-    if (s_hteam != 0 && !poi) {
+    // 7466 launches, ~2.6 TB/s).  Bitwise (plain copies).
+    if (!poi) {
       const int nr2 = n2, nr3 = n3, nqq = nq;
       const int nrow = (nmb1 + 1)*nq*n3*n2;
       constexpr int kTr = 4;
@@ -3841,11 +3819,6 @@ void RadiationM1::ImplicitReport() {
                   : std::string(""))
               << " rowsel=" << (fmm_rowsel ? "on" : "off") << " re-assembled rows="
               << fmm_selrows << " of " << fmm_selall;
-    if (zl_prof) {std::cout << " second-assembly wall=" << fmm_asm2_wall << " s";}
-    if (zl_prof) {
-      std::cout << " round-loop wall=" << zl_wall[1] << " s (exchanges " << zl_xwall[1]
-                << " s)";
-    }
     if (zl_active) {std::cout << " zalesak_active=on";}
     if (zl_colsweep) {std::cout << " zalesak_colsweep=on";}
     if (zl_cap > 0) {

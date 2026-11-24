@@ -36,10 +36,9 @@
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace hydro {
-// <hydro>/dt_report (read only when named, in the Hydro constructor; -1 = not named).
-// The key wins over the env alias ATHENA_DT_REPORT (which <mhd>/dt_report takes too,
-// mhd_dtreport.cpp).  Diagnostics only: no state change.
-int dt_report_key = -1;
+// <hydro>/dt_report (read only when named, in the Hydro constructor; 0 = off).
+// Diagnostics only: no state change.
+int dt_report_key = 0;
 
 //----------------------------------------------------------------------------------------
 // \!fn void Hydro::NewTimeStep()
@@ -66,13 +65,9 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   hloc.loc = -1;
   if (dt_diag.h_view.extent(0) == 0) Kokkos::realloc(dt_diag, ndtdiag);
 
-  // env ATHENA_DT_REPORT = N > 0 (diagnostic, no key): the report cycles
-  // also keep every cell's CFL dt (dt_cell) for the per-region minima (polar rows / rest)
-  static int dtrep = -1;
-  if (dtrep < 0) {
-    const char *ev = std::getenv("ATHENA_DT_REPORT");
-    dtrep = (dt_report_key >= 0) ? dt_report_key : ((ev != nullptr) ? std::atoi(ev) : 0);
-  }
+  // <hydro>/dt_report = N > 0: the report cycles also keep every cell's CFL dt (dt_cell)
+  // for the per-region minima (polar rows / rest)
+  const int dtrep = dt_report_key;
   const bool dtcell_on = (dtrep > 0) && ((pmy_pack->pmesh->ncycle % dtrep) == 0) &&
                          (pmy_pack->pmesh->use_spherical_polar);
   if (dtcell_on && dt_cell.extent(0) != static_cast<size_t>(pmy_pack->nmb_thispack)) {
@@ -455,11 +450,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     pmlat->Diag(u0, "h");
   }
 
-  // DEBUG dt report (env ATHENA_DT_REPORT = N > 0, every N cycles,
-  // no key, no state change): the rank holding the global minimum hydro dt prints the
-  // limiting cell, its direction, gas and radiation-modified signal speeds, the taper
-  // optical depth rho kappa_T dx, E_rad, c dt rho kappa_P and the thin-freeze flag; the
-  // global minimum of the GAS-ONLY dt dx/(|v| + c_gas) is printed alongside.
+  // dt report (<hydro>/dt_report = N > 0, every N cycles, no state change): the rank
+  // holding the global minimum hydro dt prints the limiting cell, its direction, gas and
+  // radiation-modified signal speeds, the taper optical depth rho kappa_T dx, E_rad,
+  // c dt rho kappa_P and the thin-freeze flag; the global minimum of the GAS-ONLY dt
+  // dx/(|v| + c_gas) is printed alongside.
   if (dtrep > 0 && pdrive->time_evolution != TimeEvolution::kinematic &&
       !is_special_relativistic_ && !is_general_relativistic_ &&
       !is_dynamical_relativistic_ && (pmy_pack->pmesh->ncycle % dtrep) == 0) {

@@ -4497,32 +4497,6 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
   // centre, so p(angle) must collapse onto ONE curve: print the bin mean with the spread
   // inside the bin.  Comparing this between the INTERIOR, SEAM and VERTEX placements is a
   // direct read of grid imprinting -- same physics, only the grid moved underneath.
-  // Per-cell scatter at ONE radial index, for plotting: on a spherically symmetric
-  // solution p(angle) must collapse to a single curve, so visible scatter IS the
-  // imprinting.  Enabled by CS_SCATTER to keep normal runs quiet.
-  if (std::getenv("CS_SCATTER") != nullptr) {
-    const int imid = (is + ie)/2;
-    for (int m=0; m<pmbp->nmb_thispack; ++m) {
-      const int p = mbpanel.h_view(m);
-      for (int k=ks; k<=ke; ++k) {
-        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
-                                                               size.h_view(m).x3max);
-        for (int j=js; j<=je; ++j) {
-          const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
-                                                                 size.h_view(m).x2max);
-          Real cx, cy, cz;
-          PanelToCart(p, xc, ec, cx, cy, cz);
-          const Real cd = cx*cs_blx + cy*cs_bly + cz*cs_blz;
-          const Real an = acos(fmin(1.0, fmax(-1.0, cd)));
-          const Real dxi = 0.25*M_PI*2.0/indcs.nx2;
-          const int sm = ((fabs(fabs(xc) - 0.25*M_PI) < 2*dxi) ||
-                          (fabs(fabs(ec) - 0.25*M_PI) < 2*dxi)) ? 1 : 0;
-          std::printf("@@PT %.6f %.6e %.6e %d %d\n", an, wh(m,IEN,k,j,imid),
-                      wh(m,IDN,k,j,imid), sm, p);
-        }
-      }
-    }
-  }
   std::printf("###   PROFILE  bin  angle      mean_p        min_p         max_p\n");
   for (int b=0; b<NB; ++b) {
     if (pn[b] == 0) {
@@ -7094,14 +7068,6 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
                 lc[0][cc] += d;
                 nc[0][cc] += 1.0;
                 mc[0][cc] = std::fmax(mc[0][cc], d);
-                // DIAGNOSTIC: env CS_EMF1_DUMP=<thr> lists the radial edges of classes
-                // 1-3 with error > thr (panel, signed xi/eta face angles / (pi/4), i)
-                static const char *e1d_ = std::getenv("CS_EMF1_DUMP");
-                if (e1d_ != nullptr && cc >= 1 && d > std::atof(e1d_)) {
-                  std::printf("E1DUMP cls %d p %d xf %+.5f ef %+.5f dxi %d deta %d i %d "
-                              "err %.4e\n", cc, p, xf/(0.25*M_PI), ef/(0.25*M_PI), dxf_,
-                              def_, i - is, d);
-                }
               }
             }
             if (j <= je) {   // x2 edge along xi at (rl, ef), centre xc

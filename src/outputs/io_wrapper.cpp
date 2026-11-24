@@ -25,15 +25,6 @@ bool IOWrapper::collective = false;
 //! This function must not be called by multiple threads in shared memory parallel regions
 
 int IOWrapper::Open(const char* fname, FileMode rw, bool single_file_per_rank) {
-  if (dtag_ != nullptr && rw == FileMode::write) {
-    job_pos_ = 0;
-#if MPI_PARALLEL_ENABLED
-    job_ = async_io::Open(dtag_, fname, !single_file_per_rank, comm_);
-#else
-    job_ = async_io::Open(dtag_, fname, false);
-#endif
-    return true;
-  }
   const char* mode;
   switch (rw) {
     case FileMode::read:
@@ -308,7 +299,6 @@ std::size_t IOWrapper::Read_Reals_at_all(void *buf, IOWrapperSizeT cnt,
 
 std::size_t IOWrapper::Write_any_type(const void *buf, IOWrapperSizeT cnt,
                                       std::string datatype, bool single_file_per_rank) {
-  if (job_ != nullptr) return DeferWrite(buf, cnt, 0, true, datatype);
 #if MPI_PARALLEL_ENABLED
   if (single_file_per_rank) {
     // Use standard C file handling
@@ -404,7 +394,6 @@ std::size_t IOWrapper::Write_any_type(const void *buf, IOWrapperSizeT cnt,
 std::size_t IOWrapper::Write_any_type_at(const void *buf, IOWrapperSizeT cnt,
                                          IOWrapperSizeT offset, std::string datatype,
                                          bool single_file_per_rank) {
-  if (job_ != nullptr) return DeferWrite(buf, cnt, offset, false, datatype);
 #if MPI_PARALLEL_ENABLED
   if (single_file_per_rank) {
     // set appropriate datasize
@@ -503,7 +492,6 @@ std::size_t IOWrapper::Write_any_type_at(const void *buf, IOWrapperSizeT cnt,
 std::size_t IOWrapper::Write_any_type_at_all(const void *buf, IOWrapperSizeT cnt,
                                             IOWrapperSizeT offset, std::string datatype,
                                             bool single_file_per_rank) {
-  if (job_ != nullptr) return DeferWrite(buf, cnt, offset, false, datatype);
 #if MPI_PARALLEL_ENABLED
   if (single_file_per_rank) {
     // set appropriate datasize
@@ -599,11 +587,6 @@ std::size_t IOWrapper::Write_any_type_at_all(const void *buf, IOWrapperSizeT cnt
 //  \brief wrapper for {MPI_File_close} versus {std::fclose}
 
 int IOWrapper::Close(bool single_file_per_rank) {
-  if (job_ != nullptr) {
-    async_io::Submit(job_);
-    job_ = nullptr;
-    return 0;
-  }
 #if MPI_PARALLEL_ENABLED
   if (!single_file_per_rank) {
     return MPI_File_close(&fh_);
@@ -649,42 +632,4 @@ IOWrapperSizeT IOWrapper::GetPosition(bool single_file_per_rank) {
   int64_t pos = ftell(fh_);
   return pos;
 #endif
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn std::size_t IOWrapper::DeferWrite()
-//! \brief record a write for the helper thread (async_io.hpp).  Sequential
-//! writes (Write_any_type) go at the running position of this file's sequential writes,
-//! which is where fwrite / MPI_File_write with the individual file pointer put them (the
-//! callers never Seek); "_at" writes go at offset, as fseek+fwrite / MPI_File_write_at.
-//! Writes of up to 1 MiB are copied now; larger ones must stay unchanged until the job is
-//! written (the caller's host staging arrays, see async_io.hpp).
-
-std::size_t IOWrapper::DeferWrite(const void *buf, IOWrapperSizeT cnt,
-                                  IOWrapperSizeT offset, bool sequential,
-                                  const std::string &datatype) {
-  std::size_t datasize;
-  if (datatype == "byte") {
-    datasize = sizeof(char);
-  } else if (datatype == "int") {
-    datasize = sizeof(int);
-  } else if (datatype == "float") {
-    datasize = sizeof(float);
-  } else if (datatype == "double") {
-    datasize = sizeof(double);
-  } else if (datatype == "Real") {
-    datasize = sizeof(Real);
-  } else {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "Unrecognized datatype '" << datatype << "'" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  IOWrapperSizeT n = cnt*datasize;
-  IOWrapperSizeT off = offset;
-  if (sequential) {
-    off = job_pos_;
-    job_pos_ += n;
-  }
-  async_io::Record(job_, buf, off, n, sequential || n <= (IOWrapperSizeT(1) << 20));
-  return cnt;
 }

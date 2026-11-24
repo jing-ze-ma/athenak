@@ -14,8 +14,7 @@
 //!     rows are the face MIDPOINTS of the real faces (the node table vgd_thn, computed
 //!     from the mesh's own theta map), and the fractional row is linear in theta between
 //!     the two bracketing nodes (VgdThFj).  On a uniform grid this is the old formula up
-//!     to round-off; vgd_sth is false there (bitwise), env VGD_THTAB=1 forces the table
-//!     path for the round-off gate.
+//!     to round-off; vgd_sth is false there (bitwise).
 //! (b) FULL SPHERE.  The band rows beyond a pole continue the theta of the EXTENDED
 //!     chart (-theta north, 2 pi - theta south, i.e. the point (|theta|, phi + pi)): the
 //!     node table is mirrored there, the halo slot beyond the pole takes the pole partner

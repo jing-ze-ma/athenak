@@ -1044,9 +1044,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
-      // finish (rename) background output writes that completed
-      async_io::Progress();
-
       // per-cycle problem-generator hook (problem/diag_gid in deep_hot_jupiter_rt).
       // Runs with the state at the end of the cycle and the new dt already set.
       if (pmesh->pgen->user_cycle_func != nullptr) {
@@ -1421,15 +1418,6 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                 << std::endl;
       std::cout << "zone-cycles/cpu_second = " << zcps << std::endl;
       std::cout << "particle-updates/cpu_second = " << pups << std::endl;
-    }
-  }
-  // every background output write finished and renamed before the outputs
-  // (which own the restart staging arrays) are deleted in main
-  if (async_io::Enabled()) {
-    Kokkos::Timer wt;
-    async_io::WaitAll();
-    if (global_variable::my_rank == 0) {
-      std::cout << "async_output: final wait " << wt.seconds() << " s" << std::endl;
     }
   }
   return;

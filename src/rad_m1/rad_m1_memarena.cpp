@@ -67,8 +67,6 @@ void RadiationM1::MemArenaInit(ParameterInput *pin, const int nmb, const int niw
   if (pin->DoesParameterExist("rad_m1", "mem_arena")) {
     marena_on = marena_on && pin->GetBoolean("rad_m1", "mem_arena");
   }
-  const char *e = std::getenv("M1_ARENA");
-  if (e != nullptr && std::string(e) == "0") {marena_on = false;}
   Kokkos::realloc(iw, nmb, niw, n3, n2, n1);
 }
 

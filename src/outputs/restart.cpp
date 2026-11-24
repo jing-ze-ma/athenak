@@ -71,9 +71,6 @@ RestartOutput::RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters op)
 // variables, including ghost zones.
 
 void RestartOutput::LoadOutputData(Mesh *pm) {
-  // the previous restart's background write reads the outarray_* staging
-  // arrays; wait for it before refilling them (no-op without ATHENA_ASYNC_OUTPUT=1)
-  async_io::WaitTag(this);
   // get spatial dimensions of arrays, including ghost zones
   auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
   int nout1 = indcs.nx1 + 2*(indcs.ng);
@@ -117,7 +114,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   // synchronously, a staging array is the contiguous device array (or its device pack)
   // itself instead of a host copy of it: the same bytes, one copy fewer at the dump
   constexpr bool um_ = Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
-  const bool zc = um_ && !async_io::Enabled();
+  const bool zc = um_;
   rst_keep_.clear();
   auto stage = [&](auto &out, const auto &sv) {
     using H = std::remove_reference_t<decltype(out)>;
@@ -298,8 +295,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
             Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
         // (independent I/O, synchronous: one MeshBlock's buffer, packed and written
         // MeshBlock by MeshBlock in WriteOutputFile)
-        const int nst = (um && nfv == 0 && !IOWrapper::collective &&
-                         !async_io::Enabled()) ? 1 : nmb;
+        const int nst = (um && nfv == 0 && !IOWrapper::collective) ? 1 : nmb;
         // (and, without ray intensities in the record, in windows of at most
         // <job>/restart_window_mb)
         const int nwin = (nst < nmb && pradm1->CleanRstNfv() == 0) ?
@@ -719,7 +715,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // open file and  write the header; this part is serial
   IOWrapper resfile;
-  resfile.SetDeferred(this);  // background write if ATHENA_ASYNC_OUTPUT=1
   resfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
   // rank 0's progress through the dump, and its watchdog: every <job>/restart_warn_s
   // seconds (default 600; 0 off) without a progress line it warns, naming the last one,

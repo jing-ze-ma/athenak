@@ -475,10 +475,9 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // images of this block's cells across the seam. Set by the implicit M1 on its scratch
   // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
-  // teams of each (block, buffer, variable) of the CC pack/unpack (env BVALS_CC_SPLIT
-  // overrides): 1, the default since defaults-1105; the clean M1 exchanges take more.
-  // CUDA: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one team's; A100 RSG 12
-  // ranks -0.28 s/cycle, hst and dumps bitwise)
+  // teams of each (block, buffer, variable) of the CC pack/unpack: 1; the clean M1
+  // exchanges take more.  CUDA: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one
+  // team's; A100 RSG 12 ranks -0.28 s/cycle, hst and dumps bitwise)
 #if defined(KOKKOS_ENABLE_CUDA)
   int cc_split = 16;
 #else

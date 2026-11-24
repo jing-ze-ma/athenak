@@ -64,33 +64,19 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
 //----------------------------------------------------------------------------------------
 //! \fn static int BvCcSplit
 //! \brief Number of teams each (block, buffer, variable) of the CC pack/unpack is split
-//! into over its (k,j) range (env BVALS_CC_SPLIT, else the object's cc_split).
+//! into over its (k,j) range (the object's cc_split).
 static int BvCcSplit(const int def) {
-  static int s = -1;
-  if (s < 0) {
-    const char *e = std::getenv("BVALS_CC_SPLIT");
-    s = (e != nullptr) ? std::max(std::atoi(e), 1) : 0;
-  }
-  return (s > 0) ? s : std::max(def, 1);
+  return std::max(def, 1);
 }
 //----------------------------------------------------------------------------------------
 //! \fn static int BvCcVl
-//! \brief Vector length of the CC pack/unpack (env BVALS_CC_VL; default 32 on CUDA, 16
-//! otherwise).
+//! \brief Vector length of the CC pack/unpack (32 on CUDA, 16 otherwise).
 static int BvCcVl() {
-  static int v = -1;
-  if (v < 0) {
-    const char *e = std::getenv("BVALS_CC_VL");
 #if defined(KOKKOS_ENABLE_CUDA)
-    v = (e != nullptr) ? std::atoi(e) : 32;
+  return 32;
 #else
-    v = (e != nullptr) ? std::atoi(e) : 16;
+  return 16;
 #endif
-    if (v < 1) {
-      v = 1;
-    }
-  }
-  return v;
 }
 
 // force-inline the seam-pack stencil lambdas on CUDA (avoids local-memory spills)
@@ -102,19 +88,8 @@ static int BvCcVl() {
 
 //----------------------------------------------------------------------------------------
 //! \fn static BvCcTeamPolicy BvCcPolicy
-//! \brief Team policy of the CC pack/unpack (env BVALS_CC_TS = team size, 0 = AUTO).
+//! \brief Team policy of the CC pack/unpack (team size AUTO).
 static BvCcTeamPolicy BvCcPolicy(const int nleague) {
-  static int t = -1;
-  if (t < 0) {
-    const char *e = std::getenv("BVALS_CC_TS");
-    t = (e != nullptr) ? std::atoi(e) : 0;
-    if (t < 0) {
-      t = 0;
-    }
-  }
-  if (t > 0) {
-    return BvCcTeamPolicy(DevExeSpace(), nleague, t, BvCcVl());
-  }
   return BvCcTeamPolicy(DevExeSpace(), nleague, Kokkos::AUTO, BvCcVl());
 }
 

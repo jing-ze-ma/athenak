@@ -1779,8 +1779,6 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
   const bool zsk = zl_hskip;
   bool zfirst = true;
-  std::chrono::steady_clock::time_point zt0;
-  if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
   const int zlr = zl_local;   // (rad_m1.hpp zalesak_local_rounds)
   // zalesak_active: a round reads slot sa and writes sb, an R that fell with its sign
   // bit set (-0 for 0); the next round evaluates only the cells with such a face
@@ -2071,11 +2069,6 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     ZalesakCapWarn("time2_face_fct", pmy_pack->pmesh->ncycle, t2_solve);
   }
   zl_rounds[0] += static_cast<Real>(nround);
-  if (zl_prof) {
-    Kokkos::fence();
-    zl_wall[0] += std::chrono::duration<double>(std::chrono::steady_clock::now()
-                                               - zt0).count();
-  }
   t2_ffct_cells += ncell;
   t2_ffct_rmax = std::max(t2_ffct_rmax, static_cast<Real>(nround));
   if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
@@ -3403,7 +3396,6 @@ void RadiationM1::Time2Report() {
               << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds[0] << " R exchanges="
               << zl_halos[0];
     if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[0];}
-    if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[0] << " s";}
     std::cout << ")";
   }
   if (vet_col && t2_vcmode != 0) {

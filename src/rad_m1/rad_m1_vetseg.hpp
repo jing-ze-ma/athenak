@@ -101,7 +101,7 @@ inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
 #endif
 }
 
-// the CUDA gx-false shell kernel, launch bounds <T, B> (env VGD_CUDA_LB;
+// the CUDA gx-false shell kernel, launch bounds <T, B> (M1_VGD_CUDA_LB;
 // 0 = the plain VgdShellPol launch).  default 2 = <128, 5> on A100 (96
 // registers, 5 blocks per SM instead of 4; R136 r136.00097 4x1 -26 ms/cycle, hst
 // identical); 0 elsewhere (not measured)

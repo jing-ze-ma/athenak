@@ -72,8 +72,8 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vgdray.hpp"
-// the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL, env
-// ACC_NCCL=1; as the sp list halo, VgdNcclOn in rad_m1_vetgd.cpp)
+// the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL; not used: VgdNcclOn in
+// rad_m1_vetgd.cpp)
 #if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
 #include <nccl.h>
 #define M1_VGDCS_NCCL 1
@@ -1337,17 +1337,12 @@ struct VgdCsXIdx {int v[VGD_CSX_NS + 1];};
 //! two-set sweep in ONE round: one pack kernel, one host fence, ONE message
 //! per partner (piece p = [current set's values of p | next set's values of p], tag
 //! 7107), one unpack kernel.  The values are those of the two VetGdCsHaloC calls (the
-//! same copies into the same band cells: bitwise).  false (nothing done) with NCCL,
-//! direction groups or env VGD_CSXM=0: the caller runs the two exchanges
+//! same copies into the same band cells: bitwise).  false (nothing done) with NCCL or
+//! direction groups: the caller runs the two exchanges
 
 bool RadiationM1::VetGdCsHaloCX(const int pass, const int i, const int eb) {
 #if MPI_PARALLEL_ENABLED
-  static int s_on = -1;
-  if (s_on < 0) {
-    const char *ev = std::getenv("VGD_CSXM");
-    s_on = (ev != nullptr) ? std::atoi(ev) : 1;
-  }
-  if (s_on == 0 || eb < 0) {return false;}
+  if (eb < 0) {return false;}
 #if M1_VGDCS_NCCL
   if (VgdNcclOn()) {return false;}
 #endif
@@ -1972,12 +1967,7 @@ void RadiationM1::VetGdCsSweep() {
   }
   auto lstb_ = vgd_cslst_xb;
   // cs early send (see the shell loop)
-  static int s_early = -1;
-  if (s_early < 0) {
-    const char *ee = std::getenv("VGD_CS_EARLY");
-    s_early = (ee != nullptr) ? std::atoi(ee) : 1;
-  }
-  bool early = (s_early != 0) && ccl && !pipe && (G == 1);
+  bool early = ccl && !pipe && (G == 1);
 #if !MPI_PARALLEL_ENABLED
   early = false;
 #endif
@@ -1987,9 +1977,9 @@ void RadiationM1::VetGdCsSweep() {
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
   if (xffs) {early = false;}   // (the early send: one set per shell kernel)
 #if defined(KOKKOS_ENABLE_HIP) && MPI_PARALLEL_ENABLED
-  // rsthip-1121: MI300A, ROCm 7.2: more than 2 ranks on one GPU with the default
-  // GPU_MAX_HW_QUEUES (4: 5/5, 3: 1/1) hang in the early send's event wait (hgs 6 ranks,
-  // 2 MI300A; GPU_MAX_HW_QUEUES=2 or VGD_CS_EARLY=0 run, with the same bits)
+  // MI300A, ROCm 7.2: more than 2 ranks on one GPU with the default GPU_MAX_HW_QUEUES
+  // of the HIP runtime (4: 5/5, 3: 1/1) hang in the early send's event wait (hgs 6
+  // ranks, 2 MI300A; GPU_MAX_HW_QUEUES=2 runs, with the same bits)
   const char *hq = std::getenv("GPU_MAX_HW_QUEUES");
   static bool s_hqchk = false;
   if (early && !s_hqchk && (hq == nullptr || std::atoi(hq) > 2)) {
@@ -2008,7 +1998,7 @@ void RadiationM1::VetGdCsSweep() {
     if (sh > 2) {
       VgdCsFatal(std::to_string(sh) + " ranks share one GPU: the early send hangs "
                  "there (HIP hardware queues); set GPU_MAX_HW_QUEUES=2 (same bits) or "
-                 "VGD_CS_EARLY=0, or use at most 2 ranks per GPU");
+                 "use at most 2 ranks per GPU");
     }
   }
 #endif
@@ -2025,18 +2015,15 @@ void RadiationM1::VetGdCsSweep() {
   auto est_ = vgd_est[0];
   int esid = 0;   // (0: no early cells; never a stamp)
   VgdCsEv eev, efork;
-  static int s_lb = -1;   // cslb (see the shell kernel)
-  if (s_lb < 0) {
-    const char *el = std::getenv("VGD_CS_LB");
-    // 6 (VGD_CS_LB=0: old launch); 2 on HIP, where the bound is min waves per EU and 6
-    // spilled the body (HG small cs deck 13083259: vet_gd sweeps 5.08 -> 2.73 s, outputs
-    // bitwise); 8 on CUDA (H200 RSG -1.1 %, HG -0.8 %, bitwise)
+  // cslb: the shell kernel with LaunchBounds<128, kLb> (register cap, the same code): 2
+  // on HIP, where the bound is min waves per EU and 6 spilled the body (HG small cs
+  // deck 13083259: vet_gd sweeps 5.08 -> 2.73 s, outputs bitwise); 8 on CUDA (25 %
+  // occupancy at 114 registers before; H200 RSG -1.1 %, HG -0.8 %, bitwise)
 #if defined(KOKKOS_ENABLE_HIP)
-    s_lb = (el != nullptr) ? std::atoi(el) : 2;
+  constexpr unsigned kLb = 2;
 #else
-    s_lb = (el != nullptr) ? std::atoi(el) : 8;
+  constexpr unsigned kLb = 8;
 #endif
-  }
   VetGdRingSweepBegin(xffs);   // (the other set's array second)
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
@@ -2081,7 +2068,7 @@ void RadiationM1::VetGdCsSweep() {
 #define M1_VGDCS_SHELL_NAME shell_
 #include "rad_m1_vetgd_cs_shell.inc"
 #undef M1_VGDCS_SHELL_NAME
-      // cs early send (env VGD_CS_EARLY, default on; compact lists, G = 1, no NCCL): the
+      // cs early send (compact lists, G = 1, no NCCL): the
       // values this shell SENDS first, then their pack (pinned host buffer) and an event;
       // the full shell kernel runs while the host exchanges (finished below at the halo
       // point: event wait instead of a fence, MPI, unpack)
@@ -2135,25 +2122,9 @@ void RadiationM1::VetGdCsSweep() {
       // then the next set's, one launch; the next set's body is the include above with
       // that set's names (direction table, n . r_hat, intensities, read mask)
 #define M1_VGDCS_LAUNCHN(F, N) \
-      if (s_lb == 8) {                                                                 \
-        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 8>>(DevExeSpace(), 0, N),    \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else if (s_lb == 6) {                                                          \
-        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, N),    \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else if (s_lb == 2) {                                                          \
-        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 2>>(DevExeSpace(), 0, N),    \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else if (s_lb == 1) {                                                          \
-        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 1>>(DevExeSpace(), 0, N),    \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else {                                                                         \
-        Kokkos::parallel_for("m1_vgdcs_shell_xff", VgdLight(DevExeSpace(), 0, N), F);  \
-      }
+      Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(        \
+          Kokkos::RangePolicy<Kokkos::LaunchBounds<128, kLb>>(DevExeSpace(), 0, N),    \
+          Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);
       const int esid_ = esid;
       esid = 0;
       if (xffs) {
@@ -2185,7 +2156,6 @@ void RadiationM1::VetGdCsSweep() {
         };
         if (nA + nB > 0) {M1_VGDCS_LAUNCHN(mainx_, nA + nB)}
       } else {
-#if defined(KOKKOS_ENABLE_CUDA)
       auto mainf_ = KOKKOS_LAMBDA(const int c) {
         int t = usel ? lst_(lo + c) : c;   // (d0 = 0, ndd = n with the list)
         const int d = d0 + t % ndd;
@@ -2197,67 +2167,9 @@ void RadiationM1::VetGdCsSweep() {
         if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
         shell_(m, k, j, d, true);
       };
-      // (the launch variants of VGD_CS_LB, below)
-#define M1_VGDCS_LAUNCH(F) \
-      if (s_lb == 8) {                                                                 \
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(          \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 8>>(DevExeSpace(), 0, nper), \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else if (s_lb == 6) {                                                          \
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(          \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper), \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else if (s_lb == 2) {                                                          \
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(          \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 2>>(DevExeSpace(), 0, nper), \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else if (s_lb == 1) {                                                          \
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(          \
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 1>>(DevExeSpace(), 0, nper), \
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
-      } else {                                                                         \
-        Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), F);   \
-      }
-      M1_VGDCS_LAUNCH(mainf_)
-#undef M1_VGDCS_LAUNCH
-#else
-      auto mainf_ = KOKKOS_LAMBDA(const int c) {
-        int t = usel ? lst_(lo + c) : c;   // (d0 = 0, ndd = n with the list)
-        const int d = d0 + t % ndd;
-        t /= ndd;
-        const int j = js + t % njj;
-        t /= njj;
-        const int k = ks + t % nkk;
-        const int m = t/nkk;
-        if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
-        shell_(m, k, j, d, true);
-      };
-      // cslb: the shell kernel is latency bound at 25 % occupancy (114
-      // registers, 4 blocks of 128 per SM; ncu: DRAM 4 %, issue 43 %); env VGD_CS_LB = 6
-      // or 8 launches it with LaunchBounds<128, LB> (register cap, same code)
-      if (s_lb == 8) {
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 8>>(DevExeSpace(), 0, nper),
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
-      } else if (s_lb == 6) {
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper),
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
-      } else if (s_lb == 2) {
-        // on HIP the second bound is the minimum waves per EU, so 6 caps
-        // the body at 80 VGPRs + 800 B scratch per thread (rocprofv3 13082414); 2 and 1
-        // allow 256 / 512 (register allocation only, the same code)
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 2>>(DevExeSpace(), 0, nper),
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
-      } else if (s_lb == 1) {
-        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
-            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 1>>(DevExeSpace(), 0, nper),
-            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
-      } else {
-        Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), mainf_);
-      }
-#endif
+      Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+          Kokkos::RangePolicy<Kokkos::LaunchBounds<128, kLb>>(DevExeSpace(), 0, nper),
+          Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
       }   // !xffs
       if (esid_ != 0) {eev.StreamWait(DevExeSpace());}   // (the send cells)
 #undef M1_VGDCS_LAUNCHN
@@ -2462,17 +2374,12 @@ void RadiationM1::CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 //! part 1: the vet_gd_replace surface q of the top cell
 
 namespace {
-// see VgdMomLds (rad_m1_vetgd.cpp); env VGD_MOM_LDS=0: the par_for kernels
+// see VgdMomLds (rad_m1_vetgd.cpp)
 constexpr int VGD_LDS_TS = 64;
 constexpr int VGD_LDS_DC = 16;
 inline bool VgdMomLdsCs() {
 #if defined(KOKKOS_ENABLE_HIP)
-  static int on = -1;
-  if (on < 0) {
-    const char *e = std::getenv("VGD_MOM_LDS");
-    on = (e != nullptr) ? std::atoi(e) : 1;
-  }
-  return on != 0;
+  return true;
 #else
   return false;
 #endif

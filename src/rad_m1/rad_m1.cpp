@@ -2229,10 +2229,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         if (pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_fuse")) {
           vgd_xff = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_fuse");
         }
-        const char *ex = std::getenv("VGD_XFF");
-        if (ex != nullptr && std::atoi(ex) == 0) {vgd_xff = false;}
-        const char *em = std::getenv("VGD_XFF_MSG");
-        vgd_xff_msg = (em == nullptr) || (std::atoi(em) != 0);
       }
       if (vgd_xf && global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd_rotate_xfade = true: the closure is "
@@ -2459,9 +2455,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_ring_refill")) {
       vgd_rg_refill = pin->GetBoolean("rad_m1","vet_gd_band_ring_refill");
     }
-    if (std::getenv("VGD_RING") != nullptr) {
-      vgd_ring_par = (std::atoi(std::getenv("VGD_RING")) != 0);
-    }
     vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
                       (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
     // the same fresh default for a plain vet_col (no vet_gd), as
@@ -2562,7 +2555,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_hx_mode = 2;
     }
     vgd_hx_on = (vgd_hx_mode > 0);
-    // vet_gd_halo_ipc (default below); env VGD_IPC
+    // vet_gd_halo_ipc (default below)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_overlap")) {
       vgd_gbo = pin->GetBoolean("rad_m1","vet_gd_halo_overlap");
     }
@@ -2581,13 +2574,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
 #endif
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_m1","vet_gd_halo_ipc");
-    }
-    if (std::getenv("VGD_IPC") != nullptr) {
-      vgd_ipc_on = (std::atoi(std::getenv("VGD_IPC")) != 0);
-      vgd_ipc_mode = std::atoi(std::getenv("VGD_IPC"));
-    }
-    if (std::getenv("VGD_IPC_LEAN") != nullptr) {
-      vgd_ipc_lean = (std::atoi(std::getenv("VGD_IPC_LEAN")) != 0);
     }
     // vet_gd_halo_ipc_fuse (read only when named; default true; CUDA lean IPC):
     // an exchange's pack, flags, wait and scatter in one kernel (bitwise the three)

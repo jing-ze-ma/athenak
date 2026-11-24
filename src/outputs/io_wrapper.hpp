@@ -11,7 +11,6 @@
 #include <string>
 #include <cstdio>
 #include "athena.hpp"
-#include "outputs/async_io.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -28,11 +27,10 @@ class IOWrapper {
   // MPI_File_*_at of the same bytes (false, default: each rank's range is contiguous)
   static bool collective;
 #if MPI_PARALLEL_ENABLED
-  IOWrapper() : fh_(nullptr), comm_(MPI_COMM_WORLD), job_(nullptr), dtag_(nullptr),
-                job_pos_(0) {}
+  IOWrapper() : fh_(nullptr), comm_(MPI_COMM_WORLD) {}
   void SetCommunicator(MPI_Comm scomm) { comm_=scomm;}
 #else
-  IOWrapper() : fh_(nullptr), job_(nullptr), dtag_(nullptr), job_pos_(0) {}
+  IOWrapper() : fh_(nullptr) {}
 #endif
   ~IOWrapper() {}
   // nested type definition of strongly typed/scoped enum in class definition
@@ -62,26 +60,11 @@ class IOWrapper {
   int Close(bool single_file_per_rank = false);
   int Seek(IOWrapperSizeT offset, bool single_file_per_rank = false);
   IOWrapperSizeT GetPosition(bool single_file_per_rank = false);
-  // (async_io.hpp): with ATHENA_ASYNC_OUTPUT=1, SetDeferred(tag) before
-  // Open() makes Open/Write_any_type*/Close record the writes and hand them to the helper
-  // thread at Close().  Only Write_any_type, Write_any_type_at, Write_any_type_at_all and
-  // Close may follow (no Seek/GetPosition/reads).  Without the env var it is a no-op.
-  void SetDeferred(const void *tag) { if (async_io::Enabled()) dtag_ = tag; }
-  // the caller's new char[] buffer: freed by the helper after the write if deferred,
-  // else here
-  void AdoptBuffer(char *p) {
-    if (job_ != nullptr) { async_io::Adopt(job_, p); } else { delete [] p; }
-  }
 
  private:
   IOWrapperFile fh_;
 #if MPI_PARALLEL_ENABLED
   MPI_Comm comm_;
 #endif
-  async_io::Job *job_;
-  const void *dtag_;
-  IOWrapperSizeT job_pos_;
-  std::size_t DeferWrite(const void *buf, IOWrapperSizeT cnt, IOWrapperSizeT offset,
-                         bool sequential, const std::string &datatype);
 };
 #endif // OUTPUTS_IO_WRAPPER_HPP_

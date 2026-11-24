@@ -98,8 +98,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("hydro","nscalars",0);
-  // the dt report key (hydro_newdt.cpp; env alias ATHENA_DT_REPORT), read only when
-  // named
+  // the dt report key (hydro_newdt.cpp), read only when named
   {
     extern int dt_report_key;
     if (pin->DoesParameterExist("hydro","dt_report")) {

@@ -142,12 +142,10 @@ void RadiationM1::VetLatInit() {
   // band formula has 1/sin(theta_min) and no pole partner map: stage S2 (latitude cap).
   // vet_gd on the spherical-polar mesh takes a stretched theta and the full
   // sphere through its node table (rad_m1_vetgd_sph2.inc); vet_col_lat keeps both
-  // refusals.  env VGD_THTAB=1 forces the table path on a uniform wedge (round-off gate)
+  // refusals
   if (vgd_on && !pm->use_cubed_sphere) {
     vgd_pol = pm->use_polar_boundary;
-    const char *ett = std::getenv("VGD_THTAB");
-    vgd_sth = pm->use_grid_stretch_theta || vgd_pol ||
-              ((ett != nullptr) && (std::atoi(ett) != 0));
+    vgd_sth = pm->use_grid_stretch_theta || vgd_pol;
   }
   if (pm->use_polar_boundary && !vgd_sth) {
     VlatFatal(std::string(vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)") +

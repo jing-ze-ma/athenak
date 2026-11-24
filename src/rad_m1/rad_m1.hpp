@@ -1189,8 +1189,7 @@ class RadiationM1 {
   // the Zalesak rounds of time2_face_fct / implicit_face_mmat exchange R only
   // when a cell within 2 ng of a MeshBlock face changed (else the ghosts already hold
   // what the exchange would write: bitwise).  <rad_m1>/zalesak_halo_skip (default true;
-  // false = exchange every round as before).  Counters: rounds, exchanges done; wall
-  // seconds (env M1_FCT_PROF only, fenced).
+  // false = exchange every round as before).  Counters: rounds, exchanges done.
   bool zl_hskip = true;
   // <rad_m1>/zalesak_local_rounds = N (default 0 = off, the global Jacobi
   // rounds above): between two R exchanges each rank runs up to N Zalesak rounds on its
@@ -1220,9 +1219,7 @@ class RadiationM1 {
   // (see ImplicitFaceMmat).  Positivity kept; more clipping where chains were cut.
   int zl_cap = 0;
   Real zl_capped = 0.0;
-  Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
-  Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
-  bool zl_prof = false;
+  Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0};
   // <rad_m1>/implicit_face_mmat_rowsel (default true; false = the full
   // second assembly as before): a limited pass assembles again only the rows of cells
   // with a face whose lam < 1 (x1 lam, transverse fmm_t 3/7); every other row has the
@@ -1233,7 +1230,7 @@ class RadiationM1 {
   // value (fmm_ns).
   bool fmm_rowsel = true;
   Kokkos::View<char****, LayoutWrapper, DevMemSpace> fmm_rf, fmm_ns;
-  Real fmm_selrows = 0.0, fmm_selall = 0.0, fmm_asm2_wall = 0.0;
+  Real fmm_selrows = 0.0, fmm_selall = 0.0;
   bool impl_pf_fa = false;   // implicit_physflux_mom = fa
   // <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
   // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.
@@ -3604,19 +3601,18 @@ class RadiationM1 {
   // vet_gd_rotate_slope = correct is not used (the closure has no jump)
   bool vgd_xf = false;
   // vet_gd_rotate_xfade_fuse (read only when named; default true with
-  // vet_gd_rotate_xfade; env VGD_XFF=0 off): the two sets of a cross-fade build swept in
+  // vet_gd_rotate_xfade): the two sets of a cross-fade build swept in
   // ONE sweep: per shell one kernel launch over both sets' (cell, direction) lists and
   // (sp, MPI exact lists) one message per partner carrying both sets' values.  Every
   // value is computed by the same code from the same inputs as by the two sweeps, and the
   // moments / blend run in the same order afterwards (bitwise).  The second set keeps its
   // own intensities (vgd_i_xb, the size of vgd_i: the extra memory), shell lists and
   // exact halo lists; they travel with the set's tables (VgdXfTables).  No band ring
-  // (vgd_ring off: the ragged array, as VGD_RING=0).  Falls back to the two sweeps where
+  // (vgd_ring off: the ragged array).  Falls back to the two sweeps where
   // a combination is not covered (VetGdXffOk)
   bool vgd_xff = false;
   bool vgd_xff_now = false;      // this sweep carries the next set too (VetGdSweep)
   bool vgd_xff_prep = false;     // VetGdSweep: the set's lists only, no passes
-  bool vgd_xff_msg = true;       // env VGD_XFF_MSG=0: two halo messages per shell
   DvceArray1D<int> vgd_shl_xb[2];
   int vgd_shn_xb[2] = {0, 0};
   Real vgd_shl_alpha_xb = -3.0;
@@ -3630,22 +3626,21 @@ class RadiationM1 {
   bool VgdXffAllExact();
   void VetGdXffPostB();
   void VgdXffSwap();
-  void VgdEs2Make();   // the early send's second stream
+  void VgdEs2Make();   // the cubed sphere's early send's second stream
   void VgdGbSwap() {   // the compact global band's kept lists go with their set
     std::swap(vgd_gbcf, vgd_gbcf_xb);
     std::swap(vgd_gbcb, vgd_gbcb_xb);
     std::swap(vgd_gbrec, vgd_gbrec_xb);
   }
-  bool VetGdHlXff(const int i, const int ws, const int mode = 0);
+  bool VetGdHlXff(const int i, const int ws);
   bool VetGdGbHaloX(const int i, const int ws);   // (vgd_raw: both sets, one message)
-  // early send of the fused sweep (env VGD_XFE): this shell's SEND cells of
-  // both sets first, on a second high-priority stream, with their pack; the host
-  // exchanges while the fused kernel (which skips the stamped cells) runs
+  // early send of the cubed sphere (VetGdCsSweep): this shell's SEND cells first, on a
+  // second high-priority stream, with their pack; the host exchanges while the shell
+  // kernel (which skips the stamped cells) runs
   DevExeSpace vgd_es2;
   bool vgd_es2_made = false;
   DvceArray4D<int> vgd_est[2];     // per set (m, kb, jb, d): the stamp of the early cells
   int vgd_esid = 0;                // the stamp of the current early shell
-  double vgd_xfe_n = 0.0;          // early-sent shells (diagnostic)
   Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
   double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
   double vgd_xf_t = 0.0;         // their seconds
@@ -3791,7 +3786,7 @@ class RadiationM1 {
   VgdIView vgd_i_xb;   // the other cross-fade set's intensities
   void VgdRagAlloc(VgdRag &a);
   // <rad_m1>/mem_arena (rad_m1_memarena.cpp; read only when named, default
-  // true with vet_gd; env M1_ARENA=0 off): the intensity arrays and solve scratch that is
+  // true with vet_gd): the intensity arrays and solve scratch that is
   // dead across a VetGdBuild in one allocation
   bool marena_on = false, marena_sealed = false;
   DvceArray1D<Real> marena;   // the intensities, then (first checkpoint) solve scratch
@@ -3804,7 +3799,7 @@ class RadiationM1 {
   void MemcutPoison(int where);
   // vet_gd_band_ring (default true where it applies: MPI band with the exact
   // halo lists, no overlap / async / fused shells; on the cubed sphere with
-  // the cs compact lists, vet_gd_halo_compact > 0; read when named; env VGD_RING=0 off):
+  // the cs compact lists, vet_gd_halo_compact > 0; read when named):
   // the ragged array keeps every shell's INTERIOR only (compact slab, depth 0) and lends
   // a shell one of VGD_RING_K wide slabs (its full band depth wi, the same rectangle as
   // before) only while the sweep needs its band: inward pass from just before the shell
@@ -3931,7 +3926,6 @@ class RadiationM1 {
   Real vgd_thalo = 0.0, vgd_tmpi = 0.0, vgd_ttab = 0.0;
   // halo diagnostics (rank 0; clamps all ranks)
   Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;
-  bool vgd_time_halo = false;
   // vet_gd_rebuild_every = k > 0 (read only when named; 0 = the tensor lagged to the
   // start of the step): rebuild the gd tensor inside the implicit solve at Picard passes
   // k, 2k, ... from the iterate's E (M1_IW_EP) and T (M1_IW_TP)
@@ -4225,8 +4219,6 @@ class RadiationM1 {
   // the last exchange that wrote it.  NOT bitwise for H > 1 (a lagged inflow)
   int vgd_fuse_h = 1;
   Real vgd_fuse_nskip = 0.0;
-  // env VGD_SCAN_SPLIT=1: the paired mask / list scans in two launches (as before 1010)
-  bool vgd_scan2 = true;
   Kokkos::View<int64_t*, DevMemSpace> vgd_scan_sums;   // VgdScan2 chunk sums
   // vet_gd_halo_exact (read only when named; default false; bitwise): the compact-halo
   // lists of each (pass, shell) cut down to the band values the sweep actually reads
@@ -4253,9 +4245,6 @@ class RadiationM1 {
   void VetGdHxBuild2(const int e, const int i, const int ws);
   // the exact lists of many shells in a few collectives (VetGdHxBatch);
   // per-slot scratch pools, the per-depth partner / piece tables, pinned bounds
-  bool vgd_hxb_on = true;
-  bool vgd_gfast = true;        // env VGD_GFAST=0: no gx-false shell kernel
-  bool vgd_hxb_cub = true;      // env VGD_HXB_CUB=0: the VgdScan2 scans
   DvceArray1D<char> vgd_hxb_tmp;
   int vgd_hxb_g = 0, vgd_hxb_npc = 0;
   size_t vgd_hxb_rcap = 0, vgd_hxb_scap = 0;
@@ -4268,7 +4257,7 @@ class RadiationM1 {
   // vet_gd_halo_ipc (read only when named; default false; bitwise): the
   // per-shell exchange of the batch-made exact lists over node-local CUDA IPC, driven by
   // the GPU (spin / flag kernels on the sweep's stream; the host never waits in the
-  // sweep).  env VGD_IPC=0/1 overrides.
+  // sweep).
   bool vgd_ipc_on = false;
   // vet_gd_halo_lean (default on): the compact band exchange without fences
   bool vgd_lean = true;
@@ -4282,10 +4271,7 @@ class RadiationM1 {
   std::map<std::pair<int, Real>, VgdGboL> vgd_gbol;   // ((depth, pass), set)
   const VgdGboL &VgdGboList(const int pass, const int d);
   bool vgd_cnan = false;   // vet_gd_halo_compact_nan: unsent band positions NaN (gate)
-  bool vgd_ipc_tfs = false;
-  bool vgd_ipc_lean = true;      // env VGD_IPC_LEAN=0: the ack kernel k1
   bool vgd_ipc_fz = true;        // vet_gd_halo_ipc_fuse (m1_vgd_ipc_x / _xff)
-  int vgd_ipc_mode = 1;          // env VGD_IPC=2: local pack + peer copies
   int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
   Real *vgd_ipc_rbuf = nullptr;
   long long *vgd_ipc_sig = nullptr;
@@ -4307,9 +4293,9 @@ class RadiationM1 {
     bool on = false, xe = false;                // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // the IPC path
     bool nccl = false;                          // NCCL (stream-ordered) path
-    // (CUDA IPC, lean): VetGdHalo's begin + end as ONE kernel (pack, flags,
-    // wait, scatter; env VGD_IPC_FUSE=0: the three kernels).  now: the end follows the
-    // begin (VetGdHalo); done: the scatter ran; cnt: the kernel's teams done packing
+    // (CUDA IPC, lean): VetGdHalo's begin + end as ONE kernel (pack, flags, wait,
+    // scatter; vet_gd_halo_ipc_fuse = false: the three kernels).  now: the end follows
+    // the begin (VetGdHalo); done: the scatter ran; cnt: the kernel's teams done packing
     bool now = false, done = false;
     Kokkos::View<int, DevMemSpace> cnt;
     long long seq = 0;
@@ -4322,9 +4308,8 @@ class RadiationM1 {
     Kokkos::Timer tq;
   };
   VgdHlPend vgd_hlp;
-  // (compile -DM1_VGD_NCCL, env ACC_NCCL=1): the per-shell list exchange of the MPI path
-  // as stream-ordered NCCL send/recv on the sweep's stream (no host fence and no MPI wait
-  // per shell; the same values reach the same band cells)
+  // (compile -DM1_VGD_NCCL; not used, VgdNcclOn = false): the per-shell list exchange of
+  // the MPI path as stream-ordered NCCL send/recv on the sweep's stream
   int acc_nccl = -1;            // -1 not decided, 0 off, 1 on
   void *acc_ncomm = nullptr;    // ncclComm_t
   bool VgdNcclOn();
@@ -4351,7 +4336,7 @@ class RadiationM1 {
   void VetGdTables(const Real alpha);
   // the tables' host part in persistent pinned buffers (no per-rotation
   // mirrors), and the next rotation's tables prefetched (host thread + upload into a
-  // second device set on vgd_tex, swapped in at the rotation); env VGD_TAB_PREFETCH=0 off
+  // second device set on vgd_tex, swapped in at the rotation)
   struct VgdTabHost {
     Kokkos::View<Real **, LayoutWrapper, Kokkos::SharedHostPinnedSpace> dir;
     Kokkos::View<int ***, LayoutWrapper, Kokkos::SharedHostPinnedSpace> w;
@@ -4374,7 +4359,6 @@ class RadiationM1 {
   VgdTabHost vgd_tabh;
   VgdTabDev vgd_tabd;
   std::future<void> vgd_tabf;
-  bool vgd_tab_pre = true;
   int vgd_tab_state = 0;       // 0 idle, 1 host thread running, 3 uploaded (vgd_tabd)
   Real vgd_tab_nswap = 0.0;
   DevExeSpace vgd_tex;
@@ -4397,7 +4381,6 @@ class RadiationM1 {
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // CUDA gx-false closures
-  int vgd_cuda_lb = 0;   // env VGD_CUDA_LB (rad_m1_vetgd.cpp)
 #endif
   int vgd_scut = 0;            // vlat_icut the running sweep uses (sync: = vlat_icut)
   DevExeSpace vgd_cur;

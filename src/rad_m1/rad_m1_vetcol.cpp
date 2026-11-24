@@ -189,8 +189,7 @@ void RadiationM1::VetColReport() {
           std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse (rank 0): fused builds "
                     << vgd_xff_n << ", two-sweep fallbacks " << vgd_xff_nfb
                     << ", merged exchanges " << vgd_xff_nmsg << ", out-of-slab accesses "
-                    << "(other set) " << oos2 << ", early-sent shells " << vgd_xfe_n
-                    << std::endl;
+                    << "(other set) " << oos2 << std::endl;
         }
       }
       if (vgd_hcomp > 0 && vgd_hl_mb > 0) {
@@ -211,7 +210,7 @@ void RadiationM1::VetColReport() {
       }
       std::cout << "<rad_m1> (rank 0) exact-list batches " << vgd_hxb_ngroup
                 << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
-                << vgd_hxb_nrealloc << "); table prefetch " << (vgd_tab_pre ? 1 : 0)
+                << vgd_hxb_nrealloc << "); table prefetch 1"
                 << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
       if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
         std::cout << "<rad_m1> (rank 0) vet_gd_overlap=" << vgd_ovl_g

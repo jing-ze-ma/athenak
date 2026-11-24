@@ -132,7 +132,6 @@ add_executable(
         mhd/mhd_wball.cpp
 
         outputs/io_wrapper.cpp
-        outputs/async_io.cpp
         outputs/outputs.cpp
         outputs/basetype_output.cpp
         outputs/cartgrid.cpp
@@ -346,7 +345,7 @@ if (DEFINED Athena_M1_VGD_NMAX AND NOT "${Athena_M1_VGD_NMAX}" STREQUAL "")
 endif()
 
 # -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
-# NCCL halo (sp list halo + cs compact exchange; used with env ACC_NCCL=1 only): only the
+# NCCL halo (sp list halo + cs compact exchange; not used: VgdNcclOn): only the
 # two vet_gd sources get the define and the include path (the rest of the tree unchanged)
 if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL "")
   set_source_files_properties(rad_m1/rad_m1_vetgd.cpp rad_m1/rad_m1_vetgd_sweep.cpp

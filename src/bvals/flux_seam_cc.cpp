@@ -149,22 +149,13 @@ bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
 
 //----------------------------------------------------------------------------------------
 //! \fn static int SeamFluxVl
-//! \brief Vector length of the seam-flux team kernels (env BVALS_SEAM_VL; default 32 on
-//! CUDA, 1 otherwise).
+//! \brief Vector length of the seam-flux team kernels (32 on CUDA, 1 otherwise).
 static int SeamFluxVl() {
-  static int v = -1;
-  if (v < 0) {
-    const char *e = std::getenv("BVALS_SEAM_VL");
 #if defined(KOKKOS_ENABLE_CUDA)
-    v = (e != nullptr) ? std::atoi(e) : 32;
+  return 32;
 #else
-    v = (e != nullptr) ? std::atoi(e) : 1;
+  return 1;
 #endif
-    if (v < 1) {
-      v = 1;
-    }
-  }
-  return v;
 }
 
 //----------------------------------------------------------------------------------------

@@ -82,7 +82,7 @@ Definitions used in the table:
 | 2 | L_bot | sum F A at the x1 face between the first and second active cells (`is+1`), one cell above the inner boundary | erg/s |
 | 3 | L_mid | sum F A at the lower face of cell `imid` | erg/s |
 | 4 | L_int | sum F A at the L_int face | erg/s |
-| 5 | L_top | energy that the step's radiation solves moved **out** through the outer x1 face, divided by dt (positive outward). This is the boundary record of the clean solve (`CleanBndAcc`, `src/rad_m1/rad_m1_time2.cpp:2109`). If the record is missing for a step it falls back to sum F A at the top face. | erg/s |
+| 5 | L_top | energy that the step's radiation solves moved **out** through the outer x1 face, divided by dt (positive outward). This is the boundary record of the clean solve (`CleanBndAcc`, `src/rad_m1/rad_m1_time2.cpp:2102`). If the record is missing for a step it falls back to sum F A at the top face. | erg/s |
 | 6 | L_in | energy that the step's radiation solves moved **in** through the inner x1 face, divided by dt (positive inward). Fallback: `implicit_flux_x1min` x A(r_in) summed over the inner faces. | erg/s |
 | 7 | E_rad | sum E V | erg |
 | 8 | e_gas | sum e V, e = gas internal energy density | erg |
@@ -226,9 +226,9 @@ handled but that the user should know about.
 | `CLEAN WARNING cycle N: K cells with a ray J not finite (isotropic)` | `rad_m1_clean_closure.cpp:2530` | The ray sweep gave a non-finite mean intensity in K cells; those cells are given an isotropic closure for this build. | Should not happen. Check the opacities and the temperature in those cells; report it. |
 | `CLEAN WARNING clean_init steady: not converged (residual X, tol Y)` | `rad_m1_clean.cpp:1143` | The steady start (`clean_init = steady`) ended before reaching `clean_init_tol`. If the last change is above 1e-2 the run stops with a FATAL (diverged start). | Small residuals are usually harmless; otherwise raise `clean_init_n` or change `clean_init_dtfac`, or start from a state closer to radiative equilibrium. |
 | `CLEAN WARNING cycle N: floor_pay = rad_column left X of the fluid floors' energy unpaid (created)` | `src/hydro/dual_energy.cpp:419` | The radiation of the cell's column could not pay all the internal energy the hydro floors created; X (energy x volume) was created. | Energy is not conserved by X in this cycle (see section 3). If it repeats, the floors act where there is too little radiation: check `dfloor`, `pfloor`, `tfloor`. |
-| `CLEAN WARNING cycle N: Ebnd without the step's boundary energy (CleanBndAcc), its faces take 0` | `rad_m1_time2.cpp:2288` | Only with the boundary-energy ledger of the drive/test problem generators (not in production). | None in production. |
+| `CLEAN WARNING cycle N: Ebnd without the step's boundary energy (CleanBndAcc), its faces take 0` | `rad_m1_time2.cpp:2281` | Only with the boundary-energy ledger of the drive/test problem generators (not in production). | None in production. |
 | `CLEAN WARNING restart: first dt X != the file's dt Y` | `src/driver/driver.cpp:666` | The first cycle after a restart does not use the dt stored in the restart file, so the restart is not a bitwise continuation. | Check that the restart deck does not change keys that set dt (`cfl_number`, `dt_retry` state, `time2_cfl_post`, `rad_signal_speed`). |
-| `CLEAN WARNING restart dump <file>: no progress for N s after ...` | `src/outputs/restart.cpp:744` | Writing a restart file has made no progress for `<job>/restart_warn_s` seconds (default 600). | A file system problem: check the file system and the job; the run may hang. |
+| `CLEAN WARNING restart dump <file>: no progress for N s after ...` | `src/outputs/restart.cpp:739` | Writing a restart file has made no progress for `<job>/restart_warn_s` seconds (default 600). | A file system problem: check the file system and the job; the run may hang. |
 
 ### 4.2 Other per-cycle lines of the clean scheme
 
