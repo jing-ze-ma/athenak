@@ -80,9 +80,6 @@ void RadiationM1::MRInit(ParameterInput *pin) {
     }
   }
   mr_every = 1;
-  if (pin->DoesParameterExist("rad_m1", "dbg_hydro_skip_t2")) {
-    dbg_hydro_skip_t2 = pin->GetBoolean("rad_m1", "dbg_hydro_skip_t2");
-  }
 }
 
 //----------------------------------------------------------------------------------------

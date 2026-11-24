@@ -351,14 +351,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // DEBUG dbg_t2_pred = N (read only when named): for the first N predict builds print
-  // the predicted state (min E, cells with E <= 0 / eint <= 0, max r, theta), and for
-  // vet_sc the formal solution's mean and max H/J and the sweep's clip count
-  t2_dbg_pred = 0;
-  t2_dbg_pred_n = 0;
-  if (pin->DoesParameterExist("rad_m1", "dbg_t2_pred")) {
-    t2_dbg_pred = pin->GetInteger("rad_m1", "dbg_t2_pred");
-  }
   // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
   // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
   // x time2_lin_tol_fac.  Default 1 since audit-m1-0928 (was 10 on fresh runs from
@@ -411,9 +403,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
-  }
-  if (pin->DoesParameterExist("rad_m1", "dbg_nonconv")) {
-    dbg_nonconv = pin->GetInteger("rad_m1", "dbg_nonconv");
   }
   // dbg_t2_admiss = N (DEBUG, default 0 = off, read only when named so the restart echo
   // and every result stay bitwise): for the first N non-admissible hesdirk2 stages print
@@ -756,13 +745,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_vcprev = false;
     }
   }
-  if (t2_pcap > 0.0 || t2_dbg_pred > 0) {
+  if (t2_pcap > 0.0) {
     Kokkos::realloc(t2pth, nmb, n3, n2, n1);
     Kokkos::deep_copy(t2pth, 1.0);
-  }
-  if (t2_dbg_pred > 0) {
-    Kokkos::realloc(vet_dbgclip, 1);
-    Kokkos::deep_copy(vet_dbgclip, 0.0);
   }
   t2_ok = false;
   if (global_variable::my_rank == 0) {

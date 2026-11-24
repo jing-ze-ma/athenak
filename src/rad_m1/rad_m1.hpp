@@ -612,11 +612,6 @@ class RadiationM1 {
   Real vet_nguard{}, vet_ncell{}; // full: cell-calls the guard changed D / all cell-calls
   Real vet_guard_max{};      // full: largest |D_guarded - D_raw| (max norm) of the run
   Real vet_d11_min{};        // full: smallest guarded D_11 of the run (x1 line diagonal)
-  // DIAGNOSTIC <rad_m1>/dbg_opac_patch = f (default 1 = off): all three opacities are
-  // multiplied by f inside the box [x1lo,x1hi] x [x2lo,x2hi] -- a horizontally
-  // inhomogeneous absorber that casts a shadow (full-tensor VET test)
-  Real dbg_opac_patch{}, dbg_opac_x1lo{}, dbg_opac_x1hi{}, dbg_opac_x2lo{},
-       dbg_opac_x2hi{};
   Real vet_time{}, vet_itime{}, vet_ncall{}; // SC seconds, implicit-solve seconds, calls
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
   DvceArray5D<Real> vet_cell;  // (nmb, M1_VET_NC, k, j, i): see M1_VET_* below
@@ -781,7 +776,6 @@ class RadiationM1 {
   // The step counter travels in the multi-rate restart header (mr_cnt).
   int csplit = 0;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
-  bool dbg_hydro_skip_t2 = false;   // DIAGNOSTIC: the same on hesdirk2
   // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
   // only): `full` (default) = the solve hands the gas the work of the FULL force and the
   // WB source none (rad_m1_fluid.cpp header; its internal-energy cancellation is
@@ -1198,8 +1192,6 @@ class RadiationM1 {
   int t2_solve{};               // what the next ImplicitSolve does (M1_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // DEBUG time2_dbg_fail: fail stage 1 at this cycle
-  int dbg_nonconv = -1;         // DEBUG dbg_nonconv: the solves of this cycle's first
-                                // attempt report non-converged (dt_retry tests)
   // <rad_m1>/time2_reject = be (default) | retry (read only when named): a
   // non-admissible hesdirk2 stage raises the dt_retry flag (reason time2_reject) instead
   // of the backward-Euler redo, so the cycle is taken again at a smaller dt with hesdirk2
@@ -1481,9 +1473,7 @@ class RadiationM1 {
   // of the gas internal energy (0 = off, the unlimited predictor)
   Real t2_pcap = 0.0;
   Real t2_pnlim = 0.0, t2_pncell = 0.0;   // limited / all cell-builds (Time2Report)
-  int t2_dbg_pred = 0, t2_dbg_pred_n = 0; // DEBUG dbg_t2_pred = N: the first N builds
   DvceArray4D<Real> t2pth;      // (m,k,j,i) theta of the current build
-  DvceArray1D<Real> vet_dbgclip;  // DEBUG dbg_t2_pred: sweep intensities clipped at 0
   DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
   DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
   void Time2VetColAt(int which);    // vet_col build at 1 = U^n + dt K1, 2 = Y1
@@ -1835,8 +1825,6 @@ class RadiationM1 {
   // lateral axes of the cs half-range ratios (VetGdHalfRange on cs)
   DvceArray3D<Real> cs_cn2, cs_cn3;
   void CubedS1Init();
-  //! test only (cs_vec_check): the seam halo of the tangential vector pairs
-  void CubedVecCheck(ParameterInput *pin);
   //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
   void CubedSeamFaceAverage();
   bool cs_seam_avg_on = true;
@@ -2117,7 +2105,6 @@ class RadiationM1 {
   bool cln_rmdone = false;      // its start taken
   bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
   void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
-  void CleanStagXCount(const int inl, const int nit);
   void CleanWorstCell(const Real dnl, const Real dnl0);
   void CleanStagXSweep();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
@@ -2128,8 +2115,6 @@ class RadiationM1 {
   bool cln_xsw = false;
   int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),
                     //  C's last change)
-  Real cln_xd_ncap = 0.0;
-  DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
   // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2
   // limited to E_old >= th E_s, conservatively (CleanStagKPos); clean_stag_xpat (default
   // off): the exchange's removal -r hcke E_k past its share of the row in Patankar form
@@ -2234,7 +2219,6 @@ class RadiationM1 {
   bool cln_rtb = false;         // clean_retry_budget
   DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
-  bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   int cln_stagmg = 0;           // clean_stag_pc = mg: the old production mg (staggered);
                                 //   2: its line colours mirror (clean_stag_mg_color)
   int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep,
@@ -2546,9 +2530,7 @@ class RadiationM1 {
   bool vcol_sqf = false;
   Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
   Real vcol_amax = 0.99;
-  int vcol_dump_every{};       // vet_col_dump_every (0 = off)
   bool vcol_built{};           // a tensor exists (vet_col_every > 1 skips builds)
-  std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
   Real vcol_time{}, vcol_ncall{}, vcol_nskip{};
   // vet_col_surface_q (runs_5e): the outer-x1 Marshak q per column from the formal
   // solution, q = H(top face)/J(top cell), lagged like the tensor
@@ -3460,7 +3442,6 @@ class RadiationM1 {
   };
   std::map<std::pair<int, Real>, VgdGboL> vgd_gbol;   // ((depth, pass), set)
   const VgdGboL &VgdGboList(const int pass, const int d);
-  bool vgd_cnan = false;   // vet_gd_halo_compact_nan: unsent band positions NaN (gate)
   bool vgd_ipc_fz = true;        // vet_gd_halo_ipc_fuse (m1_vgd_ipc_x / _xff)
   int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
   Real *vgd_ipc_rbuf = nullptr;

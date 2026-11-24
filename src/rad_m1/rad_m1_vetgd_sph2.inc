@@ -679,8 +679,7 @@ void RadiationM1::VetGdGlobalBandInit() {
 //! messages need no index.  Rows of the polar zone (+ the band depth) keep their whole
 //! branch (clamped polar reads).  vgd_raw: a phi-wall image's flags are made by the
 //! receiver (its wall map) and sent once per list to the sender.  Unsent positions get 0
-//! (vet_gd_halo_compact_nan: NaN, the gate that nothing unsent is read).  On-rank copies
-//! as before (all directions).
+//! (never read).  On-rank copies as before (all directions).
 
 //! part (vet_gd_halo_overlap): 0 the whole exchange; 1 up to the posted messages (true:
 //! begun, the kept lists of a fixed set only); 2 the wait and the unpack of a begun one
@@ -909,13 +908,6 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     Kokkos::parallel_for("m1_vgdgb_ipc_wait", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
     KOKKOS_LAMBDA(const int) {VgdIpcWaitN(sig, np_, seq, err);});
     vgd_nexch += 1.0;
-    if (nr > 0 && vgd_cnan) {
-      const Real qn = std::numeric_limits<Real>::quiet_NaN();
-      par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
-      KOKKOS_LAMBDA(const int e, const int v) {
-        if (DR_(e) <= wq) a_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
-      });
-    }
     const Real *rb = vgd_ipc_rbuf + par*vgd_ipc_half;
     const size_t cs = vgd_ipc_cs;
     auto lr_ = cf[1];
@@ -988,15 +980,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
-  // (5) the expansion into the band (unsent positions of the prefix: 0, or NaN)
-  if (vgd_raw && nr > 0 && vgd_cnan) {
-    // (the gate that no unsent position of the prefix is read: NaN before the unpack)
-    const Real qn = std::numeric_limits<Real>::quiet_NaN();
-    par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
-    KOKKOS_LAMBDA(const int e, const int v) {
-      if (DR_(e) <= wq) a_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
-    });
-  }
+  // (5) the expansion into the band (unsent positions of the prefix: 0)
   if (vgd_raw && cb[4*np + 1] > 0) {
     Kokkos::parallel_for("m1_vgdgb_kunpack",
                          Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np + 1]),
@@ -1005,13 +989,11 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
       a_(R_(e,0),lr_(o) - e*nv,R_(e,1),R_(e,2),i) = rb_(o);
     });
   } else if (nr > 0 && !vgd_raw) {
-    const bool nanfill = vgd_cnan;
-    const Real fill = nanfill ? std::numeric_limits<Real>::quiet_NaN() : 0.0;
     par_for("m1_vgdgb_unpack", DevExeSpace(), 0, nr - 1, 0, nv - 1,
     KOKKOS_LAMBDA(const int e, const int v) {
       if (DR_(e) > wq) {return;}
       const size_t q = static_cast<size_t>(e)*nv + v;
-      a_(R_(e,0),v,R_(e,1),R_(e,2),i) = (fr_(q + 1) > fr_(q)) ? rb_(fr_(q)) : fill;
+      a_(R_(e,0),v,R_(e,1),R_(e,2),i) = (fr_(q + 1) > fr_(q)) ? rb_(fr_(q)) : 0.0;
     });
   }
   if (!lean) Kokkos::fence();
@@ -1074,7 +1056,6 @@ bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
   auto aB_ = vgd_i_xb;
   auto S_ = vgd_cssl;
   auto R_ = vgd_csrl;
-  auto DR_ = vgd_gdpr;
   auto lsA_ = vgd_gbcf[key][0], lrA_ = vgd_gbcf[key][1];
   auto lsB_ = vgd_gbcf_xb[key][0], lrB_ = vgd_gbcf_xb[key][1];
   const int nv = vgd_n, npk = np;
@@ -1128,17 +1109,6 @@ bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
     vgd_ipc_n += 1.0;
     vgd_nexch += 2.0;
     vgd_xff_nmsg += 1.0;
-    const int nr = vgd_csnrcv;
-    if (nr > 0 && vgd_cnan) {
-      const Real qn = std::numeric_limits<Real>::quiet_NaN();
-      par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
-      KOKKOS_LAMBDA(const int e, const int v) {
-        if (DR_(e) <= wq) {
-          aA_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
-          aB_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
-        }
-      });
-    }
     const Real *rbp = vgd_ipc_rbuf + par*vgd_ipc_half;
     const size_t cs = vgd_ipc_cs;
     if (nR > 0) {
@@ -1209,17 +1179,6 @@ bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
     vgd_nbyte += static_cast<Real>(sm.v[p+1] - sm.v[p])*sizeof(Real);
     vgd_csvsent += static_cast<double>(sm.v[p+1] - sm.v[p]);
     vgd_csvdense += 2.0*static_cast<double>(vgd_gdsn[wq][p])*nv;
-  }
-  const int nr = vgd_csnrcv;
-  if (nr > 0 && vgd_cnan) {   // (the gate: no unsent position of the prefix is read)
-    const Real qn = std::numeric_limits<Real>::quiet_NaN();
-    par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
-    KOKKOS_LAMBDA(const int e, const int v) {
-      if (DR_(e) <= wq) {
-        aA_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
-        aB_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
-      }
-    });
   }
   if (nR > 0) {
     Kokkos::parallel_for("m1_vgdgb_xunpack", VgdLight(DevExeSpace(), 0, nR),

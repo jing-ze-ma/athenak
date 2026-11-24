@@ -251,7 +251,6 @@ write-back closure, the ray cut). `CLEAN WARNING` lines always print.
 | `CLEAN MCAP cycle N t2s S: K face momentum terms at the cap h chi_f E in the last pass` | Face momentum exchange terms at their cap. | Diagnostic. |
 | `CLEAN LZB cycle N t2s S ledger X` | 3-D spherical polar: the radiation's L_z ledger (stored in the restart file). | Use with `Lz_tot` in the history. |
 | `CLEAN RETRY ...` | With `clean_retry_budget = true`: a redone solve converged to the budget tolerance. | - |
-| `CLEAN XDONOR`, `CLEAN XT`, `CLEAN pass` | Pass-by-pass diagnostics, printed only with `<rad_m1>/clean_nl_print = true`. | Debugging only. |
 | `CLEAN KPOS`, `CLEAN KREAL`, `CLEAN XPAT` | Only with those (non-production) keys. | - |
 | `DT_RETRY cycle=N t=T dt A -> B reason=R resid=X cut K` | A cycle is taken again with a smaller dt. `reason`: NON-CONVERGED, resid>implicit_resid_fatal, eint<=0, time2_reject, vkick, floor_pay_unpaid, forced. | A few per run are normal for dynamic stars; many in a row mean the run is in trouble. |
 | `DT_RETRY recovered cycle=N ...` | The dt cap that dt_retry imposed is lifted. | - |

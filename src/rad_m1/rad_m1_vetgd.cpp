@@ -2571,7 +2571,7 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws) {
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int c2_ = nx2 + 2*w, c3_ = nx3 + 2*w, nv_ = vgd_n;
-  if (!(vgd_hl_mb > 0) || vgd_cnan || i < 0 || i >= n1c ||
+  if (!(vgd_hl_mb > 0) || i < 0 || i >= n1c ||
       static_cast<int64_t>(nmb1 + 1)*nv_*c3_*c2_ >=
       static_cast<int64_t>(std::numeric_limits<int>::max())) {
     return false;
@@ -3388,8 +3388,8 @@ bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, cons
 //! \fn void RadiationM1::VetGdHaloCompact
 //! \brief vet_gd_halo_compact = 1, 2: the per-shell MPI halo with only the needed values
 //! (VgdHaloKeep) in the messages: flags on the dense layout of both sides, exclusive
-//! scans, compact pack, MPI, expansion to the dense layout (unsent entries NaN with env
-//! vet_gd_halo_compact_nan, else 0: never read), then the dense unpack as before.
+//! scans, compact pack, MPI, expansion to the dense layout (unsent entries 0: never
+//! read), then the dense unpack as before.
 //! Bitwise.
 void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
                               const int ws) {
@@ -3782,12 +3782,11 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) {
   auto csb_ = vgd_csb;
   auto crb_ = vgd_crb;
   const int np = static_cast<int>(vgd_prk.size());
-  const bool nanfill = vgd_cnan;
   // vet_gd_halo_list_mb: the list entries X (this pass) and Y (the other pass) of shell
   // i, and the last writers of the band of a per pass
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int c2 = nx2 + 2*w, c3 = nx3 + 2*w;
-  bool lst = (vgd_hl_mb > 0) && !nanfill && (nv == vgd_n) && (i >= 0) && (i < n1c) &&
+  bool lst = (vgd_hl_mb > 0) && (nv == vgd_n) && (i >= 0) && (i < n1c) &&
              (static_cast<int64_t>(nmb1 + 1)*nv*c3*c2 <
               static_cast<int64_t>(std::numeric_limits<int>::max()));
   const int px = inw ? 0 : 1;
@@ -5356,12 +5355,11 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
   const size_t rtot = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
                       (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()))*nvi;
   const int np = static_cast<int>(vgd_prk.size());
-  const bool nanfill = vgd_cnan;
   // vet_gd_halo_list_mb: the list entries X (this pass) and Y (the other pass) of shell
   // i, and the last writers of the band of a per pass
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int c2 = nx2 + 2*w, c3 = nx3 + 2*w;
-  bool lst = (vgd_hl_mb > 0) && !nanfill && (nv == vgd_n) && (i >= 0) && (i < n1c) &&
+  bool lst = (vgd_hl_mb > 0) && (nv == vgd_n) && (i >= 0) && (i < n1c) &&
              (static_cast<int64_t>(nmb1 + 1)*nv*c3*c2 <
               static_cast<int64_t>(std::numeric_limits<int>::max()));
   const int px = inw ? 0 : 1;
@@ -5503,11 +5501,9 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
     vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
   }
   // (5) expansion to the dense receive layout
-  const Real fill = vgd_cnan ?
-                    std::numeric_limits<Real>::quiet_NaN() : 0.0;
   Kokkos::parallel_for("m1_vgd_hc_expand", Kokkos::RangePolicy<>(vgd_cur, 0, rtot),
   KOKKOS_LAMBDA(const size_t q) {
-    rb_(q) = (fr_(q + 1) > fr_(q)) ? crb_(fr_(q)) : fill;
+    rb_(q) = (fr_(q + 1) > fr_(q)) ? crb_(fr_(q)) : 0.0;
   });
   return false;
 #else

@@ -946,8 +946,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_trtol = pin->GetOrAddReal("rad_m1","clean_troot_rtol",1.0e-13);
     // clean_conv_est (read only when named): the Newton/Picard passes also stop once
     // q/(1-q) times the change of a pass (q < 1/2 its ratio to the change of the pass
-    // before) is below clean_tol_nl; clean_nl_print: rank 0 prints the changes of every
-    // pass and the CLEAN XDONOR / CLEAN XT diagnostics (computed only then)
+    // before) is below clean_tol_nl
     if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
       cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
     }
@@ -961,9 +960,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl << "<rad_m1>/clean_conv_est_f = true needs the F solve's F "
                 << "(clean_stag_fwork)" << std::endl;
       std::exit(EXIT_FAILURE);
-    }
-    if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
-      cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
     // clean_conv = budget (default) | strict: budget measures every row in the
     // cell's own budget for the step, S = the sum of its gross terms (old value, fluxes
@@ -1794,16 +1790,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_ncell = 0.0;
   vet_guard_max = 0.0;
   vet_d11_min = 1.0;
-  // read only when given, so that an input without it writes a byte-identical restart
-  dbg_opac_patch = 1.0;
-  dbg_opac_x1lo = dbg_opac_x1hi = dbg_opac_x2lo = dbg_opac_x2hi = 0.0;
-  if (pin->DoesParameterExist("rad_m1","dbg_opac_patch")) {
-    dbg_opac_patch = pin->GetReal("rad_m1","dbg_opac_patch");
-    dbg_opac_x1lo = pin->GetReal("rad_m1","dbg_opac_x1lo");
-    dbg_opac_x1hi = pin->GetReal("rad_m1","dbg_opac_x1hi");
-    dbg_opac_x2lo = pin->GetReal("rad_m1","dbg_opac_x2lo");
-    dbg_opac_x2hi = pin->GetReal("rad_m1","dbg_opac_x2hi");
-  }
   vet_time = 0.0;
   vet_itime = 0.0;
   vet_ncall = 0.0;
@@ -1814,7 +1800,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_col = false;
   vcol_sph = false;
   vcol_axis_flux = false;
-  vcol_nc = vcol_np = vcol_nmu = vcol_every = vcol_nray = vcol_dump_every = 0;
+  vcol_nc = vcol_np = vcol_nmu = vcol_every = vcol_nray = 0;
   vcol_built = false;
   vcol_time = vcol_ncall = vcol_nskip = 0.0;
   vcol_sq = false;
@@ -1996,12 +1982,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl << "<rad_m1>/vet_col_axis = '" << ax << "' not implemented "
         << "(radial | flux)" << std::endl;
       std::exit(EXIT_FAILURE);
-    }
-    vcol_dump = "";
-    if (pin->DoesParameterExist("rad_m1","vet_col_dump")) {
-      vcol_dump = pin->GetString("rad_m1","vet_col_dump");
-      vcol_dump_every = pin->GetOrAddInteger("rad_m1","vet_col_dump_every",1);
-      if (vcol_dump.compare("none") == 0 || vcol_dump_every <= 0) {vcol_dump = "";}
     }
     // vet_col_lat (m1-vetcol-lat, rad_m1_vetlat.cpp): every key read only when named, so
     // that an input without them writes the same restart and parameter dump as before
@@ -2497,11 +2477,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_lean")) {
       vgd_lean = pin->GetBoolean("rad_m1","vet_gd_halo_lean");
     }
-    // vet_gd_halo_compact_nan (read only when named; a gate): the compact exchanges put
-    // NaN on the band positions they do not send, so that a read of one shows
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact_nan")) {
-      vgd_cnan = pin->GetBoolean("rad_m1","vet_gd_halo_compact_nan");
-    }
     // (default on for clean on CUDA without a theta wall: VetGdSetup keeps it on the raw
     // 3-D sweep only; off-node partners take the MPI path)
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -2795,7 +2770,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (F2, F3) is the tangential pair (what the default (IVY, IVZ) rule gives by luck);
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
   pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
-  if (cs_geom) {CubedVecCheck(pin);}   // test only, read when named
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c

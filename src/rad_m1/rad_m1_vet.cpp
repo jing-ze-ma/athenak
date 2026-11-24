@@ -4238,8 +4238,6 @@ void RadiationM1::VetShortCharSweep() {
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
   const bool x1src = vet_x1per && vet_x1src;
-  const bool dbgc = (t2_dbg_pred > 0) && (vet_dbgclip.extent_int(0) > 0);
-  auto dcl_ = vet_dbgclip;
   const bool spl = vet_seg_split;
   const bool xcr = vet_xcr;
   const int spe = VetSegMode();
@@ -4704,7 +4702,6 @@ void RadiationM1::VetShortCharSweep() {
                       sh2, sh3p, iv, suq);
         }
       }
-      if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
       iv = fmax(iv, 0.0);
       ip_(m,pw,r,k,j) = iv;
       if (f2s_ && !x1per && i == (up ? ie : is)) {
