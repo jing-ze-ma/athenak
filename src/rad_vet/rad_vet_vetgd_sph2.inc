@@ -31,7 +31,7 @@ double VgdThetaFace(const Mesh *pm, const int n) {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::VgdPoleSlot
-//! \brief pole slot of halo neighbour o of a block in theta row lx2: 1 north, 2 south, else 0
+//! \brief pole slot of halo neighbour o of a block in theta row lx2: 1 N, 2 S, else 0
 
 int RadiationVet::VgdPoleSlot(const int o, const int lx2) const {
   if (!vgd_pol) {return 0;}
