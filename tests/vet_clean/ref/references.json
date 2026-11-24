@@ -140,19 +140,23 @@
   }
  },
  "wedge_sym": {
-  "_about": "fphi = |sum F_phi| / sum |F_r| on the 20 deg (exact), 3.7 and 7.3 deg (vet_gd_wall_sym) wedges; wedge_fatal = 1: the narrow wedge without the key stops with the FATAL",
+  "_about": "fphi = |sum F_phi| / sum |F_r| on the 20 deg (exact), 3.7 and 7.3 deg (vet_gd_wall_sym) wedges; fth = |sum F_theta| / sum |F_r| on the theta-periodic 20 deg shell with vet_gd_theta_seam_sym (reported, not bounded: 1.1e-5 at cycle 8 on the release base and IA12.3 alike, under study); wedge_fatal / theta_fatal = 1: the narrow wedge without vet_gd_wall_sym, and the theta-periodic shell without vet_gd_theta_seam_sym, stop with the FATAL",
   "max": {
    "fphi": 1e-08
   },
   "equal": {
    "wedge_fatal": 1,
+   "theta_fatal": 1,
    "warnings": 0
   }
  },
  "floor_pay": {
-  "_about": "dE from cycle 1 on; dE0 (the t = 0 -> 1 jump: the initial floor energy paid after the t = 0 output) is reported, not bounded",
+  "_about": "dE from t = 0 (the initial floor energy is paid before the t = 0 output; dE0, the t = 0 -> 1 step, is reported); ekin_*: hydro/floor_from_ekin with vceil 1.2e-2 (energy, mass, L_z as conservation_sp)",
   "max": {
-   "dE": 1e-13
+   "dE": 1e-13,
+   "ekin_dE": 1e-13,
+   "ekin_dM": 1e-13,
+   "ekin_dLz": 1e-13
   },
   "min": {
    "paid": 1e-06
