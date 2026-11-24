@@ -648,12 +648,15 @@ void AmModule::AmBndFlux(Driver *pdrive, int stage, Real bdt, const AmFluid &fl)
   const int is = ic.is, ie = ic.ie;
   const Real g0 = (stage == 1) ? 0.0 : pdrive->gam0[stage-1];
   am_bdt = g0*am_bdt + bdt;   // (the step's dt, the same weights)
+  const bool zi = am_bzero[0], zo = am_bzero[1];
   par_for("hydro_am_bflx", DevExeSpace(), 0, nmb1, 0, 1, ic.ks, ic.ke, ic.js, ic.je,
   KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
     const int ii = s ? ie + 1 : is;
     const BoundaryFlag f = v.bcs.d_view(m, s ? BoundaryFace::outer_x1
                                               : BoundaryFace::inner_x1);
-    const bool phys = (f != BoundaryFlag::block) && (f != BoundaryFlag::periodic);
+    const bool z = (f == BoundaryFlag::user) &&
+                   (s ? (zo && !(v.f1(m,IDN,k,j,ii) > 0.0)) : zi);
+    const bool phys = (f != BoundaryFlag::block) && (f != BoundaryFlag::periodic) && !z;
     const Real o = (s ? 1.0 : -1.0)*bdt;
     const Real q[3] = {v.f1(m,IDN,k,j,ii)*v.a1(m,k,j,ii), v.f1(m,IEN,k,j,ii)*v.a1(m,k,j,ii),
                        HydroAmRadialTorque(v, m, k, j, ii)};

@@ -29,6 +29,7 @@ void hydro::AmModule::DtRetryVisit(V &v) {
   v.view("frame_ln", frame_ln);
   v.view("am_bflx", am_bflx);
   v.value("am_bdt", am_bdt);
+  v.value("am_bzero", am_bzero);
 }
 
 // not visited (pointers, const, threads, timers, MPI, ...):

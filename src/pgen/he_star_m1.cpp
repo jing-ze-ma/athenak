@@ -2870,6 +2870,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               "noinflow|outflow|hse|copy", __LINE__);
     }
     hs_binf_ = (bi == "inflow");
+    hydro::AmModule *pam = hydro::AmModuleOf(pmbp);   // (the faces hs_zflux takes back)
+    if (pam != nullptr) {
+      pam->am_bzero[0] = hs_zflux_ && !hs_binf_;
+      pam->am_bzero[1] = hs_zflux_;
+    }
     hs_bzc_ = (bi == "zerocontact");
     hs_bout_ = (bo == "outflow");
     hs_bhse_ = (bo == "hse");
