@@ -36,3 +36,9 @@ no pair H0 HT
 
 ## +3 step check, 8 ranks: ok=yes
 - 2026-11-24 14:14:41 rc=0 (srun) ended: Terminating on cycle limit wall=51 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 75887 (both nodes, rank-0 samplers); CW 0, FATAL 0; 
+
+## Abort lines of the 4-rank arms (your 24zzzzk item 1)
+- H0 (srun exit 134): `  what():  Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label="cln_rk").` on every rank; it IS an out-of-memory allocation (4.254 GiB for cln_rk); peak before it 140457 MiB per GPU (nvidia-smi).
+- H1 (srun exit 134): `  what():  Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label="cln_rk").` on every rank; it IS an out-of-memory allocation (4.254 GiB for cln_rk); peak before it 140869 MiB per GPU (nvidia-smi).
+- HT (srun exit 134): `  what():  Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label="cln_rk").` on every rank; it IS an out-of-memory allocation (4.254 GiB for cln_rk); peak before it 136743 MiB per GPU (nvidia-smi).
+- No unused arm holds GPU memory (the steps are gone); the +3 check below was run with H0's args (8 ranks), so it covers the H0 memory check: peak 75.9 GB per GPU.
