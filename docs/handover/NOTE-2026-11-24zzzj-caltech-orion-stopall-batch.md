@@ -145,3 +145,12 @@ run_cs/bin/rsg.hydro_w.00009.bin cycle 1200 t = 14.047 d
   1000-2000   5.589e-06  7.315e-06  3.229e-05  4.688e-05
 ```
 - Files: cshero_results/. B hydro_w c0/600/1200 kept on Caltech (/resnick/groups/carnegie_poc/jingze/cshero_1124/B/run_cs/bin/rsg.hydro_w.{00000,00004,00008}.bin), other dumps deleted.
+
+## bsg-thinf-fresh (BSGf = T2 fresh production c0-300 on 02-11 with outputs; BSGt on 01-15, s/cyc not comparable) (11-24 13:29)
+| arm | hst rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | its t2s3 | passes/cyc | L_top/L_in end (mean) | L_bot/L_in | KE_int end (drift) | dM/M | dE/E | CW/FATAL/inf/DT_RETRY | FWB / FCONE lines |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| BSGf | 300 | 0.6963 (c0-300) | 164.6 / 168.2 / 168.8 | 15.5, 3.65 | 19.9, 3.89 | - | 1.06351 (8.52386) | 0.99543 | 1.04088e+41 (nan) | 3.10e-16 | -3.12e-04 | 0 / 0 / 0 / 0 | 0 / 0 |
+| BSGt | 301 | 0.7833 (c0-300) | 164.6 / 168.2 / 168.8 | 15.9, 3.61 | 20.6, 3.92 | - | 1.06356 (8.51445) | 0.99551 | 1.03847e+41 (nan) | -4.66e-16 | -3.12e-04 | 0 / 0 / 0 / 0 | 0 / 0 |
+
+Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
+- BSGt vs BSGf (N 300): t 3.46e-10 dt 1.84e-10 L_top 6.70e-05 L_in 0.00e+00 KE -3.99e-07 Etot -2.10e-10 M 2.02e-15 Lz -1.14e-02 | max d(L_top/L_in) 4.87e+00 | dt ratio mean 1.0000
