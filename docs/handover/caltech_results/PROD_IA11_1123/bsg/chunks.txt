@@ -1,1 +1,2 @@
 2026-11-23 10:18:47 chunk 0 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia11_bd9553537 md5=bbfdee63ca6bf55897ea1886d0bc2391 DECK=/resnick/groups/carnegie_poc/jingze/prod_ia11_1123/decks_final/IA11_bsg.athinput md5=dfa85cf907de93ef1b9acb5bd454541d start=-i /resnick/groups/carnegie_poc/jingze/prod_ia11_1123/bsg/deck.athinput WT=66:32:13 HOLDER=7333072 NODE=hpc-sm-01-17 EX=
+2026-11-23 17:29:05 chunk 0 rc=0 last: time=5e+06 cycle=32156
