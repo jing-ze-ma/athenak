@@ -31,7 +31,7 @@ is a FAIL with the path of its `run.log`.
 |---|---|---|---|
 | `conservation_sp` | `shell_sp` | closed rotating shell, 3-D spherical polar, 40 cycles (16 quick): total energy (gas + radiation), mass, total L_z | dE/E, dM/M, dLz <= 1e-13 |
 | `conservation_cs` | `shell_cs` | the same on a cubed sphere, 12 cycles | as above |
-| `conservation_lz` | `shell_sp`, `shell_cs` | the rotating shells with every L_z-exact cap / cut on (`clean_stag_fcone_lz`, `clean_lz_spin`, `clean_stag_fcone_emax`, `clean_wb_mcap`, `floor_from_ekin` with `vceil = 5e-3`; sp also `floorcap_lz` on every cell), 40 / 12 cycles; restart 8 + 8 and a forced dt_retry (factor 1) with the same keys | dE, dM, dLz <= 1e-13 on both, dLz_gr <= 1e-13 on sp (floorcap_lz included; cs: reported, as conservation_cs); restart and retry bitwise; no `CLEAN WARNING` |
+| `conservation_lz` | `shell_sp`, `shell_cs` | the rotating shells with every L_z-exact cap / cut on (`clean_stag_fcone_lz`, `clean_lz_spin`, `clean_stag_fcone_emax`, `clean_wb_mcap`, `floor_from_ekin` with `vceil = 5e-3`, `floorcap_lz` on every cell), 40 / 12 cycles; restart 8 + 8 and a forced dt_retry (factor 1) with the same keys | dE, dM, dLz <= 1e-13 on both, dLz_gr <= 1e-13 on sp (cs: reported, as conservation_cs); restart and retry bitwise; no `CLEAN WARNING` |
 | `restart_sp` | `shell_sp` | 16 cycles straight vs 8 + restart + 8 | every dump and history row identical (difference 0) |
 | `restart_cs` | `shell_cs` | 8 straight vs 4 + restart + 4 | identical |
 | `dt_retry` | `shell_sp` | a forced step retry at cycle 4 with factor 1 (the step is repeated at the same dt) and with factor 0.5 | factor 1: identical to the run without retry; factor 0.5: runs on; one retry each |

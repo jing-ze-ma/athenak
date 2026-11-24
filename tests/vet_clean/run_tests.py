@@ -107,15 +107,16 @@ LZ_KEYS = {'rad_vet/clean_stag_fcone': 'true', 'rad_vet/clean_stag_fcone_lz': 't
            'rad_vet/clean_lz_spin': 'true', 'hydro/eos': 'general',
            'hydro/floor_from_ekin': 'true', 'hydro/vceil': 5e-3, 'units/length_cgs': 1.0,
            'units/mass_cgs': 1.0, 'units/time_cgs': 1.0}
-LZ_SP = {'rad_vet/floorcap_rho': 1e30, 'rad_vet/floorcap_v': 5e-3,
-         'rad_vet/floorcap_lz': 'true', 'rad_vet/clean_stag_fwb_ring': 1}
+LZ_FC = {'rad_vet/floorcap_rho': 1e30, 'rad_vet/floorcap_v': 5e-3,
+         'rad_vet/floorcap_lz': 'true'}
+LZ_SP = dict(LZ_FC, **{'rad_vet/clean_stag_fwb_ring': 1})
 
 
 def t_conservation_lz(c):
     """the closed rotating shells with every L_z-exact cap / cut on (clean_stag_fcone_lz,
     clean_lz_spin, clean_stag_fcone_emax, clean_wb_mcap, floor_from_ekin with vceil 5e-3
-    below the shell's speeds; on spherical polar also the floor-gas cap of every cell,
-    floorcap_lz, with fwb_ring): energy, mass and L_z drifts as conservation_sp, plus
+    below the shell's speeds; the floor-gas cap of every cell, floorcap_lz, on both
+    meshes, on spherical polar with fwb_ring): energy, mass and L_z drifts as conservation_sp, plus
     dLz_gr (gas + radiation, no ledger); restart (8 + 8 = 16 cycles) and a forced dt_retry
     with factor 1 at cycle 4 with the same keys: bitwise."""
     sp = dict(LZ_KEYS, **LZ_SP)
@@ -123,7 +124,8 @@ def t_conservation_lz(c):
            am_budget(c.run('shell_sp.athinput', 'sp', dict(sp, **{'time/nlim': 40})),
                      'sp').items()}
     out.update({'cs_' + k: v for k, v in
-                am_budget(c.run('shell_cs.athinput', 'cs', dict(LZ_KEYS, **{'time/nlim': 12})),
+                am_budget(c.run('shell_cs.athinput', 'cs',
+                                dict(LZ_KEYS, **dict(LZ_FC, **{'time/nlim': 12}))),
                           'cs').items()})
     out['restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 8, sp)['maxdiff']
     o = dict(sp, **{'time/nlim': 16, 'time/dt_retry': 'true'})
