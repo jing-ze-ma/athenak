@@ -94,6 +94,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_x1npass", vet_x1npass);
   v.value("vet_x1ptol", vet_x1ptol);
   v.view("vet_x1ent", vet_x1ent);
+  v.value("vet_x1_warm", vet_x1_warm);
   v.value("vet_x1_nbuild", vet_x1_nbuild);
   v.value("vet_x1_npsum", vet_x1_npsum);
   v.value("vet_x1_ncap", vet_x1_ncap);

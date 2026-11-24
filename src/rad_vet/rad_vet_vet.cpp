@@ -1128,6 +1128,40 @@ Real RadiationVet::VetRotBeta(const int64_t blk) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn RadiationVet::X1eRst*
+//! \brief vet_x1_periodic (adaptive): the exit plane the next build starts warm from, to /
+//! from cell-sized restart slabs (kM1X1eRstMagic): ray r of row (k, j) at slab r / n1,
+//! cell i = r % n1
+
+void RadiationVet::X1eRstPack(DvceArray5D<Real> &dst, const int nmb) const {
+  auto e_ = vet_x1ent;
+  auto d_ = dst;
+  const int nray = e_.extent_int(1), n1 = dst.extent_int(4);
+  Kokkos::deep_copy(dst, 0.0);
+  par_for("vet_x1e_pack", DevExeSpace(), 0, nmb - 1, 0, nray - 1,
+          0, dst.extent_int(2) - 1, 0, dst.extent_int(3) - 1,
+  KOKKOS_LAMBDA(const int m, const int r, const int k, const int j) {
+    d_(m,r/n1,k,j,r%n1) = e_(m,r,k,j);
+  });
+}
+
+bool RadiationVet::X1eRstUnpack(const DvceArray5D<Real> &src, const int nmb,
+                                const int nsl) {
+  auto e_ = vet_x1ent;
+  auto s_ = src;
+  const int nray = e_.extent_int(1), n1 = src.extent_int(4);
+  if (!vet_x1per || vet_x1ptol <= 0.0 || e_.extent_int(0) < nmb ||
+      nsl != (nray + n1 - 1)/n1) {return false;}
+  par_for("vet_x1e_unpack", DevExeSpace(), 0, nmb - 1, 0, nray - 1, 0,
+          src.extent_int(2) - 1, 0, src.extent_int(3) - 1,
+  KOKKOS_LAMBDA(const int m, const int r, const int k, const int j) {
+    e_(m,r,k,j) = s_(m,r/n1,k,j,r%n1);
+  });
+  vet_x1_warm = true;
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRotSet
 //! \brief vet_sc set turned by beta
 
@@ -2092,8 +2126,9 @@ void RadiationVet::VetShortCharSweep() {
   Real dprev = -1.0;
   int npdone = 0;
   bool conv = false;
-  // an adaptive sweep after the first build starts from the last build's exit plane
-  const bool warm = adapt && (vet_x1_nbuild > 0.0);
+  // an adaptive sweep after the first build starts from the last build's exit plane (its
+  // periodic image then), not from the boundary inflow
+  const bool warm = adapt && vet_x1_warm;
   if (warm) {
     auto ip_ = vet_ipl;
     auto ent_ = vet_x1ent;
@@ -2397,6 +2432,7 @@ void RadiationVet::VetShortCharSweep() {
   }
   if (adapt) {
     vet_x1_nbuild += 1.0;
+    vet_x1_warm = true;
     vet_x1_npsum += static_cast<Real>(npdone);
     vet_x1_npmax = std::max(vet_x1_npmax, npdone);
     if (!conv) {

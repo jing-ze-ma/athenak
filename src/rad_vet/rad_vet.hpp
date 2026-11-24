@@ -412,7 +412,15 @@ class RadiationVet {
   int vet_x1npass = 0;       // its number of passes
   // vet_x1_ptol: stop the periodic sweep when d_p/(1 - q) < vet_x1_ptol (0: npass)
   Real vet_x1ptol = 0.0;
-  DvceArray4D<Real> vet_x1ent;   // (nmb, nray, k, j): previous pass's exit plane
+  DvceArray4D<Real> vet_x1ent;   // (nmb, nray, k, j): the previous pass's exit plane
+  // a build has run, so the next adaptive sweep starts warm from vet_x1ent; both are in
+  // the restart file (kM1X1eRstMagic; a file without them restarts the sweep cold)
+  bool vet_x1_warm = false;
+  int X1eRstNslab(const int n1) const {
+    return vet_x1_warm ? (vet_x1ent.extent_int(1) + n1 - 1)/n1 : 0;
+  }
+  void X1eRstPack(DvceArray5D<Real> &dst, const int nmb) const;
+  bool X1eRstUnpack(const DvceArray5D<Real> &src, const int nmb, const int nsl);
   Real vet_x1_nbuild = 0.0, vet_x1_npsum = 0.0, vet_x1_ncap = 0.0;
   int vet_x1_npmax = 0;
   int vet_interp = 0;        // upwind stencil 0 lin, 1 log, 2 corner

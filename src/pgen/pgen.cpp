@@ -1173,6 +1173,36 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     nxfd_file = static_cast<int>(xfd_hi[1]);
   }
+  // --- THE vet_x1_periodic WARM-START HEADER (radvet::kM1X1eRstMagic), behind the
+  // fax one (an old file: behind its xfade one): nx1e_file slabs, the last of each record
+  int nx1e_file = 0;
+  if (std::memcmp(variabledata, &(radvet::kM1X1eRstMagic[0]),
+                  sizeof(radvet::kM1X1eRstMagic)) == 0) {
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(hdr));
+      ok = ok && (resfile.Read_bytes(&(hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(hdr[0]), sizeof(hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 4096) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the rad_vet vet_x1 warm-start header of this restart "
+                << "file is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nx1e_file = static_cast<int>(hdr[1]);
+  }
 
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
@@ -1263,7 +1293,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                             + neint_file + nwpv_file + nck_file + nctr_file + nrss_file
                             + nvgd_file
                             + ncsk_file + nra_file + nams_file + npgs_file + nfax_file
-                            + nthc_file + nxfd_file)
+                            + nthc_file + nxfd_file + nx1e_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1960,7 +1990,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       nck_file > 0 ||
       neint_file > 0 ||   // an ideal-gas eint slab alone
       ctr_read || rss_read || ra_read || ams_read ||
-      npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0) {
+      npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0 ||
+      nx1e_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -2307,6 +2338,30 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (nxfd_file > 0 && global_variable::my_rank == 0) {
       std::cout << "<rad_vet> restart: vet_gd_rotate_xfade state (" << nxfd_file
                 << " slabs) IGNORED (the old scheme's cross-fade)" << std::endl;
+    }
+    // the vet_x1_periodic warm-start plane (kM1X1eRstMagic), last of the record
+    if (nx1e_file > 0) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
+                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
+                  + nams_file + npgs_file + nfax_file + nthc_file + nxfd_file;
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
+                              *sizeof(Real);
+      myoffset = offset_myrank;
+      DvceArray5D<Real> x1ein("rst-x1e-in", nmb, nx1e_file, nout3, nout2, nout1);
+      for (int n=0; n<nx1e_file; ++n) {
+        read_slab("rad_vet vet_x1 warm start");
+        DeepCopyAcross(Kokkos::subview(x1ein, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                       Kokkos::ALL), wtin);
+      }
+      const bool got = (pradvet != nullptr) &&
+                       pradvet->X1eRstUnpack(x1ein, nmb, nx1e_file);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_vet> restart: vet_x1_periodic warm-start plane (" << nx1e_file
+                  << " slabs) " << (got ? "restored" : "IGNORED (no adaptive x1 sweep)")
+                  << std::endl;
+      }
     }
   }
 
