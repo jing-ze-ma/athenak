@@ -50,10 +50,14 @@
  },
  "layout_tile": {
   "equal": {
-   "maxdiff_1x2": 0.0
+   "maxdiff_1x2": 0.0,
+   "maxdiff_dfl": 0.0
   },
   "max": {
-   "maxrel_2x2": 1e-08
+   "maxrel_2x2": 1e-08,
+   "dE_dfl": 1e-13,
+   "dM_dfl": 1e-13,
+   "dLz_dfl": 1e-13
   }
  },
  "order_time": {
