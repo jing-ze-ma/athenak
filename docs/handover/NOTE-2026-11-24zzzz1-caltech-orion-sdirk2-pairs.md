@@ -27,3 +27,12 @@ Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
 Parameter 'final_restart' in block 'job' on command line not found
 Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
 ### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/rel38f/src/parameter_input.cpp at line 460
+
+## S2 (M35ZAMS) (11-24 13:53)
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S2off | 300 | 0.2968 (c22160-22450) | 3.481 / 3.481 / 3.481 | 18.8, 2.00 | 17.6, 2.34 | 1.00009 | 1.00001 | 4.96109e+35 | -2.29e-08 | -3.10e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.2975, 7.830e-06, 0, 0, 0 |
+| S2on | 300 | 0.2977 (c22160-22450) | 3.481 / 3.481 / 3.481 | 18.7, 2.00 | 17.4, 2.32 | 1.00009 | 1.00001 | 4.96134e+35 | -2.29e-08 | 1.24e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.2970, 4.655e-01, 9, 0, 0 |
+
+- last common row 300: L_top 3.88e-07 L_in 0.00e+00 KE 5.10e-05 Etot 2.15e-12 M 1.49e-15 Lz -1.71e-03 (on - off relative)
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
