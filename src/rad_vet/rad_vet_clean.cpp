@@ -3247,9 +3247,13 @@ Real RadiationVet::CleanNewtonUpdate() {
   if (bud) {   // (the tolerance of the next test and solve; for settled, the level of a
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
     // (a step dt_retry redoes, whose state just failed, is solved strictly too)
+    // (clean_clos1_budget, clean_bud_maxnorm, clean_vel_settled: the time error down to
+    // clean_tol_nl, as each relaxes the passes to it; at 10 clean_tol a step whose time
+    // error is below, a 1e-6 wave's 1e-11 at a change of 1e-9, lost the wave's phase)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
+    const Real tlo = (cln_c1b || cln_bmn || cln_vset) ? cln_tol_nl : tfl;
     cln_tolb = (kok && !dtr_redo) ?
-               fmin(fmax(cln_bkap*ermax, tfl), cln_bmax) : tfl;
+               fmin(fmax(cln_bkap*ermax, tlo), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
   // (clean_stag_sbimp, fwork: the face beta terms' emission of the new T, hc kP a T^4,
