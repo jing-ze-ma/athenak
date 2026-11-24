@@ -85,3 +85,4 @@
 <hydro> floor_audit cycle 6626 [refresh] cell-c2p 3.395708518e+10 e_c<=0 13 kedom 534 sub_tfloor 12191 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 13 (kedom 13) floor_de 1.443068133e+38 <r> 2.414168565e+12 <r>_de 2.309179213e+12 skip(dfloor/vceil) 9213837 skip_de 2.955580135e+24 skip_dm 0 above_table_top 0
 <hydro> floor_audit cycle 6626 pay: paid 3.138571693e+42 unpaid 0 given_to_rad 1.667968658e+12 cells 335770 | fofc_retest: retested 0 unflagged 0
 ```
+- (11-23 22:24) status: T0a [cycle=30650, t 1.63707e+06 dt 82.3, CW 0, fb 0, DT_RETRY 0, pos_floor 0]; T0da [cycle=30500, t 1.65337e+06 dt 193, CW 2, fb 1, DT_RETRY 0, pos_floor 1]; T0h [cycle=30550, t 1.59182e+06 dt 29.8, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
