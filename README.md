@@ -35,8 +35,12 @@ Since AthenaK is very similar to Athena++, the [Athena++ documention](https://gi
 ## Clean VET radiation scheme
 
 This branch contains the clean VET (variable Eddington tensor) radiation-hydrodynamics scheme
-of `src/rad_vet/`. Start with [docs/vet_clean/QUICKSTART.md](docs/vet_clean/QUICKSTART.md):
-download, build on CPUs and GPUs, run the tests and the 3-D star problems.
+of `src/rad_vet/`.
+
+- Documentation: <https://jing-ze-ma.github.io/athenak-vet-docs/> (download, build on CPUs
+  and GPUs, run, the method and its properties, tests, 3-D stars).
+- Worked problems with notebooks: <https://github.com/jing-ze-ma/athenak-vet-gallery>.
+- The same text, in this repository: [docs/vet_clean/QUICKSTART.md](docs/vet_clean/QUICKSTART.md).
 
 ## Code papers
 
