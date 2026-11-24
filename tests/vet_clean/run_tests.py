@@ -45,12 +45,15 @@ class Ctx:
     def run(self, deck, sub, over=None, args=(), restart=None, ranks=1):
         """Run deck (a file in decks/) with block/key overrides in DIR/sub; returns the
         run directory.  restart = a restart file to continue from instead.  The --keys
-        overrides go into every run (the test's own overrides win)."""
-        over = dict(self.keys, **(over or {}))
+        overrides go into every fresh run (the test's own overrides win); a restart takes
+        only the test's own overrides, so the --keys never override what the restart file
+        stored from the run it continues."""
+        own = dict(over or {})
+        over = dict(self.keys, **own)
         d = os.path.join(self.dir, sub)
         os.makedirs(d, exist_ok=True)
         if restart:
-            argv = ['-r', restart] + ['%s=%s' % kv for kv in (over or {}).items()]
+            argv = ['-r', restart] + ['%s=%s' % kv for kv in own.items()]
         else:
             vett.make_deck(os.path.join(DECKS, deck), os.path.join(d, 'in.athinput'), over)
             argv = ['-i', 'in.athinput']
