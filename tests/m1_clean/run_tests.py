@@ -72,7 +72,8 @@ def hst_col(path, name):
 def am_budget(d, base):
     """energy, L_z and mass drifts of a closed sph_shell run (problem/am_hist history).
     dLz: the scheme's total L_z (gas + radiation + the L_z ledger of the clean solve,
-    column Lz_tot); dLz_gr: gas + radiation only, for information."""
+    column Lz_tot); dLz_gr: gas + radiation only, for information (on the cubed sphere
+    Lrz is the cell vector, not the face momenta the scheme conserves: use dLz)."""
     u = os.path.join(d, base + '.user.hst')
     e = hst_col(u, 'Eg') + hst_col(u, 'Er')
     lzs = np.abs(hst_col(u, 'Lgz')).max()

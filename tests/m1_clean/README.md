@@ -40,18 +40,21 @@ is a FAIL with the path of its `run.log`.
 | `wb_sp`, `wb_cs` | `rhse_sp`, `rhse_cs` | grey scattering envelope in hydrostatic and radiative equilibrium (spherical polar 2-D, cubed sphere) | max over the run of max |v| / c_s <= 1e-8 |
 
 Notes on the results of this release (512cf768a):
-- **L_z.** `dLz` is the drift of the scheme's total angular momentum, gas + radiation + the
-  L_z ledger of the clean solve (history column `Lz_tot`); it is exact to round-off
-  (2e-16). `dLz_gr`, gas + radiation alone, is printed for information: 7e-7 on
-  `shell_sp` (the face-flux cone limiter `clean_stag_fcone` books the momentum it cuts) and
-  6e-5 on `shell_cs` (the cubed-sphere torque that the gas does not take is booked).
-  Without `clean_stag_fcone`, `shell_sp`'s `dLz_gr` is 2e-15.
-- **Layout.** Tile mode is designed to give bit-identical results for every layout of
-  whole-tile MeshBlocks. On this release the layouts differ after 8 cycles by 1.5e-10
-  (1 x 2) and 4.5e-10 (2 x 2) of the largest value, so the test bounds the difference
-  instead of requiring 0. The 1 x 2 difference is the round-off of the join of the
-  per-MeshBlock F line solves; a development fix of that join makes 1 x 2 identical, while
-  2 x 2 still differs by 7e-11 with it (open).
+- **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
+  solve). It is round-off (2e-16) by construction: the ledger books what the step does not
+  conserve, so `dLz` checks the bookkeeping, not the conservation. The conservation error
+  is the ledger's growth, `dLz_gr` (gas + radiation alone): 7e-7 on `shell_sp`, from the
+  face-flux cone cut `clean_stag_fcone` (with `clean_stag_fcone_gas = true` and
+  `clean_stag_fwb_ring = 1`, 1.6e-15 with no ledger; without the cut 2e-15). On the cubed
+  sphere the ledger stays at round-off; there `dLz_gr` (6e-5) is not a conservation measure,
+  because the history's `Lrz` is the cell vector u0 F while the scheme's radiation momentum
+  is its face momenta (`CleanLzTotal`; ~0.6 % of the radiation's L_z apart).
+- **Layout.** Tile mode gives bit-identical results for every layout of whole-tile
+  MeshBlocks with one MeshBlock along x1 and x2 (theta). On this release 1 x 2 (along phi)
+  differs after 8 cycles by 1.5e-10 of the largest value (the round-off of the join of the
+  per-MeshBlock F line solves; bitwise with the F-join fix of the next release), and 2 x 2
+  by 4.5e-10: splitting theta puts ray walls inside the mesh, which is outside the tile
+  guarantee. The test therefore bounds the difference instead of requiring 0.
 - **Order.** Deck D reaches second order only as dt -> 0: successive orders 1.57, 1.61,
   1.84 (E) over the five time steps. The criterion is on the finest pair.
 
