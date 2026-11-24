@@ -4,9 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_init.cpp
-//! \brief set-up of the implicit radiation (<rad_vet>/transport = implicit): the keys the
-//! clean steps read (ImplicitInit), the run-end report (ImplicitReport, EventTotals) and
-//! the face-flux restart slabs (FaxRst*).
+//! \brief implicit-transport set-up (ImplicitInit), run-end report, face-flux restart
+//! slabs, and the device memory arena shared by vet_gd and the clean work vectors.
 
 #include <algorithm>
 #include <cmath>
@@ -37,8 +36,7 @@ namespace radvet {
 namespace {
 //----------------------------------------------------------------------------------------
 //! \fn ImplBCFromString
-//! \brief one x1 boundary type of the implicit solve, from the input string, or from the
-//! mesh boundary flag when the input does not name one.
+//! \brief x1 boundary type of the implicit solve from its key; auto: from the mesh flag
 
 int ImplBCFromString(const std::string &s, const BoundaryFlag mbc) {
   if (s.compare("auto") == 0) {
@@ -62,7 +60,7 @@ int ImplBCFromString(const std::string &s, const BoundaryFlag mbc) {
 
 //----------------------------------------------------------------------------------------
 //! \fn ImplFatal
-//! \brief one fatal-error exit with a message, used by the option parsers
+//! \brief fatal-error exit with a message
 
 void ImplFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
@@ -72,15 +70,12 @@ void ImplFatal(const std::string &msg) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ImplicitInit
-//! \brief read the <rad_vet> parameters of the implicit transport that the clean steps
-//! use (time scheme, boundaries, predictor, gas source, positivity, halos), check them
-//! and allocate the face and work arrays.  Called at the END of the constructor.
+//! \brief reads and checks the implicit-transport keys, allocates the face and work
+//! arrays.  Called at the end of the constructor.
 
 void RadiationVet::ImplicitInit(ParameterInput *pin) {
-  // <rad_vet>/time_scheme (read by Time2Init below): hesdirk2 on a fresh run wherever it
-  // is accepted (no polar boundary, a closure other than tau (vet_col included),
-  // <time>/integrator = rk2), be elsewhere and on a restart whose file lacks the key.
-  // The resolved value is echoed (so later restarts keep it).
+  // time_scheme (read by Time2Init): hesdirk2 on a fresh run where accepted (no polar
+  // boundary, not tau unless vet_col, integrator rk2), else be
   {auto *pmh = pmy_pack->pmesh;
   const std::string integ = pin->DoesParameterExist("time","integrator") ?
                             pin->GetString("time","integrator") : "rk2";
@@ -88,9 +83,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
                     (integ.compare("rk2") == 0);
   (void) pin->GetOrAddString("rad_vet","time_scheme",
                              (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
-  // plain be = the hesdirk2 backward-Euler path (t2_beonly, rad_vet.hpp) wherever
-  // hesdirk2 is accepted; <rad_vet>/be_legacy = true keeps the old step (the default on a
-  // restart whose file lacks it).  time2_be_only = true: the same path under hesdirk2.
+  // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted;
+  // be_legacy: plain BE step (default on restart); time2_be_only: BE path under hesdirk2
   const std::string tsn = pin->GetString("rad_vet","time_scheme");
   if (tsn.compare("be") == 0) {
     const bool leg = pin->GetOrAddBoolean("rad_vet","be_legacy",
@@ -108,8 +102,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   trans_on = false;
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_vet","implicit_cfl",-1.0);
-  // implicit_solver: bicgstab under the new default set (utils/recipe.hpp); a restart
-  // whose input lacks the key / recipe none: line_jacobi (polar_ring_avg needs bicgstab)
+  // implicit_solver: bicgstab under the recipe defaults, else line_jacobi
   if (!pin->DoesParameterExist("rad_vet","implicit_solver")) {
     const bool nd = recipe::NewDefaults(pin);
     recipe::Log(std::string("<rad_vet>/implicit_solver = ") +
@@ -126,8 +119,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (line_jacobi | bicgstab)");
   }
   }
-  // implicit_offdiag (the spherical-polar checks read it too): auto = operator with
-  // bicgstab on a multi-D mesh, lagged otherwise
+  // implicit_offdiag: auto = operator with multi-D bicgstab, else lagged
   std::string sod = pin->GetOrAddString("rad_vet","implicit_offdiag","auto");
   bool od_auto = (sod.compare("auto") == 0);
   if (od_auto || sod.compare("lagged") == 0) {
@@ -140,11 +132,9 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_offdiag = '" + sod
               + "' is not a choice (auto | lagged | operator | none)");
   }
-  // implicit_closure_lag: step on a multi-D mesh, pass elsewhere and on a restart whose
-  // file lacks the key (recorded).  With step, a chi(f) closure (m1, minerbo, kershaw)
-  // relaxes optically thin cells step to step by implicit_closure_thin_relax (default
-  // 1.5; 0 on a restart whose file lacks it): its memory ctr_mem travels in the restart
-  // file.  The fixed-tensor closures (eddington, vet_sc, tau, vet_col) never relax.
+  // implicit_closure_lag: step (multi-D fresh run) | pass.  With step, chi(f) closures
+  // relax thin cells by implicit_closure_thin_relax (memory ctr_mem is in the restart);
+  // fixed-tensor closures never relax
   const bool md_full = pmy_pack->pmesh->multi_d;
   bool clag_step = false;
   {std::string sc = pin->GetOrAddString("rad_vet","implicit_closure_lag",
@@ -170,7 +160,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_closure_thin_relax must be >= 0");
   }
   }
-  // the transverse realizability limiter (none: the plain theta)
+  // implicit_trans_limit: transverse realizability limiter
   {std::string st = pin->GetOrAddString("rad_vet","implicit_trans_limit","none");
   if (st.compare("none") == 0) {
     impl_tlim = M1_TLIM_NONE;
@@ -198,9 +188,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   impl_pord = 1;
   tmr_c0 = pin->DoesParameterExist("rad_vet","implicit_timers") ?
            pin->GetInteger("rad_vet","implicit_timers") : 0;   // read only when named
-  // implicit_resid_fatal: the residual above which a stage stops the run (default 1e-2
-  // with the new defaults; 0 = off on a restart whose file lacks the key; 1e2 under
-  // recipe none)
+  // implicit_resid_fatal: stage residual that stops the run (0 = off)
   if (pin->DoesParameterExist("rad_vet","implicit_resid_fatal")) {
     impl_res_fatal = pin->GetReal("rad_vet","implicit_resid_fatal");
     if (!(impl_res_fatal >= 0.0)) {
@@ -216,8 +204,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     impl_res_fatal = pin->GetOrAddReal("rad_vet","implicit_resid_fatal",1.0e2);
     recipe::Log("<rad_vet>/implicit_resid_fatal = 1e2 (recipe none: the old default)");
   }
-  // implicit_predictor = step: the step predictor (ipred, pred_ok, pred_dt travel in the
-  // restart file); none elsewhere
+  // implicit_predictor: step | none (the predictor state is in the restart)
   {std::string pr = pin->GetOrAddString("rad_vet","implicit_predictor",
                                         fixcl ? "step" : "none");
   if (pr.compare("none") == 0) {
@@ -229,8 +216,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (none | step)");
   }
   }
-  // the positivity keys implicit_pos_gas and implicit_pos_floor: default true on a fresh
-  // run; a restart whose file lacks them keeps the old default (off)
+  // implicit_pos_gas, implicit_pos_floor: true on a fresh run; off on a restart unless
+  // named
   {const bool rst = global_variable::restart_run;
   bool old_kept = false;
   auto pbool = [&](const char *key, bool &v) {
@@ -256,9 +243,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
   marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
-  // implicit_marshak_face = linear (the spherical-polar wedge only): the Marshak face
-  // value extrapolated linearly; default linear on a fresh run with a fixed-tensor
-  // closure, cell elsewhere
+  // implicit_marshak_face: cell | linear (Marshak face value; spherical wedge only)
   if (sph_geom || pin->DoesParameterExist("rad_vet","implicit_marshak_face")) {
     const bool mfdef = !global_variable::restart_run &&
                        (eddington || vet_sc || tau_closure);
@@ -287,8 +272,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_vet>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
-  // implicit_enthalpy: the face enthalpy flux a_f E_f (plm on a fresh run with a
-  // fixed-tensor closure; upwind elsewhere and on a restart whose file lacks the key)
+  // implicit_enthalpy: reconstruction of the face enthalpy flux a_f E_f
   const bool enth_up = global_variable::restart_run || !fixcl;
   const std::string sen = pin->GetOrAddString("rad_vet","implicit_enthalpy",
                                               enth_up ? "upwind" : "plm");
@@ -306,8 +290,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
   }
-  // implicit_vimp: the gas velocity implicit in the enthalpy flux, default on a fresh
-  // multi-D hesdirk2 / be-path run with live gas coupling and bicgstab
+  // implicit_vimp: gas velocity implicit in the enthalpy flux
   {auto *pmh = pmy_pack->pmesh;
   const bool gas_live = !pin->DoesParameterExist("time","evolution") ||
                         (pin->GetString("time","evolution").compare("dynamic") == 0);
@@ -318,7 +301,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_vet","implicit_vimp",vdef);}
-  // <rad_vet>/doppler_face = donor | central (rad_vet.hpp dop_face; read only when named)
+  // doppler_face: donor | central x1 enthalpy flux (read only when named)
   if (pin->DoesParameterExist("rad_vet","doppler_face")) {
     const std::string df = pin->GetString("rad_vet","doppler_face");
     if (df == "central") {
@@ -341,7 +324,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  {  // implicit_hold (default true): inert unless a pgen marks hold_m
+  {  // implicit_hold: inert unless a pgen marks hold_m
     impl_hold = pin->GetOrAddBoolean("rad_vet","implicit_hold",true);
     if (impl_hold) {
       auto &idh = pmy_pack->pmesh->mb_indcs;
@@ -353,8 +336,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(hold_m, 0.0);
     }
   }
-  // implicit_predictor_order = 2 (the step predictor from the last two increments) on a
-  // fresh be / hesdirk2 run with a fixed-tensor closure; 1 elsewhere
+  // implicit_predictor_order: 1 | 2 (2 = from the last two increments)
   {
   bool ts_ok = true;
   if (pin->DoesParameterExist("rad_vet","time_scheme")) {
@@ -368,8 +350,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_predictor_order must be 1 or 2");
   }
   }
-  // cs_vertex_mono (default on the cubed sphere): two-point lateral faces within
-  // cs_vertex_mono_n cells of the 8 cube vertices
+  // cs_vertex_mono: two-point lateral faces near the 8 cube vertices (cs_vertex_mono_n)
   cs_vtx_mono = cs_geom;
   if (pin->DoesParameterExist("rad_vet","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_vet","cs_vertex_mono") && cs_geom;
@@ -384,10 +365,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_vet>/cs_vertex_mono_n must be >= 0");
     }
   }
-  // the E floor's raise (implicit_pos_floor): implicit_pos_floor_cons takes its uncovered
-  // part from the radiation of the same column, implicit_pos_gas_cons and
-  // implicit_pos_floor_gas_keep (defaults true and 1 on a fresh run) bound what it takes
-  // from the gas
+  // E floor raise: implicit_pos_floor_cons takes the uncovered part from the column's
+  // radiation; implicit_pos_gas_cons / implicit_pos_floor_gas_keep bound the gas share
   if (pin->DoesParameterExist("rad_vet","implicit_pos_floor_cons")) {
     impl_pos_flr_cons = pin->GetBoolean("rad_vet","implicit_pos_floor_cons");
   }
@@ -413,9 +392,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
               << "D_r,lat = 0 within " << cs_vtx_n + 1 << ")" << std::endl;
   }
-  // the gas source of the coupled solve: conservative2 (the cell-F slope csk1 travels in
-  // the restart file) on a FRESH run with gas coupling (hydro, coupling, gas_feedback);
-  // matched without it and on a restart whose file lacks the key (files echo it)
+  // implicit_gas_src: gas source of the coupled solve (conservative2: csk1 in restart)
   {
     const bool gsdef = !global_variable::restart_run && fl_on && coupling &&
                        gas_feedback;
@@ -446,7 +423,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   ibc_x1max = ImplBCFromString(
       pin->GetOrAddString("rad_vet","implicit_bc_x1max","auto"),
       mbcs[static_cast<int>(BoundaryFace::outer_x1)]);
-  // the transverse faces (read only when named; auto = the old rule)
+  // transverse boundaries (read only when named; auto: periodic or reflect)
   {
     auto tbc = [&](const char *key, const BoundaryFace f) -> int {
       const bool per = (mbcs[static_cast<int>(f)] == BoundaryFlag::periodic);
@@ -528,8 +505,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   if (impl_vimp && indcs.ng < 2) {
     ImplFatal("<rad_vet>/implicit_vimp needs <mesh>/nghost >= 2");
   }
-  // the cubed sphere's angular-momentum transport: the hesdirk2 spin slope (am_vec)
-  // follows <hydro|mhd>/am_vector unless implicit_am_cs = false
+  // cubed sphere: the spin slope am_vec follows <hydro|mhd>/am_vector unless
+  // implicit_am_cs = false
   if (cs_geom) {
     auto named = [&](const char *b, const char *k) {
       return pin->DoesParameterExist(b, k) && pin->GetBoolean(b, k);
@@ -545,8 +522,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     }
     am_vec = am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
   }
-  // the Zalesak limiter of the hesdirk2 face fluxes: zalesak_halo_skip, zalesak_active
-  // (default true on a fresh run)
+  // Zalesak limiter of the hesdirk2 face fluxes: zalesak_halo_skip, zalesak_active
   if (pin->DoesParameterExist("rad_vet","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_vet","zalesak_halo_skip");
   }
@@ -578,9 +554,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(thx3, 0.0);
       }
     }
-    // implicit_hr_q = col (read only when named; default cell = bitwise): the outer
-    // Marshak q of the half-range beam from the closure's own surface estimate (closure
-    // vet_col + vet_gd) instead of the top cell's centre ratio H+_N/J_N
+    // implicit_hr_q: cell | col (outer Marshak q of the half-range beam: top-cell
+    // H+_N/J_N, or the vet_col surface estimate)
     bool hrq_col = false;
     if (pin->DoesParameterExist("rad_vet","implicit_hr_q")) {
       const std::string sq = pin->GetString("rad_vet","implicit_hr_q");
@@ -613,7 +588,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               << " flux_max=" << iflux_x1max << std::endl;
   }
   if (vet_sc) {VetInit(pin);}
-  ImplBeamInit(pin);   // (rad_vet_vet.cpp)
+  ImplBeamInit(pin);
   Time2Init(pin);
   if (time_scheme == M1_TIME_BE) {
     Kokkos::realloc(u1, u1.extent(0), M1_NVAR, 1, 1, 1);
@@ -623,7 +598,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::TmrMark
 //! \brief implicit_timers: fence, charge the time since the last mark to category c
-//! (c < 0 only sets the mark)
+//! (c < 0: only set the mark)
 
 void RadiationVet::TmrMark(int c) {
   if (!tmr_on) return;
@@ -635,12 +610,9 @@ void RadiationVet::TmrMark(int c) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::EventTotals
-//! \brief the limiter totals of this run (or restart) for the event log, all ranks
-//! (collective): per-rank device counters, summed here.  0..6 (the old solver's
-//! BiCGStab / Newton / positivity fallbacks) stay 0; 7 opac-Newton face terms dropped,
-//! 8 E floor raises (write-back, cell-solves), 9 energy the floor CREATED (x volume),
-//! 10 of which the solve undershoot, 11 ApplyClosureLimits E raises, 12
-//! ApplyClosureLimits |F| clips (active cells, every stage)
+//! \brief limiter totals for the event log, summed over ranks (collective).
+//! Slots: 0..6 unused (0); 7 opac-Newton face terms dropped; 8 E floor raises;
+//! 9 floor energy created (x volume); 10 of which solve undershoot; 11-12 closure clips
 
 void RadiationVet::EventTotals(Real *v) {
   for (int q = 0; q < 13; ++q) {v[q] = 0.0;}
@@ -668,12 +640,10 @@ void RadiationVet::EventTotals(Real *v) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ImplicitReport
-//! \brief the end-of-run lines of the implicit transport: the timers (implicit_timers),
-//! the multi-rate report and the positivity bookings of the clean steps
+//! \brief end-of-run report: timers and positivity bookings
 
 void RadiationVet::ImplicitReport() {
-  // the positivity counters and the hydro inversions' floor energy, all ranks
-  // (collective: every rank reaches this line with the same pos keys)
+  // positivity counters and hydro floor energy (collective: same pos keys on all ranks)
   const bool pos = impl_pos_gas || impl_pos_floor;
   Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
   if (pos) {
@@ -691,7 +661,7 @@ void RadiationVet::ImplicitReport() {
   }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
-    // implicit_timers: seconds per category (see TmrMark)
+    // seconds per category (see TmrMark)
     std::cout << "<rad_vet> timers from cycle " << tmr_c0 << ": stages=" << tmr_cnt[7]
               << std::endl;
     const char *nm[11] = {"closure", "opacity", "solve_pre", "tensor", "pred",
@@ -702,8 +672,8 @@ void RadiationVet::ImplicitReport() {
     std::cout << std::endl;
   }
   if (pos) {
-    std::cout << "<rad_vet> vet-positivity: implicit_pos_gas=" << impl_pos_gas << " (frac "
-              << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
+    std::cout << "<rad_vet> vet-positivity: implicit_pos_gas=" << impl_pos_gas
+              << " (frac " << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
               << " energy moved rad->gas=" << pos_cnt[M1_POS_GAS_DE]
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
@@ -714,10 +684,11 @@ void RadiationVet::ImplicitReport() {
               << " | hydro EOS floors energy created=" << hfl << std::endl;
   }
 }
+
 //----------------------------------------------------------------------------------------
-//! time2_face_fct: t2pf1 to / from cell-sized restart slabs (rad_vet.hpp FaxRstNslab),
-//! one per direction (files before: two, the second 0); the slabs include the ghosts, so
-//! every face a solve set
+//! \fn RadiationVet::FaxRstPack / FaxRstUnpack
+//! \brief time2_face_fct: t2pf1 to / from cell-sized restart slabs (with ghosts), one
+//! per direction; files with two slabs per direction: the first one is read
 
 void RadiationVet::FaxRstPack(DvceArray5D<Real> out, int nmb) {
   const int n3 = out.extent_int(2), n2 = out.extent_int(3), n1 = out.extent_int(4);
@@ -731,7 +702,7 @@ void RadiationVet::FaxRstPack(DvceArray5D<Real> out, int nmb) {
 
 bool RadiationVet::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   const int n3 = in.extent_int(2), n2 = in.extent_int(3), n1 = in.extent_int(4);
-  // (a file without them: the first stage takes the stage-start face F, Time2FaceFct)
+  // file without them: the first stage takes the stage-start face F
   const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
   if (t2_pfst && t2pf1.extent_int(0) >= nmb && (nsl == nd || nsl == 2*nd)) {
     auto pf = t2pf1;
@@ -750,11 +721,13 @@ bool RadiationVet::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   return false;
 }
 
+//========================================================================================
+// device memory arena (vet_gd intensities, clean work vectors over them)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::MemArenaInit
-//! \brief the arena with vet_gd; allocate iw (zero-filled) as before (iw is NOT in the
-//! arena: some of its channels live across a VetGdBuild, MEMCUT_POISON=iw, job 13107429)
+//! \brief enables the arena with vet_gd; allocates iw (not in the arena: some of its
+//! channels live across a VetGdBuild)
 
 void RadiationVet::MemArenaInit(ParameterInput *pin, const int nmb, const int niw,
                                 const int n3, const int n2, const int n1) {
@@ -764,8 +737,8 @@ void RadiationVet::MemArenaInit(ParameterInput *pin, const int nmb, const int ni
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::MemArenaVgd
-//! \brief bind a.d (n Reals, zero-filled by the caller) into the arena (the intensity
-//! arrays one after the other); false: not bound, the caller allocates a.d itself
+//! \brief binds a.d (n Reals) into the arena after the previous intensity array;
+//! false: not bound, the caller allocates a.d
 
 bool RadiationVet::MemArenaVgd(VgdRag &a, const int64_t n) {
   if (!marena_on || marena_sealed) return false;
@@ -773,16 +746,14 @@ bool RadiationVet::MemArenaVgd(VgdRag &a, const int64_t n) {
   const int64_t need = off + n;
   MemArenaGrow(need);
   a.d = DvceArray1D<Real>(marena.data() + off, n);
-  marena_sw = need + ((64 - (need % 64)) % 64);   // 64-Real alignment of the next one
+  marena_sw = need + ((64 - (need % 64)) % 64);   // 64-Real alignment
   return true;
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::MemArenaGrow
-//! \brief at least need Reals: a new allocation, the old bytes copied in front (the
-//! intensity arrays bound so far keep their contents and offsets), then rebind them;
-//! keep = false (CleanWoBind: all of it dead between a build and its solve): the old
-//! allocation freed first, nothing copied
+//! \brief grows the arena to need Reals and rebinds the views in it (same offsets);
+//! keep: copy the old contents, else free the old allocation first, nothing copied
 
 void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
   const int64_t have = static_cast<int64_t>(marena.extent(0));
@@ -800,7 +771,7 @@ void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
       b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
     }
   }
-  for (DvceArray5D<Real> *w : {&cln_w.o, &cln_w.s}) {   // (bound by CleanWoBind)
+  for (DvceArray5D<Real> *w : {&cln_w.o, &cln_w.s}) {   // bound by CleanWoBind
     if (have > 0 && w->data() != nullptr && w->data() >= o0 && w->data() < o1) {
       *w = DvceArray5D<Real>(nb.data() + (w->data() - o0), w->extent(0), w->extent(1),
                              w->extent(2), w->extent(3), w->extent(4));
@@ -812,23 +783,17 @@ void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::MemArenaSeal
 //! \brief called by every DtRetry::Save before it copies; the first call after the
-//! intensities exist moves the solve scratch arrays that are dead across a VetGdBuild
-//! (MEMCUT_POISON: ost, fmm_t, odc, d3w, aa_*, job 13105648) into
-//! the arena, over the intensities (contents copied, member rebound), as many as fit;
-//! then no more rebinding
+//! intensities exist moves cln_w.o into the arena (copied, rebound), then seals it
 
 void RadiationVet::MemArenaSeal() {
-  // (a fresh run allocates the intensities inside cycle 1: the move waits for the next
-  // checkpoint; every checkpoint takes the members' handles anew, so a retry after the
-  // move restores the moved Views)
+  // each checkpoint takes the handles anew, so a retry after the move restores them
   if (marena_sealed || !marena_on || marena.data() == nullptr) return;
   marena_sealed = true;
   DvceArray5D<Real> *cand[] = {&cln_w.o, &ost, &fmm_t, &odc, &d3w, &aa_xc, &aa_fc,
                                &aa_xp, &aa_fp};
   const char *nm[] = {"cln_wo", "ost", "fmm_t", "odc", "d3w", "aa_xc", "aa_fc", "aa_xp",
                       "aa_fp"};
-  // (clean: the arena grows to the clean scheme's own work vectors where they outgrow
-  // the intensities, whatever vgd_i's layout makes of those)
+  // grow to hold cln_w.o where it outgrows the intensities
   MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
   const int64_t have = static_cast<int64_t>(marena.extent(0));
   int64_t off = 0;
@@ -837,10 +802,10 @@ void RadiationVet::MemArenaSeal() {
   for (int q = 0; q < static_cast<int>(sizeof(cand)/sizeof(cand[0])); ++q) {
     DvceArray5D<Real> &a = *cand[q];
     const int64_t n = static_cast<int64_t>(a.span());
-    // (clean: its own work vectors only)
+    // only cln_w.o (q = 0) moves
     if (q > 0 || a.data() == nullptr || n == 0 ||
         !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
-      // (cln_w.o already there, CleanWoBind)
+      // already in the arena (CleanWoBind)
       if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);
       continue;
     }
@@ -861,12 +826,9 @@ void RadiationVet::MemArenaSeal() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanWoBind
-//! \brief the staggered layout's own work vectors cln_w.o at the first solve that needs
-//! them: in the arena, over the intensities (dead outside a build), where a build has
-//! made it (MemArenaGrow rebinds them with the intensities), else their own allocation
-//! (moved over the intensities by MemArenaSeal): no second copy before the first
-//! checkpoint.  The shared slots cln_w.s, where CleanInit left them unmade (no build
-//! inside the solve), follow cln_w.o: in the arena after it, or their own allocation
+//! \brief allocates cln_w.o at the first solve: over the intensities in the arena when
+//! it exists (dead outside a build), else its own allocation.  cln_w.s, if CleanInit
+//! left it unmade, follows cln_w.o (after it in the arena, or its own allocation)
 
 void RadiationVet::CleanWoBind() {
   auto &id = pmy_pack->pmesh->mb_indcs;
@@ -886,7 +848,7 @@ void RadiationVet::CleanWoBind() {
     return;
   }
   const int64_t no = static_cast<int64_t>(cln_w.o.span());
-  const int64_t off = no + ((64 - (no % 64)) % 64);   // (64-Real alignment)
+  const int64_t off = no + ((64 - (no % 64)) % 64);   // 64-Real alignment
   MemArenaGrow(off + static_cast<int64_t>(nmb)*CLW_NS*n3*n2*n1, false);
   cln_w.s = DvceArray5D<Real>(marena.data() + off, nmb, CLW_NS, n3, n2, n1);
 }
