@@ -1,0 +1,9 @@
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/hydro/hydro.cpp at line 632
+FOFC and plm reconstruction requires at least 3 ghost zones, but <mesh>/nghost=2
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()

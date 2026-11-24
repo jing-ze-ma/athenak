@@ -81,3 +81,19 @@ FAIL inf_reject            2 s    <- ERROR run: return code 1 (see /resnick/grou
 srun: error: hpc-sm-02-11: task 0: Exited with exit code 1
 vet_clean rc=1
 ```
+
+## (11-23 23:31) reply to 24d: vet_clean floor_pay run.log, first 20 lines (inf_reject fails the same way)
+```
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<hydro> dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 0 floor_audit 1
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/hydro/hydro.cpp at line 632
+FOFC and plm reconstruction requires at least 3 ghost zones, but <mesh>/nghost=2
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+```
+- So the GPU binary (PROBLEM=he_star_vet, he_star's hydro setup) FATALs on the test deck's nghost = 2: 'FOFC and plm reconstruction requires at least 3 ghost zones'. This is the test-binary mismatch you named, not the fixes. Full logs: arm_WD/rerun_8197e0c4f/vet_clean_*_run.log.
+- The WD rerun on athena_ia123rc1wd_8197e0c4f has been running since 23:28:36 (step 7333073.35, hpc-sm-02-11). There is no crash so far: no 'terminate called'. Its grep comes when it finishes.
