@@ -26,6 +26,7 @@
 #include "mhd/mhd.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_clean.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/vet_fluid.hpp"
 #include "rad_vet/rad_vet_closure.hpp"
 #include "rad_vet/rad_vet_opacity.hpp"
@@ -65,6 +66,8 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "vet_post");
   // skip on a failed solve (dt_retry discards it; inf/NaN would poison the counters)
+  // compton: once per step, after its final solve (stage 2, or the backward Euler)
+  if (compton && !dtr_fail && t2_solve != M1_T2S_STAGE1) {Compton(pmy_pack->pmesh->dt);}
   if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
   FluidRefresh(pdrive);
   eint_ledger::Mark(pmy_pack->pmesh, "vet_c2p");
@@ -286,6 +289,95 @@ void RadiationVet::FloorGasCap() {
                 << c[0] << " n_t " << c[1] << " dKE " << c[2] << " dEint " << c[3]
                 << " (erg, to E_rad)"
                 << " momentum removed |dp| " << c[4] << " dL_z " << c[5] << std::endl;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::Compton
+//! \brief the Kompaneets (non-relativistic Compton) exchange over h, active cells, on the
+//! conserved state (FluidRefresh follows):
+//!   e - e0 = -h c rho kappa_es E* 4 k_B (T(e) - T_r(E0 + e0 - e))/(m_e c^2),
+//! with E = E0 + e0 - e, so gas eint + E is exact per cell.  E* = E0 where the gas
+//! cools, E (implicit) where it heats: either makes the left side minus the right side
+//! strictly increasing in e.  The root lies between e0 and e(T_r(E0)), where both sides
+//! have opposite signs, so T stays between T and T_r (no overshoot, eint > 0, E above
+//! e_floor; a heating cell whose E would fall below e_floor stops at it, counted).
+
+void RadiationVet::Compton(const Real h) {
+  if (pmy_pack->pmhd != nullptr) {
+    std::cout << "### FATAL ERROR: <rad_vet>/compton is hydro only" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (pmy_pack->phydro == nullptr) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto u0_ = u0;
+  auto opac_ = opac;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto eos = fl.eos;
+  const bool etg = fl.use_etotgrav;
+  auto phicc = fl.phicc0;
+  const bool sph = pmy_pack->pmesh->use_spherical_polar;
+  const bool cub = pmy_pack->pmesh->use_cubed_sphere;
+  auto cosc = cub ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("cmp_c",1,1,1);
+  auto mbs = pmy_pack->pmb->mb_size;
+  auto pnl = pmy_pack->pmb->mb_panel.d_view;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const Real ar = arad, efl = e_floor, hcc = h*chat*cmp_c;
+  auto cnt_ = cmp_cnt;
+  par_for("vet_compton", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real dd = uh(m,IDN,k,j,i), a = hcc*opac_(m,M1_OP_S,k,j,i);
+    const Real er = u0_(m,M1_E,k,j,i);
+    if (!(dd > 0.0) || !(a > 0.0) || !(er > 0.0)) return;
+    const Real pm[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
+    Real f[3], msq, pf, rf;
+    FloorCapMomentum(sph, cub, false, pnl(m), mbs.d_view(m), cub ? cosc(m,k,j) : 0.0,
+                     i - is, j - js, k - ks, nx1, nx2, nx3, pm, f, msq, pf, rf);
+    const Real e0 = uh(m,IEN,k,j,i) - 0.5*msq/dd - (etg ? dd*phicc(m,k,j,i) : 0.0);
+    if (!(e0 > 0.0)) return;
+    const Real tr0 = sqrt(sqrt(er/ar)), t0 = eos.Temperature(dd, e0);
+    if (t0 == tr0) return;
+    const bool cool = t0 > tr0;
+    const Real er_ = er + e0;
+    auto g = [&](const Real e) {
+      const Real en = er_ - e;
+      return e - e0 + a*(cool ? er : en)*(eos.Temperature(dd, e) - sqrt(sqrt(en/ar)));
+    };
+    const Real eq = eos.EnergyFromTemperature(dd, tr0);
+    Real lo = cool ? eq : e0, hi = cool ? e0 : fmin(eq, er_ - efl);
+    bool lim = false;
+    if (!cool && !(g(hi) > 0.0)) {   // E would fall below e_floor: it stops there
+      lo = hi;
+      lim = true;
+    }
+    for (int n = 0; n < 200 && hi - lo > 4.0e-16*hi; ++n) {
+      const Real mid = 0.5*(lo + hi);
+      if (g(mid) > 0.0) {hi = mid;} else {lo = mid;}
+    }
+    const Real e = cool ? hi : lo;   // the side that keeps T between T and T_r
+    uh(m,IEN,k,j,i) += e - e0;
+    u0_(m,M1_E,k,j,i) = er_ - e;
+    Kokkos::atomic_add(&cnt_.d_view(0), 1.0);
+    if (lim) Kokkos::atomic_add(&cnt_.d_view(1), 1.0);
+  });
+  const int rep = cmp_report;
+  const int cyc = pmy_pack->pmesh->ncycle;
+  if (rep > 0 && (cyc % rep) == 0) {
+    cmp_cnt.modify_device();
+    cmp_cnt.sync_host();
+    Real c[2] = {cmp_cnt.h_view(0), cmp_cnt.h_view(1)};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, c, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_vet> compton cycle " << cyc << " (cumulative): cell-steps "
+                << c[0] << " stopped at e_floor " << c[1] << std::endl;
     }
   }
 }

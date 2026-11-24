@@ -67,6 +67,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("fcap_spin", fcap_spin);
   v.value("fcap_mvol", fcap_mvol);
   v.dual("fcap_cnt", fcap_cnt);
+  v.value("compton", compton);
+  v.value("cmp_c", cmp_c);
+  v.value("cmp_report", cmp_report);
+  v.dual("cmp_cnt", cmp_cnt);
   v.value("rsla_warn", rsla_warn);
   v.value("rsla_vmax", rsla_vmax);
   v.value("rsla_force", rsla_force);

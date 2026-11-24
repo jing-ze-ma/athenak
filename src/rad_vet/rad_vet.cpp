@@ -1199,6 +1199,20 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     arad = pin->GetOrAddReal("rad_vet","arad",0.0);
   }
+  // compton (read only when named): the Kompaneets gas-radiation exchange (Compton)
+  if (pin->DoesParameterExist("rad_vet","compton")) {
+    compton = pin->GetBoolean("rad_vet","compton");
+    if (compton && !vscat) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_vet>/compton needs vet_scatter = true (kappa_es)"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cmp_c = 4.0*1.380649e-16*otab.tunit/8.1871057769e-7;   // 4 k_B T_unit/(m_e c^2)
+    cmp_report = pin->GetOrAddInteger("rad_vet","compton_report",0);
+    Kokkos::realloc(cmp_cnt, 2);
+    Kokkos::deep_copy(cmp_cnt.d_view, 0.0);
+  }
   // floor-gas cap (read only when named)
   if (pin->DoesParameterExist("rad_vet","floorcap_rho")) {
     fcap_rho = pin->GetReal("rad_vet","floorcap_rho");

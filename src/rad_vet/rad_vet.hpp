@@ -369,6 +369,15 @@ class RadiationVet {
   bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CleanVol and CleanLzArm
   DualArray1D<Real> fcap_cnt;   // removed: 0 n_v, 1 n_t, 2 dKE, 3 dEint, 4 |dp|V, 5 dL_zV
   void FloorGasCap();
+  // compton (read only when named; needs vet_scatter): after the final solve of a step,
+  // the Kompaneets exchange rho kappa_es c E 4 k_B (T - T_r)/(m_e c^2) over dt, backward
+  // Euler, cell by cell, gas eint <-> E exact (Compton); cmp_c = 4 k_B temp_unit_kelvin
+  // /(m_e c^2) per code temperature; cmp_cnt: 0 cells, 1 cells whose E reached e_floor
+  bool compton = false;
+  Real cmp_c = 0.0;
+  int cmp_report = 0;
+  DualArray1D<Real> cmp_cnt;
+  void Compton(const Real h);
 
   // RSLA check: v_max*tau_max/chat once, on the first opacity (rsla_vmax <= 0: measure)
   Real rsla_warn{}, rsla_vmax{};
