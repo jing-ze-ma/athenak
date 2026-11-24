@@ -725,6 +725,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_bmax", cln_bmax);
   v.value("cln_ewr", cln_ewr);
   v.value("cln_eta", cln_eta);
+  v.value("cln_verbose", cln_verbose);
   v.value("cln_stagmg", cln_stagmg);
   v.value("cln_pcsweep", cln_pcsweep);
   v.value("cln_steady", cln_steady);
@@ -1136,7 +1137,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_hcomp", vgd_hcomp);
   v.value("vgd_capped", vgd_capped);
   v.value("vgd_allow_clamp", vgd_allow_clamp);
-  v.value("vgd_rset", vgd_rset);
   v.value("vgd_nclamp_seen", vgd_nclamp_seen);
   v.value("vgd_npath", vgd_npath);
   v.value("vgd_hinw", vgd_hinw);
