@@ -75,6 +75,9 @@ Notes on the results of this release (465aff485):
   icosahedral set: 180 deg), else the run stops with a FATAL; `vet_gd_wall_sym = true` (with
   `vet_gd_wall_interp = true`) lifts it on narrow wedges. All suite decks meet the rule. A
   theta-periodic mesh needs `vet_gd_theta_seam_sym = true` (FATAL otherwise; `wedge_sym`).
+  With the budget keys (`clean_clos1_budget`, `clean_bud_maxnorm`) a stage solve stops at the
+  time-error tolerance, so the mirror symmetry holds only to that tolerance; the turning-set arm
+  of `wedge_sym` therefore names them false, so it tests the mirror pairing under a `--keys` run.
 - **Linear momentum.** The scheme does not conserve linear momentum (gas + radiation) in
   general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone` with
   `clean_stag_fcone_gas = false`), the well-balancing residual (`clean_stag_fwb`) and the

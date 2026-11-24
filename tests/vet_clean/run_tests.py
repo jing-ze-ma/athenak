@@ -501,7 +501,10 @@ def t_wedge_sym(c):
         log = open(os.path.join(c.dir, 'th20_nosym', 'run.log')).read()
         out['theta_fatal'] = int('vet_gd_theta_seam_sym' in log and 'FATAL' in log)
     r = dict(th, **{'mesh/x3max': np.pi/6, 'rad_vet/vet_gd_gl_nphi': 12,
-                    'rad_vet/vet_gd_rotate_dt': 2.0, 'rad_vet/vet_gd_theta_seam_sym': 'true'})
+                    'rad_vet/vet_gd_rotate_dt': 2.0, 'rad_vet/vet_gd_theta_seam_sym': 'true',
+                    # (strict solves: with the budget keys the iterate is mirror-symmetric only
+                    # to the time-error tolerance, and the turning set carries that seed on)
+                    'rad_vet/clean_clos1_budget': 'false', 'rad_vet/clean_bud_maxnorm': 'false'})
     d = c.run('shell_sp.athinput', 'th30rot', dict(r, **{'rad_vet/vet_gd_gl_nmu': 11}))
     m = vett.last_bin(d, 'vet')
     out['fth_rot'] = float(abs(m['vet_f2'].sum())/np.abs(m['vet_f1']).sum())
