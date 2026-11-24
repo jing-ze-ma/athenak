@@ -1,0 +1,2 @@
+2026-11-24 14:52:20 start S3Fon hpc-sm-02-11 BIN md5=b8b0d79c45351fecfd04cee19c996605 ARGS: -r /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/m35mms/rst_keep/m35mms.stop1124b.rst -i /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_m35mms.athinput time/cfl_number=0.3 hydro/dt_report=0 time/nlim=7259 rad_vet/clean_stag_thinf=false rad_vet/clean_stag_mg_levels=4 rad_vet/time2_gtime_slope=true output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 job/final_restart=false
+2026-11-24 14:58:01 rc=0 wall=341 s CW 0 FATAL 0 inf 0 DT_RETRY 0

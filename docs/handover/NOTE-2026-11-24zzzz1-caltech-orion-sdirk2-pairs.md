@@ -214,3 +214,15 @@ max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36
 
 ## Marked per your 24zzzzj: all S passes are CONDITIONAL
 - **S1, S2, S2L, S3, S5: 'PASS' = conditional: old binary (a840d7e92), ef<=0 NOT tested.** The key has a positivity defect in floorcap gas (the increment is built before FloorGasCap) that the ef<=0 counter does not see, so 'ef<=0 0' in these tables is not a valid test. The other criteria (CW, fallback, BE, retry, dt, cost, L_top) stand as measured. S2L ran to its end (posted above); no further S arm; S3 and S5 are rerun only when you give the fixed binary.
+
+## S3F (fixed binary sdorder2 09d1e4df4, both arms, SDO_PRINT=1), 11-24 14:58
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S3Foff | 300 | 1.0333 (c7000-7250) | 9.862 / 11.5 / 12.01 | 34.1, 4.95 | 16.1, 4.01 | 0.99958 | 1.00016 | 1.57167e+39 | 9.32e-07 | -3.78e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.3227, 1.882e-02, 0, 0, 0 |
+| S3Fon | 300 | 1.0325 (c7000-7250) | 9.86 / 11.5 / 12.01 | 34.3, 4.92 | 16.0, 3.97 | 0.99975 | 1.00016 | 1.57194e+39 | 9.06e-07 | -1.89e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.3234, 2.277e+00, 95623, 255, 0 |
+
+- last common row 300: L_top 1.74e-04 L_in 6.91e-16 KE 1.71e-04 Etot -2.59e-08 M 1.89e-15 Lz 1.18e-05 (on - off relative)
+- floor_pay sum (CLEAN FALLBACK lines): off 1.781e+26 on 1.719e+26 ratio 0.965; per 50 cycles off: 4.51e+25 3.56e+25 4.23e+25 3.15e+25 1.59e+25 6.86e+24 7.92e+23 | on: 4.57e+25 3.44e+25 4.17e+25 3.23e+25 1.32e+25 4.45e+24 1.44e+23
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
+- ends: S3Foff: 2026-11-24 14:52:20 rc=0 wall=346 s CW 0 FATAL 0 inf 0 DT_RETRY 0 | S3Fon: 2026-11-24 14:58:01 rc=0 wall=341 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- ef<=0 per 50 cycles (post-cap) off/on: 0 0 0 0 0 0 ; 0 0 0 0 0 0 ; 
