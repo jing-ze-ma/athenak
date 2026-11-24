@@ -112,7 +112,6 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.upw = cln_upw;
   x.ucen = cln_ucen;
   x.ucp = cln_ucp;
-  x.sbi = cln_sbimp && cln_feedback;
   x.sar = !cln_gflux || cln_farea;
   x.bar = cln_bcarea;
   x.op = opac;
@@ -1233,154 +1232,138 @@ void RadiationVet::CleanApply(const int src, const int dst) {
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
   // (the cubed sphere's lateral sums Y of src: their exchange overlaps the inner faces'
   // cross terms, cln_xf)
-  const bool yov = cln_stst && pmy_pack->pmesh->use_cubed_sphere && !cln_xd_on;
-  if (!cln_xd_on) CleanStagCsLateral(src, cln_stst, yov ? 1 : 0);   // (xdonor: none)
-  CleanArgs x = CleanMakeArgs(), xh = x;
+  const bool yov = pmy_pack->pmesh->use_cubed_sphere && !cln_xd_on;
+  if (!cln_xd_on) CleanStagCsLateral(src, true, yov ? 1 : 0);   // (xdonor: none)
+  CleanArgs x = CleanMakeArgs();
   x.fwc = true;
-  xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
-  auto op = opac;
-  if (cln_stst) {   // (clean_stag_stencil: from the rows of the pass)
-    auto w = cln_w;
-    auto st = cln_st;
-    const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
-    // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross;
-    // none with the xdonor, which takes the cross terms out of the operator)
-    const bool cub = x.cub, cxf = cub && !(x.xq >= 0 && !x.hi);
-    const CleanArgs *px = cxf ? CleanDevArgs(x, 0) : nullptr;
-    // (the cubed sphere: each face's cross term once, not once per cell beside it)
-    DvceArray5D<Real> xf;
-    if (cxf) {
-      const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
-      xf = ScratchView<DvceArray5D<Real>>("cln_xf", pmy_pack->nmb_thispack, 3,
-                                          w.s.extent_int(2), w.s.extent_int(3),
-                                          w.s.extent_int(4));
-      // (pass 0: the faces between two active cells; pass 1, after the exchange: the
-      // two end planes of each direction)
-      for (int ps = 0; ps < 2; ++ps) {
-        if (ps == 1 && yov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
-        const bool xon0 = x.multi_d && !(x.xq >= 0 && !x.hi);
-        if (ps == 1 || !xon0) {
-          // the cln_xfe faces of every direction in ONE launch (were one per
-          // plane or direction, up to 9 per apply): pass 1 the end planes, pass 0 (no
-          // inner kernel) the inner faces; the same CleanFaceCross per face
-          const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
-          Kokkos::Array<int, 7> c0;   // (segment s: faces c0[s] .. c0[s+1]-1 per block)
-          Kokkos::Array<int, 6> sd, sk0, sj0, si0, snj, sni;
-          int ns = 0;
-          c0[0] = 0;
-          for (int d = 0; d < x.nf; ++d) {
-            const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-            for (int pl = 0; pl < (ps ? 2 : 1); ++pl) {
-              const int o = pl*ne[d];
-              const int k0 = ps ? ks + o*dk : ks + dk, k1 = ps ? (dk ? ks + o : ke) : ke;
-              const int j0 = ps ? js + o*dj : js + dj, j1 = ps ? (dj ? js + o : je) : je;
-              const int i0 = ps ? is + o*di : is + di, i1 = ps ? (di ? is + o : ie) : ie;
-              sd[ns] = d;
-              sk0[ns] = k0;
-              sj0[ns] = j0;
-              si0[ns] = i0;
-              snj[ns] = j1 - j0 + 1;
-              sni[ns] = i1 - i0 + 1;
-              c0[ns+1] = c0[ns] + (k1 - k0 + 1)*snj[ns]*sni[ns];
-              ++ns;
-            }
-          }
-          const int nper = c0[ns];
-          Kokkos::parallel_for("cln_xfe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                               pmy_pack->nmb_thispack*nper),
-          KOKKOS_LAMBDA(const int t) {
-            const int m = t/nper;
-            int c = t - m*nper, q = 0;
-            while (c >= c0[q+1]) {++q;}
-            c -= c0[q];
-            const int i = si0[q] + c % sni[q];
-            c /= sni[q];
-            const int j = sj0[q] + c % snj[q];
-            const int k = sk0[q] + c/snj[q];
-            xf(m,sd[q],k,j,i) = CleanFaceCross(*px, src, sd[q], m, k, j, i);
-          });
-          continue;
-        }
+  // (the operator from its rows, CleanPreconditionerSetup)
+  auto w = cln_w;
+  auto st = cln_st;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross;
+  // none with the xdonor, which takes the cross terms out of the operator)
+  const bool cub = x.cub, cxf = cub && !(x.xq >= 0 && !x.hi);
+  const CleanArgs *px = cxf ? CleanDevArgs(x, 0) : nullptr;
+  // (the cubed sphere: each face's cross term once, not once per cell beside it)
+  DvceArray5D<Real> xf;
+  if (cxf) {
+    const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
+    xf = ScratchView<DvceArray5D<Real>>("cln_xf", pmy_pack->nmb_thispack, 3,
+                                        w.s.extent_int(2), w.s.extent_int(3),
+                                        w.s.extent_int(4));
+    // (pass 0: the faces between two active cells; pass 1, after the exchange: the
+    // two end planes of each direction)
+    for (int ps = 0; ps < 2; ++ps) {
+      if (ps == 1 && yov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
+      const bool xon0 = x.multi_d && !(x.xq >= 0 && !x.hi);
+      if (ps == 1 || !xon0) {
+        // the cln_xfe faces of every direction in ONE launch (were one per
+        // plane or direction, up to 9 per apply): pass 1 the end planes, pass 0 (no
+        // inner kernel) the inner faces; the same CleanFaceCross per face
+        const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
+        Kokkos::Array<int, 7> c0;   // (segment s: faces c0[s] .. c0[s+1]-1 per block)
+        Kokkos::Array<int, 6> sd, sk0, sj0, si0, snj, sni;
+        int ns = 0;
+        c0[0] = 0;
         for (int d = 0; d < x.nf; ++d) {
           const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-          const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
-          auto gn = x.g;
-          auto fcd = x.fc[d];
-          const bool xon = x.multi_d && !(x.xq >= 0 && !x.hi);
           for (int pl = 0; pl < (ps ? 2 : 1); ++pl) {
-            const int o = pl*ne[d];   // (ps 1: the low and the high plane)
+            const int o = pl*ne[d];
             const int k0 = ps ? ks + o*dk : ks + dk, k1 = ps ? (dk ? ks + o : ke) : ke;
             const int j0 = ps ? js + o*dj : js + dj, j1 = ps ? (dj ? js + o : je) : je;
             const int i0 = ps ? is + o*di : is + di, i1 = ps ? (di ? is + o : ie) : ie;
-            if (ps == 1 || !xon) {
-              CleanFor("cln_xfe", pmy_pack->nmb_thispack - 1, k0, k1, j0, j1, i0, i1,
-              KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-                xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
-              });
-              continue;
-            }
-            // (inside: CleanFaceCross with no boundary or seam, its own kernel)
-            CleanFor("cln_xf", pmy_pack->nmb_thispack - 1, k0, k1, j0, j1, i0, i1,
-            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-              const int kl = k - dk, jl = j - dj, il = i - di;
-              auto lat = [&](const int kc, const int jc, const int ic) {
-                Real s;   // (CleanStagCsLat)
-                const int q = d ? CleanCsSlot(*px, d, m, k, j, i, kc, jc, ic, false, s)/2
-                                : 0;
-                const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
-                Real r = 0.0;
-                for (int c = 0; c < 3; ++c) {
-                  r += gn.At<CLG_N>(m,3*d+c,k,j,i)*(w(m,CLW_L+3*p+c,kc,jc,ic) +
-                                               w(m,CLW_L+3*pp+c,kc,jc,ic));
-                }
-                return r;
-              };
-              Real dv = 0.0;
-              dv += lat(kl, jl, il) + lat(k, j, i);
-              xf(m,d,k,j,i) = fcd(m,CLF_QL+2,k,j,i)*
-                  (dv/(0.5*(gn(m,CLG_F+3,k,j,i) + gn(m,CLG_F+3,kl,jl,il))));
-            });
+            sd[ns] = d;
+            sk0[ns] = k0;
+            sj0[ns] = j0;
+            si0[ns] = i0;
+            snj[ns] = j1 - j0 + 1;
+            sni[ns] = i1 - i0 + 1;
+            c0[ns+1] = c0[ns] + (k1 - k0 + 1)*snj[ns]*sni[ns];
+            ++ns;
           }
+        }
+        const int nper = c0[ns];
+        Kokkos::parallel_for("cln_xfe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                             pmy_pack->nmb_thispack*nper),
+        KOKKOS_LAMBDA(const int t) {
+          const int m = t/nper;
+          int c = t - m*nper, q = 0;
+          while (c >= c0[q+1]) {++q;}
+          c -= c0[q];
+          const int i = si0[q] + c % sni[q];
+          c /= sni[q];
+          const int j = sj0[q] + c % snj[q];
+          const int k = sk0[q] + c/snj[q];
+          xf(m,sd[q],k,j,i) = CleanFaceCross(*px, src, sd[q], m, k, j, i);
+        });
+        continue;
+      }
+      for (int d = 0; d < x.nf; ++d) {
+        const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+        const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
+        auto gn = x.g;
+        auto fcd = x.fc[d];
+        const bool xon = x.multi_d && !(x.xq >= 0 && !x.hi);
+        for (int pl = 0; pl < (ps ? 2 : 1); ++pl) {
+          const int o = pl*ne[d];   // (ps 1: the low and the high plane)
+          const int k0 = ps ? ks + o*dk : ks + dk, k1 = ps ? (dk ? ks + o : ke) : ke;
+          const int j0 = ps ? js + o*dj : js + dj, j1 = ps ? (dj ? js + o : je) : je;
+          const int i0 = ps ? is + o*di : is + di, i1 = ps ? (di ? is + o : ie) : ie;
+          if (ps == 1 || !xon) {
+            CleanFor("cln_xfe", pmy_pack->nmb_thispack - 1, k0, k1, j0, j1, i0, i1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+              xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
+            });
+            continue;
+          }
+          // (inside: CleanFaceCross with no boundary or seam, its own kernel)
+          CleanFor("cln_xf", pmy_pack->nmb_thispack - 1, k0, k1, j0, j1, i0, i1,
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+            const int kl = k - dk, jl = j - dj, il = i - di;
+            auto lat = [&](const int kc, const int jc, const int ic) {
+              Real s;   // (CleanStagCsLat)
+              const int q = d ? CleanCsSlot(*px, d, m, k, j, i, kc, jc, ic, false, s)/2
+                              : 0;
+              const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
+              Real r = 0.0;
+              for (int c = 0; c < 3; ++c) {
+                r += gn.At<CLG_N>(m,3*d+c,k,j,i)*(w(m,CLW_L+3*p+c,kc,jc,ic) +
+                                             w(m,CLW_L+3*pp+c,kc,jc,ic));
+              }
+              return r;
+            };
+            Real dv = 0.0;
+            dv += lat(kl, jl, il) + lat(k, j, i);
+            xf(m,d,k,j,i) = fcd(m,CLF_QL+2,k,j,i)*
+                (dv/(0.5*(gn(m,CLG_F+3,k,j,i) + gn(m,CLG_F+3,kl,jl,il))));
+          });
         }
       }
     }
-    auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real a = 0.0;
-#pragma unroll
-      for (int s = 0; s < CLN_ST; ++s) {
-        int dk, dj, di;
-        CleanStOff(s, dk, dj, di);
-        if ((dj != 0 && !md) || (dk != 0 && !td) || (cub && dk*dk + dj*dj + di*di > 1)) {
-          continue;   // (no such neighbour)
-        }
-        a += st(m,s,k-ks,j-js,i-is)*w(m,src,k+dk,j+dj,i+di);
-      }
-      if (cxf) {
-        const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
-        for (int d = 0; d < 3; ++d) {
-          for (int sd = 0; sd < 2 && d < x.nf; ++sd) {
-            const int kf = k + sd*(d == 2), jf = j + sd*(d == 1), iff = i + sd*(d == 0);
-            a += (sd ? x.h : -x.h)*CleanDivW(x, d, m, k, j, i, sd)*xf(m,d,kf,jf,iff);
-          }
-        }
-      }
-      w(m,dst,k,j,i) = a;
-    };
-    CleanOverlapFor("cln_apply_st", pmy_pack, ov, f, fin);
-    return;
   }
-  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-
   auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-    const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-    x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr +
-                                         (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0))
-                       + CleanFluxDivergence(x, src, m, k, j, i, false);
-    // (clean_stag_sbimp: - (1 - r) sb(E), CleanRightHandSide)
-    if (x.sbi) x.w(m,dst,k,j,i) -= qr*CleanStagBetaE(xh, src, m, k, j, i);
+    Real a = 0.0;
+#pragma unroll
+    for (int s = 0; s < CLN_ST; ++s) {
+      int dk, dj, di;
+      CleanStOff(s, dk, dj, di);
+      if ((dj != 0 && !md) || (dk != 0 && !td) || (cub && dk*dk + dj*dj + di*di > 1)) {
+        continue;   // (no such neighbour)
+      }
+      a += st(m,s,k-ks,j-js,i-is)*w(m,src,k+dk,j+dj,i+di);
+    }
+    if (cxf) {
+      const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+      for (int d = 0; d < 3; ++d) {
+        for (int sd = 0; sd < 2 && d < x.nf; ++sd) {
+          const int kf = k + sd*(d == 2), jf = j + sd*(d == 1), iff = i + sd*(d == 0);
+          a += (sd ? x.h : -x.h)*CleanDivW(x, d, m, k, j, i, sd)*xf(m,d,kf,jf,iff);
+        }
+      }
+    }
+    w(m,dst,k,j,i) = a;
   };
-  CleanOverlapFor("cln_apply", pmy_pack, ov, f, fin);
+  CleanOverlapFor("cln_apply_st", pmy_pack, ov, f, fin);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1415,62 +1398,61 @@ void RadiationVet::CleanPreconditionerSetup() {
   }
   x.fwc = true;
   const CleanArgs *px = CleanDevArgs(x, 0);
-  if (cln_stst) {   // (clean_stag_stencil: the operator's rows, CleanApply)
-    auto st = cln_st;
-    CleanFor<0, 3>("cln_stencil", nmb1, ks, ke, js, je, is, ie,
+  // the operator's rows (CleanApply)
+  auto st = cln_st;
+  CleanFor<0, 3>("cln_stencil", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+    Real c[CLN_ST];
+    CleanStencilRow(x, m, k, j, i, c);
+    for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
+  });
+  // (the lateral stress sums' coefficients, CleanStagCsLateral; of the
+  // geometry and the closure alone, so built once per closure of a solve, cln_csyok)
+  if (x.cub && !cln_csyok) {
+    cln_csyok = true;
+    auto cy = cln_csy;
+    par_for("cln_csyb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
-      Real c[CLN_ST];
-      CleanStencilRow(x, m, k, j, i, c);
-      for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
-    });
-    // (the lateral stress sums' coefficients, CleanStagCsLateral; of the
-    // geometry and the closure alone, so built once per closure of a solve, cln_csyok)
-    if (x.cub && !cln_csyok) {
-      cln_csyok = true;
-      auto cy = cln_csy;
-      par_for("cln_csyb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
-        for (int q = 0; q < 3; ++q) {
-          const int dk = (q == 2), dj = (q == 1), di = (q == 0);
-          Real y0[3] = {0.0, 0.0, 0.0}, yn[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
-          const int vl = CleanTransSide(x, q, m, k, j, i, 0);
-          const int vh = CleanTransSide(x, q, m, k, j, i, 1);
-          // (a seam side: its ghost extrapolated in panel, the cell 2 away in its slot,
-          // CleanStagCsLateral)
-          const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel;
-          const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
-          for (int s = -1; s <= 1; s += 2) {
-            const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
-            const bool ex = o2 && !CleanTransSide(x, q, m, k, j, i, s > 0);
-            if (!ex && !CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
-            const Real a = wq*s*x.area[q](m,kf,jf,iff);
-            for (int b = 0; b < 3; ++b) {
-              for (int c = 0; c < 3; ++c) {
-                const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
-                const Real ag = a*x.g.At<CLG_N>(m,3*q+c,kf,jf,iff);
-                if (ex) {   // (c0 P0 + c1 P1 + c2 P2 of the other side's cells)
-                  Real cf[3];
-                  CleanCsSeamCoef(x, n, q, m, k, j, i, -s, cf);
-                  y0[b] += cf[0]*ag*x.cs(m,n,k,j,i);
-                  yn[s < 0][b] += cf[1]*ag*x.cs(m,n,k-s*dk,j-s*dj,i-s*di);
-                  yn[s > 0][b] += cf[2]*ag*x.cs(m,n,k-2*s*dk,j-2*s*dj,i-2*s*di);
-                  continue;
-                }
-                yn[s > 0][b] += ag*x.cs(m,n,k+s*dk,j+s*dj,i+s*di);
-                y0[b] -= ag*x.cs(m,n,k,j,i);
+      for (int q = 0; q < 3; ++q) {
+        const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+        Real y0[3] = {0.0, 0.0, 0.0}, yn[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+        const int vl = CleanTransSide(x, q, m, k, j, i, 0);
+        const int vh = CleanTransSide(x, q, m, k, j, i, 1);
+        // (a seam side: its ghost extrapolated in panel, the cell 2 away in its slot,
+        // CleanStagCsLateral)
+        const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel;
+        const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
+        for (int s = -1; s <= 1; s += 2) {
+          const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
+          const bool ex = o2 && !CleanTransSide(x, q, m, k, j, i, s > 0);
+          if (!ex && !CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
+          const Real a = wq*s*x.area[q](m,kf,jf,iff);
+          for (int b = 0; b < 3; ++b) {
+            for (int c = 0; c < 3; ++c) {
+              const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
+              const Real ag = a*x.g.At<CLG_N>(m,3*q+c,kf,jf,iff);
+              if (ex) {   // (c0 P0 + c1 P1 + c2 P2 of the other side's cells)
+                Real cf[3];
+                CleanCsSeamCoef(x, n, q, m, k, j, i, -s, cf);
+                y0[b] += cf[0]*ag*x.cs(m,n,k,j,i);
+                yn[s < 0][b] += cf[1]*ag*x.cs(m,n,k-s*dk,j-s*dj,i-s*di);
+                yn[s > 0][b] += cf[2]*ag*x.cs(m,n,k-2*s*dk,j-2*s*dj,i-2*s*di);
+                continue;
               }
+              yn[s > 0][b] += ag*x.cs(m,n,k+s*dk,j+s*dj,i+s*di);
+              y0[b] -= ag*x.cs(m,n,k,j,i);
             }
           }
-          for (int b = 0; b < 3; ++b) {
-            cy(m,6*q+b,k-ks,j-js,i-is) = yn[0][b];
-            cy(m,6*q+3+b,k-ks,j-js,i-is) = yn[1][b];
-          }
-          for (int b = 0; b < 3; ++b) cy(m,18+3*q+b,k-ks,j-js,i-is) = y0[b];
         }
-      });
-    }
+        for (int b = 0; b < 3; ++b) {
+          cy(m,6*q+b,k-ks,j-js,i-is) = yn[0][b];
+          cy(m,6*q+3+b,k-ks,j-js,i-is) = yn[1][b];
+        }
+        for (int b = 0; b < 3; ++b) cy(m,18+3*q+b,k-ks,j-js,i-is) = y0[b];
+      }
+    });
   }
   par_for("cln_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

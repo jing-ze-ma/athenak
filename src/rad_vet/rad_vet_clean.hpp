@@ -236,7 +236,6 @@ constexpr int CLW_GM = 17;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms 
 constexpr int CLW_EP = 18;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 19;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
 constexpr int CLW_GX = 22;   //   iterate (3 + 1): implicit gas velocity;
-                             //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide);
                              //   staggered gflux: JV + 1 = hc kE dop (CleanNewtonUpdate)
 constexpr int CLW_RY = 23;
 constexpr int CLW_NS = 24;
@@ -318,7 +317,6 @@ struct CleanArgs {
   bool ucen;                   //   clean_stag_upwind_central: its lagged rest central
   bool ucp;                    //   clean_stag_central: plain central, work on the diagonal
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
-  bool sbi;                    // staggered, clean_stag_sbimp: E-row beta terms implicit
   bool sar;                    // staggered: the streaming share's net flux in area form
   bool bar;                    // clean_bc_area: an open x1 end's h+- E in area form too
                                // (CleanStagArea)
@@ -351,12 +349,12 @@ struct CleanArgs {
   DvceArray4D<Real> phi, emag;
 };
 
-// the rows of the staggered operator (clean_stag_stencil): the coefficients of E at the
+// the rows of the staggered operator: the coefficients of E at the
 // cell and its 18 neighbours that share a face or an edge.  Slot of offset (dk, dj, di):
 // 0 the cell; 1 + 2 a + (d > 0) the faces along axis a (i, j, k); 7 + 4 p + 2 (d1 > 0) +
 // (d2 > 0) the edges in the plane p of axes (j, i), (k, i), (k, j), offsets d1, d2
 constexpr int CLN_ST = 19;
-// cubed sphere, clean_stag_stencil: the coefficients of the lateral stress sums Y_q,b of
+// cubed sphere: the coefficients of the lateral stress sums Y_q,b of
 // a cell (CleanStagCsLateral) on E of its neighbour across face s of family q (slot 3 (2
 // q + s) + b) and on its own E (18 + 3 q + b)
 constexpr int CLN_CSY = 27;
@@ -1451,23 +1449,6 @@ Real CleanFaceStressCall(const CleanArgs &x, const int e, const int dir, const i
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanFluxDivergence
-//! \brief h div F of cell (k,j,i) for E in work vector e
-
-KOKKOS_INLINE_FUNCTION
-Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int k,
-                         const int j, const int i, const bool with_source) {
-  Real d = 0.0;
-  for (int n = 0; n < 3; ++n) {   // (constant trip: x.fc[n], x.area[n] resolved)
-    if (n >= x.nf) break;
-    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-    d += CleanDivF(x, n, m, k, j, i, CleanFaceFlux(x, e, n, m, k, j, i, with_source),
-                   CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di, with_source));
-  }
-  return x.h*d;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void CleanStAdd
 //! \brief adds f D_ab E of the cell at offset (OK, OJ, OI) from (k,j,i) to its slot of
 //! row c
@@ -1584,7 +1565,7 @@ void CleanStFace(const CleanArgs &x, const int m, const int k, const int j, cons
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStencilRow
 //! \brief c = the row of cell (k,j,i) of the operator of CleanApply (x.fwc): the diagonal
-//! and the coefficients of E in CleanFluxDivergence (clean_stag_stencil)
+//! and the coefficients of E in h div F
 
 KOKKOS_INLINE_FUNCTION
 void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
@@ -1699,33 +1680,6 @@ void CleanStagCellVector(const CleanArgs &x, const int m, const int k, const int
     return;
   }
   for (int q = 0; q < 3; ++q) u[q] = 0.5*(c[2*q] + c[2*q+1]);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real CleanStagBetaE
-//! \brief the E-dependent part of the E-row beta terms (Ma et al. 2025, eq. 56) of cell
-//! (k,j,i), sb(E) = hc kE [(beta^2/2 - beta.a/c) E + 2 beta.y(E)], y the mean of the two
-//! faces' momentum F^H/c without its E-independent part (xh: the face momentum state),
-//! E in work vector e (CleanRightHandSide, clean_stag_sbimp)
-
-KOKKOS_INLINE_FUNCTION
-Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
-                    const int j, const int i) {
-  Real b2 = 0.0, ba = 0.0, by = 0.0, fv[3], c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  for (int d = 0; d < 6; ++d) {   // (the cell's flux vector, CleanStagCellVector)
-    const int q = d/2, s = d%2;
-    if (q < xh.nf) {
-      c[d] = CleanFaceFlux(xh, e, q, m, k+s*(q == 2), j+s*(q == 1), i+s*(q == 0), false);
-    }
-  }
-  CleanStagCellVector(xh, m, k, j, i, c, fv);
-  for (int n = 0; n < 3; ++n) {
-    const Real bt = xh.w(m,CLW_BT+n,k,j,i);
-    if (n < xh.nf) by += bt*fv[n]/xh.c;
-    b2 += SQR(bt);
-    ba += bt*xh.w(m,CLW_A1+n,k,j,i)/xh.c;
-  }
-  return xh.h*xh.c*xh.op(m,M1_OP_E,k,j,i)*((0.5*b2 - ba)*xh.w(m,e,k,j,i) + 2.0*by);
 }
 
 //----------------------------------------------------------------------------------------

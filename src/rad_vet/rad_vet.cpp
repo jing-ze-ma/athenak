@@ -382,8 +382,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // face momentum of its own F solve (fsolve) in the Newton loop (fwork), with
     // clean_consistency the rays' kinetic momentum flux in it (fkin) and their face flux
     // as flux factors (gflux), the donor-cell share of the advective flux (upwind).  Read
-    // only when named: clean_stag_vimp, the gas velocity implicit in the face momentum;
-    // clean_stag_sbimp (default off), the Ma et al. beta terms linearised in E
+    // only when named: clean_stag_vimp, the gas velocity implicit in the face momentum
     auto stag = [&](const char *key, const bool def) {
       return pin->DoesParameterExist("rad_vet", key) ? pin->GetBoolean("rad_vet", key) :
                                                       def;
@@ -650,7 +649,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_vimp = false;
     }
-    cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
@@ -754,31 +752,20 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }}
-    // clean_stag_stencil: the operator applied from its rows (CleanStencilRow), built
-    // once per pass (default, as production's implicit_op_stencil; on the cubed sphere
-    // the rows without the lateral stress, which the stored coefficients of its sums add,
-    // CleanStagCsLateral); not with clean_stag_sbimp
-    cln_stst = stag("clean_stag_stencil", !cln_sbimp);
-    if (cln_stst && cln_sbimp) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_stag_stencil: not with clean_stag_sbimp"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_stag_lat_sums: spherical polar / Cartesian, the lateral stress of the faces
     // from the cells' sums Y (CleanStagCsLateral), the cubed sphere's form (spherical
     // polar phi faces: the torque form); with clean_stag_xdonor, whose cross flux reads
-    // them, and no clean_stag_sbimp (the operator keeps the central rows).  Default on
-    // for a fresh run with those, USER 11-21 uniform settings, recorded; a restart file
-    // without the key keeps the 4-cell central differences (echoed)
+    // them.  Default on for a fresh run with those, USER 11-21 uniform settings,
+    // recorded; a restart file without the key keeps the 4-cell central differences
+    // (echoed)
     old("clean_stag_lat_sums", "false");
     cln_ysum = pin->GetOrAddBoolean("rad_vet","clean_stag_lat_sums",
-                                    nw && cln_xd && !cln_sbimp) &&
+                                    nw && cln_xd) &&
                pmy_pack->pmesh->multi_d && !pmy_pack->pmesh->use_cubed_sphere;
-    if (cln_ysum && (!cln_xd || cln_sbimp)) {
+    if (cln_ysum && !cln_xd) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/clean_stag_lat_sums: with clean_stag_xdonor = "
-                << "lag | p1 and without clean_stag_sbimp" << std::endl;
+                << "lag | p1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     // clean_closure (default extrap1: the rays' source from converged states; predict's

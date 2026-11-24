@@ -1733,8 +1733,8 @@ class RadiationVet {
   bool cln_optdr = false;       // clean_stag_opac_drag: the refresh rebuilds the drag
   bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
   bool cln_fspcr = false;      // clean_stag_fs_line = pcr: F solve x1 lines on a GPU
-  bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
-  DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
+  // the operator's rows (CLN_ST per active cell, CleanPreconditionerSetup)
+  DvceArray5D<Real> cln_st;
   //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
   DvceArray5D<Real> cln_csy;
   bool cln_csyok = false;       //   cln_csy is of the current closure (no rebuild)
@@ -1878,7 +1878,6 @@ class RadiationVet {
   bool cln_upw = false;         // staggered: donor-cell advective flux, lagged rest
   bool cln_ucp = false;         //   clean_stag_central
   bool cln_ucen = false;        //   clean_stag_upwind_central: the rest central
-  bool cln_sbimp = false;       // staggered: the E-row beta terms (1 - r) sb implicit
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
   int cln_ncwin = 0;   // solves accepted by the per-cell measure's stall window (cnorm)
