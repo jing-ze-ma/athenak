@@ -14,3 +14,10 @@
 - s/cycle 1.257 (c21950-22900); dt first 6.0032 / min 5.9768 / last 6.0034; mean solves/stage 4.48
 - Ltop/Lin 0.9897-1.0007 (end 1.0006), Lbot/Lin 0.9955-1.0060 (end 1.0020)
 - max GPU memory 36411 MiB per GPU (mem.log)
+
+## D1 (time/cfl_number=0.3 rad_m1/clean_gas_secant=stage2 time/nlim=23945 hydro/rad_signal_speed_diff=true )
+- 2026-11-23 20:16:11 rc=0 last: elapsed=2.470106e+03 cycle=23900 time=1.962664e+05 dt=1.200577e+01
+- CLEAN WARNING 0, CLEAN FALLBACK 0, stage fallbacks 0, DT_RETRY 0, FATAL 0; DTREP/DTREG lines 480
+- s/cycle 1.255 (c21950-23900); dt first 12.0064 / min 11.9491 / last 12.0058; mean solves/stage 3.89
+- Ltop/Lin 0.9772-1.0052 (end 1.0012), Lbot/Lin 0.9907-1.0084 (end 1.0019)
+- max GPU memory 36371 MiB per GPU (mem.log)
