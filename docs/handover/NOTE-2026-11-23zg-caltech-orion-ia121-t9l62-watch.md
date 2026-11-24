@@ -50,3 +50,5 @@ CLEAN cycle 7583 t2s 1 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 4771 first
 CLEAN MCAP cycle 7583 t2s 1: 5376 face momentum terms at the cap h chi_f E in the last pass
 CLEAN FCONE cycle 7583 t2s 1 faces 26953913 momentum cut sum |dF| V/c^2 4.816909e+29
 ```
+
+- (11-23 19:18) **ALARM:  DT_RETRY 7 in the last hour** cycle 7800 | t 4.842563e+05 | dt 4.016836e+00 | s/cycle 3.660 | per h over 1.16667 h: stage fallback 19.7, DT_RETRY 6.0, CW 28.3, FCONE 1963 lines max faces 27732626, XT closure max 4.415e+07
