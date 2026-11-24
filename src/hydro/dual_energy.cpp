@@ -78,8 +78,9 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     Fatal("<" + blk + ">/dual_energy, floor_pay, fofc_retest, floor_audit need eos = "
           "general (the gamma-law mode of the general EOS reproduces the ideal gas)");
   }
-  if (on && eos.efloor_from_ekin) {
-    Fatal("<" + blk + ">/dual_energy with efloor_from_ekin is not supported");
+  if (on && (eos.efloor_from_ekin || eos.ekin_heat)) {
+    Fatal("<" + blk + ">/dual_energy with efloor_from_ekin / floor_from_ekin is not "
+          "supported");
   }
   if (on && !(eta > 0.0 && eta < 1.0)) {
     Fatal("<" + blk + ">/dual_energy_eta must be in (0, 1)");

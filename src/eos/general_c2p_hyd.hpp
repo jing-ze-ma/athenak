@@ -248,12 +248,29 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        u.e -= (1.0 - fs*fs)*e_k;
-        vceil_de += (1.0 - fs*fs)*e_k;
+        if (!eos.ekin_heat) {
+          u.e -= (1.0 - fs*fs)*e_k;
+          vceil_de += (1.0 - fs*fs)*e_k;
+        }
         e_k *= fs*fs;
         vceil_used = true;
         mom_scaled = true;
       }
+    }
+  }
+  // floor_from_ekin: E fixed, the kinetic energy (but x3's on spherical polar) pays the
+  // temperature floor where it can; a cell with E below e(rho, tfloor) + KE_x3 keeps its
+  // momentum and goes to the floors below
+  if (eos.ekin_heat && !eos.defer_cons_floors) {
+    const Real etf = eos.EnergyFromTemperature(w.d, eos.tfloor);
+    const Real ek3 = eos.ekin_keep_x3 ? 0.5*di*SQR(u.mz) : 0.0;
+    if (u.e - e_k < etf && u.e - ek3 >= etf && e_k > ek3) {
+      const Real fs = sqrt((u.e - etf - ek3)/(e_k - ek3));
+      const Real fz = eos.ekin_keep_x3 ? 1.0 : fs;
+      u.mx *= fs; u.my *= fs; u.mz *= fz;
+      w.vx *= fs; w.vy *= fs; w.vz *= fz;
+      e_k = ek3 + fs*fs*(e_k - ek3);
+      mom_scaled = true;
     }
   }
   w.e = (u.e - e_k);
