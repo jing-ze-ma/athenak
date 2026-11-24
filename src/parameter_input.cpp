@@ -171,8 +171,8 @@ InputBlock* ParameterInput::GetPtrToBlock(std::string name) {
 //! \fn void VetAlias(std::string &block, std::string &name, std::string &value)
 //! \brief the names of the radiation module before its m1 -> vet rename, read as the new
 //! names: <rad_m1>, <problem>/m1_*, <problem>/pgen_name = rad_m1_*, <outputN>/variable =
-//! m1 | m1_*.  And the star keys before their he_ -> star_ rename: <problem>/he_* is read
-//! as star_*.  Input files, command lines and restart files that use them run unchanged.
+//! m1 | m1_*.  And the star keys before their rename: <problem>/he_* and hs_* are read as
+//! star_*.  Input files, command lines and restart files that use them run unchanged.
 
 static void VetAlias(std::string &block, std::string &name, std::string &value) {
   auto swap = [](std::string &s, const std::string &a, const std::string &b) {
@@ -182,6 +182,7 @@ static void VetAlias(std::string &block, std::string &name, std::string &value) 
   if (block == "problem") {
     swap(name, "m1_", "vet_");
     swap(name, "he_", "star_");
+    swap(name, "hs_", "star_");
     if (name == "pgen_name") swap(value, "rad_m1_", "rad_vet_");
   }
   if (block.compare(0, 6, "output") == 0 && name == "variable") {
@@ -193,12 +194,13 @@ static void VetAlias(std::string &block, std::string &name, std::string &value) 
 //----------------------------------------------------------------------------------------
 //! \fn void ParameterInput::CheckStarAlias()
 //! \brief the <problem> parameters of one source (file, restart header or command line) as
-//! spelled there: FATAL if it names he_X and star_X with different values; records the
-//! he_X for the NOTE of ModifyFromCmdline
+//! spelled there: FATAL if it names he_X (hs_X) and star_X with different values;
+//! records the old names for the NOTE of ModifyFromCmdline
 
 void ParameterInput::CheckStarAlias(const std::map<std::string, std::string> &spelled) {
   for (const auto &kv : spelled) {
-    if (kv.first.compare(0, 3, "he_") != 0) continue;
+    const std::string pre = kv.first.substr(0, 3);
+    if (pre != "he_" && pre != "hs_") continue;
     star_renamed.insert(kv.first);
     auto it = spelled.find("star_" + kv.first.substr(3));
     if (it == spelled.end() || it->second == kv.second) continue;
@@ -496,7 +498,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
   }
   CheckStarAlias(spelled);
   if (global_variable::my_rank == 0 && !star_renamed.empty()) {
-    std::cout << "### NOTE: <problem>/he_* keys are now named star_*; read as such:";
+    std::cout << "### NOTE: <problem>/he_* (hs_*) keys are now named star_*; read so:";
     for (const auto &k : star_renamed) std::cout << " " << k;
     std::cout << std::endl;
   }

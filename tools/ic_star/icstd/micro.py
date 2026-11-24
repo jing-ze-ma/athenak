@@ -93,7 +93,7 @@ def read_ross_raw(fn):
 
 
 def read_ross(fn, ld_ext=None):
-    """star_vet table format; ld_ext: HsReadOpacityTable's extension to low rho
+    """star_vet table format; ld_ext: StarReadOpacityTable's extension to low rho
     (log10 kappa continued in log rho with the first interval's slope clamped to [0, 1])"""
     nT, nD, lT0, dlT, lD0, dlD, v = read_ross_raw(fn)
     if ld_ext is not None and ld_ext < lD0 - 1e-9*dlD:

@@ -10,7 +10,7 @@
     Hopf join of the column, smoothly.
 (2) Code-consistent atmosphere: the column is passed through the code's OWN startup solve
     (star_ic_rad = sph1d + re_atm + star_ic_rad_hse, the run's Rosseland/Planck tables, tau_a/tau_b
-    blend, HsSph1dPass) by running the production binary (CPU build of the same commit) for 0
+    blend, StarSph1dPass) by running the production binary (CPU build of the same commit) for 0
     cycles with problem/star_ic_rad_dump; the dumped column (+ the re-applied taper) becomes the
     new column; iterate to the fixed point R_ph(column) = R_ph(sph1d) (the code prints
     'R_ph (tau_R 2/3, run kappa) rph0 -> rph1').  Then the run's startup reproduces the column's

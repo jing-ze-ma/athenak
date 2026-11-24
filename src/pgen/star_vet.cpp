@@ -4,15 +4,16 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file star_vet.cpp
-//! \brief Problem generator for the 4.0 Msun presupernova He star (Woosley 2019) on a
-//! spherical-polar WEDGE with the implicit grey M1 module (<rad_vet>), used with
+//! \brief Problem generator for stellar envelopes with the VET radiation module
+//! (<rad_vet>), on spherical-polar wedges and the cubed sphere, used with
 //! `cmake -D PROBLEM=star_vet`.  Inputs: inputs/stars/star_*.athinput,
 //! star3d_*.athinput.
 //!
-//! LEAN by design: a point mass, the well-balanced x1 gravity, the <rad_vet> hookup and
-//! nothing else.  No two-stream, no MLT closure, no rt_* keys, no conduction operator,
-//! no MHD (refused).  Derived from the former sph_wedge test pgen with the features this
-//! star does not need removed and the ones it does need added:
+//! It sets up any star from a 1-D column (problem/star_ic_file) and opacity tables:
+//! gas and radiation in the column's balance, gravity (star_gravity, star_gm*), walls
+//! (star_bc_inner, star_bc_outer, star_wall_*), seeds (star_seed*, star_ic_profile*),
+//! a top sponge (star_sponge_*), a frozen or adaptive MLT++ scaffold (mlt_*) and an
+//! optional time-dependent base (star_drive.hpp).  Hydro only (<mhd> is refused):
 //!   * the gas-only tabulated EOS (<hydro>/eos_radiation = false, enforced by the module)
 //!     or an ideal gas (eos = ideal; <units>/mu sets its kelvin scale, which
 //!     <rad_vet>/temp_unit_kelvin must equal; no EOS range check then)
@@ -27,10 +28,10 @@
 //!     residual).  The pgen also gives the reference WORK (fref_wsplit_ok), which is what
 //!     lets <rad_vet>/force_reference_work = split be accepted;
 //!   * x1 boundaries (ix1_bc = ox1_bc = user): inner = closed hydro wall carrying the
-//!     scaled initial profile, the luminosity entering through the M1 face flux
+//!     scaled initial profile, the luminosity entering through the face flux
 //!     (<rad_vet>/implicit_bc_x1min = flux, implicit_flux_x1min = L/(4 pi r_in^2));
 //!     outer = hydro outflow with NO inflow (mass may leave through the top, none
-//!     enters), M1 Marshak top (implicit_bc_x1max = marshak);
+//!     enters), Marshak top (implicit_bc_x1max = marshak);
 //!   * a startup CHECK that the whole initial column, ghost margin included, lies inside
 //!     the EOS table (rho, T) and inside the Rosseland/Planck table grid (fatal);
 //!   * history columns (user_hist): face luminosities, L_in, E_rad, the total energy of
@@ -43,7 +44,7 @@
 //!     the initial column is most unstable (Brunt-Vaisala N^2 < 0, gas + radiation,
 //!     general EOS), real Y_lm with l from pi r/H_p clipped to the grid, amplitude
 //!     star_seed default 1e-3; old = the seed of the keys as named (star_seed default 0),
-//!     bitwise as before.  See HsN2Band().
+//!     bitwise as before.  See StarN2Band().
 //!   * problem/star_gm_column (default off): the gravity of the enclosed
 //!     mass of the initial column instead of the point mass: G m(r) = star_gm + G int 4
 //!     pi r^2 rho_IC dr from r_in (star_gm = G m(r_in)), a static monopole frozen at t =
@@ -52,9 +53,10 @@
 //!     zone: the scaffold's wall-face convective luminosity is kept as a base heating
 //!     layer while the frozen scaffold is ramped off.
 //!
-//! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
-//! a restart: the column, the tables, the potentials, the reference acceleration and the
-//! hooks are rebuilt from the input file (the evolved arrays come from the restart file).
+//! RESTARTS: the pgen is not skipped on a restart: the column, the tables, the
+//! potentials, the reference acceleration and the hooks are rebuilt from the input file;
+//! what cannot be (Picard window, star_ic_equil a_ref, automatic mlt_ramp, adaptive MLT
+//! scaffold, drive ledger) travels in the file's pgen block.
 //!
 //! CUDA-safe: no lambdas inside kernels, no host reads of device Views (the fine column
 //! is built on the host and copied), no class members inside kernels.
@@ -117,18 +119,19 @@ namespace {
 
 namespace {
 // the initial column on a uniform fine radial grid (device), read by the x1 BCs
-DvceArray1D<Real> hs_rho_, hs_eint_;
-Real hs_rlo_ = 0.0, hs_dr_ = 1.0;
-int hs_nf_ = 0;
-Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
+DvceArray1D<Real> star_rho_, star_eint_;
+Real star_rlo_ = 0.0, star_dr_ = 1.0;
+int star_nf_ = 0;
+Real star_gm_ = 0.0, star_rin_ = 1.0, star_rint_ = 0.0, star_fin_ = 0.0;
 // problem/star_gm_column (read only when named, default false = the point
 // mass GM = star_gm, bit for bit): the gravity of the ENCLOSED MASS of the initial
 // column, G m(r) = star_gm + G int_{r_in}^{r} 4 pi r'^2 rho_IC dr' (star_gm = G m(r_in),
 // the mass inside the wall), FROZEN at t = 0 (a static monopole, rebuilt from
-// star_ic_file on every start).  hs_phig_ = Phi(r) = int_{r_in}^{r} G m/r'^2 dr' and
-// hs_gmr_ = G m(r) on the uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
-bool hs_gmc_ = false;
-DvceArray1D<Real> hs_phig_, hs_gmr_;
+// star_ic_file on every start).  star_phig_ = Phi(r) = int_{r_in}^{r} G m/r'^2 dr' and
+// star_gmr_ = G m(r) on the uniform fine grid of the column (star_rlo_, star_dr_,
+// star_nf_).
+bool star_gmc_ = false;
+DvceArray1D<Real> star_phig_, star_gmr_;
 // problem/star_base_heat [cm] (read only when named, default none): the wall
 // lies inside a CONVECTIVE zone, so the frozen MLT scaffold's wall-face flux F_MLT(r_in)
 // is the convective luminosity entering the domain.  While the scaffold is ramped off
@@ -137,25 +140,25 @@ DvceArray1D<Real> hs_phig_, hs_gmr_;
 // max(0, 1 - (r - r_in)/star_base_heat) on the x1 faces, so A F_b = L_MLT(r_in) at the
 // wall face and 0 above r_in + star_base_heat.  Frozen closure only.  (Injecting it as M1
 // face flux instead puts a radiation force of ~Gamma_F ~ 100 g on the wall cells.)
-Real hs_bheat_ = 0.0;
-DvceArray1D<Real> hs_fb_;
-Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
-bool hs_zflux_ = true;
+Real star_bheat_ = 0.0;
+DvceArray1D<Real> star_fb_;
+Real star_sp_rate_ = 0.0, star_sp_r0_ = 0.0, star_rtop_ = 1.0;
+bool star_zflux_ = true;
 // problem/star_wb_grav_window (read only when named, default false): the x1
 // WB gravity source honours the fluid's wb_rmax / wb_phimax window -- the cells
 // the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
 // p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see StarGravity)
-bool hs_wbwin_ = false;
-// he-wind-bc: problem/star_bc_inner = inflow (hs_binf_) and star_bc_outer = outflow
-// (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
-bool hs_binf_ = false, hs_bout_ = false;
+bool star_wbwin_ = false;
+// he-wind-bc: problem/star_bc_inner = inflow (star_binf_) and star_bc_outer = outflow
+// (star_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
+bool star_binf_ = false, star_bout_ = false;
 // the initial column's rho, eint at r_in (scales of the table ghosts)
-Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
-// bsg-arm2: problem/star_bc_outer = hse (hs_bhse_): the top ghosts are the HYDROSTATIC
+Real star_drv_d0_ = 1.0, star_drv_e0_ = 1.0;
+// bsg-arm2: problem/star_bc_outer = hse (star_bhse_): the top ghosts are the HYDROSTATIC
 // continuation of the last active cell (StarBC); star_bc_hse_gmax clamps the Eddington
 // factor used there, star_bc_hse_tgrad continues T along the interior's dT/dPhi_eff
 // (polytropic WB walk) instead of holding it (isothermal).  problem/star_sponge_mode =
-// radial (hs_sp_rad_) makes the top sponge damp v_r only (default all = v).
+// radial (star_sp_rad_) makes the top sponge damp v_r only (default all = v).
 // problem/star_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
 // every cell with rho < star_sponge_dmax (the floor gas above the photosphere, which can
 // not be hydrostatic and falls freely)
@@ -165,61 +168,62 @@ Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
 // SSP-RK stages (exact for the decay, 2nd order, weights >= 0): the stage's u^n part
 // decays over c_s dt, the rest over (c_s - c_{s-1}) dt; w and the rho < dmax flag from
 // u^n (u1), the same on every stage
-bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false, hs_sp_law_ = false;
+bool star_bhse_ = false, star_bhse_tg_ = false;
+bool star_sp_rad_ = false, star_sp_law_ = false;
 // problem/star_bc_hse_flux = face (default on a fresh start) | cell: the radial flux in
 // the hse top's Gamma.  face = the transported comoving face flux (f0x1, mean of the top
 // cell's two x1 faces); cell = the old clipped lab-frame cell F1.  A restart whose
 // embedded input lacks the key keeps cell (no silent change mid-run).
-bool hs_bhse_face_ = true;
-Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
+bool star_bhse_face_ = true;
+Real star_bhse_gmax_ = 0.9, star_sp_dmax_ = 0.0;
 // problem/star_ic_balance: the discretely balanced initial cells (all x1 cells incl.
 // ghosts of the ONE MeshBlock along x1; every block has the same radial grid)
-bool hs_bal_ = false;
-DvceArray1D<Real> hs_bd_, hs_be_;
+bool star_bal_ = false;
+DvceArray1D<Real> star_bd_, star_be_;
 // problem/star_ic_rad_atm_post (StarIcPost): the thin atmosphere's first
 // mesh cell above R_ph (x1 index incl. ghosts) and the column's floor density
-bool hs_atp_ = false;
-ParameterInput *hs_pin_ = nullptr;   // the run's input (StarIcPost records a_ref)
-int hs_atp_ia_ = -1;
-Real hs_atp_dfl_ = 0.0;
+bool star_atp_ = false;
+ParameterInput *star_pin_ = nullptr;   // the run's input (StarIcPost records a_ref)
+int star_atp_ia_ = -1;
+Real star_atp_dfl_ = 0.0;
 // (Ma, Bildsten & Jiang 2026 setup, all three default off):
-// problem/star_gravity = pointmass (hs_pm_): NO well-balanced pair; the point-mass
+// problem/star_gravity = pointmass (star_pm_): NO well-balanced pair; the point-mass
 //   momentum source in the Athena++ form rho GM <1/r>_vol/x1v (etotgrav keeps the
 //   energy);
-// problem/star_bc_inner = zerocontact (hs_bzc_): every inner ghost holds the UNSCALED
+// problem/star_bc_inner = zerocontact (star_bzc_): every inner ghost holds the UNSCALED
 //   initial column (rho, eint), v = 0, except the first ghost layer whose v_r is solved
 //   so that the HLLC contact speed of the code's own PLM states at the wall face is 0;
-// problem/star_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
+// problem/star_bc_outer = copy (star_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
-bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
+bool star_pm_ = false, star_bzc_ = false, star_bcopy_ = false;
 // problem/star_bc_outer_r2 (read only when named; default false = bitwise;
 // needs star_bc_outer = copy): bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
 // copied, v_r = 0; else (v_r >= 0) ghost rho = previous ghost rho (r_{g-1}/r_g)^2 and v_r
 // copied; P (here eint, ideal gas) and v_t copied in both branches
-bool hs_bcr2_ = false;
+bool star_bcr2_ = false;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
-bool hs_mlt_ = false;
-DvceArray1D<Real> hs_fm_;
+bool star_mlt_ = false;
+DvceArray1D<Real> star_fm_;
 // problem/mlt_ramp_start, mlt_ramp_time: the time-only weight w(t) on the frozen MLT
 // deposit (1 before the start, cosine to 0 over the ramp time, 0 after; start < 0 = no
-// ramp, w = 1 always); hs_mw_ = the w now in <rad_vet>/esrc; hs_lmx_ = max over the x1
-// faces of the UNSCALED L_MLT = F_MLT r^2 Omega (the wedge's solid angle)
-Real hs_mrs_ = -1.0, hs_mrt_ = 0.0, hs_mw_ = 1.0, hs_lmx_ = 0.0;
+// ramp, w = 1 always); star_mw_ = the w now in <rad_vet>/esrc; star_lmx_ = max over the
+// x1 faces of the UNSCALED L_MLT = F_MLT r^2 Omega (the wedge's solid angle)
+Real star_mrs_ = -1.0, star_mrt_ = 0.0, star_mw_ = 1.0, star_lmx_ = 0.0;
 // mlt_ramp_start/_time = auto (default) resolved from the IC column's
-// convective growth rates at the fresh start; hs_mr_store_ = the two numbers travel in
-// the restart file (trailer kHsRmpTag, the LAST one: start, time, tag)
-bool hs_mr_store_ = false;
-constexpr char kHsRmpTag[8] = {'H', 'S', 'R', 'A', 'M', 'P', '0', '1'};
-// the IC column's per-cell N^2 profile (HsN2Compute), computed once
-struct HsN2Col {
+// convective growth rates at the fresh start; star_mr_store_ = the two numbers travel in
+// the restart file (trailer kStarRmpTag, the LAST one: start, time, tag)
+bool star_mr_store_ = false;
+constexpr char kStarRmpTag[8] = {'H', 'S', 'R', 'A', 'M', 'P', '0', '1'};
+// the IC column's per-cell N^2 profile (StarN2Compute), computed once
+struct StarN2Col {
   bool done = false;
   int is = 0, iex = -1, ipk = 0, iu0 = 0, iu1 = 0, nu = 0;
   Real smax = 0.0, med = 0.0;
   std::vector<Real> r, sg, dm, pt, dd, gg, tt, g1;
 };
-HsN2Col hs_n2_;
+StarN2Col star_n2_;
 // problem/star_esrc_const, star_esrc_rmax (the esrc test, kept when w is re-applied)
-Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
+Real star_esc_ = 0.0, star_esrmx_ = 0.0;
 // problem/mlt_closure = adaptive (default frozen): the ADAPTIVE SHELL-MEAN DEFICIT
 // closure.  The applied subgrid flux F_sub (x1 faces) relaxes toward
 // s(r) max(0, L - L_rad - L_conv,res)/A over problem/mlt_relax_time, updated every
@@ -227,28 +231,28 @@ Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // shell sums over all ranks: L_rad = sum A F_0 (the M1 comoving face flux), L_conv,res =
 // the FLUCTUATION flux A (<v_r'(e+p)_gas'> + (4/3) <v_r'E'>) of the cell shells averaged
 // to the face.  s = clamp(fmlt_IC/problem/mlt_closure_taper, 0, 1): the FeCZ of the IC
-// (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  hs_fsub_ and the
-// update clock hs_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
-bool hs_ad_ = false;
+// (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  star_fsub_ and the
+// update clock star_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
+bool star_ad_ = false;
 // problem/mlt_closure = pressure (opt-in): the same F_sub machinery (restart
 // state, relaxation over mlt_relax_time, every cycle), but the target
 // is the IC's F_MLT/F as a function of the SHELL-MEAN total pressure, F_sub =
 // fm_IC(P_face) x F_tot,IC(face) with F_tot,IC = L/(4 pi r^2) of the IC: the scaffold is
-// frozen in P instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm
-// of the IC (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
-bool hs_adp_ = false;
-// problem/hs_ad_dead_skip (read only when named; default true;
+// frozen in P instead of r and moves with the envelope.  star_plnp_/star_pfm_: ln P_tot,
+// fm of the IC (ascending in ln P), star_ftot_: F_r + F_MLT of the IC on the faces.
+bool star_adp_ = false;
+// problem/star_ad_dead_skip (read only when named; default true;
 // bitwise):
-// under mesh/layout_invariant the per-shell serial sums of HsAdaptiveUpdate (a thread per
-// radial index over every column, with the EOS pressure) are overwritten by the
+// under mesh/layout_invariant the per-shell serial sums of StarAdaptiveUpdate (a thread
+// per radial index over every column, with the EOS pressure) are overwritten by the
 // order-independent repro::ShellSums: skip them (A100 small RSG/HG: 34-36 ms per cycle)
-bool hs_ad_dskip_ = false;
-std::vector<Real> hs_plnp_, hs_pfm_, hs_ftot_;
-DvceArray2D<Real> hs_shp_;
-Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
-Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
-int hs_ad_cyc_ = -1;
-DvceArray1D<Real> hs_fsub_;
+bool star_ad_dskip_ = false;
+std::vector<Real> star_plnp_, star_pfm_, star_ftot_;
+DvceArray2D<Real> star_shp_;
+Real star_ad_tau_ = 1500.0, star_ad_taper_ = 0.01, star_ad_tl_ = 0.0;
+Real star_ad_dout_ = 0.0, star_ad_tout_ = 0.0, star_lsub_ = 0.0;
+int star_ad_cyc_ = -1;
+DvceArray1D<Real> star_fsub_;
 // problem/mlt_src_time (default stage on a fresh start, USER 11-21, recorded; start on a
 // hesdirk2 run with another tableau, and a restart file without the key keeps start,
 // NOTE): start = the ramp w and the
@@ -256,49 +260,51 @@ DvceArray1D<Real> hs_fsub_;
 // time of the implicit stages, t + dt (hesdirk2: c2 = c3 = 1, and the FSAL slope K1
 // carries this step's esrc into the next step's weight 1/2: the trapezoid of esrc over
 // the step), w(t + dt); adaptive: F_sub^n = F^{n-1} + a(t^n - t^{n-1}) ((tgt^{n-1} +
-// tgt^n)/2 - F^{n-1}) (exponential trapezoid; hs_tgp_ = tgt^{n-1}, restart state behind
-// F_sub, hdr[1] = 1) and esrc from F^{n+1} = F^n + a(dt) (tgt^n - F^n) (hs_fsrc_)
-bool hs_mtc_ = false;
-int hs_tgp_ok_ = 0;
-DvceArray1D<Real> hs_tgp_, hs_fsrc_;
-DvceArray2D<Real> hs_shs_;
-std::vector<Real> hs_tap_, hs_r2o_;
-char hs_ad_file_[1024] = {0};
+// tgt^n)/2 - F^{n-1}) (exponential trapezoid; star_tgp_ = tgt^{n-1}, restart state behind
+// F_sub, hdr[1] = 1) and esrc from F^{n+1} = F^n + a(dt) (tgt^n - F^n) (star_fsrc_)
+bool star_mtc_ = false;
+int star_tgp_ok_ = 0;
+DvceArray1D<Real> star_tgp_, star_fsrc_;
+DvceArray2D<Real> star_shs_;
+std::vector<Real> star_tap_, star_r2o_;
+char star_ad_file_[1024] = {0};
 // Picard counters at the previous history output (StarHist)
-Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
+Real star_pic_n0_ = 0.0, star_pic_s0_ = 0.0;
 // the open Picard window travels in the pgen restart block as a tagged
 // trailer (tag, solves, passes since the last history output), so the first user.hst row
 // after a restart is the continuous run's
-constexpr char kHsPicTag[8] = {'H', 'S', 'P', 'I', 'C', 'W', '0', '1'};
-Mesh *hs_mesh_ = nullptr;   // the mesh (HsAdaptiveRstWrite: the rad_vet counters)
+constexpr char kStarPicTag[8] = {'H', 'S', 'P', 'I', 'C', 'W', '0', '1'};
+Mesh *star_mesh_ = nullptr;   // the mesh (StarAdaptiveRstWrite: the rad_vet counters)
 // problem/star_ic_equil (StarIcEquil; read only when named, default false =
 // nothing): the discrete equilibrium of the initial state on the code's own operators.
-// hs_eq_ on; hs_eq_it_ the hook calls so far; hs_eq_dfl_ the column's floor density;
-// hs_eq_a_ a_ref of the active cells is..ie (the restart trailer kHsDicTag); hs_sfac_ the
-// star_seed factor of every cell, applied after the equilibrium (deferred seed)
-bool hs_eq_ = false, hs_eq_srad_ = false, hs_eq_seed_ = false, hs_eq_last_ = false;
-int hs_eq_it_ = 0, hs_eq_maxit_ = 30;
-Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
-std::vector<Real> hs_eq_a_;
-DvceArray4D<Real> hs_sfac_;
-constexpr char kHsDicTag[8] = {'H', 'S', 'D', 'I', 'C', 'E', '0', '1'};
+// star_eq_ on; star_eq_it_ the hook calls so far; star_eq_dfl_ the column's floor
+// density; star_eq_a_ a_ref of the active cells is..ie (the restart trailer kStarDicTag);
+// star_sfac_ the star_seed factor of every cell, applied after the equilibrium (deferred
+// seed)
+bool star_eq_ = false, star_eq_srad_ = false;
+bool star_eq_seed_ = false, star_eq_last_ = false;
+int star_eq_it_ = 0, star_eq_maxit_ = 30;
+Real star_eq_tol_ = 1.0e-9, star_eq_dfl_ = 0.0;
+std::vector<Real> star_eq_a_;
+DvceArray4D<Real> star_sfac_;
+constexpr char kStarDicTag[8] = {'H', 'S', 'D', 'I', 'C', 'E', '0', '1'};
 // (the removed fixed-profile inner face's wall-luminosity trailer: stripped from old
 // restart files)
-constexpr char kHsLbcTag[8] = {'H', 'S', 'L', 'B', 'A', 'T', 'H', '1'};
+constexpr char kStarLbcTag[8] = {'H', 'S', 'L', 'B', 'A', 'T', 'H', '1'};
 
 //! the frozen-MLT weight w(t): a function of the time only (restart-safe)
-Real HsMltW(const Real t) {
-  if (hs_mrs_ < 0.0 || t < hs_mrs_) return 1.0;
-  if (hs_mrt_ <= 0.0 || t >= hs_mrs_ + hs_mrt_) return 0.0;
-  return 0.5*(1.0 + cos(M_PI*(t - hs_mrs_)/hs_mrt_));
+Real StarMltW(const Real t) {
+  if (star_mrs_ < 0.0 || t < star_mrs_) return 1.0;
+  if (star_mrt_ <= 0.0 || t >= star_mrs_ + star_mrt_) return 0.0;
+  return 0.5*(1.0 + cos(M_PI*(t - star_mrs_)/star_mrt_));
 }
 //! the time the step's MLT source is taken at (mlt_src_time)
-Real HsMltTc(const Mesh *pm) {return hs_mtc_ ? pm->time + pm->dt : pm->time;}
+Real StarMltTc(const Mesh *pm) {return star_mtc_ ? pm->time + pm->dt : pm->time;}
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
-Real HsLogInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, const int nf,
-                 const Real r) {
+Real StarLogInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr,
+                   const int nf, const Real r) {
   Real x = (r - rlo)/dr;
   int i = static_cast<int>(floor(x));
   i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
@@ -309,8 +315,8 @@ Real HsLogInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
 
 //! linear interpolation on the fine grid, clamped
 KOKKOS_INLINE_FUNCTION
-Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, const int nf,
-                 const Real r) {
+Real StarLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr,
+                   const int nf, const Real r) {
   Real x = (r - rlo)/dr;
   int i = static_cast<int>(floor(x));
   i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
@@ -324,7 +330,7 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
 //! every layout, device and site (the per-block srand(gid)/rand() stream of the Athena++
 //! pgen cannot be reproduced; only its statistics are).
 KOKKOS_INLINE_FUNCTION
-Real HsCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
+Real StarCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
   std::uint64_t z = idx + seed*0x9E3779B97F4A7C15ULL + 0x632BE59BD9B4E019ULL;
   z = (z ^ (z >> 30))*0xBF58476D1CE4E5B9ULL;
   z = (z ^ (z >> 27))*0x94D049BB133111EBULL;
@@ -332,7 +338,7 @@ Real HsCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
   return static_cast<Real>(z >> 11)*(1.0/9007199254740992.0);
 }
 
-[[noreturn]] void HsFatal(const std::string &msg, const int line) {
+[[noreturn]] void StarFatal(const std::string &msg, const int line) {
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << line << std::endl
             << "star_vet: " << msg << std::endl;
   // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
@@ -341,14 +347,14 @@ Real HsCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
 
 //! the problem key `k` (star_ic_profile*), or its deprecated name star_ic_linhao* when
 //! only that one is in the input (older decks and restart files)
-std::string HsIcKey(ParameterInput *pin, const std::string &k) {
+std::string StarIcKey(ParameterInput *pin, const std::string &k) {
   const std::string old = "star_ic_linhao" + k.substr(std::strlen("star_ic_profile"));
   return (!pin->DoesParameterExist("problem", k) &&
           pin->DoesParameterExist("problem", old)) ? old : k;
 }
 
 //! a restart file without problem/<key>: the old default v applies (NOTE)
-void HsOldDefault(ParameterInput *pin, const char *key, const char *v) {
+void StarOldDefault(ParameterInput *pin, const char *key, const char *v) {
   if (global_variable::restart_run && !pin->DoesParameterExist("problem", key) &&
       global_variable::my_rank == 0) {
     std::cout << "star_vet: NOTE problem/" << key << " = " << v << " (a restart file "
@@ -360,12 +366,12 @@ void HsOldDefault(ParameterInput *pin, const char *key, const char *v) {
 //! lines, one of them "# nT nD lTmin dlT lDmin dlD", then nT*nD values of log10 kappa,
 //! T slowest), filled on the host and deep-copied to the device; the grid ranges are
 //! returned for the startup range check
-void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
-                        DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,
-                        Real &lt_lo, Real &lt_hi, Real &ld_lo, Real &ld_hi,
-                        const Real ld_ext = 1.0e300) {
+void StarReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
+                          DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,
+                          Real &lt_lo, Real &lt_hi, Real &ld_lo, Real &ld_hi,
+                          const Real ld_ext = 1.0e300) {
   std::ifstream f(fname);
-  if (!f.good()) HsFatal("cannot open opacity table '" + fname + "'", __LINE__);
+  if (!f.good()) StarFatal("cannot open opacity table '" + fname + "'", __LINE__);
   std::string line;
   Real lt0 = 0.0, dlt = 0.0, ld0 = 0.0, dld = 0.0;
   bool have_grid = false;
@@ -387,8 +393,8 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
     vals.push_back(std::stod(line));
   }
   if (!have_grid || static_cast<int>(vals.size()) != nT*nD) {
-    HsFatal("opacity table '" + fname + "' has no grid line or the wrong value count",
-            __LINE__);
+    StarFatal("opacity table '" + fname + "' has no grid line or the wrong value count",
+              __LINE__);
   }
   // problem/star_opac_logd_min (he-wind-bc, default none): the grid is EXTENDED to lower
   // density by nadd columns, log10 kappa continued linearly in log10 rho with the slope
@@ -440,14 +446,14 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 
 //----------------------------------------------------------------------------------------
 // (problem/star_ic_rad = sph1d): helpers of the 1-D spherical grey
-// radiative-equilibrium solve of the initial column (see StarM1)
+// radiative-equilibrium solve of the initial column (see UserProblem)
 
 // kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
 // own ckt) of the module's tables at (d, t) [code units], one device thread per point
-void HsKtEval(const radvet::M1OpacTab &ot, const std::vector<Real> &d,
-              const std::vector<Real> &t, std::vector<Real> &k) {
+void StarKtEval(const radvet::M1OpacTab &ot, const std::vector<Real> &d,
+                const std::vector<Real> &t, std::vector<Real> &k) {
   const int n = static_cast<int>(d.size());
-  DvceArray1D<Real> dd("hs_icr_d", n), dt("hs_icr_t", n), dk("hs_icr_k", n);
+  DvceArray1D<Real> dd("star_icr_d", n), dt("star_icr_t", n), dk("star_icr_k", n);
   auto hd = Kokkos::create_mirror_view(dd);
   auto ht = Kokkos::create_mirror_view(dt);
   for (int i=0; i<n; ++i) {
@@ -456,7 +462,7 @@ void HsKtEval(const radvet::M1OpacTab &ot, const std::vector<Real> &d,
   }
   Kokkos::deep_copy(dd, hd);
   Kokkos::deep_copy(dt, ht);
-  par_for("hs_icr_kt", DevExeSpace(), 0, n-1, KOKKOS_LAMBDA(const int i) {
+  par_for("star_icr_kt", DevExeSpace(), 0, n-1, KOKKOS_LAMBDA(const int i) {
     Real op, oe, of, os;
     radvet::M1TableOpacities(ot, dd(i), dt(i), op, oe, of, os);
     dk(i) = of + os;
@@ -468,7 +474,7 @@ void HsKtEval(const radvet::M1OpacTab &ot, const std::vector<Real> &d,
 
 // mean of chi over an interval with chi log-linear in the path (the arithmetic mean
 // where the two ends are equal or one vanishes)
-inline Real HsLogMean(const Real c0, const Real c1) {
+inline Real StarLogMean(const Real c0, const Real c1) {
   if (c0 > 0.0 && c1 > 0.0 && std::fabs(c1 - c0) > 1.0e-8*c0) {
     return (c1 - c0)/std::log(c1/c0);
   }
@@ -477,7 +483,7 @@ inline Real HsLogMean(const Real c0, const Real c1) {
 
 // one first-order short-characteristic step (the positive weights VetSegW,
 // source linear in tau): I = I_up e^-dtau + w0 S_0 + wu S_up
-inline Real HsScStep(const Real iup, const Real dtau, const Real su, const Real s0) {
+inline Real StarScStep(const Real iup, const Real dtau, const Real su, const Real s0) {
   Real ex, w0, wu;
   VetSegW(dtau, ex, w0, wu);
   return iup*ex + w0*s0 + wu*su;
@@ -492,10 +498,10 @@ inline Real HsScStep(const Real iup, const Real dtau, const Real su, const Real 
 // (b) the moment equation d(f E)/dr + (3f - 1) E/r = -chi F/c with f = K/J, integrated
 //     inward (trapezoid; chi log-linear) from E_top = F_top/(c g_top), g = H/J.
 // E is replaced by the new E; jout = J of the formal solution (for diagnostics).
-void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
-                 const std::vector<Real> &F, const int ncore, const Real cl,
-                 std::vector<Real> &E, std::vector<Real> &jout, Real &gtop,
-                 Real &ftop) {
+void StarSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
+                   const std::vector<Real> &F, const int ncore, const Real cl,
+                   std::vector<Real> &E, std::vector<Real> &jout, Real &gtop,
+                   Real &ftop) {
   const int N = static_cast<int>(rg.size());
   std::vector<Real> J(N, 0.0), H(N, 0.0), K(N, 0.0), mup(N, -1.0), ap(N), bp(N);
   std::vector<Real> im(N), ip(N), z(N), dtau(N);
@@ -509,16 +515,16 @@ void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
       z[k] = (!core && k == k0) ? 0.0
                                 : std::sqrt(std::fmax((rg[k] - p)*(rg[k] + p), 0.0));
     }
-    for (int k=k0; k<N-1; ++k) dtau[k] = (z[k+1] - z[k])*HsLogMean(chi[k], chi[k+1]);
+    for (int k=k0; k<N-1; ++k) dtau[k] = (z[k+1] - z[k])*StarLogMean(chi[k], chi[k+1]);
     im[N-1] = 0.0;
-    for (int k=N-2; k>=k0; --k) im[k] = HsScStep(im[k+1], dtau[k], E[k+1], E[k]);
+    for (int k=N-2; k>=k0; --k) im[k] = StarScStep(im[k+1], dtau[k], E[k+1], E[k]);
     if (core) {
       const Real mub = std::sqrt(std::fmax(1.0 - (p/rb)*(p/rb), 0.0));
       ip[k0] = E[0] + 3.0*mub*F[0]/cl;
     } else {
       ip[k0] = im[k0];
     }
-    for (int k=k0+1; k<N; ++k) ip[k] = HsScStep(ip[k-1], dtau[k-1], E[k-1], E[k]);
+    for (int k=k0+1; k<N; ++k) ip[k] = StarScStep(ip[k-1], dtau[k-1], E[k-1], E[k]);
     for (int k=k0; k<N; ++k) {
       const Real mu = z[k]/rg[k], a = ip[k], b = im[k];
       if (mup[k] >= 0.0) {
@@ -541,7 +547,7 @@ void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
     const Real h = rg[k+1] - rg[k];
     const Real a0 = (3.0*f[k] - 1.0)/(f[k]*rg[k]);
     const Real a1 = (3.0*f[k+1] - 1.0)/(f[k+1]*rg[k+1]);
-    const Real b = HsLogMean(chi[k], chi[k+1])*h*0.5*(F[k] + F[k+1])/cl;
+    const Real b = StarLogMean(chi[k], chi[k+1])*h*0.5*(F[k] + F[k+1])/cl;
     y[k] = (y[k+1]*(1.0 + 0.5*h*a1) + b)/(1.0 - 0.5*h*a0);
   }
   for (int k=0; k<N; ++k) E[k] = y[k]/f[k];
@@ -556,35 +562,36 @@ namespace {
 //! sum of squares (the sp/Cartesian form, kept textually below) is wrong by the cross
 //! term at every off-midline cell with transverse motion
 KOKKOS_INLINE_FUNCTION
-Real HsKeCs(const Real m1, const Real m2, const Real m3, const Real d, const Real c) {
+Real StarKeCs(const Real m1, const Real m2, const Real m3, const Real d, const Real c) {
   return CsKeMom(m1, m2, m3, c)/d;
 }
 void StarGravity(Mesh *pm, const Real bdt);
 void StarBC(Mesh *pm);
 void StarHist(HistoryData *pdata, Mesh *pm);
-void HsApplyMltW(Mesh *pm, const Real w);
-void HsAdaptiveUpdate(Mesh *pm);
-std::vector<char> HsAdaptiveRstWrite();
+void StarApplyMltW(Mesh *pm, const Real w);
+void StarAdaptiveUpdate(Mesh *pm);
+std::vector<char> StarAdaptiveRstWrite();
 void StarFinal(ParameterInput *pin, Mesh *pm);
 void StarIcPost(Mesh *pm);
 void StarIcEquil(Mesh *pm);
-void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
-                 const int *n);
-void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
-                 const std::vector<Real> &pc0, const std::vector<Real> &pf0,
-                 const std::vector<Real> &p0c, const std::vector<Real> &p0f,
-                 const std::vector<Real> &x1v, const std::vector<Real> &x1f,
-                 std::vector<Real> &pc, std::vector<Real> &pf);
-void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> &pf0,
-                 std::vector<Real> &p0c, std::vector<Real> &p0f, std::vector<Real> &x1v,
-                 std::vector<Real> &x1f, std::vector<Real> &ar0);
-void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
-                const std::vector<Real> &pc, const std::vector<Real> &pf);
-void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
-bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Real tk,
-              const bool hcs, const Real frac, const int nmin, const int ngap,
-              const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin, int &lmax);
-Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
+void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
+                   const int *n);
+void StarAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
+                   const std::vector<Real> &pc0, const std::vector<Real> &pf0,
+                   const std::vector<Real> &p0c, const std::vector<Real> &p0f,
+                   const std::vector<Real> &x1v, const std::vector<Real> &x1f,
+                   std::vector<Real> &pc, std::vector<Real> &pf);
+void StarAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> &pf0,
+                   std::vector<Real> &p0c, std::vector<Real> &p0f, std::vector<Real> &x1v,
+                   std::vector<Real> &x1f, std::vector<Real> &ar0);
+void StarAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
+                  const std::vector<Real> &pc, const std::vector<Real> &pf);
+void StarN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
+bool StarN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Real tk,
+                const bool hcs, const Real frac, const int nmin, const int ngap,
+                const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin,
+                int &lmax);
+Real StarN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
 }  // namespace
 // the L budget history of pgen/tests/rad_vet_tests2.cpp (am_hist)
 void RadVetAmHistory(HistoryData *pdata, Mesh *pm);
@@ -593,14 +600,14 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm);
 //! \fn void ProblemGenerator::UserProblem()
 //! \brief see the file header.
 
-void HsStripBackground(ParameterInput *pin, Mesh *pm);   // (star_strip_bg.cpp)
-void HsRestartPerturb(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp)
-void HsEosReinitFromT(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp)
+void StarStripBackground(ParameterInput *pin, Mesh *pm);   // (star_strip_bg.cpp)
+void StarRestartPerturb(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp)
+void StarEosReinitFromT(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp)
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto *pm1 = pmbp->pradvet;
-  hs_pin_ = pin;
+  star_pin_ = pin;
   // STAGE CS3 (m1-cs-implicit): the cubed sphere as well (x1 = r on both meshes; the
   // column, the potentials, the WB pair and the x1 BCs are radial).  On cs the solid
   // angle is 4 pi and the multi-mode seed is laid down in the global (theta, phi) of the
@@ -608,11 +615,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool hcs = pmy_mesh_->use_cubed_sphere;
   if (pm1 == nullptr || pmbp->phydro == nullptr ||
       !(pmy_mesh_->use_spherical_polar || hcs)) {
-    HsFatal("needs <hydro>, <rad_vet> and mesh/use_spherical_polar or use_cubed_sphere",
-            __LINE__);
+    StarFatal("needs <hydro>, <rad_vet> and mesh/use_spherical_polar or use_cubed_sphere",
+              __LINE__);
   }
   if (pmbp->pmhd != nullptr) {
-    HsFatal("<mhd> is not supported by this pgen (hydro only)", __LINE__);
+    StarFatal("<mhd> is not supported by this pgen (hydro only)", __LINE__);
   }
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto *ph = &fl;
@@ -627,64 +634,66 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // kelvin per unit code temperature: the tabulated general EOS keeps its own scale
   // (EOS_Data::temp_cgs, mu_ref = 1); an ideal gas has T_code = p/d, whose scale is the
   // <units> temperature with <units>/mu folded in (EOS_Data::temp_cgs stays 1 there)
-  const Real hs_tk = eos.tbl.active ? eos.temp_cgs :
-                     ((pmbp->punit != nullptr) ? pmbp->punit->temperature_cgs() : 1.0);
+  const Real star_tk = eos.tbl.active ? eos.temp_cgs :
+                       ((pmbp->punit != nullptr) ? pmbp->punit->temperature_cgs() : 1.0);
   const bool etg = ph->use_etotgrav;
   const bool wbdyn = ph->use_wellbalance_dynamic;
   {
     const std::string hg = pin->GetOrAddString("problem","star_gravity","wb");
     if (hg != "wb" && hg != "pointmass") {
-      HsFatal("problem/star_gravity must be wb|pointmass", __LINE__);
+      StarFatal("problem/star_gravity must be wb|pointmass", __LINE__);
     }
-    hs_pm_ = (hg == "pointmass");
+    star_pm_ = (hg == "pointmass");
   }
-  if (hs_pm_) {
+  if (star_pm_) {
     // plain (not well-balanced) hydro with the full M1 force
     if (wbdyn || !etg) {
-      HsFatal("problem/star_gravity = pointmass needs <hydro>/etotgrav = true and "
-              "wellbalance_dynamic = false", __LINE__);
+      StarFatal("problem/star_gravity = pointmass needs <hydro>/etotgrav = true and "
+                "wellbalance_dynamic = false", __LINE__);
     }
     if (pm1->force_ref != radvet::M1_FREF_NONE) {
-      HsFatal("problem/star_gravity = pointmass needs <rad_vet>/force_reference = none "
-              "(no well-balanced pair to carry a reference force)", __LINE__);
+      StarFatal("problem/star_gravity = pointmass needs <rad_vet>/force_reference = none "
+                "(no well-balanced pair to carry a reference force)", __LINE__);
     }
     if (pin->DoesParameterExist("problem","star_gm_column") &&
         pin->GetBoolean("problem","star_gm_column")) {
-      HsFatal("problem/star_gravity = pointmass does not support star_gm_column",
-              __LINE__);
+      StarFatal("problem/star_gravity = pointmass does not support star_gm_column",
+                __LINE__);
     }
   } else {
     if (!(wbdyn && ph->use_wb_x1 && etg)) {
-      HsFatal("needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = "
-              "true (the gravity source reads the x1 well-balanced cache)", __LINE__);
+      StarFatal("needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = "
+                "true (the gravity source reads the x1 well-balanced cache)", __LINE__);
     }
     if (pm1->force_ref != radvet::M1_FREF_WB_ARAD) {
-      HsFatal("needs <rad_vet>/force_reference = wb_arad (the well-balanced pair carries "
-              "the reference force of the initial column)", __LINE__);
+      StarFatal("needs <rad_vet>/force_reference = wb_arad (the well-balanced pair "
+                "carries the reference force of the initial column)", __LINE__);
     }
   }
   if (pm1->opacity_type != radvet::M1_OPAC_TABLE) {
-    HsFatal("needs <rad_vet>/opacity = table", __LINE__);
+    StarFatal("needs <rad_vet>/opacity = table", __LINE__);
   }
 
   // ---- parameters
-  hs_gm_ = pin->GetReal("problem","star_gm");
-  hs_gmc_ = pin->DoesParameterExist("problem","star_gm_column") &&
-            pin->GetBoolean("problem","star_gm_column");
+  star_gm_ = pin->GetReal("problem","star_gm");
+  star_gmc_ = pin->DoesParameterExist("problem","star_gm_column") &&
+              pin->GetBoolean("problem","star_gm_column");
   if (pin->DoesParameterExist("problem","star_base_heat")) {
-    hs_bheat_ = pin->GetReal("problem","star_base_heat");
-    if (!(hs_bheat_ > 0.0)) HsFatal("problem/star_base_heat must be > 0 [cm]", __LINE__);
+    star_bheat_ = pin->GetReal("problem","star_base_heat");
+    if (!(star_bheat_ > 0.0)) StarFatal("problem/star_base_heat must be > 0 [cm]",
+                                        __LINE__);
   }
-  hs_rin_ = pmy_mesh_->mesh_size.x1min;
+  star_rin_ = pmy_mesh_->mesh_size.x1min;
   const Real rtop = pmy_mesh_->mesh_size.x1max;
-  hs_fin_ = pin->GetReal("rad_vet","implicit_flux_x1min");
+  star_fin_ = pin->GetReal("rad_vet","implicit_flux_x1min");
   const std::string fn = pin->GetString("problem","star_ic_file");
   const int nf = pin->GetOrAddInteger("problem","star_nfine",16384);
   const Real tau_int = pin->GetOrAddReal("problem","star_tau_int",1.0);
   // star_ic_cols = 5: the file also carries the radiation energy density E (a state that
   // was relaxed by a run); 4 (default): E = a T(rho,eint)^4
   const int ncols = pin->GetOrAddInteger("problem","star_ic_cols",4);
-  if (ncols != 4 && ncols != 5) HsFatal("problem/star_ic_cols must be 4 or 5", __LINE__);
+  if (ncols != 4 && ncols != 5) StarFatal("problem/star_ic_cols must be 4 or 5",
+                                          __LINE__);
   // problem/mlt_flux_frozen (default false; in 3-D only as the start-up scaffold that is
   // ramped off by problem/mlt_ramp_start/_time while convection grows, or relaxed by
   // problem/mlt_closure = adaptive): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
@@ -693,21 +702,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // source -(A F_MLT|_{i+1/2} - A F_MLT|_{i-1/2})/V into the RADIATION energy through
   // <rad_vet>/esrc (the implicit solve's old vector, every stage with its weight).
   // Rebuilt from the file on every start (restarts).
-  hs_mlt_ = pin->GetOrAddBoolean("problem","mlt_flux_frozen",false);
-  if (hs_mlt_ && ncols != 5) {
-    HsFatal("problem/mlt_flux_frozen = true needs star_ic_cols = 5 and the 7-column "
-            "file of make_ic_he_presn_m1.py mlt", __LINE__);
+  star_mlt_ = pin->GetOrAddBoolean("problem","mlt_flux_frozen",false);
+  if (star_mlt_ && ncols != 5) {
+    StarFatal("problem/mlt_flux_frozen = true needs star_ic_cols = 5 and the 7-column "
+              "file of make_ic_he_presn_m1.py mlt", __LINE__);
   }
   // ONE MeshBlock along x1 (the margins below, the history's face picks and the balanced
   // IC read the radial grid of block 0)
   if (pmy_mesh_->mesh_indcs.nx1 != indcs.nx1) {
-    HsFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)", __LINE__);
+    StarFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)", __LINE__);
   }
   // the fine grid spans the OUTERMOST GHOST FACES (the code's own x1f, stretched or
   // not) plus two end-cell widths on each side: on a uniform grid this is the old
   // (ng + 2) dx margin exactly; on a coarse stretched grid the old "at least the mean
   // width" margin reached rho < 1e-14 above the top (v2/runs/P03 fatal)
-  Real rlo_g = hs_rin_, rhi_g = rtop, dxlo = 0.0, dxhi = 0.0;
+  Real rlo_g = star_rin_, rhi_g = rtop, dxlo = 0.0, dxhi = 0.0;
   {
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
     rlo_g = hx1f(0,0);
@@ -734,12 +743,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
   }
-  hs_rlo_ = rlo_g - 2.0*dxlo;
+  star_rlo_ = rlo_g - 2.0*dxlo;
   const Real rhi = rhi_g + 2.0*dxhi;
-  hs_nf_ = nf;
-  hs_dr_ = (rhi - hs_rlo_)/(nf - 1);
+  star_nf_ = nf;
+  star_dr_ = (rhi - star_rlo_)/(nf - 1);
   std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0), hM(nf, 0.0);
-  for (int n=0; n<nf; ++n) hr[n] = hs_rlo_ + n*hs_dr_;
+  for (int n=0; n<nf; ++n) hr[n] = star_rlo_ + n*star_dr_;
 
   // problem/star_wind_ic (he-wind-bc, default false): above the radius r_c where the
   // column's density falls below that of a beta-law wind (star_wind_mdot [g/s, full
@@ -781,8 +790,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   const bool eft = pin->GetOrAddBoolean("problem","star_ic_eint_from_t",eft_def);
   if (eft && ncols != 5) {
-    HsFatal("problem/star_ic_eint_from_t = true needs star_ic_cols = 5 and the 7-column "
-            "file (column 6 = T [K])", __LINE__);
+    StarFatal("problem/star_ic_eint_from_t = true needs star_ic_cols = 5 and the "
+              "7-column file (column 6 = T [K])", __LINE__);
   }
   bool tcol_read = false;
   std::vector<Real> hTcol(nf, -1.0);   // the file's T column [K] on the fine grid
@@ -790,7 +799,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
-    if (!f.good()) HsFatal("cannot open problem/star_ic_file '" + fn + "'", __LINE__);
+    if (!f.good()) StarFatal("cannot open problem/star_ic_file '" + fn + "'", __LINE__);
     std::vector<Real> fr, fd, fe, fF, fE, fM, fT;
     std::string line;
     while (std::getline(f, line)) {
@@ -800,9 +809,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (!(ss >> a >> b >> c >> d)) continue;
       if (ncols == 5 && !(ss >> e)) continue;
       Real tcol = 0.0, fm = 0.0;
-      if ((hs_mlt_ || eft) && !(ss >> tcol >> fm)) {
-        HsFatal("problem/mlt_flux_frozen / star_ic_eint_from_t: star_ic_file line "
-                "without columns 6-7 (T, fmlt)", __LINE__);
+      if ((star_mlt_ || eft) && !(ss >> tcol >> fm)) {
+        StarFatal("problem/mlt_flux_frozen / star_ic_eint_from_t: star_ic_file line "
+                  "without columns 6-7 (T, fmlt)", __LINE__);
       }
       fM.push_back(fm);
       fT.push_back(tcol);
@@ -814,7 +823,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       os << "problem/star_ic_file '" << fn << "' must cover r = " << hr.front() << " .. "
          << hr.back() << " (the mesh plus the ghost margin), it has "
          << (fr.empty() ? 0.0 : fr.front()) << " .. " << (fr.empty() ? 0.0 : fr.back());
-      HsFatal(os.str(), __LINE__);
+      StarFatal(os.str(), __LINE__);
     }
     std::size_t kk = 0;
     for (int n=0; n<nf; ++n) {
@@ -825,16 +834,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       he[n] = exp((1.0 - w)*log(fe[kk]) + w*log(fe[kk+1]));
       hF[n] = exp((1.0 - w)*log(fF[kk]) + w*log(fF[kk+1]));
       if (ncols == 5) hE[n] = exp((1.0 - w)*log(fE[kk]) + w*log(fE[kk+1]));
-      if (hs_mlt_) hM[n] = (1.0 - w)*fM[kk] + w*fM[kk+1];
-      if (hs_mlt_ || eft) hTcol[n] = exp((1.0 - w)*log(fT[kk]) + w*log(fT[kk+1]));
+      if (star_mlt_) hM[n] = (1.0 - w)*fM[kk] + w*fM[kk+1];
+      if (star_mlt_ || eft) hTcol[n] = exp((1.0 - w)*log(fT[kk]) + w*log(fT[kk+1]));
     }
-    tcol_read = (hs_mlt_ || eft);
+    tcol_read = (star_mlt_ || eft);
     hfr_keep = fr;
     hfM_keep = fM;
     if (eft) {
       for (int n=0; n<nf; ++n) {
         Real ee, pp, cr, ct, cv;
-        eos.ThermoAt(hd[n], hTcol[n]/hs_tk, ee, pp, cr, ct, cv);
+        eos.ThermoAt(hd[n], hTcol[n]/star_tk, ee, pp, cr, ct, cv);
         he[n] = ee;
       }
     }
@@ -856,8 +865,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
       if (nc < 1 || hr[nc] > fr.back()) {
-        HsFatal("problem/star_wind_ic: the wind density never exceeds the column's "
-                "inside the file's range above star_wind_r0", __LINE__);
+        StarFatal("problem/star_wind_ic: the wind density never exceeds the column's "
+                  "inside the file's range above star_wind_r0", __LINE__);
       }
       wrc = hr[nc];
       hdc = hd;   // the column itself (extrapolated), for the balance anchor
@@ -885,7 +894,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::cout << "star_vet: star_wind_ic: Mdot = " << mdot << " g/s, vinf = " << vinf
                   << ", beta = " << wbeta << ", r0 = " << wr0 << "; the wind starts at "
                   << "r_c = " << wrc << " (rho " << hd[nc] << ", T [K] "
-                  << tc*hs_tk << ", v "
+                  << tc*star_tk << ", v "
                   << hV[nc] << ")" << std::endl;
       }
     }
@@ -903,17 +912,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // problem/star_opac_logd_min (default none): extend both tables to this log10 rho
     const Real ldx = pin->DoesParameterExist("problem","star_opac_logd_min") ?
                      pin->GetReal("problem","star_opac_logd_min") : 1.0e300;
-    HsReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD, tab_lt_lo, tab_lt_hi, tab_ld_lo,
-                       tab_ld_hi, ldx);
-    HsReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4, ldx);
+    StarReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD, tab_lt_lo, tab_lt_hi, tab_ld_lo,
+                         tab_ld_hi, ldx);
+    StarReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4, ldx);
     b1 = tab_lt_lo; b2 = tab_lt_hi; b3 = tab_ld_lo; b4 = tab_ld_hi;
     if (mnT != pnT || mnD != pnD || fabs(a1 - b1) + fabs(a2 - b2) + fabs(a3 - b3) +
         fabs(a4 - b4) > 1.0e-9) {
-      HsFatal("the Rosseland and Planck tables are not on the same grid", __LINE__);
+      StarFatal("the Rosseland and Planck tables are not on the same grid", __LINE__);
     }
     pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
     // the lookup's units against the EOS's own code temperature and <units> density
-    const Real tcgs = hs_tk;
+    const Real tcgs = star_tk;
     const Real dcgs = (pmbp->punit != nullptr) ? pmbp->punit->density_cgs() : 1.0;
     if (std::fabs(pm1->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
         std::fabs(pm1->otab.dunit/dcgs - 1.0) > 1.0e-5) {
@@ -921,7 +930,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       os << "<rad_vet>/temp_unit_kelvin = " << pm1->otab.tunit << ", rho_unit_cgs = "
          << pm1->otab.dunit << " but this run's units are (" << tcgs << ", " << dcgs
          << ")";
-      HsFatal(os.str(), __LINE__);
+      StarFatal(os.str(), __LINE__);
     }
   }
 
@@ -931,7 +940,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
   // vet_col/vet_gd source in RE, the vet_scatter split included) with the column's own
   // radiative flux F_r: a VET iteration of a p-z formal solution (f = K/J, g_top = H/J)
-  // and the radial moment equation (HsSph1dPass).  The file's E above R_ph is an
+  // and the radial moment equation (StarSph1dPass).  The file's E above R_ph is an
   // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).
   // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at star_ic_rad_taua, 0
   // at star_ic_rad_taub.  star_ic_rad_gas = column (old default): T of the column; re:
@@ -970,14 +979,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                                icrdef ? "sph1d" : "file");
   if (icr0 != "file") {
     const std::string icr = icr0;
-    if (icr != "sph1d") HsFatal("problem/star_ic_rad must be file | sph1d", __LINE__);
+    if (icr != "sph1d") StarFatal("problem/star_ic_rad must be file | sph1d", __LINE__);
     if (wic) {
-      HsFatal("problem/star_ic_rad = sph1d does not combine with star_wind_ic", __LINE__);
+      StarFatal("problem/star_ic_rad = sph1d does not combine with star_wind_ic",
+                __LINE__);
     }
     if (pin->DoesParameterExist("problem","star_ic_rad_thin") &&
         pin->GetBoolean("problem","star_ic_rad_thin")) {
-      HsFatal("problem/star_ic_rad = sph1d replaces star_ic_rad_thin (set one)",
-              __LINE__);
+      StarFatal("problem/star_ic_rad = sph1d replaces star_ic_rad_thin (set one)",
+                __LINE__);
     }
     Kokkos::Timer tw0;
     const Real taua = pin->GetOrAddReal("problem","star_ic_rad_taua",30.0);
@@ -1010,49 +1020,49 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
           tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
           hsdamp > 0.0 && hsdamp <= 1.0 && hsmaxo >= 1)) {
-      HsFatal("problem/star_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore "
-              ">= 4, 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
-              __LINE__);
+      StarFatal("problem/star_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore "
+                ">= 4, 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
+                __LINE__);
     }
     if (gasm != "column" && gasm != "re" && gasm != "re_atm") {
-      HsFatal("problem/star_ic_rad_gas must be column | re | re_atm", __LINE__);
+      StarFatal("problem/star_ic_rad_gas must be column | re | re_atm", __LINE__);
     }
     // re_atm: radiative equilibrium only where rho is above the column's floor (the floor
     // gas keeps the column's T, hence its a_ref = kt F/c, as with star_ic_rad = file)
     const bool gre = (gasm == "re" || gasm == "re_atm");
     const bool gatm = (gasm == "re_atm");
     if (hse && !gre) {
-      HsFatal("problem/star_ic_rad_hse = true needs star_ic_rad_gas = re | re_atm",
-              __LINE__);
+      StarFatal("problem/star_ic_rad_hse = true needs star_ic_rad_gas = re | re_atm",
+                __LINE__);
     }
     // the column as read: T [code] (the file's T with star_ic_eint_from_t, else the
     // code's T(rho, eint)), E (the file's, else a T^4), rho
     std::vector<Real> d0(hd), t0(nf), e0(nf);
     for (int n=0; n<nf; ++n) {
-      t0[n] = eft ? hTcol[n]/hs_tk : eos.Temperature(hd[n], he[n]);
+      t0[n] = eft ? hTcol[n]/star_tk : eos.Temperature(hd[n], he[n]);
       e0[n] = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(t0[n]));
     }
     std::vector<Real> tcur(t0), ef(e0), kt, tauf(nf, 0.0);
     radvet::M1OpacTab otr = pm1->otab;
     auto ftau = [&]() {   // kappa_t and tau from the mesh top (as the pgen's tau below)
-      HsKtEval(otr, hd, tcur, kt);
+      StarKtEval(otr, hd, tcur, kt);
       tauf[nf-1] = 0.0;
       for (int n=nf-2; n>=0; --n) {
         const Real a0 = (hr[n] < rtop) ? hd[n]*kt[n] : 0.0;
         const Real a1 = (hr[n+1] < rtop) ? hd[n+1]*kt[n+1] : 0.0;
-        tauf[n] = tauf[n+1] + 0.5*hs_dr_*(a0 + a1);
+        tauf[n] = tauf[n+1] + 0.5*star_dr_*(a0 + a1);
       }
     };
     auto frph = [&]() {   // tau_R = 2/3
       for (int n=nf-2; n>=0; --n) {
         if (tauf[n] >= 2.0/3.0 && tauf[n+1] < 2.0/3.0) {
-          return hr[n] + hs_dr_*(tauf[n] - 2.0/3.0)/(tauf[n] - tauf[n+1]);
+          return hr[n] + star_dr_*(tauf[n] - 2.0/3.0)/(tauf[n] - tauf[n+1]);
         }
       }
       return -1.0;
     };
     auto flog = [&](const std::vector<Real> &a, const Real r) {   // fine grid, log-linear
-      Real x = (r - hs_rlo_)/hs_dr_;
+      Real x = (r - star_rlo_)/star_dr_;
       int i = static_cast<int>(floor(x));
       i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
       Real w = x - i;
@@ -1086,9 +1096,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // gravity of the HSE march: the point mass, or (star_gm_column) the static monopole
     // of the current column, as built below
     Real gcode = 0.0;
-    if (hs_gmc_) {
-      if (pmbp->punit == nullptr) HsFatal("problem/star_gm_column needs <units>",
-                                          __LINE__);
+    if (star_gmc_) {
+      if (pmbp->punit == nullptr) StarFatal("problem/star_gm_column needs <units>",
+                                            __LINE__);
       const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
       gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/(lu*lu*lu);
     }
@@ -1104,8 +1114,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       for (int n=nb+1; n<nf; ++n) {
         const Real a0 = (hr[n-1] < rtop) ? hd[n-1]*kt[n-1] : 0.0;
         const Real a1 = (hr[n] < rtop) ? hd[n]*kt[n] : 0.0;
-        sm[n] = sm[n-1] + hs_dr_*(1.0/(dlnr*hr[n]) +
-                                  0.5*(a0 + a1)/(dtau0*pow(std::max(1.0, tauf[n]), 0.7)));
+        sm[n] = sm[n-1] + star_dr_*(1.0/(dlnr*hr[n]) +
+                             0.5*(a0 + a1)/(dtau0*pow(std::max(1.0, tauf[n]), 0.7)));
       }
       const int ngr = std::min(std::max(16, static_cast<int>(ceil(sm[nf-1])) + 1), 50000);
       rg.assign(ngr, 0.0);
@@ -1114,7 +1124,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         for (int g=0; g<ngr; ++g) {
           const Real s = sm[nf-1]*g/(ngr - 1);
           while (n < nf - 1 && sm[n] < s) ++n;
-          rg[g] = hr[n-1] + hs_dr_*(s - sm[n-1])/(sm[n] - sm[n-1]);
+          rg[g] = hr[n-1] + star_dr_*(s - sm[n-1])/(sm[n] - sm[n-1]);
         }
         rg[0] = hr[nb];
         rg[ngr-1] = hr[nf-1];
@@ -1133,15 +1143,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                                          : pow(eg[g]/ar, 0.25);
           }
         }
-        HsKtEval(otr, dg, tg, kg);
+        StarKtEval(otr, dg, tg, kg);
         for (int g=0; g<ngr; ++g) cg[g] = (rg[g] < rtop) ? dg[g]*kg[g] : 0.0;
         const std::vector<Real> ep(eg);
-        HsSph1dPass(rg, cg, fg, ncore, cl, eg, jg, gtop, ftop);
+        StarSph1dPass(rg, cg, fg, ncore, cl, eg, jg, gtop, ftop);
         ++nit;
         Real de = 0.0;
         for (int g=0; g<ngr; ++g) de = std::max(de, std::fabs(eg[g]/ep[g] - 1.0));
         if (!(eg[0] > 0.0) || !std::isfinite(de)) {
-          HsFatal("problem/star_ic_rad = sph1d: the VET iteration failed", __LINE__);
+          StarFatal("problem/star_ic_rad = sph1d: the VET iteration failed", __LINE__);
         }
         if (de < tol) break;
       }
@@ -1159,18 +1169,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       // hydrostatic balance at fixed T, outward from r_b (kappa_t at the previous rho):
       // P(rho_{n+1}) + dr/2 rho_{n+1} g_{n+1} = P(rho_n) - dr/2 rho_n g_n
-      HsKtEval(otr, hd, tcur, kt);
-      std::vector<Real> gm(nf, hs_gm_);
-      if (hs_gmc_) {
+      StarKtEval(otr, hd, tcur, kt);
+      std::vector<Real> gm(nf, star_gm_);
+      if (star_gmc_) {
         std::vector<Real> cm(nf, 0.0);
         for (int n=1; n<nf; ++n) {
-          cm[n] = cm[n-1] + 0.5*hs_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] +
-                                                 hr[n]*hr[n]*hd[n]);
+          cm[n] = cm[n-1] + 0.5*star_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] +
+                                                   hr[n]*hr[n]*hd[n]);
         }
-        const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+        const Real x = (star_rin_ - star_rlo_)/star_dr_;
         const int i0 = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
         const Real cm0 = (1.0 - (x - i0))*cm[i0] + (x - i0)*cm[i0+1];
-        for (int n=0; n<nf; ++n) gm[n] = hs_gm_ + gcode*(cm[n] - cm0);
+        for (int n=0; n<nf; ++n) gm[n] = star_gm_ + gcode*(cm[n] - cm0);
       }
       std::vector<Real> dn(hd);
       bool flo = false;
@@ -1195,11 +1205,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
         Real ee, p0, cr, ct, cv;
         eos.ThermoAt(dn[n], tcur[n], ee, p0, cr, ct, cv);
-        const Real rhs = p0 - 0.5*hs_dr_*dn[n]*g0;
+        const Real rhs = p0 - 0.5*star_dr_*dn[n]*g0;
         auto res = [&](const Real lx) {
           Real e1, p1, c1, c2, c3;
           eos.ThermoAt(exp(lx), tcur[n+1], e1, p1, c1, c2, c3);
-          return (p1 + 0.5*hs_dr_*exp(lx)*g1)/rhs - 1.0;
+          return (p1 + 0.5*star_dr_*exp(lx)*g1)/rhs - 1.0;
         };
         Real x0 = log(dn[n]) + log(hd[n+1]/hd[n]), x1 = x0 + 1.0e-6;
         Real f0 = res(x0), f1 = res(x1);
@@ -1266,11 +1276,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const std::string afm = pin->GetOrAddString("problem","star_ic_rad_atm_force",
                                                    "continuum");
       if (afm != "module" && afm != "continuum") {
-        HsFatal("problem/star_ic_rad_atm_force must be module | continuum", __LINE__);
+        StarFatal("problem/star_ic_rad_atm_force must be module | continuum", __LINE__);
       }
       if (afm == "module" && !(hse && gatm)) {
-        HsFatal("problem/star_ic_rad_atm_force = module needs star_ic_rad_hse = true and "
-                "star_ic_rad_gas = re_atm", __LINE__);
+        StarFatal("problem/star_ic_rad_atm_force = module needs star_ic_rad_hse = true "
+                  "and star_ic_rad_gas = re_atm", __LINE__);
       }
       if (afm == "module") {
         const bool rst = global_variable::restart_run;
@@ -1279,8 +1289,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real arel = pin->GetOrAddReal("problem","star_ic_rad_atm_relax",
                                             rst ? 1.0 : 0.5);
         if (amaxit < 1 || !(arel > 0.0 && arel <= 1.0)) {
-          HsFatal("problem/star_ic_rad_atm_maxit >= 1 and 0 < star_ic_rad_atm_relax <= 1",
-                  __LINE__);
+          StarFatal("problem/star_ic_rad_atm_maxit >= 1 and 0 < star_ic_rad_atm_relax <= "
+                    "1", __LINE__);
         }
         const Real atol = pin->GetOrAddReal("problem","star_ic_rad_atm_tol",1.0e-12);
         auto ax1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
@@ -1297,12 +1307,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         }
         if (!(rpa > 0.0) || ia < 1 || ia > aie) {
-          HsFatal("problem/star_ic_rad_atm_force = module: R_ph not inside the mesh",
-                  __LINE__);
+          StarFatal("problem/star_ic_rad_atm_force = module: R_ph not inside the mesh",
+                    __LINE__);
         }
-        const int n0 = static_cast<int>(floor((ax1f(0,ia) - hs_rlo_)/hs_dr_));
-        auto lin = [&](const std::vector<Real> &a, const Real r) {   // as HsLinInterp
-          Real x = (r - hs_rlo_)/hs_dr_;
+        const int n0 = static_cast<int>(floor((ax1f(0,ia) - star_rlo_)/star_dr_));
+        auto lin = [&](const std::vector<Real> &a, const Real r) {   // as StarLinInterp
+          Real x = (r - star_rlo_)/star_dr_;
           int n = static_cast<int>(floor(x));
           n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
           Real w = x - n;
@@ -1322,7 +1332,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             cd[i] = flog(hd, ax1v(0,i));
             ctt[i] = flog(tcur, ax1v(0,i));
           }
-          HsKtEval(otr, cd, ctt, ckk);
+          StarKtEval(otr, cd, ctt, ckk);
           dph = 0.0;
           natm = 0;
           for (int i=ia; i<=aie; ++i) {
@@ -1346,7 +1356,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             ph0 = hatm_c;
             for (int i=ia; i<=aie; ++i) {
               const Real gg = (hatm_c[i] - 1.0)*ckk[i]*0.5*(cf[i] + cf[i+1])/cl
-                              /(hs_gm_/SQR(ax1v(0,i)));
+                              /(star_gm_/SQR(ax1v(0,i)));
               if (gg > gpre) {
                 gpre = gg;
                 rgpre = ax1v(0,i);
@@ -1373,7 +1383,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
           // the outward march at fixed T from fine node n0 (as the HSE loop's, the
           // radiative acceleration times phi; the same Gamma clamp)
-          HsKtEval(otr, hd, tcur, kt);
+          StarKtEval(otr, hd, tcur, kt);
           bool flo = false;
           rmxa = 0.0;
           for (int n=n0; n<nf-1; ++n) {
@@ -1381,18 +1391,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               hd[n+1] = dfl;
               continue;
             }
-            const Real gg0 = hs_gm_/SQR(hr[n]), gg1 = hs_gm_/SQR(hr[n+1]);
+            const Real gg0 = star_gm_/SQR(hr[n]), gg1 = star_gm_/SQR(hr[n+1]);
             const Real ar0 = hatm_f[n]*kt[n]*hF[n]/cl;
             const Real ar1 = hatm_f[n+1]*kt[n+1]*hF[n+1]/cl;
             const Real g0 = (ar0 > hgmax*gg0) ? (1.0 - hgmax)*gg0 : (gg0 - ar0);
             const Real g1 = (ar1 > hgmax*gg1) ? (1.0 - hgmax)*gg1 : (gg1 - ar1);
             Real ee, p0, cr, ct, cv;
             eos.ThermoAt(hd[n], tcur[n], ee, p0, cr, ct, cv);
-            const Real rhs = p0 - 0.5*hs_dr_*hd[n]*g0;
+            const Real rhs = p0 - 0.5*star_dr_*hd[n]*g0;
             auto res = [&](const Real lx) {
               Real e1, p1, c1, c2, c3;
               eos.ThermoAt(exp(lx), tcur[n+1], e1, p1, c1, c2, c3);
-              return (p1 + 0.5*hs_dr_*exp(lx)*g1)/rhs - 1.0;
+              return (p1 + 0.5*star_dr_*exp(lx)*g1)/rhs - 1.0;
             };
             Real x0 = log(hd[n]);
             if (arel == 1.0) x0 += log(std::max(hd[n+1], dfl)/hd[n]);
@@ -1424,13 +1434,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         // construction up to the fixed-point tolerance; printed)
         for (int i=ia; i<=aie; ++i) {
           const Real gg = (hatm_c[i] - 1.0)*ckk[i]*0.5*(cf[i] + cf[i+1])/cl
-                          /(hs_gm_/SQR(ax1v(0,i)));
+                          /(star_gm_/SQR(ax1v(0,i)));
           gpost = std::max(gpost, gg);
         }
         ftau();
         hatm_on = true;
-        hs_atp_ia_ = ia;
-        hs_atp_dfl_ = dfl;
+        star_atp_ia_ = ia;
+        star_atp_dfl_ = dfl;
         if (global_variable::my_rank == 0) {
           Real pmx = 1.0, pmx0 = 1.0;
           for (int i=ia; i<=aie; ++i) {
@@ -1459,16 +1469,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           for (int i=ia; i<=aie; ++i) {
             if (!(cd[i] > dfl*(1.0 + 1.0e-6))) break;
             std::cout << "star_vet:   atm cell " << i << " r/R_ph " << ax1v(0,i)/rpa
-                      << " rho " << cd[i] << " T [K] " << ctt[i]*hs_tk << " phi "
+                      << " rho " << cd[i] << " T [K] " << ctt[i]*star_tk << " phi "
                       << ph0[i] << " -> " << hatm_c[i] << ", Gamma "
-                      << ckk[i]*0.5*(cf[i] + cf[i+1])/cl/(hs_gm_/SQR(ax1v(0,i)))
+                      << ckk[i]*0.5*(cf[i] + cf[i+1])/cl/(star_gm_/SQR(ax1v(0,i)))
                       << std::endl;
           }
         }
         (void) gpost;
         if (arel < 1.0 && !(dph < atol && rmxa < 1.0e-10)) {
-          HsFatal("problem/star_ic_rad_atm_force = module: the atmosphere march did not "
-                  "converge (star_ic_rad_atm_maxit, star_ic_rad_atm_relax)", __LINE__);
+          StarFatal("problem/star_ic_rad_atm_force = module: the atmosphere march did "
+                    "not converge (star_ic_rad_atm_maxit, star_ic_rad_atm_relax)",
+                    __LINE__);
         }
       }
     }
@@ -1476,7 +1487,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int n=nb; n<nf; ++n) {
       hE[n] = ef[n];
       if (gre) {
-        hTcol[n] = tcur[n]*hs_tk;
+        hTcol[n] = tcur[n]*star_tk;
         Real ee, pp, cr, ct, cv;
         eos.ThermoAt(hd[n], tcur[n], ee, pp, cr, ct, cv);
         he[n] = ee;
@@ -1535,7 +1546,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (r < hr[nb] || r > rtop) continue;
         std::cout << "star_vet:   r/R_ph " << xx << ": E/E_col "
                   << flog(ef, r)/flog(e0, r)
-                  << ", T [K] " << flog(tcur, r)*hs_tk << " (/T_col " << flog(tcur, r)/
+                  << ", T [K] " << flog(tcur, r)*star_tk << " (/T_col " << flog(tcur, r)/
                   flog(t0, r) << "), rho/rho_col " << flog(hd, r)/flog(d0, r)
                   << ", F/(cE) " << flog(hF, r)/(cl*flog(ef, r)) << std::endl;
       }
@@ -1552,9 +1563,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::sort(ru.begin(), ru.end());
       ru.erase(std::unique(ru.begin(), ru.end()), ru.end());
       std::vector<Real> tk(nf);
-      for (int n=0; n<nf; ++n) tk[n] = tcur[n]*hs_tk;
+      for (int n=0; n<nf; ++n) tk[n] = tcur[n]*star_tk;
       FILE *fp = fopen(dfn.c_str(), "w");
-      if (fp == nullptr) HsFatal("cannot write problem/star_ic_rad_dump", __LINE__);
+      if (fp == nullptr) StarFatal("cannot write problem/star_ic_rad_dump", __LINE__);
       {
         std::ifstream f0(fn);
         std::string l0;
@@ -1588,19 +1599,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // problem/star_ic_equil (read only when named; default false = nothing): see
   // StarIcEquil.  Its floor density is the column's minimum (the sph1d floor)
-  hs_eq_ = pin->DoesParameterExist("problem","star_ic_equil") &&
-           pin->GetBoolean("problem","star_ic_equil");
-  if (hs_eq_) {
-    hs_eq_dfl_ = 1.0e300;
-    for (int n=0; n<nf; ++n) hs_eq_dfl_ = std::min(hs_eq_dfl_, hd[n]);
+  star_eq_ = pin->DoesParameterExist("problem","star_ic_equil") &&
+             pin->GetBoolean("problem","star_ic_equil");
+  if (star_eq_) {
+    star_eq_dfl_ = 1.0e300;
+    for (int n=0; n<nf; ++n) star_eq_dfl_ = std::min(star_eq_dfl_, hd[n]);
   }
   // ---- the column on the device: T, E = a T^4 and kappa_t
-  Kokkos::realloc(hs_rho_, nf);
-  Kokkos::realloc(hs_eint_, nf);
-  DvceArray1D<Real> cE("hs_E", nf), cT("hs_T", nf), ckt("hs_kt", nf), cF("hs_F", nf);
+  Kokkos::realloc(star_rho_, nf);
+  Kokkos::realloc(star_eint_, nf);
+  DvceArray1D<Real> cE("star_E", nf), cT("star_T", nf), ckt("star_kt", nf);
+  DvceArray1D<Real> cF("star_F", nf);
   {
-    auto h1 = Kokkos::create_mirror_view(hs_rho_);
-    auto h2 = Kokkos::create_mirror_view(hs_eint_);
+    auto h1 = Kokkos::create_mirror_view(star_rho_);
+    auto h2 = Kokkos::create_mirror_view(star_eint_);
     auto h4 = Kokkos::create_mirror_view(cF);
     auto h5 = Kokkos::create_mirror_view(cE);
     for (int n=0; n<nf; ++n) {
@@ -1610,14 +1622,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       h5(n) = hE[n];
     }
     Kokkos::deep_copy(cE, h5);
-    Kokkos::deep_copy(hs_rho_, h1);
-    Kokkos::deep_copy(hs_eint_, h2);
+    Kokkos::deep_copy(star_rho_, h1);
+    Kokkos::deep_copy(star_eint_, h2);
     Kokkos::deep_copy(cF, h4);
   }
   {
-    auto crho = hs_rho_, ceint = hs_eint_;
+    auto crho = star_rho_, ceint = star_eint_;
     radvet::M1OpacTab ot = pm1->otab;
-    par_for("hs_col", DevExeSpace(), 0, nf-1, KOKKOS_LAMBDA(const int n) {
+    par_for("star_col", DevExeSpace(), 0, nf-1, KOKKOS_LAMBDA(const int n) {
       const Real d = crho(n);
       const Real t = eos.Temperature(d, ceint(n));
       Real op, oe, of, os;
@@ -1639,7 +1651,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real tdm = 0.0, rdm = 0.0;
     for (int n=0; n<nf; ++n) {
       if (hr[n] < x1a || hr[n] > x1b) continue;
-      const Real dv = fabs(hT(n)*hs_tk/hTcol[n] - 1.0);
+      const Real dv = fabs(hT(n)*star_tk/hTcol[n] - 1.0);
       if (dv > tdm) {
         tdm = dv;
         rdm = hr[n];
@@ -1682,7 +1694,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
          << " .. " << tab_lt_hi << ")  ";
       bad = true;
     }
-    if (bad) HsFatal(os.str(), __LINE__);
+    if (bad) StarFatal(os.str(), __LINE__);
     if (global_variable::my_rank == 0) {
       std::cout << "star_vet: column inside the tables: log10 rho " << ldmin << " .. "
                 << ldmax << ", log10 T " << ltmin << " .. " << ltmax << std::endl;
@@ -1690,15 +1702,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // the imposed bottom flux must be the column's own F_r at r_in
   {
-    const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+    const Real x = (star_rin_ - star_rlo_)/star_dr_;
     const int i = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
     const Real w = x - i;
     const Real fcol = (1.0 - w)*hF[i] + w*hF[i+1];
-    if (fabs(hs_fin_/fcol - 1.0) > 1.0e-3) {
+    if (fabs(star_fin_/fcol - 1.0) > 1.0e-3) {
       std::ostringstream os;
-      os << "<rad_vet>/implicit_flux_x1min = " << hs_fin_ << " but the column has F_r("
-         << hs_rin_ << ") = " << fcol;
-      HsFatal(os.str(), __LINE__);
+      os << "<rad_vet>/implicit_flux_x1min = " << star_fin_ << " but the column has F_r("
+         << star_rin_ << ") = " << fcol;
+      StarFatal(os.str(), __LINE__);
     }
   }
   // tau from the top face, r_int (tau = star_tau_int), Phi_eff = Phi - int a_ref dr
@@ -1711,12 +1723,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   for (int n=nf-2; n>=0; --n) {
     const Real a0 = (hr[n] < rtop) ? hd[n]*hkt(n) : 0.0;
     const Real a1 = (hr[n+1] < rtop) ? hd[n+1]*hkt(n+1) : 0.0;
-    tau[n] = tau[n+1] + 0.5*hs_dr_*(a0 + a1);
+    tau[n] = tau[n+1] + 0.5*star_dr_*(a0 + a1);
   }
-  hs_rint_ = hs_rin_;
+  star_rint_ = star_rin_;
   for (int n=nf-1; n>=0; --n) {
     if (tau[n] >= tau_int) {
-      hs_rint_ = std::max(hr[n], hs_rin_);
+      star_rint_ = std::max(hr[n], star_rin_);
       break;
     }
   }
@@ -1731,22 +1743,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->GetOrAddBoolean("problem","star_ic_rad_thin",false)) {
     const Real taub = pin->GetOrAddReal("problem","star_ic_rad_thin_taub",2.0);
     const Real t23 = 2.0/3.0;
-    if (!(taub > t23)) HsFatal("problem/star_ic_rad_thin_taub must exceed 2/3", __LINE__);
+    if (!(taub > t23)) StarFatal("problem/star_ic_rad_thin_taub must exceed 2/3",
+                                 __LINE__);
     Real rph = -1.0;
     for (int n=nf-2; n>=0; --n) {
       if (tau[n] >= t23 && tau[n+1] < t23) {
-        rph = hr[n] + hs_dr_*(tau[n] - t23)/(tau[n] - tau[n+1]);
+        rph = hr[n] + star_dr_*(tau[n] - t23)/(tau[n] - tau[n+1]);
         break;
       }
     }
-    if (!(rph > 0.0)) HsFatal("problem/star_ic_rad_thin: tau_R = 2/3 not on the column",
-                              __LINE__);
+    if (!(rph > 0.0)) StarFatal("problem/star_ic_rad_thin: tau_R = 2/3 not on the column",
+                                __LINE__);
     auto hEc = Kokkos::create_mirror_view(cE);
     Kokkos::deep_copy(hEc, cE);
     const Real lph = 4.0*M_PI*rph*rph;
     Real fdev = 0.0, lum = 0.0;
     {
-      const Real x = (rph - hs_rlo_)/hs_dr_;
+      const Real x = (rph - star_rlo_)/star_dr_;
       const int i = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
       const Real w = x - i;
       lum = lph*((1.0 - w)*hF[i] + w*hF[i+1]);
@@ -1776,10 +1789,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << std::endl;
     }
   }
-  for (int n=1; n<nf; ++n) cum[n] = cum[n-1] + 0.5*hs_dr_*(aref[n-1] + aref[n]);
+  for (int n=1; n<nf; ++n) cum[n] = cum[n-1] + 0.5*star_dr_*(aref[n-1] + aref[n]);
   Real cin = 0.0;
   {
-    const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+    const Real x = (star_rin_ - star_rlo_)/star_dr_;
     int i = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
     const Real w = x - i;
     cin = (1.0 - w)*cum[i] + w*cum[i+1];
@@ -1787,50 +1800,52 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // star_gm_column: G m(r) and Phi(r) of the column on the fine grid (trapezoid sums,
   // both zero-referenced at r_in like the point-mass Phi = GM (1/r_in - 1/r))
   std::vector<Real> hphig;
-  if (hs_gmc_) {
-    if (pmbp->punit == nullptr) HsFatal("problem/star_gm_column needs <units>", __LINE__);
+  if (star_gmc_) {
+    if (pmbp->punit == nullptr) StarFatal("problem/star_gm_column needs <units>",
+                                          __LINE__);
     const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
     const Real gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
                        (lu*lu*lu);
     std::vector<Real> cm(nf, 0.0), hgm(nf), cp(nf, 0.0);
     for (int n=1; n<nf; ++n) {
-      cm[n] = cm[n-1] + 0.5*hs_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] + hr[n]*hr[n]*hd[n]);
+      cm[n] = cm[n-1] + 0.5*star_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] +
+                                               hr[n]*hr[n]*hd[n]);
     }
-    const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+    const Real x = (star_rin_ - star_rlo_)/star_dr_;
     const int i0 = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
     const Real w0 = x - i0;
     const Real cm0 = (1.0 - w0)*cm[i0] + w0*cm[i0+1];
-    for (int n=0; n<nf; ++n) hgm[n] = hs_gm_ + gcode*(cm[n] - cm0);
+    for (int n=0; n<nf; ++n) hgm[n] = star_gm_ + gcode*(cm[n] - cm0);
     for (int n=1; n<nf; ++n) {
-      cp[n] = cp[n-1] + 0.5*hs_dr_*(hgm[n-1]/(hr[n-1]*hr[n-1]) + hgm[n]/(hr[n]*hr[n]));
+      cp[n] = cp[n-1] + 0.5*star_dr_*(hgm[n-1]/(hr[n-1]*hr[n-1]) + hgm[n]/(hr[n]*hr[n]));
     }
     const Real cp0 = (1.0 - w0)*cp[i0] + w0*cp[i0+1];
     hphig.resize(nf);
     for (int n=0; n<nf; ++n) hphig[n] = cp[n] - cp0;
-    Kokkos::realloc(hs_phig_, nf);
-    Kokkos::realloc(hs_gmr_, nf);
-    auto h1 = Kokkos::create_mirror_view(hs_phig_);
-    auto h2 = Kokkos::create_mirror_view(hs_gmr_);
+    Kokkos::realloc(star_phig_, nf);
+    Kokkos::realloc(star_gmr_, nf);
+    auto h1 = Kokkos::create_mirror_view(star_phig_);
+    auto h2 = Kokkos::create_mirror_view(star_gmr_);
     for (int n=0; n<nf; ++n) {
       h1(n) = hphig[n];
       h2(n) = hgm[n];
     }
-    Kokkos::deep_copy(hs_phig_, h1);
-    Kokkos::deep_copy(hs_gmr_, h2);
+    Kokkos::deep_copy(star_phig_, h1);
+    Kokkos::deep_copy(star_gmr_, h2);
     if (global_variable::my_rank == 0) {
-      std::cout << "star_vet: star_gm_column: G m(r_in) = " << hs_gm_
+      std::cout << "star_vet: star_gm_column: G m(r_in) = " << star_gm_
                 << ", G m(r_top) = " << hgm[nf-1] << " (G = " << gcode
                 << " code), static monopole of the initial column" << std::endl;
     }
   }
-  DvceArray1D<Real> cphi("hs_phieff", nf);
+  DvceArray1D<Real> cphi("star_phieff", nf);
   {
     auto hp = Kokkos::create_mirror_view(cphi);
     for (int n=0; n<nf; ++n) {
-      if (hs_gmc_) {
+      if (star_gmc_) {
         hp(n) = hphig[n] - (cum[n] - cin);
       } else {
-        hp(n) = hs_gm_*(1.0/hs_rin_ - 1.0/hr[n]) - (cum[n] - cin);
+        hp(n) = star_gm_*(1.0/star_rin_ - 1.0/hr[n]) - (cum[n] - cin);
       }
     }
     Kokkos::deep_copy(cphi, hp);
@@ -1839,18 +1854,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // ---- potentials: the TRUE one (etotgrav, the WB default) ...
   auto &x1v = pmbp->pcoord->x1v;
   auto &x1f = pmbp->pcoord->xx1f;
-  const Real gm = hs_gm_, rin = hs_rin_;
-  if (hs_gmc_) {
+  const Real gm = star_gm_, rin = star_rin_;
+  if (star_gmc_) {
     auto phicc = ph->phicc0;
     auto ph1 = ph->phi0->x1f, ph2 = ph->phi0->x2f, ph3 = ph->phi0->x3f;
-    auto pg = hs_phig_;
-    const Real rlo0 = hs_rlo_, dr0 = hs_dr_;
-    par_for("hs_phi_col", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    auto pg = star_phig_;
+    const Real rlo0 = star_rlo_, dr0 = star_dr_;
+    par_for("star_phi_col", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real pc = HsLinInterp(pg, rlo0, dr0, nf, x1v(m,i));
+      const Real pc = StarLinInterp(pg, rlo0, dr0, nf, x1v(m,i));
       phicc(m,k,j,i) = pc;
-      ph1(m,k,j,i) = HsLinInterp(pg, rlo0, dr0, nf, x1f(m,i));
-      if (i == n1m1) ph1(m,k,j,i+1) = HsLinInterp(pg, rlo0, dr0, nf, x1f(m,i+1));
+      ph1(m,k,j,i) = StarLinInterp(pg, rlo0, dr0, nf, x1f(m,i));
+      if (i == n1m1) ph1(m,k,j,i+1) = StarLinInterp(pg, rlo0, dr0, nf, x1f(m,i+1));
       ph2(m,k,j,i) = pc;
       ph3(m,k,j,i) = pc;
       if (j == n2m1) ph2(m,k,j+1,i) = pc;
@@ -1859,7 +1874,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   } else {
     auto phicc = ph->phicc0;
     auto ph1 = ph->phi0->x1f, ph2 = ph->phi0->x2f, ph3 = ph->phi0->x3f;
-    par_for("hs_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    par_for("star_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real pc = gm*(1.0/rin - 1.0/x1v(m,i));
       phicc(m,k,j,i) = pc;
@@ -1872,37 +1887,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
   }
   // ... and the EFFECTIVE one of the x1 well-balanced pair
-  const Real rlo = hs_rlo_, dr = hs_dr_;
+  const Real rlo = star_rlo_, dr = star_dr_;
   // (star_gravity = pointmass: no WB pair, no reference force; phicc_wb aliases phicc0)
-  if (!hs_pm_) {
+  if (!star_pm_) {
     ph->EnableWBEffectivePotential();
     auto pwc = ph->phicc_wb, pwf = ph->phi_wb_x1f;
-    par_for("hs_phieff", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    par_for("star_phieff", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      pwc(m,k,j,i) = HsLinInterp(cphi, rlo, dr, nf, x1v(m,i));
-      pwf(m,k,j,i) = HsLinInterp(cphi, rlo, dr, nf, x1f(m,i));
-      if (i == n1m1) pwf(m,k,j,i+1) = HsLinInterp(cphi, rlo, dr, nf, x1f(m,i+1));
+      pwc(m,k,j,i) = StarLinInterp(cphi, rlo, dr, nf, x1v(m,i));
+      pwf(m,k,j,i) = StarLinInterp(cphi, rlo, dr, nf, x1f(m,i));
+      if (i == n1m1) pwf(m,k,j,i+1) = StarLinInterp(cphi, rlo, dr, nf, x1f(m,i+1));
     });
   }
   // the reference acceleration, face form: kt(cell) (F(r_l) + F(r_r))/(2c), from the
   // INITIAL column (identical on a restart)
-  if (!hs_pm_) {
-    DvceArray4D<Real> aref_d("hs_aref", nmb1+1, n3m1+1, n2m1+1, n1m1+1);
-    par_for("hs_aref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  if (!star_pm_) {
+    DvceArray4D<Real> aref_d("star_aref", nmb1+1, n3m1+1, n2m1+1, n1m1+1);
+    par_for("star_aref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real kt = HsLinInterp(ckt, rlo, dr, nf, x1v(m,i));
+      const Real kt = StarLinInterp(ckt, rlo, dr, nf, x1v(m,i));
       const Real rl = x1f(m,i), rr = x1f(m,i+1);
-      aref_d(m,k,j,i) = 0.5*kt*(HsLinInterp(cF, rlo, dr, nf, rl)
-                                + HsLinInterp(cF, rlo, dr, nf, rr))/cl;
+      aref_d(m,k,j,i) = 0.5*kt*(StarLinInterp(cF, rlo, dr, nf, rl)
+                                + StarLinInterp(cF, rlo, dr, nf, rr))/cl;
     });
     // (star_ic_rad_atm_force = module): the thin-atmosphere cells take the
     // module's face-mean form, phi times the continuum value (phi = 1 elsewhere)
     if (hatm_on) {
-      DvceArray1D<Real> aphi("hs_aphi", n1m1+1);
+      DvceArray1D<Real> aphi("star_aphi", n1m1+1);
       auto hp = Kokkos::create_mirror_view(aphi);
       for (int i=0; i<=n1m1; ++i) hp(i) = hatm_c[i];
       Kokkos::deep_copy(aphi, hp);
-      par_for("hs_aref_atm", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+      par_for("star_aref_atm", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         aref_d(m,k,j,i) *= aphi(i);
       });
@@ -1930,40 +1945,40 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // column's values.  Rebuilt on a restart (the BCs read the balanced ghost profiles).
   // With star_ic_profile the column is the profile file's (rho, T, F_r incl. the inner
   // ghosts); its seed then multiplies the balanced rho (isobaric, in its block below).
-  hs_bal_ = pin->GetOrAddBoolean("problem","star_ic_balance",false);
+  star_bal_ = pin->GetOrAddBoolean("problem","star_ic_balance",false);
   // problem/star_ic_profile (read only when named; default false = this
   // IC bitwise, no key added to the input; deprecated name star_ic_linhao) replaces the
   // initial state by the construction of the BSG reference Athena++ setup bsg_star.cpp
   // (the block at the end of this function).  Its profile is read here:
   // problem/star_ic_balance re-marches it (also on a restart).
-  const bool hlin = pin->DoesParameterExist("problem",HsIcKey(pin,"star_ic_profile")) &&
-                    pin->GetBoolean("problem",HsIcKey(pin,"star_ic_profile"));
+  const bool hlin = pin->DoesParameterExist("problem",StarIcKey(pin,"star_ic_profile")) &&
+                    pin->GetBoolean("problem",StarIcKey(pin,"star_ic_profile"));
   std::string lfn;
   std::vector<Real> pr, pT, pd, pM, pF;
   bool gxi = false;
   Real lrmax = 0.0, ltmax = 0.0, ldmax = 0.0, lgmax = 0.0;
-  if (hlin && (hs_bal_ || !restart)) {
-    lfn = pin->GetString("problem",HsIcKey(pin,"star_ic_profile_file"));
+  if (hlin && (star_bal_ || !restart)) {
+    lfn = pin->GetString("problem",StarIcKey(pin,"star_ic_profile_file"));
     // Athena++ Constants::grav_const_cgs (bsg_star.cpp's grav_rmax: G, the file's M)
-    const Real lG = pin->GetOrAddReal("problem",HsIcKey(pin,"star_ic_profile_gconst"),
+    const Real lG = pin->GetOrAddReal("problem",StarIcKey(pin,"star_ic_profile_gconst"),
                                       6.67408e-8);
     // star_ic_profile_gext = r2 (default, bsg_star.cpp:429 g = g(rmax)
     // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see
     // below)
     const std::string gxs = pin->GetOrAddString("problem",
-                                                HsIcKey(pin,"star_ic_profile_gext"),"r2");
+                                              StarIcKey(pin,"star_ic_profile_gext"),"r2");
     if (gxs != "r2" && gxs != "invsq") {
-      HsFatal("problem/star_ic_profile_gext must be r2 or invsq", __LINE__);
+      StarFatal("problem/star_ic_profile_gext must be r2 or invsq", __LINE__);
     }
     gxi = (gxs == "invsq");
-    if (gxi && hs_gmc_) {
-      HsFatal("problem/star_ic_profile_gext = invsq needs the point-mass gravity",
-              __LINE__);
+    if (gxi && star_gmc_) {
+      StarFatal("problem/star_ic_profile_gext = invsq needs the point-mass gravity",
+                __LINE__);
     }
     {
       std::ifstream f(lfn);
-      if (!f.good()) HsFatal("cannot open problem/star_ic_profile_file '" + lfn + "'",
-                             __LINE__);
+      if (!f.good()) StarFatal("cannot open problem/star_ic_profile_file '" + lfn + "'",
+                               __LINE__);
       std::string line;
       while (std::getline(f, line)) {
         if (line.empty() || line[0] == '#') continue;
@@ -1974,8 +1989,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pF.push_back(g);
       }
     }
-    if (pr.size() < 2) HsFatal("problem/star_ic_profile_file: fewer than 2 rows",
-                               __LINE__);
+    if (pr.size() < 2) StarFatal("problem/star_ic_profile_file: fewer than 2 rows",
+                                 __LINE__);
     lrmax = pr.back(); ltmax = pT.back(); ldmax = pd.back();
     lgmax = lG*pM.back()/(lrmax*lrmax);
   }
@@ -1987,12 +2002,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     flx = 0.0;
     if (x1 > lrmax) {
       tem = ltmax;
-      const Real tc = tem/hs_tk;   // P/rho of this EOS at T(rmax)
+      const Real tc = tem/star_tk;   // P/rho of this EOS at T(rmax)
       if (gxi) {
         // star_ic_profile_gext = invsq: the isothermal hydrostatic atmosphere of the
         // run's own point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) =
         // GM/rmax^2): rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
-        rho = ldmax*std::exp(-(hs_gm_/tc)*(1.0/lrmax - 1.0/x1));
+        rho = ldmax*std::exp(-(star_gm_/tc)*(1.0/lrmax - 1.0/x1));
       } else {
         const Real gl = lgmax*std::pow(x1/lrmax, 2.0);
         rho = ldmax*std::exp(-gl*(x1 - lrmax)/tc);
@@ -2010,14 +2025,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     flx = pF[lleft]
           + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
   };
-  if (hs_bal_ && hs_pm_) {
-    HsFatal("problem/star_ic_balance = true needs the well-balanced pair (star_gravity = "
-            "wb)", __LINE__);
+  if (star_bal_ && star_pm_) {
+    StarFatal("problem/star_ic_balance = true needs the well-balanced pair (star_gravity "
+              "= wb)", __LINE__);
   }
-  if (hs_bal_) {
+  if (star_bal_) {
     if (ph->wb_option != WBOption::polytropic) {
-      HsFatal("problem/star_ic_balance = true needs <hydro>/wb_option = polytropic",
-              __LINE__);
+      StarFatal("problem/star_ic_balance = true needs <hydro>/wb_option = polytropic",
+                __LINE__);
     }
     const int n1 = n1m1 + 1;
     const int is = indcs.is, ie = indcs.ie, k0 = indcs.ks, j0 = indcs.js;
@@ -2026,7 +2041,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto hpf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ph->phi_wb_x1f);
     std::vector<Real> dc(n1), ec(n1), tc(n1), bd(n1), be(n1);
     auto logint = [&](const std::vector<Real> &a, const Real r) {
-      Real x = (r - hs_rlo_)/hs_dr_;
+      Real x = (r - star_rlo_)/star_dr_;
       int i = static_cast<int>(floor(x));
       i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
       Real w = x - i;
@@ -2039,7 +2054,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (hlin) {   // star_ic_profile: the profile (rho, T) is the column
         Real tl, fl, p, cr, ct, cv;
         lprof(hx1v(0,i), dc[i], tl, fl);
-        eos.ThermoAt(dc[i], tl/hs_tk, ec[i], p, cr, ct, cv);
+        eos.ThermoAt(dc[i], tl/star_tk, ec[i], p, cr, ct, cv);
       }
       tc[i] = eos.Temperature(dc[i], ec[i]);
       bd[i] = dc[i];
@@ -2092,7 +2107,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // rescales rho of the WHOLE column (-1.2 %, v2/runs/mG2) against the reference.
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1f);
     auto linF = [&](const Real r) {
-      Real x = (r - hs_rlo_)/hs_dr_;
+      Real x = (r - star_rlo_)/star_dr_;
       int n = static_cast<int>(floor(x));
       n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
       Real w = x - n;
@@ -2100,7 +2115,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       return (1.0 - w)*hF[n] + w*hF[n+1];
     };
     auto phig = [&](const Real r) {   // star_gm_column: the column's Phi, linear
-      Real x = (r - hs_rlo_)/hs_dr_;
+      Real x = (r - star_rlo_)/star_dr_;
       int n = static_cast<int>(floor(x));
       n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
       Real w = x - n;
@@ -2108,8 +2123,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       return (1.0 - w)*hphig[n] + w*hphig[n+1];
     };
     auto seg = [&](const Real a_, const Real ra, const Real rb) {   // Phi_eff(rb) - (ra)
-      if (hs_gmc_) return phig(rb) - phig(ra) - a_*(rb - ra);
-      return hs_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
+      if (star_gmc_) return phig(rb) - phig(ra) - a_*(rb - ra);
+      return star_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
     };
     // star_wind_ic: the march starts below r_c (the wind cells keep their IC)
     int ianc = ie;
@@ -2166,7 +2181,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                        pin->GetString("problem","star_ic_balance_aref") == "dpr");
     auto tfc = [&](const Real r) {   // the column's code T at a face
       Real dl, tl, fl;
-      if (hlin) {lprof(r, dl, tl, fl); return tl/hs_tk;}
+      if (hlin) {lprof(r, dl, tl, fl); return tl/star_tk;}
       return eos.Temperature(logint(hd, r), logint(he, r));
     };
     if (adpr) {
@@ -2192,7 +2207,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Kokkos::deep_copy(pm1->arad_ref, har);
     }
     const int NW = adpr ? 0 : std::min(4, ie - is);
-    DvceArray1D<Real> kd_d("hs_kd", NW + 1), kt_d("hs_kt", NW + 1), kk_d("hs_kk", NW + 1);
+    DvceArray1D<Real> kd_d("star_kd", NW + 1), kt_d("star_kt", NW + 1);
+    DvceArray1D<Real> kk_d("star_kk", NW + 1);
     auto hkd = Kokkos::create_mirror_view(kd_d);
     auto hkt = Kokkos::create_mirror_view(kt_d);
     radvet::M1OpacTab ot1 = pm1->otab;
@@ -2212,7 +2228,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       Kokkos::deep_copy(kd_d, hkd);
       Kokkos::deep_copy(kt_d, hkt);
-      par_for("hs_kap1", DevExeSpace(), 0, NW, KOKKOS_LAMBDA(const int n) {
+      par_for("star_kap1", DevExeSpace(), 0, NW, KOKKOS_LAMBDA(const int n) {
         Real op, oe, of, os;
         radvet::M1TableOpacities(ot1, kd_d(n), kt_d(n), op, oe, of, os);
         kk_d(n) = of + os;
@@ -2280,7 +2296,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       for (int i=is; i<=ie; ++i) {
         Real tr = 0.0, dl, fl;
         if (hlin) lprof(hx1v(0,i), dl, tr, fl);
-        const Real dv = fabs(eos.Temperature(bd[i], be[i])*hs_tk
+        const Real dv = fabs(eos.Temperature(bd[i], be[i])*star_tk
                              /(hlin ? tr : logint(hTcol, hx1v(0,i))) - 1.0);
         if (dv > tdm) {
           tdm = dv;
@@ -2294,16 +2310,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       bd[ianc+1] = logint(hd, hx1v(0,ianc+1));
       be[ianc+1] = logint(he, hx1v(0,ianc+1));
     }
-    Kokkos::realloc(hs_bd_, n1);
-    Kokkos::realloc(hs_be_, n1);
-    auto h1 = Kokkos::create_mirror_view(hs_bd_);
-    auto h2 = Kokkos::create_mirror_view(hs_be_);
+    Kokkos::realloc(star_bd_, n1);
+    Kokkos::realloc(star_be_, n1);
+    auto h1 = Kokkos::create_mirror_view(star_bd_);
+    auto h2 = Kokkos::create_mirror_view(star_be_);
     for (int i=0; i<n1; ++i) {
       h1(i) = bd[i];
       h2(i) = be[i];
     }
-    Kokkos::deep_copy(hs_bd_, h1);
-    Kokkos::deep_copy(hs_be_, h2);
+    Kokkos::deep_copy(star_bd_, h1);
+    Kokkos::deep_copy(star_be_, h2);
     if (global_variable::my_rank == 0) {
       std::cout << "star_vet: star_ic_balance: max |rho/rho_col - 1| = " << dmax
                 << " at r = " << hx1v(0,imax) << ", max face residual |PR/PL - 1| = "
@@ -2320,10 +2336,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int ia = pin->GetInteger("problem","star_ic_rad_atm_ia");
     const int na = pin->GetInteger("problem","star_ic_rad_atm_na");
     if (ia < indcs.is + 2 || na < 0 || ia + na - 1 > indcs.ie) {
-      HsFatal("problem/star_ic_rad_atm_ia, _na do not match this radial grid", __LINE__);
+      StarFatal("problem/star_ic_rad_atm_ia, _na do not match this radial grid",
+                __LINE__);
     }
     std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0, pc, pf;
-    HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+    StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
     std::vector<Real> a(indcs.ie - ia + 1);
     for (int i=ia; i<=indcs.ie; ++i) a[i - ia] = ar0[i];
     char key[40];
@@ -2331,8 +2348,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       snprintf(key, sizeof(key), "star_ic_rad_atm_a%03d", n);
       a[n] = std::strtod(pin->GetString("problem", key).c_str(), nullptr);
     }
-    HsAtmPhiEff(ia, indcs.ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
-    HsAtmWrite(pmbp, ia, a, pc, pf);
+    StarAtmPhiEff(ia, indcs.ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+    StarAtmWrite(pmbp, ia, a, pc, pf);
     if (global_variable::my_rank == 0) {
       std::cout << "star_vet: star_ic_rad_atm_a*: a_ref (cells " << ia << " .. "
                 << ia + na - 1 << ") and Phi_eff from the fresh start's re-balance"
@@ -2341,15 +2358,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // ---- the frozen MLT flux on the x1 faces (problem/mlt_flux_frozen)
-  if (hs_mlt_) {
+  if (star_mlt_) {
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1f);
     const int nfc = n1m1 + 2;
-    Kokkos::realloc(hs_fm_, nfc);
-    auto hfm = Kokkos::create_mirror_view(hs_fm_);
+    Kokkos::realloc(star_fm_, nfc);
+    auto hfm = Kokkos::create_mirror_view(star_fm_);
     Real fmax = 0.0, rmx = 0.0;
     for (int i=0; i<nfc; ++i) {
       const Real r = hx1f(0,i);
-      Real x = (r - hs_rlo_)/hs_dr_;
+      Real x = (r - star_rlo_)/star_dr_;
       int n = static_cast<int>(floor(x));
       n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
       Real w = x - n;
@@ -2362,25 +2379,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         rmx = r;
       }
     }
-    Kokkos::deep_copy(hs_fm_, hfm);
-    // star_base_heat: the base-heating flux F_b on the same faces (see hs_bheat_)
-    if (hs_bheat_ > 0.0) {
+    Kokkos::deep_copy(star_fm_, hfm);
+    // star_base_heat: the base-heating flux F_b on the same faces (see star_bheat_)
+    if (star_bheat_ > 0.0) {
       if (pin->GetOrAddString("problem","mlt_closure","frozen") != "frozen") {
-        HsFatal("problem/star_base_heat needs mlt_closure = frozen", __LINE__);
+        StarFatal("problem/star_base_heat needs mlt_closure = frozen", __LINE__);
       }
-      Kokkos::realloc(hs_fb_, nfc);
-      auto hfb = Kokkos::create_mirror_view(hs_fb_);
+      Kokkos::realloc(star_fb_, nfc);
+      auto hfb = Kokkos::create_mirror_view(star_fb_);
       const Real fw = hfm(indcs.is);
       for (int i=0; i<nfc; ++i) {
         const Real r = hx1f(0,i);
-        Real x = 1.0 - (r - hs_rin_)/hs_bheat_;
+        Real x = 1.0 - (r - star_rin_)/star_bheat_;
         x = (x < 0.0) ? 0.0 : ((x > 1.0) ? 1.0 : x);
-        hfb(i) = fw*SQR(hs_rin_/r)*x;
+        hfb(i) = fw*SQR(star_rin_/r)*x;
       }
-      Kokkos::deep_copy(hs_fb_, hfb);
+      Kokkos::deep_copy(star_fb_, hfb);
       if (global_variable::my_rank == 0) {
         std::cout << "star_vet: star_base_heat: F_MLT(r_in) = " << fw << " kept as base "
-                  << "heating over r_in .. r_in + " << hs_bheat_ << " when w(t) < 1"
+                  << "heating over r_in .. r_in + " << star_bheat_ << " when w(t) < 1"
                   << std::endl;
       }
     }
@@ -2388,20 +2405,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const auto &ms = pmy_mesh_->mesh_size;
       const Real omg = hcs ? (4.0*M_PI)
                            : (cos(ms.x2min) - cos(ms.x2max))*(ms.x3max - ms.x3min);
-      hs_lmx_ = 0.0;
-      hs_r2o_.assign(nfc, 0.0);
+      star_lmx_ = 0.0;
+      star_r2o_.assign(nfc, 0.0);
       for (int i=0; i<nfc; ++i) {
-        hs_r2o_[i] = SQR(hx1f(0,i))*omg;
-        hs_lmx_ = std::max(hs_lmx_, hfm(i)*hs_r2o_[i]);
+        star_r2o_[i] = SQR(hx1f(0,i))*omg;
+        star_lmx_ = std::max(star_lmx_, hfm(i)*star_r2o_[i]);
       }
     }
     // the adaptive closure's radial taper, from the IC's F_MLT/F on the faces
-    hs_tap_.assign(nfc, 0.0);
+    star_tap_.assign(nfc, 0.0);
     {
       const Real tp = pin->GetOrAddReal("problem","mlt_closure_taper",0.01);
       for (int i=0; i<nfc; ++i) {
         const Real r = hx1f(0,i);
-        Real x = (r - hs_rlo_)/hs_dr_;
+        Real x = (r - star_rlo_)/star_dr_;
         int n = static_cast<int>(floor(x));
         n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
         Real w = x - n;
@@ -2409,7 +2426,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
         Real s = (tp > 0.0) ? fm/tp : ((fm > 0.0) ? 1.0 : 0.0);
         s = (s < 0.0) ? 0.0 : ((s > 1.0) ? 1.0 : s);
-        hs_tap_[i] = (hfm(i) > 0.0) ? s : 0.0;
+        star_tap_[i] = (hfm(i) > 0.0) ? s : 0.0;
       }
     }
     // the RADIATION takes the deposit (<rad_vet>/esrc, added to the implicit solve's old
@@ -2419,12 +2436,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
     Kokkos::deep_copy(pm1->esrc, 0.0);
     auto es = pm1->esrc;
-    auto fmd = hs_fm_;
+    auto fmd = star_fm_;
     auto &area1 = pmbp->pcoord->area.x1f;
     auto &volume = pmbp->pcoord->volume;
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
-    par_for("hs_esrc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    par_for("star_esrc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       es(m,k,j,i) = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
     });
@@ -2439,10 +2456,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // TEST of <rad_vet>/esrc (default off): a constant source star_esrc_const (erg/cm^3/s)
   // in the cells with r < star_esrc_rmax, ON TOP of the frozen MLT deposit if that is on
   const Real esc = pin->GetOrAddReal("problem","star_esrc_const",0.0);
-  hs_esc_ = esc;
+  star_esc_ = esc;
   if (esc != 0.0) {
-    const Real rmx = pin->GetOrAddReal("problem","star_esrc_rmax",hs_rin_);
-    hs_esrmx_ = rmx;
+    const Real rmx = pin->GetOrAddReal("problem","star_esrc_rmax",star_rin_);
+    star_esrmx_ = rmx;
     if (!pm1->esrc_on) {
       Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
       Kokkos::deep_copy(pm1->esrc, 0.0);
@@ -2451,7 +2468,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto es = pm1->esrc;
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
-    par_for("hs_esrc_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    par_for("star_esrc_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (x1v(m,i) < rmx) es(m,k,j,i) += esc;
     });
@@ -2461,14 +2478,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // w(t) on the frozen MLT deposit, w = 1 for t < start, 0.5 (1 + cos(pi (t - start)/
   // time)) during the ramp, 0 after.  A function of t only, re-applied on a restart (both
   // keys may be overridden on the restart's command line).  Unused: esrc bitwise.
-  hs_mw_ = 1.0;
-  if (hs_mrs_ >= 0.0 && !hs_mlt_) {
-    HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
+  star_mw_ = 1.0;
+  if (star_mrs_ >= 0.0 && !star_mlt_) {
+    StarFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true",
+              __LINE__);
   }
   // the Picard window trailer of the pgen restart block (stripped here,
   // so the adaptive state below reads the block as before); the rad_vet counters restart
   // at 0, so the window base is minus the open window's sums
-  hs_mesh_ = pmy_mesh_;
+  star_mesh_ = pmy_mesh_;
   // problem/star_ic_remap_file (read only when named; absent = nothing,
   // bitwise the old code): a FRESH start whose state is a remapped restart of another
   // run (tools: remap_e1w.py).  The file carries the parent's time, its pgen restart
@@ -2478,15 +2496,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // so that w_mlt(t), the vet_gd rotation clock (physical) and the outputs continue.  No
   // ic_rad, no star_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
   // with time2_start, the implicit F0 faces from implicit_f0_init, empty rotavg history).
-  const bool hs_rmp = !restart &&
-                      pin->DoesParameterExist("problem","star_ic_remap_file");
-  std::string hs_rmp_fn;
-  std::int64_t hs_rmp_data = 0;   // byte offset of the arrays
-  int hs_rmp_n[4] = {0, 0, 0, 0};  // ng, nx1, nx2, nx3
-  if (hs_rmp) {
-    hs_rmp_fn = pin->GetString("problem","star_ic_remap_file");
-    std::ifstream rf(hs_rmp_fn, std::ios::binary);
-    if (!rf) HsFatal("cannot open problem/star_ic_remap_file " + hs_rmp_fn, __LINE__);
+  const bool star_rmp = !restart &&
+                        pin->DoesParameterExist("problem","star_ic_remap_file");
+  std::string star_rmp_fn;
+  std::int64_t star_rmp_data = 0;   // byte offset of the arrays
+  int star_rmp_n[4] = {0, 0, 0, 0};  // ng, nx1, nx2, nx3
+  if (star_rmp) {
+    star_rmp_fn = pin->GetString("problem","star_ic_remap_file");
+    std::ifstream rf(star_rmp_fn, std::ios::binary);
+    if (!rf) StarFatal("cannot open problem/star_ic_remap_file " + star_rmp_fn, __LINE__);
     char mg[8];
     std::int32_t hi[8];
     double hd[7];
@@ -2497,7 +2515,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rf.read(reinterpret_cast<char*>(&npg), sizeof(npg));
     if (!rf || std::memcmp(mg, "HSREMAP1", 8) != 0 || hi[0] != 1 || hi[5] != 5 ||
         hi[6] != 4 || npg > (1u << 30)) {
-      HsFatal("problem/star_ic_remap_file: not a version-1 HSREMAP1 file", __LINE__);
+      StarFatal("problem/star_ic_remap_file: not a version-1 HSREMAP1 file", __LINE__);
     }
     auto &ms = pmy_mesh_->mesh_size;
     auto &mi = pmy_mesh_->mesh_indcs;
@@ -2506,29 +2524,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (hi[1] != mi.ng || hi[2] != mi.nx1 || hi[3] != mi.nx2 || hi[4] != mi.nx3 ||
         !rel(hd[1], ms.x1min) || !rel(hd[2], ms.x1max) || !rel(hd[3], ms.x2min) ||
         !rel(hd[4], ms.x2max) || !rel(hd[5], ms.x3min) || !rel(hd[6], ms.x3max)) {
-      HsFatal("problem/star_ic_remap_file: its mesh (ng, nx1..3, extents) differs from "
-              "<mesh>", __LINE__);
+      StarFatal("problem/star_ic_remap_file: its mesh (ng, nx1..3, extents) differs from "
+                "<mesh>", __LINE__);
     }
     if (hd[0] != pmy_mesh_->time) {
       char buf[128];
       snprintf(buf, sizeof(buf), "%.17g", hd[0]);
-      HsFatal(std::string("problem/star_ic_remap_file: set <time>/start_time = ") + buf +
-              " (the parent's time; the remap deck from remap_e1w.py does)", __LINE__);
+      StarFatal(std::string("problem/star_ic_remap_file: set <time>/start_time = ") +
+                buf + " (the parent's time; the remap deck from remap_e1w.py does)",
+                __LINE__);
     }
     pgen_rststate.resize(npg);
     if (npg > 0) rf.read(pgen_rststate.data(), npg);
-    if (!rf) HsFatal("problem/star_ic_remap_file: truncated pgen block", __LINE__);
-    hs_rmp_data = 8 + sizeof(hi) + sizeof(hd) + sizeof(npg) + npg;
-    for (int n=0; n<4; ++n) hs_rmp_n[n] = hi[n+1];
+    if (!rf) StarFatal("problem/star_ic_remap_file: truncated pgen block", __LINE__);
+    star_rmp_data = 8 + sizeof(hi) + sizeof(hd) + sizeof(npg) + npg;
+    for (int n=0; n<4; ++n) star_rmp_n[n] = hi[n+1];
     const std::int64_t c1 = hi[2] + 2*hi[1], c2 = hi[3] + 2*hi[1], c3 = hi[4] + 2*hi[1];
-    const std::int64_t want = hs_rmp_data + 8*(9*c1*c2*c3 + (c1 + 1)*c2*c3);
+    const std::int64_t want = star_rmp_data + 8*(9*c1*c2*c3 + (c1 + 1)*c2*c3);
     rf.seekg(0, std::ios::end);
     if (static_cast<std::int64_t>(rf.tellg()) != want) {
-      HsFatal("problem/star_ic_remap_file: file size does not match its header",
-              __LINE__);
+      StarFatal("problem/star_ic_remap_file: file size does not match its header",
+                __LINE__);
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "star_vet: star_ic_remap_file " << hs_rmp_fn << ": t = " << hd[0]
+      std::cout << "star_vet: star_ic_remap_file " << star_rmp_fn << ": t = " << hd[0]
                 << ", pgen block " << npg << " bytes (remapped fresh start)" << std::endl;
     }
   }
@@ -2540,86 +2559,86 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // sigma_max: Caltech's measured RSG E e-fold ~10 d at 0.995 R_ph against THIS code's
   // sigma_max (G m(r) gravity, code cells; 1/6.11 d); their 0.74 was against a fixed-GM
   // sigma_max (1/7.35 d); read only when a ramp key is auto), sigma_max from the IC
-  // column (HsN2Compute).  TODO: code the star_seed amplitude -> v_seed mapping for
+  // column (StarN2Compute).  TODO: code the star_seed amplitude -> v_seed mapping for
   // n_efold.  The
-  // mass-weighted median 1/sigma (HsN2Median) is printed for reference.  Computed once
-  // and kept in the restart file (kHsRmpTag), which a
+  // mass-weighted median 1/sigma (StarN2Median) is printed for reference.  Computed once
+  // and kept in the restart file (kStarRmpTag), which a
   // restart reuses (never recomputed).  A restart (or star_ic_remap_file start) with auto
   // and no stored numbers keeps NO ramp (an old restart file carries the old binary's
   // explicit default -1 anyway).
   // the drive's trailer is the LAST one: strip it first (star_drive.cpp)
-  if (restart || hs_rmp) {hsdrive::RestartStrip(&pgen_rststate);}
+  if (restart || star_rmp) {stardrive::RestartStrip(&pgen_rststate);}
   {
     const std::string ms = pin->GetOrAddString("problem","mlt_ramp_start","auto");
     const std::string mt = pin->GetOrAddString("problem","mlt_ramp_time","auto");
     const bool sa = (ms == "auto"), ta = (mt == "auto");
-    hs_mrs_ = sa ? -1.0 : static_cast<Real>(atof(ms.c_str()));
-    hs_mrt_ = ta ? 0.0 : static_cast<Real>(atof(mt.c_str()));
+    star_mrs_ = sa ? -1.0 : static_cast<Real>(atof(ms.c_str()));
+    star_mrt_ = ta ? 0.0 : static_cast<Real>(atof(mt.c_str()));
     Real st[2] = {-1.0, 0.0};
     bool have = false;
-    if (restart || hs_rmp) {   // strip the trailer (the last one) whatever the keys say
+    if (restart || star_rmp) {   // strip the trailer (the last one) whatever the keys say
       auto &blk = pgen_rststate;
-      const std::size_t nt = sizeof(kHsRmpTag) + 2*sizeof(Real);
+      const std::size_t nt = sizeof(kStarRmpTag) + 2*sizeof(Real);
       if (blk.size() >= nt &&
-          std::memcmp(blk.data() + blk.size() - sizeof(kHsRmpTag), &(kHsRmpTag[0]),
-                      sizeof(kHsRmpTag)) == 0) {
+          std::memcmp(blk.data() + blk.size() - sizeof(kStarRmpTag), &(kStarRmpTag[0]),
+                      sizeof(kStarRmpTag)) == 0) {
         std::memcpy(&(st[0]), blk.data() + blk.size() - nt, 2*sizeof(Real));
         blk.resize(blk.size() - nt);
         have = true;
       }
     }
-    const bool on = !(!sa && hs_mrs_ < 0.0);   // an explicit negative start: no ramp
+    const bool on = !(!sa && star_mrs_ < 0.0);   // an explicit negative start: no ramp
     if ((sa || ta) && on) {
       std::string how;
-      if (restart || hs_rmp) {
+      if (restart || star_rmp) {
         if (have) {
-          if (sa) hs_mrs_ = st[0];
-          if (ta) hs_mrt_ = st[1];
-          hs_mr_store_ = true;
+          if (sa) star_mrs_ = st[0];
+          if (ta) star_mrt_ = st[1];
+          star_mr_store_ = true;
           how = "restart file (computed at the fresh start)";
         } else {
-          hs_mrs_ = -1.0;
+          star_mrs_ = -1.0;
           how = "no stored numbers in the restart file: NO ramp";
         }
-      } else if (!hs_mlt_) {
-        hs_mrs_ = -1.0;
+      } else if (!star_mlt_) {
+        star_mrs_ = -1.0;
         how = "mlt_flux_frozen = false: NO ramp";
       } else {
-        HsN2Compute(pmbp, eos, ar);
-        if (hs_n2_.smax > 0.0) {
+        StarN2Compute(pmbp, eos, ar);
+        if (star_n2_.smax > 0.0) {
           const Real nef = pin->GetOrAddReal("problem","mlt_ramp_nefold",10.5);
           const Real sfr = pin->GetOrAddReal("problem","mlt_ramp_sigma_frac",0.61);
           if (!(nef > 0.0) || !(sfr > 0.0)) {
-            HsFatal("problem/mlt_ramp_nefold and mlt_ramp_sigma_frac must be > 0",
-                    __LINE__);
+            StarFatal("problem/mlt_ramp_nefold and mlt_ramp_sigma_frac must be > 0",
+                      __LINE__);
           }
-          HsN2Median(pmbp, eos, ar);
-          if (sa) hs_mrs_ = 0.0;
-          if (ta) hs_mrt_ = nef/(sfr*hs_n2_.smax);
+          StarN2Median(pmbp, eos, ar);
+          if (sa) star_mrs_ = 0.0;
+          if (ta) star_mrt_ = nef/(sfr*star_n2_.smax);
           if (global_variable::my_rank == 0) {
             std::cout << "star_vet: mlt_ramp auto rule v2: t_sat = n_efold " << nef
                       << " / (sigma_frac " << sfr << " sigma_max) = "
-                      << nef/(sfr*hs_n2_.smax) << " s" << std::endl;
+                      << nef/(sfr*star_n2_.smax) << " s" << std::endl;
           }
-          hs_mr_store_ = true;
+          star_mr_store_ = true;
           how = "IC column N^2";
         } else {
-          hs_mrs_ = -1.0;
+          star_mrs_ = -1.0;
           how = "no unstable cell below r_int: NO ramp";
         }
       }
       if (global_variable::my_rank == 0) {
         std::cout << "star_vet: mlt_ramp auto (start " << ms << ", time " << mt
-                  << ") from " << how << ": start = " << hs_mrs_ << " s ("
-                  << hs_mrs_/86400.0 << " d), time = " << hs_mrt_ << " s ("
-                  << hs_mrt_/86400.0 << " d)";
-        if (hs_n2_.done && hs_n2_.smax > 0.0) {
-          std::cout << "; sigma_max " << hs_n2_.smax << " /s (1/sigma "
-                    << 1.0/hs_n2_.smax/86400.0 << " d) at r/r_int "
-                    << hs_n2_.r[hs_n2_.ipk]/hs_rint_ << ", unstable cells r/r_int "
-                    << hs_n2_.r[hs_n2_.iu0]/hs_rint_ << " - "
-                    << hs_n2_.r[hs_n2_.iu1]/hs_rint_ << " (" << hs_n2_.nu
-                    << " cells), mass-weighted median 1/sigma " << hs_n2_.med/86400.0
+                  << ") from " << how << ": start = " << star_mrs_ << " s ("
+                  << star_mrs_/86400.0 << " d), time = " << star_mrt_ << " s ("
+                  << star_mrt_/86400.0 << " d)";
+        if (star_n2_.done && star_n2_.smax > 0.0) {
+          std::cout << "; sigma_max " << star_n2_.smax << " /s (1/sigma "
+                    << 1.0/star_n2_.smax/86400.0 << " d) at r/r_int "
+                    << star_n2_.r[star_n2_.ipk]/star_rint_ << ", unstable cells r/r_int "
+                    << star_n2_.r[star_n2_.iu0]/star_rint_ << " - "
+                    << star_n2_.r[star_n2_.iu1]/star_rint_ << " (" << star_n2_.nu
+                    << " cells), mass-weighted median 1/sigma " << star_n2_.med/86400.0
                     << " d";
         }
         std::cout << std::endl;
@@ -2634,163 +2653,163 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the removed fixed-profile inner face's wall-luminosity trailer (the last one) is
     // dropped
     auto &blk = pgen_rststate;
-    const std::size_t nt = sizeof(kHsLbcTag) + sizeof(Real);
+    const std::size_t nt = sizeof(kStarLbcTag) + sizeof(Real);
     if (blk.size() >= nt &&
-        std::memcmp(blk.data() + blk.size() - sizeof(kHsLbcTag), &(kHsLbcTag[0]),
-                    sizeof(kHsLbcTag)) == 0) {
+        std::memcmp(blk.data() + blk.size() - sizeof(kStarLbcTag), &(kStarLbcTag[0]),
+                    sizeof(kStarLbcTag)) == 0) {
       blk.resize(blk.size() - nt);
     }
   }
   // (also from a star_ic_remap_file's copy of the parent's block)
-  if (restart || hs_rmp) {
+  if (restart || star_rmp) {
     auto &blk = pgen_rststate;
-    const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
+    const std::size_t nt = sizeof(kStarDicTag) + sizeof(Real);
     if (blk.size() >= nt &&
-        std::memcmp(blk.data() + blk.size() - sizeof(kHsDicTag), &(kHsDicTag[0]),
-                    sizeof(kHsDicTag)) == 0) {
+        std::memcmp(blk.data() + blk.size() - sizeof(kStarDicTag), &(kStarDicTag[0]),
+                    sizeof(kStarDicTag)) == 0) {
       Real rn;
       std::memcpy(&rn, blk.data() + blk.size() - nt, sizeof(Real));
       const int na = static_cast<int>(rn);
       const std::size_t nb = nt + static_cast<std::size_t>(na)*sizeof(Real);
       if (na != indcs.nx1 || blk.size() < nb) {
-        HsFatal("the restart file's star_ic_equil trailer does not match this radial "
-                "grid", __LINE__);
+        StarFatal("the restart file's star_ic_equil trailer does not match this radial "
+                  "grid", __LINE__);
       }
-      hs_eq_a_.assign(na, 0.0);
-      std::memcpy(hs_eq_a_.data(), blk.data() + blk.size() - nb, na*sizeof(Real));
+      star_eq_a_.assign(na, 0.0);
+      std::memcpy(star_eq_a_.data(), blk.data() + blk.size() - nb, na*sizeof(Real));
       blk.resize(blk.size() - nb);
       std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0, pc, pf;
-      HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
-      HsAtmPhiEff(indcs.is, indcs.ie, hs_eq_a_, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
-      HsAtmWrite(pmbp, indcs.is, hs_eq_a_, pc, pf);
+      StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+      StarAtmPhiEff(indcs.is, indcs.ie, star_eq_a_, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+      StarAtmWrite(pmbp, indcs.is, star_eq_a_, pc, pf);
       if (global_variable::my_rank == 0) {
         std::cout
             << "star_vet: star_ic_equil: a_ref (cells is .. ie) and Phi_eff from the "
                   << "fresh start's equilibrium (restart trailer)" << std::endl;
       }
-    } else if (hs_eq_) {
-      HsFatal("problem/star_ic_equil = true but the restart file carries no "
-              "star_ic_equil trailer", __LINE__);
+    } else if (star_eq_) {
+      StarFatal("problem/star_ic_equil = true but the restart file carries no "
+                "star_ic_equil trailer", __LINE__);
     }
   }
-  if (restart || hs_rmp) {
+  if (restart || star_rmp) {
     auto &blk = pgen_rststate;
-    const std::size_t nt = sizeof(kHsPicTag) + 2*sizeof(Real);
+    const std::size_t nt = sizeof(kStarPicTag) + 2*sizeof(Real);
     if (blk.size() >= nt &&
-        std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]),
-                    sizeof(kHsPicTag)) == 0) {
+        std::memcmp(blk.data() + blk.size() - nt, &(kStarPicTag[0]),
+                    sizeof(kStarPicTag)) == 0) {
       Real w[2];
       std::memcpy(&(w[0]), blk.data() + blk.size() - 2*sizeof(Real), 2*sizeof(Real));
       // a remapped start opens a new window (the trailer is only stripped)
       if (restart) {
-        hs_pic_n0_ = -w[0];
-        hs_pic_s0_ = -w[1];
+        star_pic_n0_ = -w[0];
+        star_pic_s0_ = -w[1];
       }
       blk.resize(blk.size() - nt);
     }
     // an adaptive-closure remap keeps the adaptive state at the block's
     // front (read below as a restart reads it); anything else left is refused
-    const bool rmp_ad = hs_rmp && (pin->GetOrAddString("problem","mlt_closure",
-                                                       "frozen") != "frozen");
-    if (hs_rmp && !blk.empty() && !rmp_ad) {
-      HsFatal("problem/star_ic_remap_file: the parent's pgen block carries state this "
-              "start cannot take (adaptive MLT?)", __LINE__);
+    const bool rmp_ad = star_rmp && (pin->GetOrAddString("problem","mlt_closure",
+                                                         "frozen") != "frozen");
+    if (star_rmp && !blk.empty() && !rmp_ad) {
+      StarFatal("problem/star_ic_remap_file: the parent's pgen block carries state this "
+                "start cannot take (adaptive MLT?)", __LINE__);
     }
   }
   // problem/mlt_closure: frozen (default: the IC's F_MLT, times w(t)) or adaptive (see
-  // hs_ad_ above; w(t) caps it as an overall factor)
+  // star_ad_ above; w(t) caps it as an overall factor)
   {
     const std::string mc = pin->GetOrAddString("problem","mlt_closure","frozen");
     if (mc != "frozen" && mc != "adaptive" && mc != "pressure") {
-      HsFatal("problem/mlt_closure must be frozen, adaptive or pressure", __LINE__);
+      StarFatal("problem/mlt_closure must be frozen, adaptive or pressure", __LINE__);
     }
-    hs_ad_ = (mc == "adaptive" || mc == "pressure");
-    hs_adp_ = (mc == "pressure");
+    star_ad_ = (mc == "adaptive" || mc == "pressure");
+    star_adp_ = (mc == "pressure");
     const bool tab2 = pm1->time_scheme == radvet::M1_TIME_HESDIRK2 && pm1->t2_tab != 0;
-    HsOldDefault(pin, "mlt_src_time", "start");
+    StarOldDefault(pin, "mlt_src_time", "start");
     const std::string tc = pin->GetOrAddString("problem","mlt_src_time",
         (!global_variable::restart_run && !tab2) ? "stage" : "start");
     if (tc != "start" && tc != "stage") {
-      HsFatal("problem/mlt_src_time must be start|stage", __LINE__);
+      StarFatal("problem/mlt_src_time must be start|stage", __LINE__);
     }
-    hs_mtc_ = (tc == "stage");
-    if (hs_mtc_ && tab2) {
-      HsFatal("problem/mlt_src_time = stage needs the hesdirk2 tableau (stage times "
-              "t + dt)", __LINE__);
+    star_mtc_ = (tc == "stage");
+    if (star_mtc_ && tab2) {
+      StarFatal("problem/mlt_src_time = stage needs the hesdirk2 tableau (stage times "
+                "t + dt)", __LINE__);
     }
   }
-  // problem/hs_ad_dead_skip (default true; acts only under mesh/layout_invariant)
-  hs_ad_dskip_ = true;
-  if (pin->DoesParameterExist("problem","hs_ad_dead_skip")) {
-    hs_ad_dskip_ = pin->GetBoolean("problem","hs_ad_dead_skip");
+  // problem/star_ad_dead_skip (default true; acts only under mesh/layout_invariant)
+  star_ad_dskip_ = true;
+  if (pin->DoesParameterExist("problem","star_ad_dead_skip")) {
+    star_ad_dskip_ = pin->GetBoolean("problem","star_ad_dead_skip");
   }
-  if (hs_ad_) {
-    if (!hs_mlt_) {
-      HsFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true (the "
-              "IC's F_MLT is its start profile and its FeCZ mask)", __LINE__);
+  if (star_ad_) {
+    if (!star_mlt_) {
+      StarFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true "
+                "(the IC's F_MLT is its start profile and its FeCZ mask)", __LINE__);
     }
     if (pm1->f0x1.extent_int(0) <= 0) {
-      HsFatal("problem/mlt_closure = adaptive needs the implicit M1 face flux f0x1",
-              __LINE__);
+      StarFatal("problem/mlt_closure = adaptive needs the implicit M1 face flux f0x1",
+                __LINE__);
     }
-    hs_ad_tau_ = pin->GetOrAddReal("problem","mlt_relax_time",1500.0);
-    hs_ad_dout_ = pin->GetOrAddReal("problem","mlt_closure_dout",0.0);
-    if (!(hs_ad_tau_ > 0.0)) {
-      HsFatal("problem/mlt_relax_time must be > 0", __LINE__);
+    star_ad_tau_ = pin->GetOrAddReal("problem","mlt_relax_time",1500.0);
+    star_ad_dout_ = pin->GetOrAddReal("problem","mlt_closure_dout",0.0);
+    if (!(star_ad_tau_ > 0.0)) {
+      StarFatal("problem/mlt_relax_time must be > 0", __LINE__);
     }
     const int nfc = n1m1 + 2;
-    Kokkos::realloc(hs_fsub_, nfc);
-    Kokkos::deep_copy(hs_fsub_, hs_fm_);
-    if (hs_mtc_) {
-      Kokkos::realloc(hs_tgp_, nfc);
-      Kokkos::realloc(hs_fsrc_, nfc);
+    Kokkos::realloc(star_fsub_, nfc);
+    Kokkos::deep_copy(star_fsub_, star_fm_);
+    if (star_mtc_) {
+      Kokkos::realloc(star_tgp_, nfc);
+      Kokkos::realloc(star_fsrc_, nfc);
     }
-    Kokkos::realloc(hs_shs_, nfc, 8);
-    if (hs_adp_) {
+    Kokkos::realloc(star_shs_, nfc, 8);
+    if (star_adp_) {
       // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column,
       // the fine grid between x1min and x1max), and F_tot = F_r/(1 - fm) on the faces
       if (!tcol_read) {
-        HsFatal("problem/mlt_closure = pressure needs the 7-column file", __LINE__);
+        StarFatal("problem/mlt_closure = pressure needs the 7-column file", __LINE__);
       }
       std::vector<std::pair<Real, Real>> pf;
       for (int n=0; n<nf; ++n) {
-        if (hr[n] < hs_rin_ || hr[n] > rtop) continue;
+        if (hr[n] < star_rin_ || hr[n] > rtop) continue;
         Real ee, pp, cr, ct, cv;
-        eos.ThermoAt(hd[n], hTcol[n]/hs_tk, ee, pp, cr, ct, cv);
-        const Real er = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(hTcol[n]/hs_tk));
+        eos.ThermoAt(hd[n], hTcol[n]/star_tk, ee, pp, cr, ct, cv);
+        const Real er = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(hTcol[n]/star_tk));
         pf.emplace_back(log(pp + er/3.0), hM[n]);
       }
       std::sort(pf.begin(), pf.end());
-      hs_plnp_.clear();
-      hs_pfm_.clear();
+      star_plnp_.clear();
+      star_pfm_.clear();
       for (const auto &q : pf) {
-        if (!hs_plnp_.empty() && !(q.first > hs_plnp_.back())) continue;
-        hs_plnp_.push_back(q.first);
-        hs_pfm_.push_back(q.second);
+        if (!star_plnp_.empty() && !(q.first > star_plnp_.back())) continue;
+        star_plnp_.push_back(q.first);
+        star_pfm_.push_back(q.second);
       }
       auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
-      hs_ftot_.assign(nfc, 0.0);
+      star_ftot_.assign(nfc, 0.0);
       for (int i=0; i<nfc; ++i) {
         const Real r = hx1f(0,i);
-        Real x = (r - hs_rlo_)/hs_dr_;
+        Real x = (r - star_rlo_)/star_dr_;
         int n = static_cast<int>(floor(x));
         n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
         Real w = x - n;
         w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
         const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
         const Real fr = exp((1.0 - w)*log(hF[n]) + w*log(hF[n+1]));
-        hs_ftot_[i] = (fm < 1.0) ? fr/(1.0 - fm) : fr;
+        star_ftot_[i] = (fm < 1.0) ? fr/(1.0 - fm) : fr;
       }
-      Kokkos::realloc(hs_shp_, nfc, 3);
-      if (hs_plnp_.size() < 2) {
-        HsFatal("problem/mlt_closure = pressure: no IC pressure table", __LINE__);
+      Kokkos::realloc(star_shp_, nfc, 3);
+      if (star_plnp_.size() < 2) {
+        StarFatal("problem/mlt_closure = pressure: no IC pressure table", __LINE__);
       }
     }
-    hs_ad_tl_ = pmy_mesh_->time;
-    hs_ad_cyc_ = -1;
+    star_ad_tl_ = pmy_mesh_->time;
+    star_ad_cyc_ = -1;
     // a star_ic_remap_file start takes F_sub from the file's adaptive state
     // (the parent's), and its update clock restarts at this start's time
-    if (restart || hs_rmp) {
+    if (restart || star_rmp) {
       const auto &blk = pgen_rststate;
       if (blk.size() < 2*sizeof(std::int32_t) + sizeof(Real)) {
         if (global_variable::my_rank == 0) {
@@ -2804,67 +2823,67 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const int ntg = (hdr[1] == 1) ? nfc : 0;   // tgt^{n-1} (mlt_src_time)
         if (hdr[0] != nfc || (hdr[1] != 0 && hdr[1] != 1) ||
             blk.size() != sizeof(hdr) + (nfc + 1 + ntg)*sizeof(Real)) {
-          HsFatal("the restart file's adaptive MLT profile does not match this radial "
-                  "grid", __LINE__);
+          StarFatal("the restart file's adaptive MLT profile does not match this radial "
+                    "grid", __LINE__);
         }
         std::vector<Real> tmp(nfc + 1 + ntg);
         std::memcpy(tmp.data(), blk.data() + sizeof(hdr), tmp.size()*sizeof(Real));
-        hs_ad_tl_ = hs_rmp ? pmy_mesh_->time : tmp[0];
-        auto hf = Kokkos::create_mirror_view(hs_fsub_);
+        star_ad_tl_ = star_rmp ? pmy_mesh_->time : tmp[0];
+        auto hf = Kokkos::create_mirror_view(star_fsub_);
         for (int i=0; i<nfc; ++i) hf(i) = tmp[i+1];
-        Kokkos::deep_copy(hs_fsub_, hf);
-        if (hs_mtc_ && ntg > 0 && !hs_rmp) {
-          auto hp = Kokkos::create_mirror_view(hs_tgp_);
+        Kokkos::deep_copy(star_fsub_, hf);
+        if (star_mtc_ && ntg > 0 && !star_rmp) {
+          auto hp = Kokkos::create_mirror_view(star_tgp_);
           for (int i=0; i<nfc; ++i) hp(i) = tmp[nfc+1+i];
-          Kokkos::deep_copy(hs_tgp_, hp);
-          hs_tgp_ok_ = 1;
+          Kokkos::deep_copy(star_tgp_, hp);
+          star_tgp_ok_ = 1;
         }
       }
-      if (hs_mtc_ && hs_tgp_ok_ == 0 && global_variable::my_rank == 0) {
+      if (star_mtc_ && star_tgp_ok_ == 0 && global_variable::my_rank == 0) {
         std::cout << "star_vet: NOTE mlt_src_time = stage: no tgt^{n-1} in the "
                      "restart "
                   << "file, the first update takes tgt^n for both ends" << std::endl;
       }
     }
-    if (hs_mtc_) Kokkos::deep_copy(hs_fsrc_, hs_fsub_);
+    if (star_mtc_) Kokkos::deep_copy(star_fsrc_, star_fsub_);
     {
-      auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
-      hs_lsub_ = 0.0;
-      for (int i=0; i<nfc; ++i) hs_lsub_ = std::max(hs_lsub_, hf(i)*hs_r2o_[i]);
+      auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_fsub_);
+      star_lsub_ = 0.0;
+      for (int i=0; i<nfc; ++i) star_lsub_ = std::max(star_lsub_, hf(i)*star_r2o_[i]);
     }
-    if (hs_ad_dout_ > 0.0) {
-      snprintf(hs_ad_file_, sizeof(hs_ad_file_), "%s.fsub.txt",
+    if (star_ad_dout_ > 0.0) {
+      snprintf(star_ad_file_, sizeof(star_ad_file_), "%s.fsub.txt",
                pin->GetString("job","basename").c_str());
-      hs_ad_tout_ = hs_ad_dout_*floor(pmy_mesh_->time/hs_ad_dout_ + 1.0);
-      if (!restart) hs_ad_tout_ = 0.0;
+      star_ad_tout_ = star_ad_dout_*floor(pmy_mesh_->time/star_ad_dout_ + 1.0);
+      if (!restart) star_ad_tout_ = 0.0;
     }
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
-    HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
+    StarApplyMltW(pmy_mesh_, StarMltW(pmy_mesh_->time));
     if (global_variable::my_rank == 0) {
-      std::cout << "star_vet: mlt_closure = " << (hs_adp_ ? "pressure" : "adaptive")
-                << ", relax time " << hs_ad_tau_
+      std::cout << "star_vet: mlt_closure = " << (star_adp_ ? "pressure" : "adaptive")
+                << ", relax time " << star_ad_tau_
                 << " s, every cycle, taper "
                 << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
-                << hs_ad_tl_ << ", max L_sub = " << hs_lsub_ << std::endl;
+                << star_ad_tl_ << ", max L_sub = " << star_lsub_ << std::endl;
     }
   }
-  if (hs_mlt_) {
-    const Real w = HsMltW(pmy_mesh_->time);
-    if (w != hs_mw_) HsApplyMltW(pmy_mesh_, w);
+  if (star_mlt_) {
+    const Real w = StarMltW(pmy_mesh_->time);
+    if (w != star_mw_) StarApplyMltW(pmy_mesh_, w);
     if (global_variable::my_rank == 0) {
-      std::cout << "star_vet: mlt ramp start = " << hs_mrs_ << ", time = " << hs_mrt_
-                << ", w(t = " << pmy_mesh_->time << ") = " << hs_mw_
-                << ", max L_MLT (unscaled) = " << hs_lmx_ << std::endl;
+      std::cout << "star_vet: mlt ramp start = " << star_mrs_ << ", time = " << star_mrt_
+                << ", w(t = " << pmy_mesh_->time << ") = " << star_mw_
+                << ", max L_MLT (unscaled) = " << star_lmx_ << std::endl;
     }
   }
 
   // top sponge (default off) and hooks
-  hs_zflux_ = pin->GetOrAddBoolean("problem","star_wall_zero_flux",true);
+  star_zflux_ = pin->GetOrAddBoolean("problem","star_wall_zero_flux",true);
   // default true; with the window keys absent it is bitwise the plain branch; recipe
   // none keeps false
-  hs_wbwin_ = recipe::GetMode(pin) != recipe::Mode::none;
+  star_wbwin_ = recipe::GetMode(pin) != recipe::Mode::none;
   if (pin->DoesParameterExist("problem","star_wb_grav_window")) {
-    hs_wbwin_ = pin->GetBoolean("problem","star_wb_grav_window");
+    star_wbwin_ = pin->GetBoolean("problem","star_wb_grav_window");
   }
   // the inner wall face sees the exact mirror of the interior-side state
   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
@@ -2885,46 +2904,46 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const std::string bo = pin->GetOrAddString("problem","star_bc_outer","noinflow");
     if ((bi != "wall" && bi != "inflow" && bi != "zerocontact") ||
         (bo != "noinflow" && bo != "outflow" && bo != "hse" && bo != "copy")) {
-      HsFatal("problem/star_bc_inner must be wall|inflow|zerocontact, star_bc_outer "
-              "noinflow|outflow|hse|copy", __LINE__);
+      StarFatal("problem/star_bc_inner must be wall|inflow|zerocontact, star_bc_outer "
+                "noinflow|outflow|hse|copy", __LINE__);
     }
-    hs_binf_ = (bi == "inflow");
-    hydro::AmModule *pam = hydro::AmModuleOf(pmbp);   // (the faces hs_zflux takes back)
+    star_binf_ = (bi == "inflow");
+    hydro::AmModule *pam = hydro::AmModuleOf(pmbp);   // (the faces star_zflux takes back)
     if (pam != nullptr) {
-      pam->am_bzero[0] = hs_zflux_ && !hs_binf_;
-      pam->am_bzero[1] = hs_zflux_;
+      pam->am_bzero[0] = star_zflux_ && !star_binf_;
+      pam->am_bzero[1] = star_zflux_;
     }
-    hs_bzc_ = (bi == "zerocontact");
-    hs_bout_ = (bo == "outflow");
-    hs_bhse_ = (bo == "hse");
-    hs_bcopy_ = (bo == "copy");
+    star_bzc_ = (bi == "zerocontact");
+    star_bout_ = (bo == "outflow");
+    star_bhse_ = (bo == "hse");
+    star_bcopy_ = (bo == "copy");
     if (pin->DoesParameterExist("problem","star_bc_outer_r2")) {
-      hs_bcr2_ = pin->GetBoolean("problem","star_bc_outer_r2");
-      if (hs_bcr2_ && !hs_bcopy_) {
-        HsFatal("problem/star_bc_outer_r2 = true needs star_bc_outer = copy", __LINE__);
+      star_bcr2_ = pin->GetBoolean("problem","star_bc_outer_r2");
+      if (star_bcr2_ && !star_bcopy_) {
+        StarFatal("problem/star_bc_outer_r2 = true needs star_bc_outer = copy", __LINE__);
       }
     }
-    if (hs_bzc_) {
+    if (star_bzc_) {
       // the root find replays the plain (non-WB) spherical-polar
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
       auto *phy = pmbp->phydro;
       if (phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
-          !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || hs_bal_ ||
+          !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || star_bal_ ||
           indcs.nx1 < 2 || ng < 2) {
-        HsFatal("problem/star_bc_inner = zerocontact needs spherical polar, an ideal "
-                "gas, <hydro>/rsolver = hllc, no well-balanced scheme, "
-                "star_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
+        StarFatal("problem/star_bc_inner = zerocontact needs spherical polar, an ideal "
+                  "gas, <hydro>/rsolver = hllc, no well-balanced scheme, "
+                  "star_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
       }
     }
     // problem/star_bc_linhao (the ghost-built fixed-profile inner face of the old solver)
     // is removed
     if (pin->DoesParameterExist("problem","star_bc_linhao") &&
         pin->GetBoolean("problem","star_bc_linhao")) {
-      HsFatal("problem/star_bc_linhao was removed with the old solver", __LINE__);
+      StarFatal("problem/star_bc_linhao was removed with the old solver", __LINE__);
     }
-    if (hs_bhse_) {
-      hs_bhse_gmax_ = pin->GetOrAddReal("problem","star_bc_hse_gmax",0.9);
-      hs_bhse_tg_ = pin->GetOrAddBoolean("problem","star_bc_hse_tgrad",false);
+    if (star_bhse_) {
+      star_bhse_gmax_ = pin->GetOrAddReal("problem","star_bc_hse_gmax",0.9);
+      star_bhse_tg_ = pin->GetOrAddBoolean("problem","star_bc_hse_tgrad",false);
       std::string hf;
       if (restart && !pin->DoesParameterExist("problem","star_bc_hse_flux")) {
         hf = "cell";
@@ -2938,58 +2957,58 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         hf = pin->GetOrAddString("problem","star_bc_hse_flux","face");
       }
       if (hf != "face" && hf != "cell") {
-        HsFatal("problem/star_bc_hse_flux must be face|cell", __LINE__);
+        StarFatal("problem/star_bc_hse_flux must be face|cell", __LINE__);
       }
-      hs_bhse_face_ = (hf == "face");
-      if (hs_bhse_face_ && (pmbp->pradvet == nullptr ||
-                            pmbp->pradvet->f0x1.extent_int(0) == 0)) {
-        HsFatal("problem/star_bc_hse_flux = face needs the implicit rad_vet transport "
-                "(face fluxes f0x1); use cell", __LINE__);
+      star_bhse_face_ = (hf == "face");
+      if (star_bhse_face_ && (pmbp->pradvet == nullptr ||
+                              pmbp->pradvet->f0x1.extent_int(0) == 0)) {
+        StarFatal("problem/star_bc_hse_flux = face needs the implicit rad_vet transport "
+                  "(face fluxes f0x1); use cell", __LINE__);
       }
-      if (!(hs_bhse_gmax_ >= 0.0 && hs_bhse_gmax_ < 1.0)) {
-        HsFatal("problem/star_bc_hse_gmax must be in [0,1)", __LINE__);
+      if (!(star_bhse_gmax_ >= 0.0 && star_bhse_gmax_ < 1.0)) {
+        StarFatal("problem/star_bc_hse_gmax must be in [0,1)", __LINE__);
       }
     }
   }
   pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","star_wall_closed",
-                                                       !(hs_binf_ || hs_bzc_));
-  if ((hs_binf_ || hs_bzc_) && pmbp->phydro->wall_closed_ix1) {
-    HsFatal("problem/star_bc_inner = inflow|zerocontact needs star_wall_closed = false",
-            __LINE__);
+                                                       !(star_binf_ || star_bzc_));
+  if ((star_binf_ || star_bzc_) && pmbp->phydro->wall_closed_ix1) {
+    StarFatal("problem/star_bc_inner = inflow|zerocontact needs star_wall_closed = false",
+              __LINE__);
   }
-  hs_sp_rate_ = pin->GetOrAddReal("problem","star_sponge_rate",0.0);
-  hs_sp_r0_ = pin->GetOrAddReal("problem","star_sponge_r0",hs_rint_);
+  star_sp_rate_ = pin->GetOrAddReal("problem","star_sponge_rate",0.0);
+  star_sp_r0_ = pin->GetOrAddReal("problem","star_sponge_r0",star_rint_);
   if (pin->DoesParameterExist("problem","star_sponge_mode")) {
     const std::string sm = pin->GetString("problem","star_sponge_mode");
     if (sm != "all" && sm != "radial") {
-      HsFatal("problem/star_sponge_mode must be all|radial", __LINE__);
+      StarFatal("problem/star_sponge_mode must be all|radial", __LINE__);
     }
-    hs_sp_rad_ = (sm == "radial");
+    star_sp_rad_ = (sm == "radial");
   }
   if (pin->DoesParameterExist("problem","star_sponge_dmax")) {
-    hs_sp_dmax_ = pin->GetReal("problem","star_sponge_dmax");
+    star_sp_dmax_ = pin->GetReal("problem","star_sponge_dmax");
   }
-  {HsOldDefault(pin, "star_sponge_form", "exp");
+  {StarOldDefault(pin, "star_sponge_form", "exp");
   const std::string sf = pin->GetOrAddString("problem","star_sponge_form",
                                   global_variable::restart_run ? "exp" : "lawson");
   if (sf != "exp" && sf != "lawson") {
-    HsFatal("problem/star_sponge_form must be exp|lawson", __LINE__);
+    StarFatal("problem/star_sponge_form must be exp|lawson", __LINE__);
   }
-  hs_sp_law_ = (sf == "lawson");}
-  hs_rtop_ = rtop;
+  star_sp_law_ = (sf == "lawson");}
+  star_rtop_ = rtop;
   user_srcs_func = StarGravity;
   // fin51-r-fix: the per-cycle state of StarGravity joins the <time>/dt_retry
   // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly
   // as the straight cycle; esrc itself is in the m1 minimal list)
-  dtretry::RegisterValue("hs_mw", &hs_mw_);
-  dtretry::RegisterValue("hs_ad_cyc", &hs_ad_cyc_);
-  dtretry::RegisterValue("hs_ad_tl", &hs_ad_tl_);
-  dtretry::RegisterValue("hs_ad_tout", &hs_ad_tout_);
-  dtretry::RegisterValue("hs_lsub", &hs_lsub_);
-  dtretry::RegisterView("hs_fsub", &hs_fsub_);
-  if (hs_mtc_ && hs_ad_) {
-    dtretry::RegisterView("hs_tgp", &hs_tgp_);
-    dtretry::RegisterValue("hs_tgp_ok", &hs_tgp_ok_);
+  dtretry::RegisterValue("star_mw", &star_mw_);
+  dtretry::RegisterValue("star_ad_cyc", &star_ad_cyc_);
+  dtretry::RegisterValue("star_ad_tl", &star_ad_tl_);
+  dtretry::RegisterValue("star_ad_tout", &star_ad_tout_);
+  dtretry::RegisterValue("star_lsub", &star_lsub_);
+  dtretry::RegisterView("star_fsub", &star_fsub_);
+  if (star_mtc_ && star_ad_) {
+    dtretry::RegisterView("star_tgp", &star_tgp_);
+    dtretry::RegisterValue("star_tgp_ok", &star_tgp_ok_);
   }
   user_bcs_func = StarBC;
   user_hist_func = StarHist;
@@ -3000,7 +3019,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetBoolean("problem", "am_hist")) {
     user_hist_func = RadVetAmHistory;
   }
-  pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
+  pgen_rst_write_func = StarAdaptiveRstWrite;   // adaptive state + the Picard window
   pgen_final_func = StarFinal;
   // problem/star_ic_rad_atm_post (default true with star_ic_rad_atm_force =
   // module; a fresh start whose <rad_vet>/ic_rad runs; the x1 WB pair): after the ic_rad
@@ -3016,11 +3035,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   {
     const bool atp = pin->GetOrAddBoolean("problem","star_ic_rad_atm_post",hatm_on);
     if (atp && !hatm_on) {
-      HsFatal("problem/star_ic_rad_atm_post = true needs star_ic_rad_atm_force = module",
-              __LINE__);
+      StarFatal("problem/star_ic_rad_atm_post = true needs star_ic_rad_atm_force = "
+                "module", __LINE__);
     }
-    hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_ && !hs_rmp;
-    if (hs_atp_) user_icpost_func = StarIcPost;
+    star_atp_ = atp && !global_variable::restart_run && wbdyn && !star_pm_ && !star_rmp;
+    if (star_atp_) user_icpost_func = StarIcPost;
   }
   // problem/star_ic_equil (read only when named; default false = nothing, bitwise
   // the old start): the DISCRETE EQUILIBRIUM of the initial state on the code's own
@@ -3033,112 +3052,112 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   //     the module's own net momentum deposit dm - dt rho a_ref of every cell;
   // (2) the force per volume f = dm/dt + rho a_ref (radiation pressure gradient form,
   //     independent of rho at fixed E) gives a_ref = f/rho; Phi_eff is rebuilt above the
-  //     face x1f(is) from these a_ref (HsAtmPhiEff) and rho is re-marched at the relaxed
-  //     T in the discrete balance of the x1 WB pair (the star_ic_balance face condition)
-  //     OUTWARD from the wall cell (its rho kept) to the floor, a_i = f_i/rho_i solved
-  //     with rho_i in each face solve; e from (rho, T).
+  //     face x1f(is) from these a_ref (StarAtmPhiEff) and rho is re-marched at the
+  //     relaxed T in the discrete balance of the x1 WB pair (the star_ic_balance face
+  //     condition) OUTWARD from the wall cell (its rho kept) to the floor, a_i =
+  //     f_i/rho_i solved with rho_i in each face solve; e from (rho, T).
   // It stops (no update) when both residuals -- the measured module deposit and the WB
   // face condition, as accelerations / g -- are below star_ic_equil_tol, or after
   // star_ic_equil_maxit rounds.  The star_seed factor is applied after it (deferred).
-  // a_ref travels in the restart files (kHsDicTag).  Needs star_ic_balance, ic_rad, the
+  // a_ref travels in the restart files (kStarDicTag).  Needs star_ic_balance, ic_rad, the
   // WB pair, a fresh start; replaces star_ic_rad_atm_post.
-  if (hs_eq_ && !restart && !hs_rmp) {
-    if (!hs_bal_ || hs_pm_ || (pm1->icr_mode == 0 && !pm1->cln_steady) || hs_atp_) {
-      HsFatal("problem/star_ic_equil = true needs star_ic_balance = true, star_gravity = "
-              "wb, <rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) and "
-              "star_ic_rad_atm_post = false", __LINE__);
+  if (star_eq_ && !restart && !star_rmp) {
+    if (!star_bal_ || star_pm_ || (pm1->icr_mode == 0 && !pm1->cln_steady) || star_atp_) {
+      StarFatal("problem/star_ic_equil = true needs star_ic_balance = true, star_gravity "
+                "= wb, <rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) "
+                "and star_ic_rad_atm_post = false", __LINE__);
     }
     // (scheme = clean: each round's relax is CleanSteadyStart, E and the face F at the
     // scheme's own fixed point with the gas T, and its force pass the last steady pass;
     // the x1 shells of the force, its radial component: spherical polar or the cubed
     // sphere)
     if (!(pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere)) {
-      HsFatal("problem/star_ic_equil with scheme = clean needs spherical polar or the "
-              "cubed sphere", __LINE__);
+      StarFatal("problem/star_ic_equil with scheme = clean needs spherical polar or the "
+                "cubed sphere", __LINE__);
     }
-    if (wic) HsFatal("problem/star_ic_equil does not combine with star_wind_ic",
-                     __LINE__);
-    hs_eq_maxit_ = pin->GetOrAddInteger("problem","star_ic_equil_maxit",30);
+    if (wic) StarFatal("problem/star_ic_equil does not combine with star_wind_ic",
+                       __LINE__);
+    star_eq_maxit_ = pin->GetOrAddInteger("problem","star_ic_equil_maxit",30);
     // star_ic_equil_last_march (default false = the last round only checks): the round
     // star_ic_equil_maxit still updates (march at the relaxed T, a_i = f_i/rho_i) and the
     // equilibrium stops there WITHOUT a further ic_rad relax: E, F, T are the relaxed
     // ones of that round, rho/a_ref/Phi_eff the march's (module deposit and WB faces
     // balanced at fixed E; the face luminosities then differ by the rho change)
-    hs_eq_last_ = pin->GetOrAddBoolean("problem","star_ic_equil_last_march",false);
-    hs_eq_tol_ = pin->GetOrAddReal("problem","star_ic_equil_tol",1.0e-9);
+    star_eq_last_ = pin->GetOrAddBoolean("problem","star_ic_equil_last_march",false);
+    star_eq_tol_ = pin->GetOrAddReal("problem","star_ic_equil_tol",1.0e-9);
     const Real eqdt = pin->GetOrAddReal("problem","star_ic_equil_dtfac",1.0e6);
     const Real eqrt = pin->GetOrAddReal("problem","star_ic_equil_relax_tol",1.0e-12);
-    if (hs_eq_maxit_ < 1 || !(hs_eq_tol_ > 0.0) || !(eqdt > 0.0) || !(eqrt > 0.0)) {
-      HsFatal("problem/star_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
-              __LINE__);
+    if (star_eq_maxit_ < 1 || !(star_eq_tol_ > 0.0) || !(eqdt > 0.0) || !(eqrt > 0.0)) {
+      StarFatal("problem/star_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
+                __LINE__);
     }
     pm1->icr_fmeas = true;
-    hs_eq_it_ = 0;
+    star_eq_it_ = 0;
     user_icpost_func = StarIcEquil;
     user_icpost_again = false;
   }
   if (global_variable::my_rank == 0) {
-    const int i0 = static_cast<int>((hs_rin_ - hs_rlo_)/hs_dr_);
-    std::cout << "star_vet: GM = " << hs_gm_ << ", F_in = " << hs_fin_
+    const int i0 = static_cast<int>((star_rin_ - star_rlo_)/star_dr_);
+    std::cout << "star_vet: GM = " << star_gm_ << ", F_in = " << star_fin_
               << ", tau(r_in) = " << tau[i0] << ", r_int (tau = " << tau_int
-              << ") = " << hs_rint_ << ", r_top = " << rtop
-              << ", sponge rate = " << hs_sp_rate_ << " above r = " << hs_sp_r0_
+              << ") = " << star_rint_ << ", r_top = " << rtop
+              << ", sponge rate = " << star_sp_rate_ << " above r = " << star_sp_r0_
               << std::endl;
   }
   // (star_drive.hpp; every key read only when named, absent = bitwise):
   // the inflow table, the live monopole gravity and the boundary ledgers
   {
-    hsdrive::SetupArgs da;
+    stardrive::SetupArgs da;
     if (pmbp->punit != nullptr) {
       const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
       da.gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
                  (lu*lu*lu);
     }
-    da.tk = hs_tk;
-    da.gm = hs_gm_;
-    da.fconst = hs_fin_;
-    da.binf = hs_binf_;
-    da.pointmass = hs_pm_;
-    da.bc_hse = hs_bhse_;
+    da.tk = star_tk;
+    da.gm = star_gm_;
+    da.fconst = star_fin_;
+    da.binf = star_binf_;
+    da.pointmass = star_pm_;
+    da.bc_hse = star_bhse_;
     if (pin->DoesParameterExist("problem","star_bc_inner_table")) {
-      DvceArray1D<Real> c2("hs_drv_c", 2);
-      auto crho = hs_rho_, ceint = hs_eint_;
-      const Real rlo = hs_rlo_, dr = hs_dr_, rin = hs_rin_;
-      const int nf2 = hs_nf_;
-      par_for("hs_drv_col", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
-        c2(0) = HsLogInterp(crho, rlo, dr, nf2, rin);
-        c2(1) = HsLogInterp(ceint, rlo, dr, nf2, rin);
+      DvceArray1D<Real> c2("star_drv_c", 2);
+      auto crho = star_rho_, ceint = star_eint_;
+      const Real rlo = star_rlo_, dr = star_dr_, rin = star_rin_;
+      const int nf2 = star_nf_;
+      par_for("star_drv_col", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
+        c2(0) = StarLogInterp(crho, rlo, dr, nf2, rin);
+        c2(1) = StarLogInterp(ceint, rlo, dr, nf2, rin);
       });
       auto hc2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), c2);
       da.rho_rin = hc2(0);
       da.eint_rin = hc2(1);
-      hs_drv_d0_ = hc2(0);
-      hs_drv_e0_ = hc2(1);
+      star_drv_d0_ = hc2(0);
+      star_drv_e0_ = hc2(1);
     }
-    hsdrive::Setup(pin, pmy_mesh_, restart, da);
-    if (hsdrive::On()) {user_cycle_func = hsdrive::Cycle;}
+    stardrive::Setup(pin, pmy_mesh_, restart, da);
+    if (stardrive::On()) {user_cycle_func = stardrive::Cycle;}
   }
   // (star_strip_bg.cpp): one-shot restart-time background strip, off unless
   // problem/strip_bg_on_restart = true (absent: bitwise)
   if (restart) {
-    hsdrive::RestartApply(pmy_mesh_);   // (absent: nothing)
-    HsEosReinitFromT(pin, pmy_mesh_);   // (absent: bitwise)
-    HsStripBackground(pin, pmy_mesh_);
-    HsRestartPerturb(pin, pmy_mesh_);   // (absent: bitwise)
+    stardrive::RestartApply(pmy_mesh_);   // (absent: nothing)
+    StarEosReinitFromT(pin, pmy_mesh_);   // (absent: bitwise)
+    StarStripBackground(pin, pmy_mesh_);
+    StarRestartPerturb(pin, pmy_mesh_);   // (absent: bitwise)
     return;
   }
   // a fresh start builds e with this run's EOS table already, so
   // eos_reinit_from_t has nothing to do; mark it done so that the restarts of this run
-  // never fire it (see HsEosReinitFromT).  The state is unchanged.
+  // never fire it (see StarEosReinitFromT).  The state is unchanged.
   if (pin->DoesParameterExist("problem", "eos_reinit_from_t") &&
       pin->GetBoolean("problem", "eos_reinit_from_t")) {
     pin->SetBoolean("problem", "eos_reinit_from_t", false);
     pin->SetBoolean("problem", "eos_reinit_done", true);
   }
-  if (hs_rmp) {
+  if (star_rmp) {
     // no <rad_vet>/ic_rad (the state is an evolved one), then the arrays
     pm1->icr_mode = 0;
-    HsRemapLoad(pmy_mesh_, hs_rmp_fn, hs_rmp_data, hs_rmp_n);
+    StarRemapLoad(pmy_mesh_, star_rmp_fn, star_rmp_data, star_rmp_n);
     return;
   }
 
@@ -3146,22 +3165,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // problem/star_seed_band = n2 (default) | old.
   // old = the seed exactly as the keys below name it (star_seed default 0 = no seed).  n2
   // = the radial band, the Y_lm l range and (star_seed default 1e-3) the amplitude come
-  // from the convective growth rate of the initial column (HsN2Band); star_seed_rlo/rhi,
-  // _ylm/_lmin/_lmax are then ignored, star_seed_rad/_rng are used as named.  Fresh
-  // starts only (restarts and remaps returned above).
+  // from the convective growth rate of the initial column (StarN2Band);
+  // star_seed_rlo/rhi, _ylm/_lmin/_lmax are then ignored, star_seed_rad/_rng are used as
+  // named.  Fresh starts only (restarts and remaps returned above).
   const std::string sband = pin->GetOrAddString("problem","star_seed_band","n2");
   if (sband != "n2" && sband != "old") {
-    HsFatal("star_seed_band must be n2 or old", __LINE__);
+    StarFatal("star_seed_band must be n2 or old", __LINE__);
   }
   const bool sn2 = (sband == "n2");
   Real seed = pin->GetOrAddReal("problem","star_seed",sn2 ? 1.0e-3 : 0.0);
   if (hlin && seed != 0.0) {
-    HsFatal("problem/star_ic_profile = true replaces the star_seed perturbation by its "
-            "own (set star_seed = 0)", __LINE__);
+    StarFatal("problem/star_ic_profile = true replaces the star_seed perturbation by its "
+              "own (set star_seed = 0)", __LINE__);
   }
   const Real seedk = pin->GetOrAddReal("problem","star_seed_k",4.0);
-  Real srlo = pin->GetOrAddReal("problem","star_seed_rlo",hs_rin_);
-  Real srhi = pin->GetOrAddReal("problem","star_seed_rhi",hs_rint_);
+  Real srlo = pin->GetOrAddReal("problem","star_seed_rlo",star_rin_);
+  Real srhi = pin->GetOrAddReal("problem","star_seed_rhi",star_rint_);
   int n2lmin = 1, n2lmax = 1;
   if (sn2 && seed != 0.0) {
     const Real n2fr = pin->GetOrAddReal("problem","star_seed_n2_frac",0.3);
@@ -3169,10 +3188,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int n2gp = pin->GetOrAddInteger("problem","star_seed_n2_gap",2);
     const Real n2pw = pin->GetOrAddReal("problem","star_seed_n2_ppw",8.0);
     if (!(n2fr > 0.0 && n2fr < 1.0) || n2nm < 1 || n2gp < 0 || !(n2pw >= 2.0)) {
-      HsFatal("star_seed_n2_frac in (0,1), _nmin >= 1, _gap >= 0, _ppw >= 2", __LINE__);
+      StarFatal("star_seed_n2_frac in (0,1), _nmin >= 1, _gap >= 0, _ppw >= 2", __LINE__);
     }
-    if (!HsN2Band(pmbp, eos, ar, hs_tk, hcs, n2fr, n2nm, n2gp, n2pw, 64, srlo, srhi,
-                  n2lmin, n2lmax)) {
+    if (!StarN2Band(pmbp, eos, ar, star_tk, hcs, n2fr, n2nm, n2gp, n2pw, 64, srlo, srhi,
+                    n2lmin, n2lmax)) {
       seed = 0.0;   // no unstable band: no seed (said in the log)
     }
   }
@@ -3200,20 +3219,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const std::string ssign = pin->GetOrAddString("problem","star_seed_signs","positive");
   const std::string skdist = pin->GetOrAddString("problem","star_seed_kdist","box");
   if (ssign != "positive" && ssign != "random") {
-    HsFatal("star_seed_signs must be positive or random", __LINE__);
+    StarFatal("star_seed_signs must be positive or random", __LINE__);
   }
   if (skdist != "box" && skdist != "shell") {
-    HsFatal("star_seed_kdist must be box or shell", __LINE__);
+    StarFatal("star_seed_kdist must be box or shell", __LINE__);
   }
   const bool srsign = (ssign == "random"), sshell = (skdist == "shell");
   if (snk > 0 && (skmin < 0 || skmax < skmin || !(srhi > srlo))) {
-    HsFatal("need 0 <= star_seed_kmin <= star_seed_kmax and star_seed_rhi > "
-            "star_seed_rlo", __LINE__);
+    StarFatal("need 0 <= star_seed_kmin <= star_seed_kmax and star_seed_rhi > "
+              "star_seed_rlo", __LINE__);
   }
   if (snk > 0 && sshell && skmax < 1) {
-    HsFatal("star_seed_kdist = shell needs star_seed_kmax >= 1", __LINE__);
+    StarFatal("star_seed_kdist = shell needs star_seed_kmax >= 1", __LINE__);
   }
-  DualArray2D<Real> smd("hs_seed_modes", std::max(snk, 1), 4);   // k2, k3, amp, phase
+  DualArray2D<Real> smd("star_seed_modes", std::max(snk, 1), 4);   // k2, k3, amp, phase
   {
     std::mt19937 rng(srng);
     std::uniform_real_distribution<double> u01(0.0, 1.0);
@@ -3280,11 +3299,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int slmax = sylm ? pin->GetOrAddInteger("problem","star_seed_lmax",
                                                 sn2 ? n2lmax : 8) : 0;
   if (sylm && (slmin < 1 || slmax < slmin || slmax > 64 || !(srhi > srlo))) {
-    HsFatal("star_seed_ylm needs 1 <= star_seed_lmin <= star_seed_lmax <= 64 and "
-            "star_seed_rhi > star_seed_rlo", __LINE__);
+    StarFatal("star_seed_ylm needs 1 <= star_seed_lmin <= star_seed_lmax <= 64 and "
+              "star_seed_rhi > star_seed_rlo", __LINE__);
   }
   const int nylm = sylm ? (slmax + 1)*(slmax + 1) : 1;
-  DualArray1D<Real> sylc("hs_seed_ylm", nylm);   // index l*l + l + m: c_lm N_lm
+  DualArray1D<Real> sylc("star_seed_ylm", nylm);   // index l*l + l + m: c_lm N_lm
   for (int q = 0; q < nylm; ++q) {sylc.h_view(q) = 0.0;}
   if (sylm) {
     std::mt19937 rngy(static_cast<unsigned>(srng) + 0x9e37u);
@@ -3336,33 +3355,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto ur = pm1->u0;
   auto x2v = pmbp->pcoord->x2v;
   auto x3v = pmbp->pcoord->x3v;
-  auto crho = hs_rho_, ceint = hs_eint_;
-  const bool gmc = hs_gmc_;
-  auto pgc = hs_phig_;
-  const bool bal = hs_bal_;
-  auto cbd = hs_bd_, cbe = hs_be_;
-  DvceArray1D<Real> cwv("hs_wv", wic ? nf : 1);
+  auto crho = star_rho_, ceint = star_eint_;
+  const bool gmc = star_gmc_;
+  auto pgc = star_phig_;
+  const bool bal = star_bal_;
+  auto cbd = star_bd_, cbe = star_be_;
+  DvceArray1D<Real> cwv("star_wv", wic ? nf : 1);
   if (wic) {
     auto hw = Kokkos::create_mirror_view(cwv);
     for (int n=0; n<nf; ++n) hw(n) = hV[n];
     Kokkos::deep_copy(cwv, hw);
   }
   // (star_ic_equil): the seed factor is stored and applied after the equilibrium
-  const bool sdef = hs_eq_ && (seed != 0.0);
-  hs_eq_seed_ = sdef;
-  hs_eq_srad_ = srad;
+  const bool sdef = star_eq_ && (seed != 0.0);
+  star_eq_seed_ = sdef;
+  star_eq_srad_ = srad;
   if (sdef) {
-    Kokkos::realloc(hs_sfac_, nmb1 + 1, n3m1 + 1, n2m1 + 1, n1m1 + 1);
-    Kokkos::deep_copy(hs_sfac_, 1.0);
+    Kokkos::realloc(star_sfac_, nmb1 + 1, n3m1 + 1, n2m1 + 1, n1m1 + 1);
+    Kokkos::deep_copy(star_sfac_, 1.0);
   }
-  auto sfc = hs_sfac_;
-  par_for("hs_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  auto sfc = star_sfac_;
+  par_for("star_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
-    const Real d = bal ? cbd(i) : HsLogInterp(crho, rlo, dr, nf, r);
-    Real e = bal ? cbe(i) : HsLogInterp(ceint, rlo, dr, nf, r);
+    const Real d = bal ? cbd(i) : StarLogInterp(crho, rlo, dr, nf, r);
+    Real e = bal ? cbe(i) : StarLogInterp(ceint, rlo, dr, nf, r);
     // seed (default off): one smooth lateral mode in eint, wave number star_seed_k
-    Real er = HsLogInterp(cE, rlo, dr, nf, r);
+    Real er = StarLogInterp(cE, rlo, dr, nf, r);
     if (seed != 0.0 && r >= srlo && r <= srhi) {
       Real fac;
       Real th2 = x2v(m,j), ph3 = x3v(m,k), tap = 1.0;
@@ -3425,19 +3444,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (srad) er *= SQR(SQR(fac));
       }
     }
-    const Real vr = wic ? HsLinInterp(cwv, rlo, dr, nf, r) : 0.0;
+    const Real vr = wic ? StarLinInterp(cwv, rlo, dr, nf, r) : 0.0;
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = d*vr;
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     if (gmc) {
-      uh(m,IEN,k,j,i) = e + d*HsLinInterp(pgc, rlo, dr, nf, r);
+      uh(m,IEN,k,j,i) = e + d*StarLinInterp(pgc, rlo, dr, nf, r);
     } else {
       uh(m,IEN,k,j,i) = e + d*gm*(1.0/rin - 1.0/r);
     }
     if (wic) uh(m,IEN,k,j,i) += 0.5*d*vr*vr;
     ur(m,radvet::M1_E,k,j,i) = fmax(er, efl);
-    ur(m,radvet::M1_F1,k,j,i) = HsLinInterp(cF, rlo, dr, nf, r);
+    ur(m,radvet::M1_F1,k,j,i) = StarLinInterp(cF, rlo, dr, nf, r);
     ur(m,radvet::M1_F2,k,j,i) = 0.0;
     ur(m,radvet::M1_F3,k,j,i) = 0.0;
   });
@@ -3446,9 +3465,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (ff0.extent_int(0) >= nmb1 + 1) {
     const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
     const int e1 = ff0.extent_int(3) - 1;
-    par_for("hs_icf", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
+    par_for("star_icf", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      ff0(m,k,j,i) = HsLinInterp(cF, rlo, dr, nf, x1f(m,i));
+      ff0(m,k,j,i) = StarLinInterp(cF, rlo, dr, nf, x1f(m,i));
     });
   }
   if (!hlin) return;
@@ -3466,37 +3485,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   //  * gas energy from the UNPERTURBED rho and T (its IEN = rho T/(gamma - 1)), E = a
   // T^4, F1 = F_r (its two-zone intensities have exactly these moments), F2 = F3 = 0, v =
   // 0; * the perturbation rho *= 1 + amp (U - 0.5) where the unperturbed rho > rho_thr,
-  //    U uniform per cell from HsCellUniform(global cell index) (there: srand(gid),
+  //    U uniform per cell from StarCellUniform(global cell index) (there: srand(gid),
   //    rand()): isobaric (P, E unchanged).  The potential energy of etotgrav uses the
   // perturbed rho. * the comoving x1 face fluxes f0x1 = the profile's F_r at the faces.
   // Fresh starts only (a restart returned above).  The ghost cells are filled the same
   // way and then overwritten by the (unchanged) boundary conditions.
   {
     if (hcs || wic) {
-      HsFatal("problem/star_ic_profile needs the spherical-polar wedge and no "
-              "star_wind_ic", __LINE__);
+      StarFatal("problem/star_ic_profile needs the spherical-polar wedge and no "
+                "star_wind_ic", __LINE__);
     }
     if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
         || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
-      HsFatal("problem/star_ic_profile needs <units> length_cgs = mass_cgs = 1 (cgs r, "
-              "rho)", __LINE__);
+      StarFatal("problem/star_ic_profile needs <units> length_cgs = mass_cgs = 1 (cgs r, "
+                "rho)", __LINE__);
     }
-    const Real lamp = pin->GetOrAddReal("problem",HsIcKey(pin,"star_ic_profile_amp"),
+    const Real lamp = pin->GetOrAddReal("problem",StarIcKey(pin,"star_ic_profile_amp"),
                                         0.05);
     // the reference threshold rho > 0.01 in ITS code units: rho_thr [cgs] = 0.01
     // rho_unit (of its input file, not supplied).  No default: the run states its
     // assumption.
-    const Real lthr = pin->GetReal("problem",HsIcKey(pin,"star_ic_profile_rho_thr"));
-    const int lrng = pin->GetOrAddInteger("problem",HsIcKey(pin,"star_ic_profile_rng"),0);
+    const Real lthr = pin->GetReal("problem",StarIcKey(pin,"star_ic_profile_rho_thr"));
+    const int lrng = pin->GetOrAddInteger("problem",StarIcKey(pin,"star_ic_profile_rng"),
+                                         0);
     const int np = static_cast<int>(pr.size());
     const int nm = nmb1 + 1, nc1 = n1m1 + 1;
-    DualArray2D<Real> lD("hs_lin_d", nm, nc1), lE("hs_lin_eg", nm, nc1);
-    DualArray2D<Real> lR("hs_lin_er", nm, nc1), lF("hs_lin_f", nm, nc1);
-    DualArray2D<Real> lFf("hs_lin_ff", nm, nc1 + 1);
-    DualArray2D<std::int64_t> lof("hs_lin_off", nm, 3);
+    DualArray2D<Real> lD("star_lin_d", nm, nc1), lE("star_lin_eg", nm, nc1);
+    DualArray2D<Real> lR("star_lin_er", nm, nc1), lF("star_lin_f", nm, nc1);
+    DualArray2D<Real> lFf("star_lin_ff", nm, nc1 + 1);
+    DualArray2D<std::int64_t> lof("star_lin_off", nm, 3);
     auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
-    const Real tk = hs_tk;
+    const Real tk = star_tk;
     for (int m=0; m<nm; ++m) {
       const LogicalLocation &ll = pmy_mesh_->lloc_eachmb[pmbp->gids + m];
       lof.h_view(m,0) = static_cast<std::int64_t>(ll.lx1)*indcs.nx1;
@@ -3534,15 +3554,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // problem/star_ic_profile_seed_group = true (read only when named): one
     // deviate per hydro merge_lat group, so a merged 128^2 shell has the seed of the real
     // coarse cells (same amp and rms) instead of the average of 4 fine deviates.
-    DualArray2D<int> lfg("hs_lin_fg", nm, nc1);
+    DualArray2D<int> lfg("star_lin_fg", nm, nc1);
     {
       std::vector<Real> mrc;
       std::vector<int> mfs;
-      if (pin->DoesParameterExist("problem",HsIcKey(pin,"star_ic_profile_seed_group")) &&
-          pin->GetBoolean("problem",HsIcKey(pin,"star_ic_profile_seed_group"))) {
+      const std::string ksg = StarIcKey(pin,"star_ic_profile_seed_group");
+      if (pin->DoesParameterExist("problem",ksg) && pin->GetBoolean("problem",ksg)) {
         if (!pin->DoesParameterExist("hydro","merge_lat_rc")) {
-          HsFatal("problem/star_ic_profile_seed_group needs hydro/merge_lat_rc",
-                  __LINE__);
+          StarFatal("problem/star_ic_profile_seed_group needs hydro/merge_lat_rc",
+                    __LINE__);
         }
         std::istringstream sr(pin->GetString("hydro","merge_lat_rc"));
         std::istringstream sf(pin->GetString("hydro","merge_lat_f"));
@@ -3550,7 +3570,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         while (std::getline(sr, tk1, ',')) mrc.push_back(std::stod(tk1));
         while (std::getline(sf, tk1, ',')) mfs.push_back(std::stoi(tk1));
         if (mrc.size() != mfs.size()) {
-          HsFatal("merge_lat_rc and merge_lat_f sizes differ", __LINE__);
+          StarFatal("merge_lat_rc and merge_lat_f sizes differ", __LINE__);
         }
       }
       for (int m=0; m<nm; ++m) {
@@ -3565,7 +3585,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lfg.modify_host(); lfg.sync_device();
     }
     auto lfgd = lfg.d_view;
-    par_for("hs_ic_profile", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    par_for("star_ic_profile", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
       const Real d0 = bal ? cbd(i) : ld(m,i), eg = bal ? cbe(i) : le(m,i);
@@ -3576,14 +3596,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const std::int64_t gj = m2 ? (lo(m,1) + ((j - ljs)/fg)*fg + ng) : 0;
         const std::int64_t gk = m3 ? (lo(m,2) + ((k - lks)/fg)*fg + ng) : 0;
         const std::uint64_t idx = static_cast<std::uint64_t>((gk*gn2 + gj)*gn1 + gi);
-        d = d0*(1.0 + lamp*(HsCellUniform(idx, useed) - 0.5));
+        d = d0*(1.0 + lamp*(StarCellUniform(idx, useed) - 0.5));
       }
       uh(m,IDN,k,j,i) = d;
       uh(m,IM1,k,j,i) = 0.0;
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       if (gmc) {
-        uh(m,IEN,k,j,i) = eg + d*HsLinInterp(pgc, rlo, dr, nf, r);
+        uh(m,IEN,k,j,i) = eg + d*StarLinInterp(pgc, rlo, dr, nf, r);
       } else {
         uh(m,IEN,k,j,i) = eg + d*gm*(1.0/rin - 1.0/r);
       }
@@ -3595,7 +3615,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (ff0.extent_int(0) >= nmb1 + 1) {
       const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
       const int e1 = std::min(ff0.extent_int(3) - 1, nc1);
-      par_for("hs_icf_profile", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
+      par_for("star_icf_profile", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         ff0(m,k,j,i) = lff(m,i);
       });
@@ -3647,17 +3667,18 @@ void StarGravity(Mesh *pm, const Real bdt) {
   // w L_sub), so F_sub and its clock stay FROZEN at their last values (also in the
   // restart files), except when a problem/mlt_closure_dout profile is due (diagnostic
   // cadence kept: the update runs and writes its lines)
-  if (hs_ad_ && pm->ncycle != hs_ad_cyc_) {
-    hs_ad_cyc_ = pm->ncycle;
-    const bool off = (hs_mrs_ >= 0.0 && HsMltW(HsMltTc(pm)) == 0.0 && hs_mw_ == 0.0);
-    const bool dout = (hs_ad_dout_ > 0.0 && pm->time >= hs_ad_tout_);
-    if (!off || dout) HsAdaptiveUpdate(pm);
+  if (star_ad_ && pm->ncycle != star_ad_cyc_) {
+    star_ad_cyc_ = pm->ncycle;
+    const bool off = (star_mrs_ >= 0.0 && StarMltW(StarMltTc(pm)) == 0.0 &&
+                      star_mw_ == 0.0);
+    const bool dout = (star_ad_dout_ > 0.0 && pm->time >= star_ad_tout_);
+    if (!off || dout) StarAdaptiveUpdate(pm);
   }
   // the frozen-MLT ramp: w at the step's start (mlt_src_time = stage: t + dt) time,
   // the same on every stage
-  if (hs_mlt_ && hs_mrs_ >= 0.0) {
-    const Real w = HsMltW(HsMltTc(pm));
-    if (w != hs_mw_) HsApplyMltW(pm, w);
+  if (star_mlt_ && star_mrs_ >= 0.0) {
+    const Real w = StarMltW(StarMltTc(pm));
+    if (w != star_mw_) StarApplyMltW(pm, w);
   }
   // F6 localisation (<rad_vet>/dbg_energy_tally, output only): sum IEN V
   // after each part of this source and the hydro energy flux through the x1 boundary
@@ -3666,7 +3687,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
   auto htsum = [&]() {
     Real s = 0.0;
     const int nx1 = ie - is + 1, nx2 = je - js + 1, nx3 = ke - ks + 1;
-    Kokkos::parallel_reduce("hs_htally", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+    Kokkos::parallel_reduce("star_htally", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             (nmb1 + 1)*nx3*nx2*nx1),
     KOKKOS_LAMBDA(const int n, Real &acc) {
       const int m = n/(nx3*nx2*nx1);
@@ -3689,7 +3710,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
     for (int q = 0; q < 2; ++q) {
       Real s = 0.0;
       const int ib = (q == 0) ? is : (ie + 1);
-      Kokkos::parallel_reduce("hs_htally_f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+      Kokkos::parallel_reduce("star_htally_f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                               (nmb1 + 1)*nx3*nx2),
       KOKKOS_LAMBDA(const int n, Real &acc) {
         const int m = n/(nx3*nx2);
@@ -3706,21 +3727,21 @@ void StarGravity(Mesh *pm, const Real bdt) {
     ht[4] = fb[0];
     ht[5] = fb[1];
   }
-  if (hs_pm_) {
+  if (star_pm_) {
     // star_gravity = pointmass: the Athena++ point-mass source
     // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
     // (r_+^2 - r_-^2)/2 / ((r_+^3 - r_-^3)/3).  The energy needs no source: etotgrav
     // carries rho Phi in the total energy and its flux.
     auto &x1vg = pmbp->pcoord->x1v;
     auto &x1fg = pmbp->pcoord->xx1f;
-    const Real gmp = hs_gm_;
-    par_for("hs_grav_pm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    const Real gmp = star_gm_;
+    par_for("star_grav_pm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real rm = x1fg(m,i), rp = x1fg(m,i+1);
       const Real src1 = 1.5*(rp*rp - rm*rm)/(rp*rp*rp - rm*rm*rm);
       u0(m,IM1,k,j,i) -= bdt*w0(m,IDN,k,j,i)*gmp*src1/x1vg(m,i);
     });
-  } else if (hs_wbwin_) {
+  } else if (star_wbwin_) {
   // problem/star_wb_grav_window: outside the fluid's WB window (x1v > wb_rmax > 0 or
   // phicc_wb > wb_phimax: exactly the cells whose x1
   // reconstruction is plain, hydro_fluxes.cpp / mhd_fluxes.cpp) the cached hydrostatic
@@ -3737,7 +3758,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
   const Real wphmax = fl.mhd ? fl.pm->wb_phimax : fl.ph->wb_phimax;
   auto &x1vw = pmbp->pcoord->x1v;
   auto pwcw = ph->phicc_wb, pwfw = ph->phi_wb_x1f;
-  par_for("hs_grav_win", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for("star_grav_win", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
     Real pl, pr, d1, d2, d3;
@@ -3753,7 +3774,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
                        /volume(m,k,j,i);
   });
   } else {
-  par_for("hs_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for("star_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
     Real pl, pr, d1, d2, d3;
@@ -3774,14 +3795,14 @@ void StarGravity(Mesh *pm, const Real bdt) {
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
       auto wacc = pm1->FrefWacc();
       const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
-      par_for("hs_grav_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      par_for("star_grav_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real w = bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
         u0(m,IEN,k,j,i) += w;
         wacc(m,k,j,i) = g0*wacc(m,k,j,i) + w;
       });
     } else {
-      par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      par_for("star_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
       });
@@ -3792,11 +3813,11 @@ void StarGravity(Mesh *pm, const Real bdt) {
   // Riemann flux through a "closed" wall carries mass.  The inner wall loses its mass,
   // transverse momentum and energy fluxes (u0 was just updated with them); the pressure
   // flux stays.  The outer face keeps OUTFLOW and loses only inflow (no mass enters).
-  if (hs_zflux_) {
+  if (star_zflux_) {
     auto flx1 = ph->uflx->x1f;
     auto &mbbcs = pmbp->pmb->mb_bcs;
-    const bool binf = hs_binf_;
-    par_for("hs_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    const bool binf = star_binf_;
+    par_for("star_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       if (!binf && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
@@ -3817,8 +3838,8 @@ void StarGravity(Mesh *pm, const Real bdt) {
   }
   if (htal) {
     ht[2] = htsum();
-    if (hs_sp_rate_ <= 0.0) {ht[3] = ht[2];}
-    if (global_variable::my_rank == 0 && hs_sp_rate_ <= 0.0) {
+    if (star_sp_rate_ <= 0.0) {ht[3] = ht[2];}
+    if (global_variable::my_rank == 0 && star_sp_rate_ <= 0.0) {
       std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
                   "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
                   ht[1] - ht[0],
@@ -3826,9 +3847,9 @@ void StarGravity(Mesh *pm, const Real bdt) {
     }
   }
   // the RK-exact boundary/sponge ledgers of this stage (star_drive.cpp)
-  const bool hdrv = hsdrive::On();
-  if (hs_sp_rate_ <= 0.0) {
-    if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, 0.0);}
+  const bool hdrv = stardrive::On();
+  if (star_sp_rate_ <= 0.0) {
+    if (hdrv) {stardrive::StageLedger(pm, bdt, star_binf_, star_zflux_, 0.0);}
     return;
   }
   const Real hdsp0 = hdrv ? htsum() : 0.0;
@@ -3837,11 +3858,11 @@ void StarGravity(Mesh *pm, const Real bdt) {
   // energy (the heat is not kept, so that the sponge adds no buoyancy).
   // star_sponge_mode = radial: only v_r (the transverse momenta are untouched)
   auto &x1v = pmbp->pcoord->x1v;
-  const Real rate = hs_sp_rate_, r0 = hs_sp_r0_, rt = hs_rtop_, spd = hs_sp_dmax_;
+  const Real rate = star_sp_rate_, r0 = star_sp_r0_, rt = star_rtop_, spd = star_sp_dmax_;
   // star_sponge_form = lawson: this stage's abscissa c (c_s = gam0_s c_{s-1} + beta_s)
   // from the integrator's weights (found by beta_s dt = bdt): u0 = fa (u0 - g1 u^n) +
   // fb g1 u^n, fa = exp(-ca rate w), fb = exp(-cb rate w)
-  const bool law = hs_sp_law_;
+  const bool law = star_sp_law_;
   auto u1 = ph->u1;
   Real ca = bdt, cb = bdt, g1 = 0.0;
   if (law) {
@@ -3852,14 +3873,14 @@ void StarGravity(Mesh *pm, const Real bdt) {
       c = pm1->fref_hgam0[q]*c + pm1->fref_hbeta[q];
       if (std::abs(bdt - pm1->fref_hbeta[q]*pm->dt) <= 1.0e-12*bdt) s = q;
     }
-    if (s < 0) HsFatal("problem/star_sponge_form = lawson: no rk1/rk2/rk3 stage has this "
-                       "beta dt", __LINE__);
+    if (s < 0) StarFatal("problem/star_sponge_form = lawson: no rk1/rk2/rk3 stage has "
+                         "this beta dt", __LINE__);
     ca = (c - cp)*pm->dt;
     cb = c*pm->dt;
     g1 = 1.0 - pm1->fref_hgam0[s];
   }
-  if (hs_sp_rad_) {
-    par_for("hs_sponge_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  if (star_sp_rad_) {
+    par_for("star_sponge_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
       const bool low = ((law ? u1(m,IDN,k,j,i) : u0(m,IDN,k,j,i)) < spd);
@@ -3884,12 +3905,12 @@ void StarGravity(Mesh *pm, const Real bdt) {
                     ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
       }
     }
-    if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, htsum() - hdsp0);}
+    if (hdrv) {stardrive::StageLedger(pm, bdt, star_binf_, star_zflux_, htsum() - hdsp0);}
     return;
   }
-  const bool hcsg = pm->use_cubed_sphere;   // metric KE (HsKeCs)
+  const bool hcsg = pm->use_cubed_sphere;   // metric KE (StarKeCs)
   auto hccl = pmbp->pcoord->cos_cell;
-  par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for("star_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
     const bool low = ((law ? u1(m,IDN,k,j,i) : u0(m,IDN,k,j,i)) < spd);
@@ -3897,8 +3918,8 @@ void StarGravity(Mesh *pm, const Real bdt) {
     const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
     const Real f = exp(-ca*rate*w);
     const Real d = u0(m,IDN,k,j,i);
-    const Real ke0 = hcsg ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i), d,
-                                   hccl(m,k,j))
+    const Real ke0 = hcsg ? StarKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i), d,
+                                     hccl(m,k,j))
                           : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                           + SQR(u0(m,IM3,k,j,i)))/d;
     if (law) {
@@ -3909,7 +3930,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
       u0(m,IM1,k,j,i) = m1;
       u0(m,IM2,k,j,i) = m2;
       u0(m,IM3,k,j,i) = m3;
-      u0(m,IEN,k,j,i) -= ke0 - (hcsg ? HsKeCs(m1, m2, m3, d, hccl(m,k,j))
+      u0(m,IEN,k,j,i) -= ke0 - (hcsg ? StarKeCs(m1, m2, m3, d, hccl(m,k,j))
                                      : 0.5*(SQR(m1) + SQR(m2) + SQR(m3))/d);
       return;
     }
@@ -3927,11 +3948,11 @@ void StarGravity(Mesh *pm, const Real bdt) {
                   ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
     }
   }
-  if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, htsum() - hdsp0);}
+  if (hdrv) {stardrive::StageLedger(pm, bdt, star_binf_, star_zflux_, htsum() - hdsp0);}
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real HsZcAm()
+//! \fn Real StarZcAm()
 //! \brief star_bc_inner = zerocontact: the HLLC contact speed S_M at the inner wall face
 //! for a trial v_r = vg of the first ghost (index is-1), exactly as the x1 sweep forms
 //! it: the plain spherical-polar PLM (Hydro::PLM_nonuniform, Mignone 2014) of the left
@@ -3942,9 +3963,9 @@ void StarGravity(Mesh *pm, const Real bdt) {
 //! cells is-1 and is.
 
 KOKKOS_INLINE_FUNCTION
-Real HsZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
-            const Real vb, const Real dl, const Real el, const Real dr, const Real er,
-            const Real *cl4, const Real *cr4) {
+Real StarZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
+              const Real vb, const Real dl, const Real el, const Real dr, const Real er,
+              const Real *cl4, const Real *cr4) {
   Real vl, vr, dum;
   hydro::Hydro::PLM_nonuniform(v2g, vg, va, cl4[0], cl4[1], cl4[2], cl4[3], vl, dum);
   hydro::Hydro::PLM_nonuniform(vg, va, vb, cr4[0], cr4[1], cr4[2], cr4[3], dum, vr);
@@ -3985,12 +4006,13 @@ void StarBC(Mesh *pm) {
   auto *ph = &fl;
   auto uh = ph->u0;
   auto phicc = ph->phicc0;
-  auto crho = hs_rho_, ceint = hs_eint_;
-  const Real rlo = hs_rlo_, dr = hs_dr_;
-  const int nf = hs_nf_;
-  const bool bal = hs_bal_;
-  auto cbd = hs_bd_, cbe = hs_be_;
-  const bool binf = hs_binf_, bout = hs_bout_, bhse = hs_bhse_, bhtg = hs_bhse_tg_;
+  auto crho = star_rho_, ceint = star_eint_;
+  const Real rlo = star_rlo_, dr = star_dr_;
+  const int nf = star_nf_;
+  const bool bal = star_bal_;
+  auto cbd = star_bd_, cbe = star_be_;
+  const bool binf = star_binf_, bout = star_bout_;
+  const bool bhse = star_bhse_, bhtg = star_bhse_tg_;
   auto ur = pmbp->pradvet->u0;
   const Real cl = pmbp->pradvet->c_light;
   const Real efl = pmbp->pradvet->e_floor;
@@ -4000,25 +4022,25 @@ void StarBC(Mesh *pm) {
   auto aref = pmbp->pradvet->arad_ref;
   auto opac = pmbp->pradvet->opac;
   const bool haveop = (opac.extent_int(0) > 0);
-  const Real gm = hs_gm_, gmax = hs_bhse_gmax_;
-  const bool gmc = hs_gmc_;
-  auto cgm = hs_gmr_;
+  const Real gm = star_gm_, gmax = star_bhse_gmax_;
+  const bool gmc = star_gmc_;
+  auto cgm = star_gmr_;
   const Real dfl = eos.dfloor;
-  const bool bhfc = bhse && hs_bhse_face_;
+  const bool bhfc = bhse && star_bhse_face_;
   auto ff1 = pmbp->pradvet->f0x1;
   // star_bc_inner = zerocontact, star_bc_outer = copy
-  const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
-  const bool bcr2 = hs_bcr2_;
+  const bool bzc = star_bzc_, bcopy = star_bcopy_;
+  const bool bcr2 = star_bcr2_;
   auto &x1fb = pmbp->pcoord->xx1f;
-  const bool hcsb = pm->use_cubed_sphere;   // metric KE (HsKeCs)
+  const bool hcsb = pm->use_cubed_sphere;   // metric KE (StarKeCs)
   auto hcclb = pmbp->pcoord->cos_cell;
   // problem/star_bc_inner_table (star_bc_inner = inflow): the table's rho,
   // T (code units) and v_r at r_in at the BC time
-  const bool itab = hsdrive::InflowOn();
+  const bool itab = stardrive::InflowOn();
   Real tbd = 0.0, tbt = 0.0, tbv = 0.0;
-  if (itab) {hsdrive::InflowAt(pm, &tbd, &tbt, &tbv);}
-  const Real tbd0 = hs_drv_d0_, tbe0 = hs_drv_e0_, tbr2 = SQR(hs_rin_);
-  par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+  if (itab) {stardrive::InflowAt(pm, &tbd, &tbt, &tbv);}
+  const Real tbd0 = star_drv_d0_, tbe0 = star_drv_e0_, tbr2 = SQR(star_rin_);
+  par_for("star_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
       const bool lo = (side == 0);
@@ -4026,8 +4048,8 @@ void StarBC(Mesh *pm) {
           != BoundaryFlag::user) continue;
       const int ia = lo ? is : ie;
       const Real da = uh(m,IDN,k,j,ia);
-      const Real kea = hcsb ? HsKeCs(uh(m,IM1,k,j,ia), uh(m,IM2,k,j,ia), uh(m,IM3,k,j,ia),
-                                     da, hcclb(m,k,j))
+      const Real kea = hcsb ? StarKeCs(uh(m,IM1,k,j,ia), uh(m,IM2,k,j,ia),
+                                       uh(m,IM3,k,j,ia), da, hcclb(m,k,j))
                             : 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
@@ -4037,14 +4059,14 @@ void StarBC(Mesh *pm) {
         // ghosts hold the UNSCALED initial column (rho, eint at their radii) and v = 0,
         // except the first ghost (is-1): its v_r is the root vg of the HLLC contact speed
         // S_M(vg) = 0 at the wall face, with the left/right states the x1 sweep will
-        // reconstruct (plain PLM, HsZcAm), v_t = 0 there.  S_M = 0 makes the HLLC mass,
+        // reconstruct (plain PLM, StarZcAm), v_t = 0 there.  S_M = 0 makes the HLLC mass,
         // transverse-momentum and energy fluxes vanish; the momentum flux is p*.
         // S_M increases with vg; bracketed Illinois iteration; no bracket -> mirror v.
         const int g0 = is - 1, g1 = is - 2, ib = is + 1;
-        const Real d0 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g0));
-        const Real e0 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
-        const Real d1 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g1));
-        const Real e1 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
+        const Real d0 = StarLogInterp(crho, rlo, dr, nf, x1v(m,g0));
+        const Real e0 = StarLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
+        const Real d1 = StarLogInterp(crho, rlo, dr, nf, x1v(m,g1));
+        const Real e1 = StarLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
         const Real db = uh(m,IDN,k,j,ib);
         const Real vb = uh(m,IM1,k,j,ib)/db;
         const Real eb = uh(m,IEN,k,j,ib) - 0.5*(SQR(uh(m,IM1,k,j,ib))
@@ -4072,17 +4094,17 @@ void StarBC(Mesh *pm) {
         const Real csa = sqrt(eos.gamma*eos.IdealGasPressure(ea)/da);
         Real w = 2.0*(csa + fabs(va) + fabs(vb));
         Real xa = -w, xb = w;
-        Real fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
-        Real fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+        Real fa = StarZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+        Real fb = StarZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
         for (int it=0; it<30 && !(fa < 0.0 && fb > 0.0); ++it) {
           w *= 2.0;
           if (!(fa < 0.0)) {
             xa = -w;
-            fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            fa = StarZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
           }
           if (!(fb > 0.0)) {
             xb = w;
-            fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            fb = StarZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
           }
         }
         Real vg = -va;
@@ -4093,7 +4115,7 @@ void StarBC(Mesh *pm) {
           Real xc = xa, fc = fa;
           for (int it=0; it<100; ++it) {
             xc = (xa*fb - xb*fa)/(fb - fa);
-            fc = HsZcAm(eos, xc, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            fc = StarZcAm(eos, xc, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
             if (fabs(fc) <= ftol || !(xb - xa > 1.0e-15*w)) break;
             if (fc < 0.0) {
               xa = xc;
@@ -4113,9 +4135,9 @@ void StarBC(Mesh *pm) {
           const int ig = is - 1 - g;
           const Real rg = x1v(m,ig);
           const Real dg = (g == 0) ? d0 : ((g == 1) ? d1 :
-                                           HsLogInterp(crho, rlo, dr, nf, rg));
+                                           StarLogInterp(crho, rlo, dr, nf, rg));
           const Real eg = (g == 0) ? e0 : ((g == 1) ? e1 :
-                                           HsLogInterp(ceint, rlo, dr, nf, rg));
+                                           StarLogInterp(ceint, rlo, dr, nf, rg));
           const Real v1 = (g == 0) ? vg : 0.0;
           uh(m,IDN,k,j,ig) = dg;
           uh(m,IM1,k,j,ig) = dg*v1;
@@ -4174,7 +4196,7 @@ void StarBC(Mesh *pm) {
         const int ia1 = ie - 1;
         const Real ta = eos.Temperature(da, ea);
         const Real ra = x1v(m,ia);
-        const Real ga = gmc ? HsLinInterp(cgm, rlo, dr, nf, ra)/SQR(ra) : gm/SQR(ra);
+        const Real ga = gmc ? StarLinInterp(cgm, rlo, dr, nf, ra)/SQR(ra) : gm/SQR(ra);
         const Real ar0 = aref(m,k,j,ia);
         Real arad = ar0;
         if (haveop && opac(m,radvet::M1_OP_T,k,j,ia) > 0.0) {
@@ -4191,7 +4213,7 @@ void StarBC(Mesh *pm) {
         Real dltdphi = 0.0;
         if (bhtg) {
           const Real d1 = uh(m,IDN,k,j,ia1);
-          const Real e1 = uh(m,IEN,k,j,ia1) - (hcsb ? HsKeCs(uh(m,IM1,k,j,ia1),
+          const Real e1 = uh(m,IEN,k,j,ia1) - (hcsb ? StarKeCs(uh(m,IM1,k,j,ia1),
                           uh(m,IM2,k,j,ia1), uh(m,IM3,k,j,ia1), d1, hcclb(m,k,j))
                           : 0.5*(SQR(uh(m,IM1,k,j,ia1))
                           + SQR(uh(m,IM2,k,j,ia1)) + SQR(uh(m,IM3,k,j,ia1)))/d1)
@@ -4238,8 +4260,8 @@ void StarBC(Mesh *pm) {
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g;
           const Real rg = x1v(m,ig);
-          const Real dg = sdt*HsLogInterp(crho, rlo, dr, nf, rg);
-          const Real eg = set*HsLogInterp(ceint, rlo, dr, nf, rg);
+          const Real dg = sdt*StarLogInterp(crho, rlo, dr, nf, rg);
+          const Real eg = set*StarLogInterp(ceint, rlo, dr, nf, rg);
           const Real v1 = tbv*tbr2*tbd/(SQR(rg)*dg);
           uh(m,IDN,k,j,ig) = dg;
           uh(m,IM1,k,j,ig) = dg*v1;
@@ -4251,17 +4273,17 @@ void StarBC(Mesh *pm) {
         continue;
       }
       const Real sd = inflo ? 1.0 :
-                      da/(bal ? cbd(ia) : HsLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
+                      da/(bal ? cbd(ia) : StarLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
       const Real se = inflo ? 1.0 :
-                      ea/(bal ? cbe(ia) : HsLogInterp(ceint, rlo, dr, nf, x1v(m,ia)));
+                      ea/(bal ? cbe(ia) : StarLogInterp(ceint, rlo, dr, nf, x1v(m,ia)));
       for (int g=0; g<ng; ++g) {
         const int ig = lo ? (is - 1 - g) : (ie + 1 + g);
         const int im = lo ? (is + g) : (ie - g);        // the mirror cell
         const Real rg = x1v(m,ig);
         const Real dg = outfl ? da*SQR(x1v(m,ia)/rg) :
-                        sd*(bal ? cbd(ig) : HsLogInterp(crho, rlo, dr, nf, rg));
+                        sd*(bal ? cbd(ig) : StarLogInterp(crho, rlo, dr, nf, rg));
         const Real eg = outfl ? ea*(dg/da) :
-                        se*(bal ? cbe(ig) : HsLogInterp(ceint, rlo, dr, nf, rg));
+                        se*(bal ? cbe(ig) : StarLogInterp(ceint, rlo, dr, nf, rg));
         const Real dm = uh(m,IDN,k,j,im);
         // wall: v1 mirrored; outer edge: v1 of the edge cell where it flows out
         const Real v1e = uh(m,IM1,k,j,ia)/da;
@@ -4298,7 +4320,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   // F4: + P_esrc (power the explicit source puts into E, (chat/c) sum
   // esrc V) and P_sponge (kinetic-energy loss rate of the top sponge at this state), the
   // two non-flux terms of d Etot/dt = L_in - L_top + P_esrc - P_sponge
-  const int nb = hs_mlt_ ? 22 : 20;
+  const int nb = star_mlt_ ? 22 : 20;
   // L_midE, L_intE: the clean energy flux Phi of the step's last solve (t2pf1, what
   // moved E; c/chat its stored chat/c) through the L_mid / L_int faces; L_mid / L_int
   // are the faces' F (clean staggered: the face momentum, not the energy flux).
@@ -4333,7 +4355,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   auto &x1f = pmbp->pcoord->xx1f;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
-  const Real rint = hs_rint_, fin = hs_fin_;   // hg262-drive
+  const Real rint = star_rint_, fin = star_fin_;   // hg262-drive
   // clean staggered: L_in / L_top = the energy the step's solves put through the x1
   // faces over dt (CleanBndAcc), the flux that moved E
   const bool lac = pm1->cln_ldt > 0.0 && pm1->cln_lacc.extent_int(0) > 0;
@@ -4347,12 +4369,13 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   const bool eso = pm1->esrc_on;
   auto es_ = pm1->esrc;
   const Real chc = pm1->chat/pm1->c_light;
-  const Real sprate = hs_sp_rate_, spr0 = hs_sp_r0_, sprt = hs_rtop_, spd = hs_sp_dmax_;
-  const bool sprad = hs_sp_rad_;
+  const Real sprate = star_sp_rate_, spr0 = star_sp_r0_;
+  const Real sprt = star_rtop_, spd = star_sp_dmax_;
+  const bool sprad = star_sp_rad_;
   const bool hcsh = pm->use_cubed_sphere;   // metric KE
   auto hccl_ = pmbp->pcoord->cos_cell;
   array_sum::GlobalSum sum_this;
-  repro::HistSums("hs_hist", pmbp->nmb_thispack, nkji, nx1,
+  repro::HistSums("star_hist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
     const int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -4403,8 +4426,8 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
       if (r > spr0 || low) {
         const Real wsp = low ? 1.0 : SQR((r - spr0)/(sprt - spr0));
         const Real kes = sprad ? 0.5*SQR(u0(m,IM1,k,j,i))/d
-                               : (hcsh ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
-                                                u0(m,IM3,k,j,i), d, hccl_(m,k,j))
+                               : (hcsh ? StarKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
+                                                  u0(m,IM3,k,j,i), d, hccl_(m,k,j))
                                : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                                       + SQR(u0(m,IM3,k,j,i)))/d);
         h.the_array[23] = 2.0*sprate*wsp*kes*vol;
@@ -4439,7 +4462,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
     auto bf = pam->am_bflx;
     const int nkj = nx3*nx2;
     array_sum::GlobalSum fsum;
-    repro::HistSums("hs_hflx", pmbp->nmb_thispack, nkj, 1,
+    repro::HistSums("star_hflx", pmbp->nmb_thispack, nkj, 1,
     KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
       const int m = idx/nkj, k = (idx - m*nkj)/nx2 + ks, j = idx%nx2 + js;
       array_sum::GlobalSum h;
@@ -4452,44 +4475,44 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   // (a global value: rank 0 contributes)
   const Real lzt = pm1->CleanLzTotal();
   pdata->hdata[nb+5] = (global_variable::my_rank == 0) ? lzt : 0.0;
-  if (hs_mlt_) {
+  if (star_mlt_) {
     // host values, summed over ranks by the history output: rank 0 contributes
     const bool r0 = (global_variable::my_rank == 0);
-    pdata->hdata[20] = r0 ? hs_mw_ : 0.0;
-    pdata->hdata[21] = r0 ? hs_mw_*(hs_ad_ ? hs_lsub_ : hs_lmx_) : 0.0;
+    pdata->hdata[20] = r0 ? star_mw_ : 0.0;
+    pdata->hdata[21] = r0 ? star_mw_*(star_ad_ ? star_lsub_ : star_lmx_) : 0.0;
   }
   // Picard: mean passes per implicit solve since the previous history output (the
   // counters are MPI_MAX-reduced, identical on every rank: rank 0 contributes)
   pdata->hdata[19] = 0.0;
   if (global_variable::my_rank == 0) {
-    const Real dn = pm1->impl_nstep - hs_pic_n0_, ds = pm1->impl_itsum - hs_pic_s0_;
+    const Real dn = pm1->impl_nstep - star_pic_n0_, ds = pm1->impl_itsum - star_pic_s0_;
     pdata->hdata[19] = (dn > 0.0) ? ds/dn : 0.0;
-    hs_pic_n0_ = pm1->impl_nstep;
-    hs_pic_s0_ = pm1->impl_itsum;
+    star_pic_n0_ = pm1->impl_nstep;
+    star_pic_s0_ = pm1->impl_itsum;
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HsApplyMltW()
+//! \fn void StarApplyMltW()
 //! \brief rebuild <rad_vet>/esrc = w (frozen MLT deposit) + the star_esrc_const test
 //! source, with exactly the operations of the start-up kernels (w = 1: bitwise the same
 //! esrc).
 
-void HsApplyMltW(Mesh *pm, const Real w) {
+void StarApplyMltW(Mesh *pm, const Real w) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto es = pmbp->pradvet->esrc;
-  auto fmd = hs_ad_ ? (hs_mtc_ ? hs_fsrc_ : hs_fsub_) : hs_fm_;
+  auto fmd = star_ad_ ? (star_mtc_ ? star_fsrc_ : star_fsub_) : star_fm_;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto &x1v = pmbp->pcoord->x1v;
-  const Real esc = hs_esc_, rmx = hs_esrmx_;
-  const bool bh = (hs_bheat_ > 0.0);
-  auto fbd = hs_fb_;
-  par_for("hs_esrc_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  const Real esc = star_esc_, rmx = star_esrmx_;
+  const bool bh = (star_bheat_ > 0.0);
+  auto fbd = star_fb_;
+  par_for("star_esrc_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
     if (bh) {
@@ -4502,12 +4525,12 @@ void HsApplyMltW(Mesh *pm, const Real w) {
     if (esc != 0.0 && x1v(m,i) < rmx) e += esc;
     es(m,k,j,i) = e;
   });
-  hs_mw_ = w;
+  star_mw_ = w;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HsAdaptiveUpdate()
-//! \brief the adaptive shell-mean deficit closure (hs_ad_): shell sums (deterministic:
+//! \fn void StarAdaptiveUpdate()
+//! \brief the adaptive shell-mean deficit closure (star_ad_): shell sums (deterministic:
 //! one thread per radial index, serial over the columns; MPI sum), the target, the
 //! relaxation F_sub += (1 - exp(-(t - t_last)/tau)) (target - F_sub), clip >= 0, esrc.
 
@@ -4518,7 +4541,7 @@ void HsApplyMltW(Mesh *pm, const Real w) {
 // fewer earlier collectives -- got F_sub a round-off different from the straight run's
 // some 40 cycles after the restart (RSG E, deck A, 1 x 4 H200), and the run drifted.
 // Same pattern as IcrDetSum / vet_gd_twin_det.
-void HsDetSum(Real *v, const int n) {
+void StarDetSum(Real *v, const int n) {
 #if MPI_PARALLEL_ENABLED
   const int nr = global_variable::nranks;
   if (nr <= 1 || n <= 0) return;
@@ -4536,7 +4559,7 @@ void HsDetSum(Real *v, const int n) {
 #endif
 }
 
-void HsAdaptiveUpdate(Mesh *pm) {
+void StarAdaptiveUpdate(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -4550,11 +4573,11 @@ void HsAdaptiveUpdate(Mesh *pm) {
   auto f0 = pm1->f0x1;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
-  auto sh = hs_shs_;
-  // hs_ad_dead_skip: the serial sums only when they are used
-  const bool dead = hs_ad_dskip_ && pm->layout_invariant;
+  auto sh = star_shs_;
+  // star_ad_dead_skip: the serial sums only when they are used
+  const bool dead = star_ad_dskip_ && pm->layout_invariant;
   if (!dead) {
-  par_for("hs_ad_shell", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
+  par_for("star_ad_shell", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
     Real s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0, s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0;
     for (int m=0; m<nmb; ++m) {
       for (int k=ks; k<=ke; ++k) {
@@ -4586,7 +4609,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
   if (pm->layout_invariant) {
     // the same per-cell terms, summed order-independently over all ranks
     std::vector<Real> rs;
-    repro::ShellSums("hs_ad_shell_r", 8, nfc, nmb, ks, ke, js, je, is, ie + 1,
+    repro::ShellSums("star_ad_shell_r", 8, nfc, nmb, ks, ke, js, je, is, ie + 1,
                      KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
                                    const int i) {
       if (q == 0) {return f0(m,k,j,i)*area1(m,k,j,i);}
@@ -4607,7 +4630,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
       for (int q=0; q<8; ++q) {hsh(i,q) = rs[static_cast<size_t>(q)*nfc + i];}
     }
   } else {
-    HsDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rank-ordered (restart-exact)
+    StarDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rank-ordered (restart-exact)
   }
   // luminosities of the wedge (the units of the history's L_in = F_in A(r_in))
   std::vector<Real> lc(nfc, 0.0), lrad(nfc, 0.0), lcf(nfc, 0.0), tgt(nfc, 0.0);
@@ -4618,23 +4641,23 @@ void HsAdaptiveUpdate(Mesh *pm) {
                     + (4.0/3.0)*(hsh(i,7)/sv - vm*hsh(i,5)/sv);
     lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
   }
-  const Real lin = hs_fin_*hsh(is,1);
+  const Real lin = star_fin_*hsh(is,1);
   for (int i=is; i<=ie+1; ++i) {
     lrad[i] = hsh(i,0);
     lcf[i] = (i > is && i <= ie) ? 0.5*(lc[i-1] + lc[i]) : 0.0;
     const Real def = lin - lrad[i] - lcf[i];
-    tgt[i] = hs_tap_[i]*((def > 0.0) ? def : 0.0)/hsh(i,1);
+    tgt[i] = star_tap_[i]*((def > 0.0) ? def : 0.0)/hsh(i,1);
   }
-  if (hs_adp_) {
+  if (star_adp_) {
     // mlt_closure = pressure: target fm_IC(ln P_face) F_tot,IC(face); P_face =
     // the log-mean of the adjacent shell-mean P_gas + E/3 (the edge cell's at is, ie+1)
-    auto sp = hs_shp_;
+    auto sp = star_shp_;
     auto ww = w0;
     auto eo = eos;
     auto uu = ur;
     auto vv = volume;
     if (!dead) {
-    par_for("hs_adp_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
+    par_for("star_adp_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
       Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
       for (int m=0; m<nmb; ++m) {
         for (int k=ks; k<=ke; ++k) {
@@ -4654,7 +4677,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
     if (pm->layout_invariant) {   // order-independent
       const int nsp = hsp.extent_int(0);
       std::vector<Real> rs;
-      repro::ShellSums("hs_adp_shell_r", 3, nsp, nmb, ks, ke, js, je, is, ie,
+      repro::ShellSums("star_adp_shell_r", 3, nsp, nmb, ks, ke, js, je, is, ie,
                        KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
                                      const int i) {
         const Real vol = vv(m,k,j,i);
@@ -4666,75 +4689,75 @@ void HsAdaptiveUpdate(Mesh *pm) {
         for (int q=0; q<3; ++q) {hsp(i,q) = rs[static_cast<size_t>(q)*nsp + i];}
       }
     } else {
-      HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rank-ordered
+      StarDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rank-ordered
     }
     std::vector<Real> lp(nfc, 0.0);
     for (int i=is; i<=ie; ++i) lp[i] = log((hsp(i,1) + hsp(i,2)/3.0)/hsp(i,0));
-    const int np = static_cast<int>(hs_plnp_.size());
+    const int np = static_cast<int>(star_plnp_.size());
     for (int i=is; i<=ie+1; ++i) {
       const Real x = (i == is) ? lp[is] : ((i == ie + 1) ? lp[ie]
                                            : 0.5*(lp[i-1] + lp[i]));
       Real fm;
-      if (x <= hs_plnp_[0]) {
-        fm = hs_pfm_[0];
-      } else if (x >= hs_plnp_[np-1]) {
-        fm = hs_pfm_[np-1];
+      if (x <= star_plnp_[0]) {
+        fm = star_pfm_[0];
+      } else if (x >= star_plnp_[np-1]) {
+        fm = star_pfm_[np-1];
       } else {
-        const int k = static_cast<int>(std::upper_bound(hs_plnp_.begin(),
-                                                        hs_plnp_.end(), x)
-                                       - hs_plnp_.begin()) - 1;
-        const Real a = (x - hs_plnp_[k])/(hs_plnp_[k+1] - hs_plnp_[k]);
-        fm = (1.0 - a)*hs_pfm_[k] + a*hs_pfm_[k+1];
+        const int k = static_cast<int>(std::upper_bound(star_plnp_.begin(),
+                                                        star_plnp_.end(), x)
+                                       - star_plnp_.begin()) - 1;
+        const Real a = (x - star_plnp_[k])/(star_plnp_[k+1] - star_plnp_[k]);
+        fm = (1.0 - a)*star_pfm_[k] + a*star_pfm_[k+1];
       }
-      tgt[i] = fm*hs_ftot_[i];
+      tgt[i] = fm*star_ftot_[i];
     }
   }
   const Real t = pm->time;
-  const Real a = 1.0 - exp(-(t - hs_ad_tl_)/hs_ad_tau_);
-  hs_ad_tl_ = t;
-  auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
+  const Real a = 1.0 - exp(-(t - star_ad_tl_)/star_ad_tau_);
+  star_ad_tl_ = t;
+  auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_fsub_);
   // mlt_src_time = stage: the trapezoid of tgt^{n-1}, tgt^n; hp keeps tgt^n
-  auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_tgp_);
-  if (hs_mtc_) {
+  auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_tgp_);
+  if (star_mtc_) {
     for (int i=0; i<nfc; ++i) {
       const Real tn = tgt[i];
-      if (hs_tgp_ok_) tgt[i] = 0.5*(hp(i) + tn);
+      if (star_tgp_ok_) tgt[i] = 0.5*(hp(i) + tn);
       hp(i) = tn;
     }
-    Kokkos::deep_copy(hs_tgp_, hp);
-    hs_tgp_ok_ = 1;
+    Kokkos::deep_copy(star_tgp_, hp);
+    star_tgp_ok_ = 1;
   }
-  hs_lsub_ = 0.0;
+  star_lsub_ = 0.0;
   for (int i=0; i<nfc; ++i) {
     Real f = hf(i) + a*(tgt[i] - hf(i));
     hf(i) = (f > 0.0) ? f : 0.0;
-    hs_lsub_ = std::max(hs_lsub_, hf(i)*hs_r2o_[i]);
+    star_lsub_ = std::max(star_lsub_, hf(i)*star_r2o_[i]);
   }
-  Kokkos::deep_copy(hs_fsub_, hf);
-  if (hs_mtc_) {   // esrc from F^{n+1}
-    const Real am = 1.0 - exp(-pm->dt/hs_ad_tau_);
-    auto hm = Kokkos::create_mirror_view(hs_fsrc_);
+  Kokkos::deep_copy(star_fsub_, hf);
+  if (star_mtc_) {   // esrc from F^{n+1}
+    const Real am = 1.0 - exp(-pm->dt/star_ad_tau_);
+    auto hm = Kokkos::create_mirror_view(star_fsrc_);
     for (int i=0; i<nfc; ++i) {
       const Real f = hf(i) + am*(hp(i) - hf(i));
       hm(i) = (f > 0.0) ? f : 0.0;
     }
-    Kokkos::deep_copy(hs_fsrc_, hm);
+    Kokkos::deep_copy(star_fsrc_, hm);
   }
-  HsApplyMltW(pm, HsMltW(HsMltTc(pm)));
+  StarApplyMltW(pm, StarMltW(StarMltTc(pm)));
   // profiles (problem/mlt_closure_dout > 0): rank 0 appends, per output, three lines
   // "t <kind> values over the faces is..ie+1" in units of L_in: fsub (w A F_sub),
   // lrad, lconv; and one "t fmlt" line (A F_MLT) at the first output
-  if (hs_ad_dout_ > 0.0 && t >= hs_ad_tout_ && global_variable::my_rank == 0) {
-    auto hm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fm_);
-    FILE *fp = fopen(hs_ad_file_, "a");
+  if (star_ad_dout_ > 0.0 && t >= star_ad_tout_ && global_variable::my_rank == 0) {
+    auto hm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_fm_);
+    FILE *fp = fopen(star_ad_file_, "a");
     if (fp != nullptr) {
       const char *kind[4] = {"fsub", "lrad", "lconv", "fmlt"};
       for (int q=0; q<4; ++q) {
-        if (q == 3 && hs_ad_tout_ > 0.0) break;
+        if (q == 3 && star_ad_tout_ > 0.0) break;
         fprintf(fp, "%.10e %s", t, kind[q]);
         for (int i=is; i<=ie+1; ++i) {
           Real v = 0.0;
-          if (q == 0) v = hs_mw_*hf(i)*hsh(i,1);
+          if (q == 0) v = star_mw_*hf(i)*hsh(i,1);
           if (q == 1) v = lrad[i];
           if (q == 2) v = lcf[i];
           if (q == 3) v = hm(i)*hsh(i,1);
@@ -4749,70 +4772,70 @@ void HsAdaptiveUpdate(Mesh *pm) {
       fprintf(fp, " 0\n");
       fclose(fp);
     }
-    hs_ad_tout_ = hs_ad_dout_*floor(t/hs_ad_dout_ + 1.0);
-  } else if (hs_ad_dout_ > 0.0 && t >= hs_ad_tout_) {
-    hs_ad_tout_ = hs_ad_dout_*floor(t/hs_ad_dout_ + 1.0);
+    star_ad_tout_ = star_ad_dout_*floor(t/star_ad_dout_ + 1.0);
+  } else if (star_ad_dout_ > 0.0 && t >= star_ad_tout_) {
+    star_ad_tout_ = star_ad_dout_*floor(t/star_ad_dout_ + 1.0);
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn std::vector<char> HsAdaptiveRstWrite()
+//! \fn std::vector<char> StarAdaptiveRstWrite()
 //! \brief the adaptive closure's restart state: int32 nface, int32 0, Real t_last (the
 //! update clock), nface Reals F_sub.
 
-std::vector<char> HsAdaptiveRstWrite() {
+std::vector<char> StarAdaptiveRstWrite() {
   std::vector<char> out;
   // the open Picard window (solves, passes since the last history
   // output) as a tagged trailer behind the adaptive state (if any)
   auto pic = [&out]() {
     Real w[2] = {0.0, 0.0};
-    const radvet::RadiationVet *pm1 = (hs_mesh_ != nullptr) ? hs_mesh_->pmb_pack->pradvet
-                                                          : nullptr;
+    const radvet::RadiationVet *pm1 =
+        (star_mesh_ != nullptr) ? star_mesh_->pmb_pack->pradvet : nullptr;
     if (pm1 != nullptr) {
-      w[0] = pm1->impl_nstep - hs_pic_n0_;
-      w[1] = pm1->impl_itsum - hs_pic_s0_;
+      w[0] = pm1->impl_nstep - star_pic_n0_;
+      w[1] = pm1->impl_itsum - star_pic_s0_;
     }
     const std::size_t o = out.size();
-    out.resize(o + sizeof(kHsPicTag) + sizeof(w));
-    std::memcpy(out.data() + o, &(kHsPicTag[0]), sizeof(kHsPicTag));
-    std::memcpy(out.data() + o + sizeof(kHsPicTag), &(w[0]), sizeof(w));
+    out.resize(o + sizeof(kStarPicTag) + sizeof(w));
+    std::memcpy(out.data() + o, &(kStarPicTag[0]), sizeof(kStarPicTag));
+    std::memcpy(out.data() + o + sizeof(kStarPicTag), &(w[0]), sizeof(w));
   };
   // the star_ic_equil a_ref as the last trailer (only when it ran / was restored)
   auto dic = [&out]() {
-    if (hs_eq_a_.empty()) return;
-    const std::size_t na = hs_eq_a_.size();
+    if (star_eq_a_.empty()) return;
+    const std::size_t na = star_eq_a_.size();
     const Real rn = static_cast<Real>(na);
     const std::size_t o = out.size();
-    out.resize(o + (na + 1)*sizeof(Real) + sizeof(kHsDicTag));
-    std::memcpy(out.data() + o, hs_eq_a_.data(), na*sizeof(Real));
+    out.resize(o + (na + 1)*sizeof(Real) + sizeof(kStarDicTag));
+    std::memcpy(out.data() + o, star_eq_a_.data(), na*sizeof(Real));
     std::memcpy(out.data() + o + na*sizeof(Real), &rn, sizeof(Real));
-    std::memcpy(out.data() + o + (na + 1)*sizeof(Real), &(kHsDicTag[0]),
-                sizeof(kHsDicTag));
+    std::memcpy(out.data() + o + (na + 1)*sizeof(Real), &(kStarDicTag[0]),
+                sizeof(kStarDicTag));
   };
   // the auto ramp's two numbers as the very last trailer
   auto rmp = [&out]() {
-    if (!hs_mr_store_) return;
-    const Real w[2] = {hs_mrs_, hs_mrt_};
+    if (!star_mr_store_) return;
+    const Real w[2] = {star_mrs_, star_mrt_};
     const std::size_t o = out.size();
-    out.resize(o + sizeof(w) + sizeof(kHsRmpTag));
+    out.resize(o + sizeof(w) + sizeof(kStarRmpTag));
     std::memcpy(out.data() + o, &(w[0]), sizeof(w));
-    std::memcpy(out.data() + o + sizeof(w), &(kHsRmpTag[0]), sizeof(kHsRmpTag));
+    std::memcpy(out.data() + o + sizeof(w), &(kStarRmpTag[0]), sizeof(kStarRmpTag));
   };
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {
+  if (!star_ad_ || star_fsub_.extent_int(0) <= 0) {
     pic(); dic(); rmp();
-    hsdrive::RstAppend(&out);   // the very last trailer (if on)
+    stardrive::RstAppend(&out);   // the very last trailer (if on)
     return out;
   }
-  const int nfc = hs_fsub_.extent_int(0);
-  auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
+  const int nfc = star_fsub_.extent_int(0);
+  auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_fsub_);
   // hdr[1] = 1: tgt^{n-1} follows F_sub (mlt_src_time = stage, once it is known)
-  const int ntg = (hs_mtc_ && hs_tgp_ok_) ? nfc : 0;
+  const int ntg = (star_mtc_ && star_tgp_ok_) ? nfc : 0;
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), (ntg > 0) ? 1 : 0};
   std::vector<Real> tmp(nfc + 1 + ntg);
-  tmp[0] = hs_ad_tl_;
+  tmp[0] = star_ad_tl_;
   for (int i=0; i<nfc; ++i) tmp[i+1] = hf(i);
   if (ntg > 0) {
-    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_tgp_);
+    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_tgp_);
     for (int i=0; i<nfc; ++i) tmp[nfc+1+i] = hp(i);
   }
   out.resize(sizeof(hdr) + tmp.size()*sizeof(Real));
@@ -4821,7 +4844,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   pic();
   dic();
   rmp();
-  hsdrive::RstAppend(&out);   // the very last trailer (if on)
+  stardrive::RstAppend(&out);   // the very last trailer (if on)
   return out;
 }
 
@@ -4830,7 +4853,7 @@ std::vector<char> HsAdaptiveRstWrite() {
 //! \brief release the namespace-scope Views before Kokkos::finalize.
 
 //----------------------------------------------------------------------------------------
-//! \fn void HsAtmPhiEff
+//! \fn void StarAtmPhiEff
 //! \brief the x1 WB pair's Phi_eff rebuilt above the face x1f(ia) from the
 //! per-cell reference accelerations a[i - ia] (cells ia..ie), each segment taking the
 //! true potential's own difference minus a dr; the ghosts above ie are shifted with the
@@ -4838,11 +4861,11 @@ std::vector<char> HsAdaptiveRstWrite() {
 //! x1 faces, p0c/p0f the true potential, x1v/x1f the grid; out pc (n1), pf (n1 + 1),
 //! equal to pc0/pf0 at and below the face x1f(ia).
 
-void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
-                 const std::vector<Real> &pc0, const std::vector<Real> &pf0,
-                 const std::vector<Real> &p0c, const std::vector<Real> &p0f,
-                 const std::vector<Real> &x1v, const std::vector<Real> &x1f,
-                 std::vector<Real> &pc, std::vector<Real> &pf) {
+void StarAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
+                   const std::vector<Real> &pc0, const std::vector<Real> &pf0,
+                   const std::vector<Real> &p0c, const std::vector<Real> &p0f,
+                   const std::vector<Real> &x1v, const std::vector<Real> &x1f,
+                   std::vector<Real> &pc, std::vector<Real> &pf) {
   const int n1 = static_cast<int>(pc0.size());
   pc = pc0;
   pf = pf0;
@@ -4858,11 +4881,11 @@ void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
   }
 }
 
-//! \fn void HsAtmRadial
-//! \brief the radial (block 0, k = ks, j = js) profiles HsAtmPhiEff reads (device)
-void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> &pf0,
-                 std::vector<Real> &p0c, std::vector<Real> &p0f, std::vector<Real> &x1v,
-                 std::vector<Real> &x1f, std::vector<Real> &ar0) {
+//! \fn void StarAtmRadial
+//! \brief the radial (block 0, k = ks, j = js) profiles StarAtmPhiEff reads (device)
+void StarAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> &pf0,
+                   std::vector<Real> &p0c, std::vector<Real> &p0f, std::vector<Real> &x1v,
+                   std::vector<Real> &x1f, std::vector<Real> &ar0) {
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto &indcs = pmbp->pmesh->mb_indcs;
   const int ks = indcs.ks, js = indcs.js;
@@ -4889,11 +4912,11 @@ void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> 
   }
 }
 
-//! \fn void HsAtmWrite
+//! \fn void StarAtmWrite
 //! \brief Phi_eff (cells >= ia, x1 faces >= ia + 1, ghosts included) and a_ref (cells
 //! ia..ie) of every block from the radial vectors
-void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
-                const std::vector<Real> &pc, const std::vector<Real> &pf) {
+void StarAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
+                  const std::vector<Real> &pc, const std::vector<Real> &pf) {
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto &indcs = pmbp->pmesh->mb_indcs;
   const int ie = indcs.ie;
@@ -4925,7 +4948,7 @@ void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
 //! Called once, on a fresh start, by Driver::Initialize after IcRadRun.
 
 void StarIcPost(Mesh *pm) {
-  if (!hs_atp_) return;
+  if (!star_atp_) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto *pm1 = pmbp->pradvet;
@@ -4936,14 +4959,14 @@ void StarIcPost(Mesh *pm) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmbp->nmb_thispack;
   const int n1 = indcs.nx1 + 2*indcs.ng;
-  const int ia = hs_atp_ia_;
-  const Real dfl = hs_atp_dfl_, cl = pm1->c_light;
+  const int ia = star_atp_ia_;
+  const Real dfl = star_atp_dfl_, cl = pm1->c_light;
   if (ia < is + 2 || ia > ie) {
-    HsFatal("star_ic_rad_atm_post: the first atmosphere cell is not inside the mesh",
-            __LINE__);
+    StarFatal("star_ic_rad_atm_post: the first atmosphere cell is not inside the mesh",
+              __LINE__);
   }
   std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0;
-  HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+  StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
   auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
   auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
   auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->f0x1);
@@ -5043,7 +5066,7 @@ void StarIcPost(Mesh *pm) {
   for (int pass=0; pass<60; ++pass) {
     ++npass;
     iprev = ilast;
-    HsAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+    StarAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
     // outward: PL_i(d_i) = PR_{i-1}(d_{i-1}), from ia; stop where rho reaches the floor
     for (int i=ia; i<=ie+1; ++i) {
       bd[i] = d0[i];
@@ -5085,7 +5108,7 @@ void StarIcPost(Mesh *pm) {
       kd.push_back(bd[i]);
       kt.push_back(tc[i]);
     }
-    HsKtEval(pm1->otab, kd, kt, kk);
+    StarKtEval(pm1->otab, kd, kt, kk);
     chg = 0.0;
     for (int i=ia; i<=ie; ++i) {
       if (i > ilast) {
@@ -5107,7 +5130,7 @@ void StarIcPost(Mesh *pm) {
   // the cells above ilast keep the pgen's a_ref (what a restart rebuilds; a no-op after
   // a converged pass) and Phi_eff follows a
   for (int i=ilast+1; i<=ie; ++i) a[i - ia] = ar0[i];
-  HsAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+  StarAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
   // write back: rho of the column, e from (rho, the cell's own T), v kept; a_ref and
   // Phi_eff of the pass that produced this rho
   Real dmx = 0.0, rdm = 0.0, tsp = 0.0, amx = 0.0, ram = 0.0;
@@ -5116,8 +5139,8 @@ void StarIcPost(Mesh *pm) {
       dmx = fabs(bd[i]/d0[i] - 1.0);
       rdm = x1v[i];
     }
-    if (fabs(a[i - ia] - ar0[i])/(hs_gm_/SQR(x1v[i])) > amx) {
-      amx = fabs(a[i - ia] - ar0[i])/(hs_gm_/SQR(x1v[i]));
+    if (fabs(a[i - ia] - ar0[i])/(star_gm_/SQR(x1v[i])) > amx) {
+      amx = fabs(a[i - ia] - ar0[i])/(star_gm_/SQR(x1v[i]));
       ram = x1v[i];
     }
     tsp = std::max(tsp, tmx[i - i0]/tmn[i - i0] - 1.0);
@@ -5141,20 +5164,20 @@ void StarIcPost(Mesh *pm) {
     }
   }
   Kokkos::deep_copy(fl.u0, hu);
-  HsAtmWrite(pmbp, ia, a, pc, pf);
+  StarAtmWrite(pmbp, ia, a, pc, pf);
   // recorded in the input (and so in every restart file): a restart rebuilds the pgen's
   // a_ref and Phi_eff and then applies these (UserProblem), bit for bit.  One short key
   // per re-balanced cell (a long value would pad every line of the restart file's
   // parameter dump past its 40 KB header limit); the cells above keep the pgen's a_ref
   {
     const int na = std::max(ilast - ia + 1, 0);
-    hs_pin_->SetString("problem", "star_ic_rad_atm_ia", std::to_string(ia));
-    hs_pin_->SetString("problem", "star_ic_rad_atm_na", std::to_string(na));
+    star_pin_->SetString("problem", "star_ic_rad_atm_ia", std::to_string(ia));
+    star_pin_->SetString("problem", "star_ic_rad_atm_na", std::to_string(na));
     char key[40], buf[40];
     for (int n=0; n<na; ++n) {
       snprintf(key, sizeof(key), "star_ic_rad_atm_a%03d", n);
       snprintf(buf, sizeof(buf), "%.17g", a[n]);
-      hs_pin_->SetString("problem", key, buf);
+      star_pin_->SetString("problem", key, buf);
     }
   }
   if (global_variable::my_rank == 0) {
@@ -5186,22 +5209,22 @@ void StarIcEquil(Mesh *pm) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmbp->nmb_thispack;
   const int n1 = indcs.nx1 + 2*indcs.ng;
-  const Real dfl = hs_eq_dfl_;
+  const Real dfl = star_eq_dfl_;
   // the march's anchor: the WALL cell (its rho kept), marched OUTWARD.  At fixed force
   // per volume f (fixed E) the hydrostatic march is stable only outward: a rho error
   // grows inward relative to rho like (rho_in/rho_out)^(Gamma/(1 - Gamma)) (from the
   // star_ic_balance anchor at 342 Rsun inward: 1 %/cell in the CZ, then NaN, run d4)
   const int ianc = is;
-  ++hs_eq_it_;
+  ++star_eq_it_;
   std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0;
-  HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+  StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
   auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
   auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
   auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->f0x1);
   auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
   const bool hdm = (pm1->icr_dm.extent_int(0) == nmb);
   if (!hdm || !(pm1->icr_dm_dt > 0.0)) {
-    HsFatal("star_ic_equil: no force pass from <rad_vet>/ic_rad", __LINE__);
+    StarFatal("star_ic_equil: no force pass from <rad_vet>/ic_rad", __LINE__);
   }
   auto hdmv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->icr_dm);
   const Real dtm = pm1->icr_dm_dt;
@@ -5272,14 +5295,14 @@ void StarIcEquil(Mesh *pm) {
     d0[i] = bd[i];
     const Real dmi = sh[4*i + 2]/cnt;
     fv[i] = dmi/dtm + bd[i]*ar0[i];
-    resm[i] = std::fabs(dmi/dtm)/(bd[i]*hs_gm_/SQR(x1v[i]));
+    resm[i] = std::fabs(dmi/dtm)/(bd[i]*star_gm_/SQR(x1v[i]));
   }
   // ghosts as StarBC makes them: inner = the balanced profile scaled to the edge cell,
   // outer = the edge cell (the floor; the march stops below it)
   std::vector<Real> gbd(n1), gbe(n1);
   {
-    auto h1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_bd_);
-    auto h2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_be_);
+    auto h1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_bd_);
+    auto h2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_be_);
     for (int i=0; i<n1; ++i) {
       gbd[i] = h1(i);
       gbe[i] = h2(i);
@@ -5326,7 +5349,7 @@ void StarIcEquil(Mesh *pm) {
     Real pl0, pr0, pl1, pr1;
     walk(i, bd[i], pl0, pr0);
     walk(i+1, bd[i+1], pl1, pr1);
-    const Real g = hs_gm_/SQR(x1f[i+1]);
+    const Real g = star_gm_/SQR(x1f[i+1]);
     resh[i] = std::fabs(pr0 - pl1)/(0.5*(bd[i] + bd[i+1])*(x1v[i+1] - x1v[i])*g);
     if (resh[i] > rmh) {
       rmh = resh[i];
@@ -5342,8 +5365,8 @@ void StarIcEquil(Mesh *pm) {
   }
   // L_rad + L_MLT (w = 1) through every x1 face against L_in (the wall face)
   std::vector<Real> lm(n1 + 1, 0.0);
-  if (hs_mlt_ && hs_fm_.extent_int(0) >= n1 + 1) {
-    auto hfm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fm_);
+  if (star_mlt_ && star_fm_.extent_int(0) >= n1 + 1) {
+    auto hfm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_fm_);
     for (int i=is; i<=ie+1; ++i) lm[i] = hfm(i)*af[i];
   }
   const Real lin = lf[is] + lm[is];
@@ -5355,15 +5378,15 @@ void StarIcEquil(Mesh *pm) {
       rld = x1f[i];
     }
   }
-  const bool conv = (std::max(rmm, rmh) < hs_eq_tol_);
-  const bool lastm = !conv && hs_eq_last_ && (hs_eq_it_ >= hs_eq_maxit_);
-  const bool done = conv || (hs_eq_it_ >= hs_eq_maxit_);
+  const bool conv = (std::max(rmm, rmh) < star_eq_tol_);
+  const bool lastm = !conv && star_eq_last_ && (star_eq_it_ >= star_eq_maxit_);
+  const bool done = conv || (star_eq_it_ >= star_eq_maxit_);
   if (global_variable::my_rank == 0) {
     std::printf("star_vet: star_ic_equil round %d: module residual max |a_net|/g = %.3e "
                 "(r %.5e), WB face residual %.3e (r %.5e), max |L(face)/L_in - 1| = "
-                "%.3e (r %.5e), L_in %.10e, L_top %.10e%s\n", hs_eq_it_, rmm, rrm, rmh,
+                "%.3e (r %.5e), L_in %.10e, L_top %.10e%s\n", star_eq_it_, rmm, rrm, rmh,
                 rrh, ldv, rld, lin, lf[ie+1] + lm[ie+1],
-                done ? ((std::max(rmm, rmh) < hs_eq_tol_) ? " CONVERGED" :
+                done ? ((std::max(rmm, rmh) < star_eq_tol_) ? " CONVERGED" :
                         (lastm ? " (star_ic_equil_maxit: last round, march then STOP)" :
                          " (star_ic_equil_maxit: STOP, not converged)")) : "");
     // the profile of this round (appended): i r rho T a_ref f/rho resm resh L/L_in
@@ -5371,7 +5394,7 @@ void StarIcEquil(Mesh *pm) {
     if (fp != nullptr) {
       for (int i=is; i<=ie; ++i) {
         std::fprintf(fp, "%d %d %.12e %.12e %.12e %.12e %.12e %.6e %.6e %.12e\n",
-                     hs_eq_it_, i - is, x1v[i], bd[i], tc[i], ar0[i], fv[i]/bd[i],
+                     star_eq_it_, i - is, x1v[i], bd[i], tc[i], ar0[i], fv[i]/bd[i],
                      resm[i], resh[i], (lf[i] + lm[i])/lin);
       }
       std::fclose(fp);
@@ -5382,8 +5405,8 @@ void StarIcEquil(Mesh *pm) {
   auto finish = [&](const std::vector<Real> &af0) {
     // the deferred star_seed: eint (and with star_seed_rad E) of every cell times its
     // factor
-    if (hs_eq_seed_) {
-      auto hsf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_sfac_);
+    if (star_eq_seed_) {
+      auto hsf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_sfac_);
       auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->u0);
       for (int m=0; m<nmb; ++m) {
         for (int k=ks; k<=ke; ++k) {
@@ -5396,7 +5419,7 @@ void StarIcEquil(Mesh *pm) {
                                    SQR(hu(m,IM3,k,j,i)))/d;
               const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
               hu(m,IEN,k,j,i) = e*fac + ek + d*hp0(m,k,j,i);
-              if (hs_eq_srad_) hr(m,radvet::M1_E,k,j,i) *= SQR(SQR(fac));
+              if (star_eq_srad_) hr(m,radvet::M1_E,k,j,i) *= SQR(SQR(fac));
             }
           }
         }
@@ -5404,19 +5427,19 @@ void StarIcEquil(Mesh *pm) {
       Kokkos::deep_copy(fl.u0, hu);
       Kokkos::deep_copy(pm1->u0, hr);
     }
-    hs_eq_a_.assign(af0.begin(), af0.end());
+    star_eq_a_.assign(af0.begin(), af0.end());
     pm1->icr_fmeas = false;
     pm->pgen->user_icpost_again = false;
     if (global_variable::my_rank == 0) {
-      std::printf("star_vet: star_ic_equil: done after %d rounds%s\n", hs_eq_it_,
-                  hs_eq_seed_ ? " (deferred star_seed applied)" : "");
+      std::printf("star_vet: star_ic_equil: done after %d rounds%s\n", star_eq_it_,
+                  star_eq_seed_ ? " (deferred star_seed applied)" : "");
     }
   };
   // not converged in star_ic_equil_maxit rounds is fatal, unless the last round marches
   // (star_ic_equil_last_march); then that march must converge (below)
   if (done && !conv && !lastm) {
-    HsFatal("problem/star_ic_equil: not converged in star_ic_equil_maxit rounds",
-            __LINE__);
+    StarFatal("problem/star_ic_equil: not converged in star_ic_equil_maxit rounds",
+              __LINE__);
   }
   if (done && !lastm) {
     finish(std::vector<Real>(ar0.begin() + is, ar0.begin() + ie + 1));
@@ -5432,7 +5455,7 @@ void StarIcEquil(Mesh *pm) {
   // (face x1f(i+1) known) pc[i], pf[i] and pc[i-1] shifted with pf[i]; outward (face
   // x1f(i) known) pc[i], pf[i+1] and pc[i+1] shifted with pf[i+1].  Only differences
   // of Phi_eff enter the walk, so the frame below (inward) / above (outward) is carried
-  // by these shifts; the final HsAtmPhiEff rebuilds the same differences.  Solving a_i
+  // by these shifts; the final StarAtmPhiEff rebuilds the same differences.  Solving a_i
   // WITH d_i is what makes the march converge: lagged (a = f/rho of the previous pass)
   // it amplifies a global rho error by ~ sum Gamma dr/H_p > 1 (diverged, run d1)
   auto setphi = [&](const int i, const Real ai, const bool outward) {
@@ -5470,7 +5493,7 @@ void StarIcEquil(Mesh *pm) {
   };
   for (int pass=0; pass<200; ++pass) {
     ++npass;
-    HsAtmPhiEff(is, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+    StarAtmPhiEff(is, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
     rmx = 0.0;
     ghosts();
     // outward from the wall cell to the floor
@@ -5510,7 +5533,7 @@ void StarIcEquil(Mesh *pm) {
     ap = an;
     if (chg < 1.0e-14) break;
   }
-  HsAtmPhiEff(is, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+  StarAtmPhiEff(is, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
   // write back: rho of every cell times its shell's ratio, e from (rho, the cell's own
   // T), v kept; a_ref and Phi_eff of the last pass
   Real dmx = 0.0, rdm = 0.0;
@@ -5545,24 +5568,24 @@ void StarIcEquil(Mesh *pm) {
     }
   }
   Kokkos::deep_copy(fl.u0, hu);
-  HsAtmWrite(pmbp, is, a, pc, pf);
+  StarAtmWrite(pmbp, is, a, pc, pf);
   pm->pgen->user_icpost_again = true;
   if (lastm) finish(a);
   if (global_variable::my_rank == 0) {
     std::printf("star_vet: star_ic_equil round %d update: anchor cell %d (r %.5e), "
                 "cells %d .. %d re-marched, %d passes (last max |da/a| %.3e, face "
-                "residual %.3e), max |drho/rho| %.3e at r %.5e\n", hs_eq_it_, ianc - is,
+                "residual %.3e), max |drho/rho| %.3e at r %.5e\n", star_eq_it_, ianc - is,
                 x1v[ianc], 0, ilast - is, npass, chg, rmx, dmx, rdm);
   }
   // (a march stopped below the floor: its cells above keep the column's rho and a_ref)
   if (nstop > 0 && global_variable::my_rank == 0) {
     std::printf("star_vet: WARNING star_ic_equil round %d: the march stopped at cell %d "
                 "(r %.5e) in %d of %d passes, no face solve (last residual %.3e); the "
-                "cells above keep the column\n", hs_eq_it_, istop - is, x1v[istop], nstop,
-                npass, rstop);
+                "cells above keep the column\n", star_eq_it_, istop - is, x1v[istop],
+                nstop, npass, rstop);
   }
   if (lastm && !(chg < 1.0e-12)) {
-    HsFatal("problem/star_ic_equil: the last round's march did not converge", __LINE__);
+    StarFatal("problem/star_ic_equil: the last round's march did not converge", __LINE__);
   }
 }
 
@@ -5571,22 +5594,23 @@ void StarIcEquil(Mesh *pm) {
 //! \brief release the namespace-scope Views before Kokkos::finalize.
 
 //----------------------------------------------------------------------------------------
-//! \fn void HsRemapLoad()
+//! \fn void StarRemapLoad()
 //! \brief problem/star_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
 //! every MeshBlock of this rank, ghosts included, from the file's global arrays
 //! [nx3+2ng][nx2+2ng][nx1+2ng(+1)] (header checked by the caller; uniform mesh only)
 
-void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const int *n) {
+void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
+                   const int *n) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto *pm1 = pmbp->pradvet;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
-  if (pm->multilevel) HsFatal("star_ic_remap_file needs a uniform mesh", __LINE__);
+  if (pm->multilevel) StarFatal("star_ic_remap_file needs a uniform mesh", __LINE__);
   const int nout1 = indcs.nx1 + 2*ng, nout2 = indcs.nx2 + 2*ng, nout3 = indcs.nx3 + 2*ng;
   const std::int64_t c1 = n[1] + 2*n[0], c2 = n[2] + 2*n[0], c3 = n[3] + 2*n[0];
   const std::int64_t cc = c1*c2*c3;
   std::ifstream rf(fn, std::ios::binary);
-  if (!rf) HsFatal("cannot open problem/star_ic_remap_file " + fn, __LINE__);
+  if (!rf) StarFatal("cannot open problem/star_ic_remap_file " + fn, __LINE__);
   auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
   auto ur = Kokkos::create_mirror_view(pm1->u0);
   const bool hf0 = (pm1->f0x1.extent_int(0) >= pmbp->nmb_thispack);
@@ -5595,7 +5619,7 @@ void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const 
   auto rd = [&](const std::int64_t pos, const int len) {
     rf.seekg(pos);
     rf.read(reinterpret_cast<char*>(row.data()), len*sizeof(double));
-    if (!rf) HsFatal("problem/star_ic_remap_file: read failed", __LINE__);
+    if (!rf) StarFatal("problem/star_ic_remap_file: read failed", __LINE__);
   };
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const LogicalLocation &ll = pm->lloc_eachmb[pmbp->gids + m];
@@ -5637,51 +5661,51 @@ void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const 
 
 void StarFinal(ParameterInput *pin, Mesh *pm) {
   (void) pin; (void) pm;
-  hs_rho_ = DvceArray1D<Real>();
-  hs_eint_ = DvceArray1D<Real>();
-  hs_bd_ = DvceArray1D<Real>();
-  hs_fm_ = DvceArray1D<Real>();
-  hs_fsub_ = DvceArray1D<Real>();
-  hs_tgp_ = DvceArray1D<Real>();
-  hs_fsrc_ = DvceArray1D<Real>();
-  hs_shs_ = DvceArray2D<Real>();
-  hs_shp_ = DvceArray2D<Real>();
-  hs_be_ = DvceArray1D<Real>();
-  hs_phig_ = DvceArray1D<Real>();
-  hs_gmr_ = DvceArray1D<Real>();
-  hs_fb_ = DvceArray1D<Real>();
-  hs_sfac_ = DvceArray4D<Real>();
-  hsdrive::Final();
+  star_rho_ = DvceArray1D<Real>();
+  star_eint_ = DvceArray1D<Real>();
+  star_bd_ = DvceArray1D<Real>();
+  star_fm_ = DvceArray1D<Real>();
+  star_fsub_ = DvceArray1D<Real>();
+  star_tgp_ = DvceArray1D<Real>();
+  star_fsrc_ = DvceArray1D<Real>();
+  star_shs_ = DvceArray2D<Real>();
+  star_shp_ = DvceArray2D<Real>();
+  star_be_ = DvceArray1D<Real>();
+  star_phig_ = DvceArray1D<Real>();
+  star_gmr_ = DvceArray1D<Real>();
+  star_fb_ = DvceArray1D<Real>();
+  star_sfac_ = DvceArray4D<Real>();
+  stardrive::Final();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HsN2Compute
+//! \fn void StarN2Compute
 //! \brief the IC column's convective growth rate on the radial cells of the
 //! (single, full-length) x1 MeshBlock column, from the initial column as the IC kernel
-//! lays it down (star_ic_balance cells, else the fine column), once (hs_n2_):
+//! lays it down (star_ic_balance cells, else the fine column), once (star_n2_):
 //!   T from the code EOS; P = p_gas + a T^4/3; Gamma_1 of gas + radiation from the first
 //!   law, chi_rho = p_g chi_rho,g/P, chi_T = (p_g chi_T,g + 4 p_r)/P, rho T c_v = rho T
 //!   c_v,g + 4 a T^4, Gamma_1 = chi_rho + P chi_T^2/(rho T c_v);  g = G m(r)/r^2 (the
 //!   star_gm_column mass, else star_gm);  N^2 = g (dlnP/dr/Gamma_1 - dln rho/dr) by
 //!   centred differences;  growth rate sigma = sqrt(max(-N^2, 0)), H_p = P/(rho g).
 //! Domain: active cells with r <= r_int (tau = star_tau_int, the code's photosphere).
-void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
-  HsN2Col &c2 = hs_n2_;
+void StarN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
+  StarN2Col &c2 = star_n2_;
   if (c2.done) return;
   Mesh *pm = pmbp->pmesh;
   auto &indcs = pm->mb_indcs;
   if (indcs.nx1 != pm->mesh_indcs.nx1) {
-    HsFatal("star_seed_band = n2 / mlt_ramp auto need one MeshBlock across x1 (or "
-            "star_seed_band = old and explicit mlt_ramp_start/_time)", __LINE__);
+    StarFatal("star_seed_band = n2 / mlt_ramp auto need one MeshBlock across x1 (or "
+              "star_seed_band = old and explicit mlt_ramp_start/_time)", __LINE__);
   }
   const int is = indcs.is, ie = indcs.ie;
   auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
   auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
-  auto hrho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_rho_);
-  auto hein = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_eint_);
-  const int nf = hs_nf_;
+  auto hrho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_rho_);
+  auto hein = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_eint_);
+  const int nf = star_nf_;
   auto lint = [&](const decltype(hrho) &a, const Real r, const bool lg) {
-    Real x = (r - hs_rlo_)/hs_dr_;
+    Real x = (r - star_rlo_)/star_dr_;
     int i = static_cast<int>(floor(x));
     i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
     Real w = x - i;
@@ -5689,11 +5713,11 @@ void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
     return lg ? exp((1.0 - w)*log(a(i)) + w*log(a(i+1))) : (1.0 - w)*a(i) + w*a(i+1);
   };
   decltype(hrho) hbd, hbe, hgm;
-  if (hs_bal_) {
-    hbd = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_bd_);
-    hbe = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_be_);
+  if (star_bal_) {
+    hbd = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_bd_);
+    hbe = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_be_);
   }
-  if (hs_gmc_) hgm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_gmr_);
+  if (star_gmc_) hgm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_gmr_);
   const int n1 = ie + 2;
   std::vector<Real> &r = c2.r, &g1 = c2.g1, &gg = c2.gg, &pt = c2.pt, &dd = c2.dd,
                     &tt = c2.tt, &sg = c2.sg, &dm = c2.dm;
@@ -5702,15 +5726,15 @@ void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
   std::vector<Real> lp(n1), ld(n1);
   for (int i = is - 1; i <= ie + 1; ++i) {
     r[i] = hx1v(0,i);
-    const Real d = hs_bal_ ? hbd(i) : lint(hrho, r[i], true);
-    const Real e = hs_bal_ ? hbe(i) : lint(hein, r[i], true);
+    const Real d = star_bal_ ? hbd(i) : lint(hrho, r[i], true);
+    const Real e = star_bal_ ? hbe(i) : lint(hein, r[i], true);
     const Real t = eos.Temperature(d, e);
     Real eg, pg, crg, ctg, cvg;
     eos.ThermoAt(d, t, eg, pg, crg, ctg, cvg);
     const Real pr = ar*SQR(SQR(t))/3.0, p = pg + pr;
     const Real chr = pg*crg/p, cht = (pg*ctg + 4.0*pr)/p;
     g1[i] = chr + p*cht*cht/(d*t*cvg + 12.0*pr);
-    gg[i] = (hs_gmc_ ? lint(hgm, r[i], false) : hs_gm_)/SQR(r[i]);
+    gg[i] = (star_gmc_ ? lint(hgm, r[i], false) : star_gm_)/SQR(r[i]);
     lp[i] = log(p);
     ld[i] = log(d);
     pt[i] = p;
@@ -5723,7 +5747,7 @@ void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
   c2.smax = 0.0;
   c2.nu = 0;
   for (int i = is; i <= ie; ++i) {
-    if (r[i] > hs_rint_) break;
+    if (r[i] > star_rint_) break;
     c2.iex = i;
     const Real h = r[i+1] - r[i-1];
     const Real n2 = gg[i]*((lp[i+1] - lp[i-1])/h/g1[i] - (ld[i+1] - ld[i-1])/h);
@@ -5742,12 +5766,12 @@ void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real HsN2Median
+//! \fn Real StarN2Median
 //! \brief the mass-weighted (rho r^2 dr) median of 1/sigma over the cells
-//! below r_int with N^2 < 0 (hs_n2_), for mlt_ramp_time = auto.
-Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
-  HsN2Compute(pmbp, eos, ar);
-  HsN2Col &c2 = hs_n2_;
+//! below r_int with N^2 < 0 (star_n2_), for mlt_ramp_time = auto.
+Real StarN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
+  StarN2Compute(pmbp, eos, ar);
+  StarN2Col &c2 = star_n2_;
   std::vector<std::pair<Real, Real>> q;
   Real mt = 0.0;
   for (int i = c2.is; i <= c2.iex; ++i) {
@@ -5771,9 +5795,9 @@ Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool HsN2Band
+//! \fn bool StarN2Band
 //! \brief the radial band and Y_lm l range of the star_seed_band = n2 seed,
-//! from the growth rates of HsN2Compute.
+//! from the growth rates of StarN2Compute.
 //! Band rule: cells with sigma >= frac sigma_max; gaps of <= ngap cells between such
 //! cells are closed; connected runs shorter than nmin cells (isolated IC-column ripples)
 //! are discarded; the band is the surviving run with the largest sigma (ties: the outer
@@ -5783,24 +5807,24 @@ Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
 //! over the smaller of the theta, phi spacings); lmax = min(l_Hp, l_grid, lcap) (>= 2),
 //! lmin = max(1, lmax/2).  Every rank computes the same band (no communication).
 //! Returns false (no seed) when no cell is unstable.
-bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Real tk,
-              const bool hcs, const Real frac, const int nmin, const int ngap,
-              const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin,
-              int &lmax) {
-  HsN2Compute(pmbp, eos, ar);
+bool StarN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Real tk,
+                const bool hcs, const Real frac, const int nmin, const int ngap,
+                const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin,
+                int &lmax) {
+  StarN2Compute(pmbp, eos, ar);
   Mesh *pm = pmbp->pmesh;
   const int is = pm->mb_indcs.is, ie = pm->mb_indcs.ie;
   auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
-  const HsN2Col &c2 = hs_n2_;
+  const StarN2Col &c2 = star_n2_;
   const std::vector<Real> &r = c2.r, &g1 = c2.g1, &gg = c2.gg, &pt = c2.pt, &dd = c2.dd,
-                          &tt = c2.tt, &sg = c2.sg;
+                            &tt = c2.tt, &sg = c2.sg;
   const int n1 = ie + 2, iex = c2.iex;
   const Real smax = c2.smax;
   const bool root = (global_variable::my_rank == 0);
   if (!(smax > 0.0)) {
     if (root) {
       std::cout << "star_vet: star_seed_band = n2: N^2 >= 0 in every cell below r_int "
-                << "= " << hs_rint_ << ": NO SEED" << std::endl;
+                << "= " << star_rint_ << ": NO SEED" << std::endl;
     }
     return false;
   }
@@ -5833,9 +5857,9 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
     }
     const bool keep = (j - i + 1 >= nmin);
     if (root) {
-      std::cout << "  run r/r_int " << r[i]/hs_rint_ << " - " << r[j]/hs_rint_ << " ("
+      std::cout << "  run r/r_int " << r[i]/star_rint_ << " - " << r[j]/star_rint_ << " ("
                 << j - i + 1 << " cells), peak 1/sigma " << 1.0/sg[ip]/86400.0
-                << " d at r/r_int " << r[ip]/hs_rint_
+                << " d at r/r_int " << r[ip]/star_rint_
                 << (keep ? "" : "  [< star_seed_n2_nmin cells: discarded]") << std::endl;
     }
     if (keep && sg[ip] >= bpk) {
@@ -5904,10 +5928,10 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
   lmin = std::max(1, static_cast<int>(std::lround(lmax/4.0)));
   if (root) {
     std::cout << "star_vet: star_seed_band = n2 BAND r " << rlo << " .. " << rhi
-              << " (r/r_int " << rlo/hs_rint_ << " - " << rhi/hs_rint_ << ", r_int "
-              << hs_rint_ << "), " << be - bs + 1 << " cells " << bs - is << ".."
+              << " (r/r_int " << rlo/star_rint_ << " - " << rhi/star_rint_ << ", r_int "
+              << star_rint_ << "), " << be - bs + 1 << " cells " << bs - is << ".."
               << be - is
-              << "; peak at r/r_int " << r[bp]/hs_rint_ << ": sigma " << bpk
+              << "; peak at r/r_int " << r[bp]/star_rint_ << ": sigma " << bpk
               << " /s, 1/sigma " << 1.0/bpk/86400.0 << " d, T " << tt[bp]*tk
               << " K, Gamma1 " << g1[bp] << ", H_p/r " << hp/r[bp]
               << "; pi r/H_p " << lhp << ", l_8 " << l8 << " (" << ppw

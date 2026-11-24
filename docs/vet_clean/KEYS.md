@@ -47,7 +47,7 @@ Rules:
 - After the first cycle the code prints `### WARNING: N input parameter(s) were never read by
   the code`: a key there is a typo or a key this build does not have.
 
-- The star keys `<problem>/star_*` were named `he_*` before 2026-11-24. Old names in a deck,
+- The star keys `<problem>/star_*` were named `he_*` (one: `hs_*`) before 2026-11-24. Old names in a deck,
   on the command line or in a restart file are read as `star_*` with one `### NOTE`; a deck
   that names both spellings of a key with different values is FATAL.
   `tools/rename_star_keys.sh FILE ...` renames the keys in decks and scripts. The problem

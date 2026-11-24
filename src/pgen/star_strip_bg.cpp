@@ -62,7 +62,7 @@
 #include <mpi.h>
 #endif
 
-void HsStripBackground(ParameterInput *pin, Mesh *pm) {
+void StarStripBackground(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "strip_bg_on_restart") ||
       !pin->GetBoolean("problem", "strip_bg_on_restart")) return;
       // absent: nothing added
@@ -257,7 +257,7 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
 //!   rst_pert_erad (absent = nothing, bitwise)  the relative amplitude amp (>= 0)
 //!   rst_pert_time (required with it)           apply only when the restart time equals
 //! it (relative 1e-9): an inherited key never re-fires
-void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
+void StarRestartPerturb(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "rst_pert_erad")) return;   // absent: bitwise
   const Real amp = pin->GetReal("problem", "rst_pert_erad");
   if (!(amp > 0.0)) return;
@@ -321,7 +321,7 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
 //! refuses <mhd>); refused under <hydro>/dual_energy (its pressure slots belong to the
 //! old table).  The key is cleared after use, so the restart files this run writes never
 //! re-fire it.
-void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
+void StarEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "eos_reinit_from_t") ||
       !pin->GetBoolean("problem", "eos_reinit_from_t")) return;   // absent: bitwise
   // one-shot ACROSS restarts.  A run script that passes the key on every
