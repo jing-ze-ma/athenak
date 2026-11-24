@@ -45,7 +45,6 @@
 
 // forward declarations
 class Driver;
-namespace hydro {class RingAvg;}   // hydro_ringavg.hpp
 
 namespace radm1 {
 struct CleanArgs;   // rad_m1_clean.hpp
@@ -1660,26 +1659,6 @@ class RadiationM1 {
   // and area with the canonical seam areas; x1 parts are copies
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
-  // <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp): the implicit transport of
-  // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
-  bool rav_on = false;
-  bool rav_dist = true;   // polar_ring_avg_dist (study key)
-  // <rad_m1>/polar_ring_avg_ke = rad: the gas kinetic-energy spread the after-solve group
-  // average removes goes back to E (the coarse cell's kick), not to heat
-  bool rav_ke_rad = false;
-  void RavKeToRad();
-  hydro::RingAvg *prav = nullptr;
-  // dxface, x3f x N_j between groups
-  DvceFaceFld4D<Real> rav_dxf{"m1ravdxf", 1, 1, 1, 1};
-  //! the centre distances every implicit kernel takes (Coordinates dxface, or the
-  //! coarse-group one under polar_ring_avg)
-  DvceFaceFld4D<Real> M1Dxf() const;
-  void RavInit(ParameterInput *pin);
-  void RavAvg(const DvceArray5D<Real> &a, const int v0, const int nv);
-  void RavLump();
-  void RavKrylovStart();
-  void RavFaces();
-  void RavState(const bool gas);
   // the planar unit normals (Cartesian) of the x2 faces (m, j = 0..n2, c)
   // and x3 faces (m, k = 0..n3, c) of each block, oriented along +x2 / +x3 (M1CsLat0)
   DvceArray3D<Real> cs_fn2, cs_fn3;

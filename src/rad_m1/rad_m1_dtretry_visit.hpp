@@ -575,12 +575,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cs_area_eff.x1f", cs_area_eff.x1f);
   v.view("cs_area_eff.x2f", cs_area_eff.x2f);
   v.view("cs_area_eff.x3f", cs_area_eff.x3f);
-  v.value("rav_on", rav_on);
-  v.value("rav_dist", rav_dist);
-  v.value("rav_ke_rad", rav_ke_rad);
-  v.view("rav_dxf.x1f", rav_dxf.x1f);
-  v.view("rav_dxf.x2f", rav_dxf.x2f);
-  v.view("rav_dxf.x3f", rav_dxf.x3f);
   v.view("cs_fn2", cs_fn2);
   v.view("cs_fn3", cs_fn3);
   v.view("cs_cn2", cs_cn2);
@@ -1313,7 +1307,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pbval_sg : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
 //   id : RadiationM1TaskIDs
-//   prav : hydro::RingAvg *
 //   pin_cs_ : ParameterInput *
 //   cln_gdx : const CleanArgs *
 //   pin_rcut_ : ParameterInput *

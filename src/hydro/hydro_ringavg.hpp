@@ -21,8 +21,7 @@
 //! <Phi>), which keeps sum E). Hydro::NewTimeStep then uses N_j dphi as the phi width
 //! in those rows. Groups never straddle a MeshBlock (N_j divides the block nx3) and the
 //! group boundaries are aligned across the pole (polar ghosts land on whole groups).
-//! The radiation (rad_m1) is averaged only with <rad_m1>/polar_ring_avg = true
-//! (rad_m1_ringavg.cpp: the implicit transport of each group as ONE coarse cell).
+//! The radiation (rad_m1) is not averaged.
 //!
 //! Keys (nothing is constructed unless polar_ring_avg = true):
 //! <mesh>/polar_ring_avg = true needs use_spherical_polar + use_polar_boundary
@@ -39,8 +38,8 @@
 //! unaveraged rows), all higher m are removed. The state stays SMOOTH in phi (no
 //! staircase), the low-m content (tidal m = 1, 2 equilibrium, cross-pole flow) is
 //! untouched. Energy: the ring-sum defect dE = sum E - sum E_f (the kinetic and rho
-//! Phi energy of the removed modes) is put back UNIFORMLY on the ring as heat (or, after
-//! the M1 solve with polar_ring_avg_ke = rad, into the radiation E), never as velocity.
+//! Phi energy of the removed modes) is put back UNIFORMLY on the ring as heat, never as
+//! velocity.
 //! Mass, momentum components, L_z and total energy are conserved per ring. A ring
 //! (pole, row, i) whose filtered rho or e falls below thr x the old value somewhere
 //! falls back to the group average (counted, reported at the end); mfac = 1, thr = 0.5.
@@ -65,16 +64,15 @@ class RingAvg {
   void Average(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
                const bool grav);
 
-  // the group table, read by the radiation (<rad_m1>/polar_ring_avg, rad_m1_ringavg.cpp)
+  // the group table
   int nent = 0;                 // number of averaged (block, row) entries on this rank
   DvceArray1D<int> em, ej, en;  // block, row j, group size of each entry
 
   // <mesh>/polar_ring_avg_filter = fourier (hydro_ringfourier.cpp)
   bool fourier = false;
-  //! u as Average; urad != nullptr: the energy defect goes to urad(m, irad) x hc (M1 E)
-  //! instead of gas heat
+  //! u as Average
   void Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
-              const bool grav, DvceArray5D<Real> *urad, const int irad, const Real hc);
+              const bool grav);
   ~RingAvg();
 
  private:

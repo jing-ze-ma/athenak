@@ -21,8 +21,8 @@
 //! on the host. u_f,k = (a_0 + 2 sum_{m>=1} (a_m cos + b_m sin))/nphi (m_c < nphi/2).
 //! Then per ring: sum E, sum E_f (E_f = e_f + KE(rho_f, m_f) [+ rho_f Phi]) and
 //! min(rho_f - thr rho), min(e_f - thr e) (second small Allreduce, SUM and MIN); a ring
-//! passes when both mins (the second with the uniform share dE/nphi added when dE is gas
-//! heat) are >= 0, and gets e_f + dE/nphi; else the old group average on that ring.
+//! passes when both mins (the second with the uniform share dE/nphi added) are >= 0,
+//! and gets e_f + dE/nphi; else the old group average on that ring.
 
 #include <algorithm>
 #include <cmath>
@@ -174,8 +174,7 @@ void RingAvg::FourierAlloc(const int nvar) {
 //! calls it (rings span ranks).
 
 void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
-                     const bool grav, DvceArray5D<Real> *urad, const int irad,
-                     const Real hc) {
+                     const bool grav) {
   if (nring == 0) return;
   if (fnvar != nvar) FourierAlloc(nvar);
   auto &ic = pmy_pack->pmesh->mb_indcs;
@@ -297,13 +296,11 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
   MPI_Allreduce(MPI_IN_PLACE, rmin.h_view.data(), nr*nxg*2, MPI_ATHENA_REAL, MPI_MIN,
                 MPI_COMM_WORLD);
 #endif
-  const bool torad = (urad != nullptr);
   {
     double nf = 0.0;
     for (int q = 0; q < nr*nxg; ++q) {
       const Real de = (rsum.h_view(2*q) - rsum.h_view(2*q+1))/static_cast<Real>(np);
-      const bool ok = rmin.h_view(2*q) >= 0.0 &&
-                      rmin.h_view(2*q+1) + (torad ? 0.0 : de) >= 0.0;
+      const bool ok = rmin.h_view(2*q) >= 0.0 && rmin.h_view(2*q+1) + de >= 0.0;
       if (!ok) nf += 1.0;
     }
     nfall += nf;
@@ -312,19 +309,15 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
   rsum.modify_host(); rsum.sync_device();
   rmin.modify_host(); rmin.sync_device();
 
-  // (3) write back: the filtered state + dE/nphi (gas heat or radiation), or the group
-  // average where the ring failed
+  // (3) write back: the filtered state + dE/nphi (gas heat), or the group average where
+  // the ring failed
   if (nent == 0) return;
-  DvceArray5D<Real> ur;
-  if (torad) ur = *urad;
-  const int ir = irad;
-  const Real hcr = hc;
   par_for("ringf_put", DevExeSpace(), 0, nent-1, 0, nx1-1,
   KOKKOS_LAMBDA(const int e, const int i) {
     const int m = em_(e), j = ej_(e), r = er_(e), ig = ei0_(e) + i, ii = is + i;
     const int q = r*nxg + ig;
     const Real de = (rs(2*q) - rs(2*q+1))/static_cast<Real>(np);
-    const bool ok = rmn(2*q) >= 0.0 && rmn(2*q+1) + (torad ? 0.0 : de) >= 0.0;
+    const bool ok = rmn(2*q) >= 0.0 && rmn(2*q+1) + de >= 0.0;
     if (ok) {
       for (int kk = 0; kk < nx3; ++kk) {
         const int k = ks + kk;
@@ -335,12 +328,7 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
         const Real f1 = u_(m,IM1,k,j,ii), f2 = u_(m,IM2,k,j,ii), f3 = u_(m,IM3,k,j,ii);
         Real en = sc(e*nvar + IEN, kk, 0, i) + 0.5*(f1*f1 + f2*f2 + f3*f3)/df;
         if (gr) en += df*phi_(m,k,j,ii);
-        if (torad) {
-          ur(m,ir,k,j,ii) += hcr*de;
-        } else {
-          en += de;
-        }
-        u_(m,IEN,k,j,ii) = en;
+        u_(m,IEN,k,j,ii) = en + de;
       }
     } else {
       // the group average (hydro::RingAvg::Average), etotgrav included

@@ -2289,7 +2289,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       pin_rcut_ = pin;
     }
   }
-  RavInit(pin);     // <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp)
+  // <rad_m1>/polar_ring_avg (the implicit M1 on hydro's coarse polar phi groups): removed
+  if (pin->GetOrAddBoolean("rad_m1", "polar_ring_avg", false)) {
+    std::cout << "### FATAL ERROR <rad_m1>/polar_ring_avg = true was removed (only false)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   if (sph_geom) {SphericalS1Check(pin);}
   if (cs_geom) {

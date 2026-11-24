@@ -119,7 +119,7 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
 void RingAvg::Average(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
                       const bool grav) {
   if (fourier) {
-    Filter(u, nvar, phi, grav, nullptr, 0, 0.0);
+    Filter(u, nvar, phi, grav);
     return;
   }
   if (nent == 0) return;
