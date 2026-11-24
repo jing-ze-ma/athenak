@@ -92,3 +92,14 @@
 - 2026-11-23 22:31:05 rc=0 last: elapsed=5.033018e+03 cycle=7700 time=4.831070e+05 dt=5.585144e+00 
 - FATAL 0 
 - CW 76, stage fallbacks 33, DT_RETRY 29, pos_floor created 5; s/cycle 3.774 (c6500-7700); dt min 0.02278 at t 4.752742e+05; skip_de per cycle: max abs 2.534e+43 at c7711; 1267 cycles > 1e41
+
+## (11-23 22:35) W stopped (23zz18) + skip_de correction (23zz19)
+- **W stopped** at 22:31 (scancel of the test step, per 23zz18). Last: cycle 7700, t 4.831070e5, dt 5.59. Its final section is above; its log + hst are in q_W/. The skip_de line in W's final section above uses the OLD cumulative method: ignore it, see below.
+- **skip_de_per_cycle.txt fixed** (skipde.sh in caltech_results/IA121_T9L62/): now the increment of the cumulative [update] skip_de between the LAST [update] line of consecutive cycles (the accepted pass; redos are not summed). Regenerated for arm_WA, arm_WB, arm_SB, q_W, arm_S, arm_L:
+  - WA: 1053 cycles, 6 > 1e41, max 1.756e+42 at c6470; 47 negative increments (DT_RETRY restores / sign of skip_de)
+  - WB: 1592 cycles, 8 > 1e41, max 1.216e+42 at c6467; 113 negative increments (DT_RETRY restores / sign of skip_de)
+  - SB: 1592 cycles, 16 > 1e41, max 8.816e+41 at c6463; 111 negative increments (DT_RETRY restores / sign of skip_de)
+  - W: 1278 cycles, 18 > 1e41, max 1.206e+42 at c7711; 0 negative increments (DT_RETRY restores / sign of skip_de)
+  - S: 392 cycles, 6 > 1e41, max 8.816e+41 at c6463; 154 negative increments (DT_RETRY restores / sign of skip_de)
+  - L: 392 cycles, 5 > 1e41, max 1.749e+42 at c6470; 138 negative increments (DT_RETRY restores / sign of skip_de)
+  These agree with T9FLOOR's table to within 1-2 cycles (WB 8 vs 9, WA 6 vs 8, SB 16 vs 16). The difference is probably whether a redone cycle's last line or its first accepted line is taken.
