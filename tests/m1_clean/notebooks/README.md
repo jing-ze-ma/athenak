@@ -14,6 +14,9 @@ PASS / FAIL line.
 | `nlte.ipynb` | `nlte_eps1e-1`, `nlte_eps1e-4` | J vs tau against the exact solution (`ref/nlte_exact_eps*.txt`) |
 | `momentum_box.ipynb` | `momentum_box` | per-cycle table and plot of the linear-momentum drift (a report, no criterion) |
 | `restart.ipynb` | `restart_sp`, `restart_cs` | straight vs restarted run: the difference (0) |
+| `radwave.ipynb` | `radwave` | wave amplitude vs the analytic decay; phase-speed and damping errors vs the trapping parameter x |
+| `wedge_sym.ipynb` | `wedge_sym` | F_phi per phi column across the wedge; the wedge-mean F_phi of each wedge vs the criterion |
+| `floor_pay.ipynb` | `floor_pay` | total-energy drift from cycle 1 on; the floor energy paid from the radiation per cycle |
 
 ## How to run
 
@@ -36,4 +39,5 @@ With 4 threads per run most notebooks take under a minute; `order.ipynb` and `wb
 (the cubed-sphere `wb_cs`) take 2-5 min.
 `nbutil.py` holds the two shared helpers: `suite()` (runs `run_tests.py --only TEST --keep
 --record`) and `verdict()` (the suite's PASS / FAIL check against `ref/references.json`).
-The committed notebooks were executed with the CPU binary of commit 69bfe5d04.
+The committed notebooks were executed with the CPU binary of commit 69bfe5d04; `radwave`,
+`wedge_sym` and `floor_pay` with that of ad213fb5e (Python 3.6 kernel).

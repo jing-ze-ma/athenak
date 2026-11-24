@@ -25,7 +25,8 @@ def suite(test, exe, work, threads=4):
                '--only', test, '--keep', '--workdir', work, '--threads', str(threads),
                '--record', rec]
         print('running:', ' '.join(cmd), flush=True)
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           universal_newlines=True)
         print(r.stdout)
         if not os.path.exists(rec):
             raise RuntimeError('the suite wrote no record (see the output above)')

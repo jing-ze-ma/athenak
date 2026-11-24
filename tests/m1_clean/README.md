@@ -109,7 +109,8 @@ generators; a `he_star_m1` binary cannot run these decks): `--exe build_tests/sr
 runs of one binary and must pass on a GPU too. The reference tests (`order_*`, `nlte_*`,
 `thermal_eq`, `wb_*`) must agree with the CPU references within their tolerances; a much
 larger difference points at the build (see the CUDA 12.2 warning in
-`docs/m1_clean/BUILD.md`). The quick subset passes on MI300A (8/8).
+`docs/m1_clean/BUILD.md`). The quick subset passed on MI300A (8/8) before `radwave`,
+`wedge_sym` and `floor_pay` were added; those three have not been run on a GPU yet.
 
 ## Notebooks
 
