@@ -70,3 +70,22 @@ c69350 dt_hyd 1.792 gasonly 1.799 dir 3 r 5.5971e+11 rho 1.000e-17 T 1.337e+11 v
 c69360 dt_hyd 1.66 gasonly 1.661 dir 3 r 5.5943e+11 rho 1.013e-17 T 4.383e+12 v 4.780e+07 cgas 2.703e+06 ceff 2.741e+06 tauT_h 9.91e-10
 ```
 - first DTREG lines: `DTREG polar cycle=69250 npol=7 cfl*cell_dt=1.931743e+00 row=4 theta_deg=8.829309e+01 phi=2.425000e-02 r=5.588872e+11 dir=3 rho=1.000000e-17 T=4.333303e+12 v=4.065206e+07 cgas=2.687410e+06 ceff=2.726319e+06 h=2.793196e+08 cfl*cell_dt_gas=1.933477e+00|DTREG rest  cycle=69250 npol=7 cfl*cell_dt=1.513318e+00 row=56 theta_deg=8.978484e+01 phi=2.375000e-02 r=5.597052e+11 dir=3 rho=1.000000e-17 T=1.183834e+14 v=-4.142355e+07 cgas=1.404655e+07 ceff=1.405400e+07 h=2.798506e+08 cfl*cell_dt_gas=1.513522e+0|`
+
+## bsg: resumed with hydro/dt_report=10 (11-24 07:27)
+- Clean STOP: yes; resumed from bsg3d.00028.rst (hard link rst_keep/bsg3d.00028.rst.pre-dtr) on hpc-sm-02-16: `2026-11-24 07:25:26 chunk 3 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DEC` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 hydro/dt_report=10
+- DTREP binders, every other report over ~100 cycles (all 84 DTREP/DTREG lines in caltech_results/DTDROP_1124/bsg/dtrep_dtreg.txt):
+```
+c38670 dt_hyd 46.02 gasonly 38.98 dir 1 r 3.9242e+12 rho 6.152e-14 T 1.045e+15 v -9.999e+07 cgas 4.174e+07 ceff 4.174e+07 tauT_h 0.000438
+c38680 dt_hyd 49.47 gasonly 40.53 dir 1 r 3.8209e+12 rho 6.235e-14 T 1.984e+13 v -6.017e+07 cgas 5.751e+06 ceff 5.751e+06 tauT_h 0.000228
+c38690 dt_hyd 44.33 gasonly 40.66 dir 1 r 4.2286e+12 rho 6.152e-14 T 1.336e+15 v -9.996e+07 cgas 4.718e+07 ceff 4.718e+07 tauT_h 0.000428
+c38700 dt_hyd 46.83 gasonly 41 dir 1 r 3.8209e+12 rho 6.232e-14 T 2.777e+13 v -6.283e+07 cgas 6.803e+06 ceff 6.803e+06 tauT_h 0.000228
+c38710 dt_hyd 45.86 gasonly 37.66 dir 1 r 4.0981e+12 rho 6.152e-14 T 1.071e+15 v -9.999e+07 cgas 4.224e+07 ceff 4.224e+07 tauT_h 0.000428
+c38720 dt_hyd 45.89 gasonly 41.35 dir 1 r 4.2286e+12 rho 6.152e-14 T 1.066e+15 v -9.999e+07 cgas 4.214e+07 ceff 4.214e+07 tauT_h 0.000421
+c38730 dt_hyd 46.35 gasonly 40.37 dir 1 r 4.0112e+12 rho 6.152e-14 T 1.695e+15 v -8.758e+07 cgas 5.315e+07 ceff 5.315e+07 tauT_h 0.000434
+c38740 dt_hyd 46.63 gasonly 36.02 dir 1 r 3.8209e+12 rho 6.238e-14 T 2.764e+13 v -6.315e+07 cgas 6.788e+06 ceff 6.788e+06 tauT_h 0.000228
+c38750 dt_hyd 46.74 gasonly 37.33 dir 1 r 3.8209e+12 rho 6.235e-14 T 2.751e+13 v -6.301e+07 cgas 6.772e+06 ceff 6.772e+06 tauT_h 0.000228
+c38760 dt_hyd 47.07 gasonly 42.66 dir 1 r 3.8209e+12 rho 6.231e-14 T 2.628e+13 v -6.267e+07 cgas 6.618e+06 ceff 6.618e+06 tauT_h 0.000228
+c38770 dt_hyd 51.06 gasonly 41.16 dir 1 r 4.2503e+12 rho 6.152e-14 T 6.959e+14 v -9.368e+07 cgas 3.406e+07 ceff 3.406e+07 tauT_h 0.000421
+c38780 dt_hyd 45 gasonly 35.04 dir 1 r 3.9242e+12 rho 6.152e-14 T 1.216e+15 v -9.993e+07 cgas 4.501e+07 ceff 4.501e+07 tauT_h 0.000423
+```
+- first DTREG lines: `DTREG polar cycle=38670 npol=7 cfl*cell_dt=84.7994 row=0 theta_deg=60.1172 phi=0.00204531 r=1.40233e+12 dir=3 rho=5.77419e-05 T=1.41913e+14 v=-1775.14 cgas=1.53792e+07 ceff=1.7594e+07 h=4.97371e+09 cfl*cell_dt_gas=97.01|DTREG rest  cycle=38670 npol=7 cfl*cell_dt=86.1643 row=7 theta_deg=61.7579 phi=0.00204531 r=1.40233e+12 dir=3 rho=5.77393e-05 T=1.41911e+14 v=-923.111 cgas=1.53791e+07 ceff=1.75939e+07 h=5.05349e+09 cfl*cell_dt_gas=98.5723|`
