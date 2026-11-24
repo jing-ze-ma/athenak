@@ -1,0 +1,9 @@
+--- IA121_t9l62
++++ IA122_t9l62
+@@ -0,0 +1 @@
++# IA12.2 2026-11-23 candidate clean-stag2-interim-f 465aff485. = caltech_ia121/notile/IA121_t9l62.athinput with ONLY clean_gas_secant -> max_stage2 and <hydro> rad_signal_speed_diff = true
+@@ -77,0 +79 @@
++rad_signal_speed_diff = true   # IA12.2 M35FAST 0f2087fbb (dt only: radiation signal speed tapered by 1 - exp(-tau c_eq/c))
+@@ -224 +226 @@
+-clean_gas_secant = stage2   # IA12.1 SPEEDA 77402f12e (USER-accepted)
++clean_gas_secant = max_stage2   # IA12.2 RSGPASS 889136d65 (chord only where steeper than the tangent; HG30 +51 L_top 2.76 %, -14 % wall)
