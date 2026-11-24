@@ -222,9 +222,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pst = pin->GetOrAddBoolean("rad_m1","clean_pred_stage",false);
     // clean_gas_secant = false (default) | true | stage2: the exchange's slopes from the
     // chord through the last pass's gas T (CleanRightHandSide), in every solve or in the
-    // stage-2 solves only
+    // stage-2 solves only; max | max_stage2: the chord only where it is steeper than the
+    // tangent
     {const std::string gs = pin->GetOrAddString("rad_m1","clean_gas_secant","false");
-    cln_gsec = (gs == "true") ? 1 : ((gs == "stage2") ? 2 : 0);}
+    cln_gsec = (gs == "true") ? 1 : ((gs == "stage2") ? 2 : ((gs == "max") ? 3 :
+               ((gs == "max_stage2") ? 4 : 0)));}
     // clean_pred_xch (default false): sdirk2's stage-2 solve starts from E_old + h K, K the
     // stage-1 slope of this step where the cell's exchange is slow, the last step's
     // stage-2 slope where it is stiff (weights 1 : z, z = h (ch kE + 4 c kP a T^4/e))
