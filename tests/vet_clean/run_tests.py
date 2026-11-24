@@ -182,7 +182,10 @@ def t_dt_retry(c):
 def t_layout_tile(c):
     """tile mode with 8 x 8 tiles: one MeshBlock vs 1 x 2 MeshBlocks (along phi, mirror
     theta walls of the ray sweep) and vs 2 x 2 MeshBlocks (vacuum theta walls: the mirror
-    walls need one MeshBlock along theta)."""
+    walls need one MeshBlock along theta).  dfl: 1 vs 1 x 2 again with
+    hydro/dfloor_flux_limit and dfloor just below the gas density (the outflow limiter
+    acts in every cell; sdirk2's stage-2 donor across a MeshBlock face is a ghost), and
+    that run's energy and L_z drifts (am_budget)."""
     o = {'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
          'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8,
          'meshblock/nx2': 16, 'meshblock/nx3': 16}
@@ -194,6 +197,12 @@ def t_layout_tile(c):
                                                               'meshblock/nx3': 8}))
         nf, mx, mr = vett.compare_dirs(a, b)
         out['maxdiff_' + tag], out['maxrel_' + tag] = mx, mr
+    o.update({'rad_vet/vet_gd_theta_wall': 'mirror', 'hydro/dfloor_flux_limit': 'true',
+              'hydro/dfloor': 99.9})
+    a = c.run('shell_sp.athinput', 'mb1_dfl', dict(o))
+    b = c.run('shell_sp.athinput', 'mb1x2_dfl', dict(o, **{'meshblock/nx3': 8}))
+    out['maxdiff_dfl'] = vett.compare_dirs(a, b)[1]
+    out.update({k + '_dfl': v for k, v in am_budget(b, 'sp').items() if k != 'dLz_gr'})
     return out
 
 
