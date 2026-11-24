@@ -113,7 +113,11 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     const Real g = kT2G;
     t2_tab = 0;
     {
-      std::string tb = pin->GetOrAddString("rad_vet", "time2_tableau", "hesdirk2");
+      // default of a fresh run: sdirk2 (mhd: not wired, hesdirk2); restart: hesdirk2
+      recipe::Old(pin, "rad_vet", "time2_tableau", "hesdirk2");
+      const bool sd = !global_variable::restart_run && pmy_pack->pmhd == nullptr;
+      std::string tb = pin->GetOrAddString("rad_vet", "time2_tableau",
+                                           sd ? "sdirk2" : "hesdirk2");
       if (tb.compare("hesdirk2") == 0) {
         t2_tab = 0;
       } else if (tb.compare("trbdf2") == 0) {

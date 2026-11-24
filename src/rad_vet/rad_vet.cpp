@@ -90,7 +90,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_c1 = pin->GetOrAddReal("rad_vet","clean_w_c1",cln_wfse ? 0.6 : 0.5);
     // clean_face_hctau: the bracket's ray face flux F_y interpolated in optical depth
     // between the cell centres, kept where the cells' H jump (CleanStagBracket)
-    cln_hctau = pin->GetOrAddBoolean("rad_vet","clean_face_hctau",false);
+    recipe::Old(pin, "rad_vet", "clean_face_hctau", "false");
+    cln_hctau = pin->GetOrAddBoolean("rad_vet","clean_face_hctau",nw);
     // clean_face_jse: face half ranges in the shape of the cells' half-range fluxes
     cln_jse = pin->GetOrAddBoolean("rad_vet","clean_face_jse",true);
     // clean_face_jse_cell: its factor on the donor cell's h+-, not the face value
@@ -177,13 +178,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pst = pin->GetOrAddBoolean("rad_vet","clean_pred_stage",false);
     // clean_gas_secant = false | true | stage2 | max | max_stage2: exchange slopes from
     // the chord through the last pass's gas T (max: only where steeper than the tangent)
-    {const std::string gs = pin->GetOrAddString("rad_vet","clean_gas_secant","false");
+    recipe::Old(pin, "rad_vet", "clean_gas_secant", "false");
+    {const std::string gs = pin->GetOrAddString("rad_vet","clean_gas_secant",
+                                                nw ? "max_stage2" : "false");
     cln_gsec = (gs == "true") ? 1 : ((gs == "stage2") ? 2 : ((gs == "max") ? 3 :
                ((gs == "max_stage2") ? 4 : 0)));}
     // clean_pred_xch: stage-2 start E_old + h K, K the stage-1 slope where the exchange
     // is slow, the last stage-2 slope where stiff (weights 1 : z,
     // z = h (ch kE + 4 c kP a T^4/e))
-    cln_pxc = pin->GetOrAddBoolean("rad_vet","clean_pred_xch",false);
+    recipe::Old(pin, "rad_vet", "clean_pred_xch", "false");
+    cln_pxc = pin->GetOrAddBoolean("rad_vet","clean_pred_xch",nw);
     {std::string bf = pin->GetOrAddString("rad_vet","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
     // clean_layout = staggered only
@@ -349,7 +353,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_ucen = pin->GetOrAddBoolean("rad_vet","clean_stag_upwind_central",false);
     // clean_stag_central: the rest as the plain central mean, the work drain and the gas
     // kick in the same Patankar weight (CleanStagMprkWeight)
-    cln_ucp = pin->GetOrAddBoolean("rad_vet","clean_stag_central",false);
+    old("clean_stag_central", "false");
+    cln_ucp = pin->GetOrAddBoolean("rad_vet","clean_stag_central",nw);
     cln_ucen = cln_ucen || cln_ucp;
     // clean_stag_csvec_radial: cs cell vector exact for a radial field (true only)
     cln_csvr = stag("clean_stag_csvec_radial", true);
@@ -486,7 +491,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
     // clean_stag_eicarry: a stage start's gas eint < 0 enters the gas row as is, paid by
     // its implicit exchange (CleanOldVector)
-    cln_eicry = pin->GetOrAddBoolean("rad_vet","clean_stag_eicarry",false);
+    old("clean_stag_eicarry", "false");
+    cln_eicry = pin->GetOrAddBoolean("rad_vet","clean_stag_eicarry",nw);
     cln_colf = stag("clean_stag_colflux", false);
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
@@ -1041,7 +1047,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 && pin->GetBoolean("rad_vet","vet_gd"));
   }
   vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter", fresh && vet_rays &&
-                               opacity_type == M1_OPAC_TABLE && gen_eos_tab);
+                               opacity_type == M1_OPAC_TABLE);
   if (vscat) {
     std::string sf = pin->GetOrAddString("rad_vet","vet_scatter_form","ma");
     if (sf.compare("ma") == 0) {
@@ -1536,10 +1542,18 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_on = pin->GetBoolean("rad_vet","vet_gd");
       if (vgd_on) {vlat_on = true;}
     }
-    // default set of a fresh start that names no set key: the geodesic vet_gd_geo = 3
-    // (92 directions); 2-D axisymmetric with a phi extent below 2 pi: the staggered GL
-    // 9 x nphi, nphi nearest 12 with 2 pi/nphi dividing the extent (fatal if none). A
-    // restart naming none keeps HEALPix nside 3.
+    // default of a fresh start on spherical polar: a fixed set (vet_gd_rotate_dt = 0)
+    if (vgd_on && ppack->pmesh->use_spherical_polar && !global_variable::restart_run &&
+        recipe::NewDefaults(pin) && !pin->DoesParameterExist("rad_vet","vet_gd_rotate_dt")
+        && !pin->DoesParameterExist("rad_vet","vet_gd_rotate_every")) {
+      pin->GetOrAddString("rad_vet","vet_gd_rotate_dt","0");
+      recipe::Log("<rad_vet>/vet_gd_rotate_dt = 0 (default on spherical polar)");
+    }
+    // default set of a fresh start that names no set key: 3-D spherical polar the
+    // staggered GL 7 x 18 (126 directions); 2-D axisymmetric with a phi extent below 2 pi
+    // the staggered GL 9 x nphi, nphi nearest 12 with 2 pi/nphi dividing the extent
+    // (fatal if none); else the geodesic vet_gd_geo = 3 (92). A restart naming none
+    // keeps HEALPix nside 3.
     if (vgd_on && !pin->DoesParameterExist("rad_vet","vet_gd_gl_nmu") &&
         !pin->DoesParameterExist("rad_vet","vet_gd_ls") &&
         !pin->DoesParameterExist("rad_vet","vet_gd_geo")) {
@@ -1548,7 +1562,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       const bool ax2 = ppack->pmesh->use_spherical_polar && !ppack->pmesh->three_d &&
           std::abs(per - 2.0*M_PI) >= 1.0e-8;
       const bool fresh = recipe::NewDefaults(pin) && !global_variable::restart_run;
-      int np = 0;
+      const bool sp3 = fresh && ppack->pmesh->use_spherical_polar && !ax2;
+      int np = sp3 ? 18 : 0;
       for (int q = 4; q <= 64 && fresh && ax2; ++q) {
         const double m = per*q/(2.0*M_PI);
         if (std::round(m) >= 1.0 && std::fabs(m - std::round(m)) < 1.0e-9 &&
@@ -1561,11 +1576,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
           << "vet_gd_gl_nphi)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (fresh && !ax2) {
+      if (fresh && !ax2 && !sp3) {
         pin->GetOrAddInteger("rad_vet","vet_gd_geo",3);
       }
-      if (fresh && ax2) {
-        pin->GetOrAddInteger("rad_vet","vet_gd_gl_nmu",9);
+      if (fresh && (ax2 || sp3)) {
+        pin->GetOrAddInteger("rad_vet","vet_gd_gl_nmu",sp3 ? 7 : 9);
         pin->GetOrAddInteger("rad_vet","vet_gd_gl_nphi",np);
         pin->GetOrAddBoolean("rad_vet","vet_gd_gl_stagger",true);
       }
@@ -1573,6 +1588,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
           (global_variable::restart_run ? "restart input has no key)" : "recipe none)")
           : (ax2 ? "<rad_vet>/vet_gd_gl_nmu = 9, vet_gd_gl_nphi = " + std::to_string(np) +
                    ", stagger (default on 2-D axisymmetric sp: exact phi walls)"
+           : sp3 ? std::string("<rad_vet>/vet_gd_gl_nmu = 7, vet_gd_gl_nphi = 18, "
+                               "stagger (default on 3-D spherical polar)")
                  : std::string("<rad_vet>/vet_gd_geo = 3 (default)")));
     }
     // a fresh vet_gd run whose set rotates and names no vet_rotate_avg averages 4 rotated
@@ -1808,8 +1825,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_vet","vet_gd_halo_ipc");
     }
-    if (vgd_on) vgd_replace =
-        pin->GetOrAddBoolean("rad_vet","vet_gd_replace",vgd_replace);
+    if (vgd_on) recipe::Old(pin, "rad_vet", "vet_gd_replace", "false");
+    if (vgd_on) vgd_replace = pin->GetOrAddBoolean("rad_vet","vet_gd_replace",nw);
     // vet_gd_tangential: full tensor by default; recipe none on cs: D_rr only
     if (vgd_on && pmy_pack->pmesh->use_cubed_sphere &&
         recipe::GetMode(pin) == recipe::Mode::none) {vgd_tan = false;}

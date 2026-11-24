@@ -22,6 +22,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "utils/recipe.hpp"
 
@@ -58,6 +59,22 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     pin->GetOrAddString(fb, "wb_option", "polytropic");
     Log("<" + fb + ">/wb_option = polytropic (default with wellbalance_dynamic)");
   }
+  // star_vet with <rad_vet> (a fresh start): the well-balanced radiative envelope, the
+  // steady start, the imposed inner flux, floored cells keep their velocity
+  if (!star_pgen || !pin->DoesBlockExist("rad_vet") || global_variable::restart_run) {
+    return;
+  }
+  auto add = [&](const std::string &b, const char *k, const char *v) {
+    if (named(b, k)) return;
+    pin->GetOrAddString(b, k, v);
+    Log("<" + b + ">/" + k + " = " + v + " (default on a fresh star start)");
+  };
+  add("rad_vet", "force_reference", "wb_arad");
+  add("rad_vet", "clean_init", "steady");
+  if (named("rad_vet", "implicit_flux_x1min")) {
+    add("rad_vet", "implicit_bc_x1min", "flux");
+  }
+  if (fb == "hydro") add("hydro", "dfloor_keep_velocity", "true");
 }
 
 }  // namespace recipe

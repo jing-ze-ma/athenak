@@ -70,7 +70,7 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     if (pskip && !pay) Fatal("<" + blk + ">/floor_pay_skip needs floor_pay = rad*");
   }
   if (pay || Named(pin, blk, "fofc_retest")) {
-    retest = pin->GetOrAddBoolean(blk, "fofc_retest", false);
+    retest = pin->GetOrAddBoolean(blk, "fofc_retest", rad);
   }
   if (Named(pin, blk, "floor_audit")) report = pin->GetInteger(blk, "floor_audit");
   worst = Named(pin, blk, "floor_audit_worst") &&
