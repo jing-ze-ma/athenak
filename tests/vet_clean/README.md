@@ -35,7 +35,7 @@ is a FAIL with the path of its `run.log`.
 | `restart_sp` | `shell_sp` | 16 cycles straight vs 8 + restart + 8 | every dump and history row identical (difference 0) |
 | `restart_cs` | `shell_cs` | 8 straight vs 4 + restart + 4 | identical |
 | `dt_retry` | `shell_sp` | a forced step retry at cycle 4 with factor 1 (the step is repeated at the same dt) and with factor 0.5 | factor 1: identical to the run without retry; factor 0.5: runs on; one retry each |
-| `layout_tile` | `shell_sp` (16 x 16 lateral) | `<mesh>/layout_invariant_mode = tile`, `layout_tile = 8`, 8 cycles: 1 MeshBlock vs 1 x 2 MeshBlocks (along phi) and vs 2 x 2 (theta x phi, vacuum ray walls) | 1 x 2: identical (difference 0); 2 x 2: largest difference / largest value <= 1e-8 (see below) |
+| `layout_tile` | `shell_sp` (16 x 16 lateral) | `<mesh>/layout_invariant_mode = tile`, `layout_tile = 8`, 8 cycles: 1 MeshBlock vs 1 x 2 MeshBlocks (along phi) and vs 2 x 2 (theta x phi, vacuum ray walls) | 1 x 2: identical (difference 0); 2 x 2: largest difference / largest value <= 1e-8 (see below); the 1 x 2 pair again with `dfloor_flux_limit` and `dfloor` just below the gas density (the limiter acts in every cell): identical, and its dE, dM, dLz <= 1e-13 |
 | `order_time` | `deckD` | time step halved at a fixed grid (3 levels quick, 5 full); successive-difference L1 of E, F_r, T | order of the finest pair >= 1.7; errors within 5 % of the reference |
 | `order_space` | `wave_cart` | linear radiation-hydro wave, one period, N = 16 ... 128 cells with dt following the CFL | order of the finest pair >= 1.7 (full only) |
 | `nlte_eps1e-1`, `nlte_eps1e-4` | `nlte_eps*` | two-level-atom non-LTE atmosphere (Jiang 2021, ApJS 253, 49, sec. 4.5): J vs the exact transport solution (`ref/nlte_exact_eps*.txt`) | L1 within 5 % of the reference value |
@@ -62,6 +62,10 @@ Notes on the results of this release (465aff485):
   2 x 2 differs after 8 cycles by 1.6e-10 of the largest value: splitting theta puts ray
   walls (mirror or vacuum) inside the mesh, which is outside the tile guarantee, so the test
   bounds that difference instead of requiring 0.
+  The `dfl` pair covers the stage-2 outflow limiter: under `time2_tableau = sdirk2` the u0
+  ghosts held the stage-2 flux state while the interior held the gas state, so the two
+  MeshBlocks of a face limited with different donors (before the fix: 1 x 2 differed by
+  1.6e-2 of the largest value, dE 1e-8, dLz 3e-9).
 - **Floors.** The floor energy of the initial conversion is paid before the t = 0 output, so
   `floor_pay` measures dE from t = 0 (`dE0`, the first step alone, is printed).
 - **Narrow wedges.** On a phi-periodic wedge every ray set needs the width to be a multiple

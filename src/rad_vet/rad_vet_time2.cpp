@@ -711,7 +711,21 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   });
   if (which != 3) return;
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
-  par_for("vet_t2_gtime3", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
+  // u0 back to U* + d in the ghosts too, with the neighbour's f d (exchanged; 0 at the
+  // physical boundaries): a ghost is then its neighbour's cell bitwise, so the stage-2
+  // dfloor_flux_limit takes the same donor state on both sides of a MeshBlock face (the
+  // face flux does not depend on the MeshBlock layout)
+  par_for("vet_t2_gtime3g", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (k >= kl && k <= ku && j >= jl && j <= ju && i >= il && i <= iu) return;
+    for (int n = 0; n < nv; ++n) {hs_(m,n,k,j,i) = 0.0;}
+  });
+  (void) ph->pbval_u->InitRecv(nv);
+  (void) ph->pbval_u->PackAndSendCC(hs_, ph->coarse_u0);
+  (void) ph->pbval_u->ClearSend();
+  (void) ph->pbval_u->ClearRecv();
+  (void) ph->pbval_u->RecvAndUnpackCC(hs_, ph->coarse_u0);
+  par_for("vet_t2_gtime3", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int n = 0; n < nv; ++n) {u0_(m,n,k,j,i) -= hs_(m,n,k,j,i);}
   });
