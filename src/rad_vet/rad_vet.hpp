@@ -398,9 +398,7 @@ class RadiationVet {
   Real c_light{};      // speed of light in code units (required)
   Real chat_over_c{};  // reduced speed of light factor (default 1)
   Real chat{};         // = chat_over_c * c_light
-  Real cfl_rad{};      // CFL number for the radiation substep (default 0.4)
   Real e_floor{};      // floor on E
-  bool subcycle{};     // sub-cycle the module inside the mesh timestep
   int chi_kind{};      // M1_CHI_*: levermore (closure = m1) | minerbo | kershaw
   bool eddington{};    // closure = eddington (chi = 1/3); default is the M1 closure
   bool advect_split{};          // the advective enthalpy-flux split of the E equation
@@ -589,7 +587,7 @@ class RadiationVet {
   bool sets_mesh_dt{};
 
   // implicit transport (rad_vet_implicit.hpp)
-  int nstage{};                 // stages per substep: M1_NSTAGE explicit, 1 implicit
+  int nstage{};                 // 1: one stage solve per task-list pass
   Real impl_cfl{};              // <rad_vet>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
   DvceArray1D<Real> opn_nskip_d;
   // vet-positivity (default true on a fresh run, off on a restart whose file lacks them):
@@ -1580,18 +1578,15 @@ class RadiationVet {
   MeshBoundaryValuesCC *pbval_u;
 
   // timestep bookkeeping
-  Real dtnew{};   // cfl_rad*min(dx)/chat, over this pack
-  Real dt_sub{};  // the dt of the substep currently being taken
-  int nsub{};     // number of substeps in the current mesh step
-
-  // PD-ARS explicit-stage weights, u0 = gam0*u0 + gam1*u1 - beta*dt_sub*div(F)
-  Real gam0[M1_NSTAGE]{}, gam1[M1_NSTAGE]{}, beta[M1_NSTAGE]{};
+  Real dtnew{};   // implicit_cfl*min(dx)/c (implicit_cfl > 0), else FLT_MAX
+  Real dt_sub{};  // the dt of the stage solve being taken
+  int nsub{};     // always 1 (no sub-cycling)
 
   RadiationVetTaskIDs id;
 
   // functions
   void AssembleRadVetTasks(std::map<std::string, std::shared_ptr<TaskList>> tl);
-  //! set dt_sub and nsub for a mesh step of length dt_mesh; returns nsub
+  //! set dt_sub = dt_mesh (nsub = 1); returns nsub
   int SetSubsteps(Real dt_mesh);
   //! print the implicit-solve counters (called from the destructor, rank 0)
   void ReportCounters();

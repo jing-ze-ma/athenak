@@ -1102,9 +1102,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_kfuse = 0;
   impl_prec = 0;
   // ---- end of the 3a hook
-  cfl_rad = pin->GetOrAddReal("rad_vet","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_vet","e_floor",(FLT_MIN));
-  subcycle = pin->GetOrAddBoolean("rad_vet","subcycle",true);
 
   // (the explicit transport's face-flux options, removed with it: only their old
   // defaults are accepted, CleanPreflight)
@@ -2178,20 +2176,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
 
-  // (2) who owns the mesh timestep.  With sub-cycling on, the radiation CFL is NOT
-  // folded into Mesh::NewTimeStep -- unless nothing else sets a timestep at all, in
-  // which case the mesh step would be unbounded.
-  bool other_sets_dt = (pin->DoesBlockExist("hydro") || pin->DoesBlockExist("mhd") ||
-                        pin->DoesBlockExist("z4c") || pin->DoesBlockExist("particles"));
-  sets_mesh_dt = (!subcycle) || (!other_sets_dt);
-
-  // (3) PD-ARS explicit weights.  With S == 0 the tableau (design sect. 5) is
-  //   U1   = U^n + dt L(U^n)
-  //   U^n1 = U^n + dt/2 [L(U^n) + L(U1)]
-  // i.e. Heun / SSP-RK2 written in the AthenaK gam0/gam1/beta form.
-  gam0[0] = 1.0;  gam1[0] = 0.0;  beta[0] = 1.0;
-  gam0[1] = 0.5;  gam1[1] = 0.5;  beta[1] = 0.5;
-
   dtnew = (FLT_MAX);
   dt_sub = 0.0;
   nsub = 1;
@@ -2298,7 +2282,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet>: c=" << c_light << " chat/c=" << chat_over_c
-              << " cfl_rad=" << cfl_rad
               << " advect_split=" << (advect_split ? "true" : "false")
               // the closure as named in the input (was eddington ? eddington : m1, which
               // printed m1 for minerbo/kershaw/vet_sc/tau/vet_col; the printout only)
@@ -2306,7 +2289,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                  tau_closure ? "tau" : eddington ? "eddington" :
                                  (chi_kind == M1_CHI_MINERBO) ? "minerbo" :
                                  (chi_kind == M1_CHI_KERSHAW) ? "kershaw" : "m1")
-              << " subcycle=" << (subcycle ? "true" : "false") << std::endl;
+              << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
               << " kappa_f=" << kappa_f << " kappa_s=" << kappa_s
               << " coupling=" << (coupling ? "true" : "false")
@@ -2746,22 +2729,11 @@ void RadiationVet::ReportCounters() {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::SetSubsteps
-//! \brief Set the substep dt and the number of substeps for a mesh step dt_mesh.
-//! N_sub = ceil(dt_mesh/dt_rad) with dt_rad = cfl_rad*min(dx)/chat (= dtnew), and every
-//! substep uses dt_mesh/N_sub.  When this module owns the mesh timestep there is nothing
-//! to sub-cycle and N_sub = 1.
+//! \brief the stage dt of a mesh step: one solve per step (no sub-cycling)
 
 int RadiationVet::SetSubsteps(Real dt_mesh) {
-  if (sets_mesh_dt || !subcycle) {
-    nsub = 1;
-  } else {
-    nsub = 1;
-    if (dtnew > 0.0 && dt_mesh > dtnew) {
-      nsub = static_cast<int>(std::ceil(dt_mesh/dtnew));
-      if (nsub < 1) {nsub = 1;}
-    }
-  }
-  dt_sub = dt_mesh/static_cast<Real>(nsub);
+  nsub = 1;
+  dt_sub = dt_mesh;
   return nsub;
 }
 

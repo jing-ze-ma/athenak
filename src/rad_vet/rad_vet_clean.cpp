@@ -432,6 +432,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_det_trace", "!"}, {"rad_vet/dbg_hydro_off", "!"},
     {"rad_vet/time2_k1_fct", "!"}, {"rad_vet/implicit_mr_every", "!"},
     {"rad_vet/coupling_split", "!"},
+    // (the explicit transport's sub-cycling, removed with it)
+    {"rad_vet/cfl_rad", ""}, {"rad_vet/subcycle", ""},
     // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
     // stops when named true (rad_vet.cpp), as under clean before; otherwise inert)
     {"rad_vet/vet_gd_twin*", ""},

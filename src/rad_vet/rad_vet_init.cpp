@@ -620,7 +620,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     std::exit(EXIT_FAILURE);
   }
 
-  subcycle = false;
   nstage = 1;
   bool other_sets_dt = (pin->DoesBlockExist("hydro") || pin->DoesBlockExist("mhd") ||
                         pin->DoesBlockExist("z4c") || pin->DoesBlockExist("particles"));

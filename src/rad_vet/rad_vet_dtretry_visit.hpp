@@ -20,9 +20,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("c_light", c_light);
   v.value("chat_over_c", chat_over_c);
   v.value("chat", chat);
-  v.value("cfl_rad", cfl_rad);
   v.value("e_floor", e_floor);
-  v.value("subcycle", subcycle);
   v.value("chi_kind", chi_kind);
   v.value("eddington", eddington);
   v.value("advect_split", advect_split);
@@ -547,9 +545,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("dtnew", dtnew);
   v.value("dt_sub", dt_sub);
   v.value("nsub", nsub);
-  v.value("gam0", gam0);
-  v.value("gam1", gam1);
-  v.value("beta", beta);
   v.value("icr_mode", icr_mode);
   v.value("icr_fmeas", icr_fmeas);
   v.view("icr_dm", icr_dm);
