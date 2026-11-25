@@ -61,10 +61,11 @@ Rules:
 
 Files of the old implicit solver, or of early versions of this scheme, store other values of
 some keys, or lack keys whose restart default is not the production value.
-`inputs/stars/restart_old_files.txt` names them all, with the reason; use it as the `-i` file:
+`inputs/stars/restart_old_files.txt` names them, with the reason (commented out: what depends
+on the star); use it as the `-i` file:
 
 ```bash
-athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt ...
+athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt mesh/layout_tile=64 ...
 ```
 
 | key | value | why |
@@ -77,11 +78,16 @@ athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt ...
 | `<rad_vet>/clean_wb_exch_local`, `clean_maxit`, `clean_pc_sweep` | `true`, `200`, `rb` | not stored, production is not the default |
 | `<rad_vet>/vet_gd_wall_interp`, `vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | spherical-polar wedges with fixed rays (commented out in the file); a theta-periodic wedge without them is FATAL |
 | `<hydro>/fofc` | `true` | older star files store false |
-| `<hydro>/fofc_retest`, `floor_pay`, `floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff`, `rad_signal_speed_phase`, `dt_floor_courant` | `true`, `rad_column`, `true`, `true`, `true`, `true`, `0.6` | not stored, restart default off |
+| `<hydro>/fofc_retest`, `floor_pay`, `floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff`, `rad_signal_speed_phase` | `true`, `rad_column`, `true`, `true`, `true`, `true` | not stored, restart default off |
+| `<hydro>/dt_floor_courant` | `0.6` | commented out: FATAL without `floorcap_rho` (HG, RSG files hold none) |
+| `<hydro>/merge_lat_mom`, `merge_lat_blockend` | `radial`, `exchange` | commented out, a choice of physics: a stored `rigid` (RSG) or `flat` stays (NOTE) |
+| `<rad_vet>/vet_rotate_avg_ema`, `_change_form`, `_wb`, `clean_rot_ring` | `128`, `linear`, `true`, `live` | commented out: stars with rotating rays (HG, RSG, R136 continuations) |
+| `<problem>/mlt_src_time` | `stage` | files of the release ccab558ee store `start` (MLT stars) |
 | `<mesh>/layout_invariant_mode`, `layout_tile` | `tile`, the lateral size of the file's MeshBlocks | stored as block (layout_tile is commented out: set it) |
 | `<time>/restart_refill_ghosts` | `false` | some files store true |
 
-A file this code wrote stores every key it read: nothing needs naming.
+A file this code wrote stores every key it read: nothing needs naming (a file of the release
+ccab558ee: `mlt_src_time` only).
 
 Rows marked "hydro only" have no `<mhd>` form: the key named under `<mhd>` (`floorcap_rho`
 with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
