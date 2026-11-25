@@ -1106,6 +1106,21 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, mx, 6, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
   mxv = mx[0]; mxp = mx[1]; mxb = mx[2]; mxv_pol = mx[3]; mxb_pol = mx[4]; mxdivb = mx[5];
 #endif
+  // iprob 12: the total energy of the Ohmic budget below (a reduction: every rank)
+  Real etot = 0.0;
+  if (iprob == 12 && is_mhd) {
+    auto u0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->u0);
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          for (int i=is; i<=ie; ++i) { etot += vol(m,k,j,i)*u0h(m,IEN,k,j,i); }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &etot, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  }
   if (global_variable::my_rank != 0) return;
 
   Real sT[NS];
@@ -1244,18 +1259,6 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   // iprob 12: the Ohmic energy budget.  The exact solution gains eta J^2 V t; compare
   // with the code's own total-energy sum (the same sum history.cpp forms).
   if (iprob == 12 && is_mhd) {
-    auto u0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->u0);
-    Real etot = 0.0;
-    for (int m=0; m<pmbp->nmb_thispack; ++m) {
-      for (int k=ks; k<=ke; ++k) {
-        for (int j=js; j<=je; ++j) {
-          for (int i=is; i<=ie; ++i) { etot += vol(m,k,j,i)*u0h(m,IEN,k,j,i); }
-        }
-      }
-    }
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &etot, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
     const Real gain = eta_*4.0*b0c*b0c*sp_svol*pm->time;
     if (global_variable::my_rank == 0) {
       std::printf("###   OHMIC BUDGET: E(0) %.10e  E(t) %.10e  gained %.6e  exact"
