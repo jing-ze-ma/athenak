@@ -51,6 +51,26 @@ void Old(ParameterInput *pin, const std::string &block, const std::string &key,
       " (a restart file without the key: the old default)");
 }
 
+bool Fix(ParameterInput *pin, const std::string &block, const std::string &key,
+         const std::string &value, const std::string &old) {
+  if (!global_variable::restart_run) return true;
+  if (!pin->DoesParameterExist(block, key) && global_variable::my_rank == 0) {
+    std::cout << "### NOTE: <" << block << ">/" << key << " = " << value << " (restart "
+              << "file without it: the fix applies; name " << key << "=" << old
+              << " to keep the old behaviour)" << std::endl;
+  }
+  return true;
+}
+
+void OldStored(ParameterInput *pin, const std::string &block, const std::string &key,
+               const std::string &old, const std::string &value) {
+  if (!global_variable::restart_run || global_variable::my_rank != 0 ||
+      !pin->DoesParameterExist(block, key) || pin->GetString(block, key) != old) return;
+  std::cout << "### NOTE: <" << block << ">/" << key << " = " << old << " (stored in the "
+            << "restart file or named) is the old behaviour; name " << key << "="
+            << value << " to switch" << std::endl;
+}
+
 void CleanDefaults(ParameterInput *pin) {
   if (global_variable::restart_run || !pin->DoesBlockExist("rad_vet")) return;
   auto named = [&](const char *b, const char *k) {return pin->DoesParameterExist(b, k);};

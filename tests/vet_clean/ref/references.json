@@ -66,6 +66,24 @@
    "warnings": 0
   }
  },
+ "restart_fixes": {
+  "_about": "a restart file without a scheme-correcting key takes the new default (NOTE 'the fix applies'); the old value named is bitwise the old run; maxdiff: named vs the run with the key stored; moved: the nameless restart differs from it; notes: keys with their NOTE; stored: NOTES on stored old values",
+  "equal": {
+   "maxdiff_lat_wb": 0.0,
+   "maxdiff_fofc": 0.0,
+   "maxdiff_merge": 0.0,
+   "maxdiff_gtime": 0.0,
+   "notes": 5,
+   "stored": 5,
+   "warnings": 0
+  },
+  "min": {
+   "moved_lat_wb": 1e-30,
+   "moved_fofc": 1e-30,
+   "moved_merge": 1e-30,
+   "moved_gtime": 1e-30
+  }
+ },
  "restart_sp": {
   "equal": {
    "maxdiff": 0.0

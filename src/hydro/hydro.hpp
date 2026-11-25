@@ -213,7 +213,7 @@ class Hydro {
   DvceArray4D<Real> fofc_cnt;
   FofcReport fofc_rep;     // <hydro>/fofc_report (diagnostic, read only when named)
   // <hydro>/fofc_flag_exchange (cubed sphere, more than one MeshBlock per panel; default
-  // true on a fresh start): the flags of the same-panel ghosts are the owner's
+  // true): the flags of the same-panel ghosts are the owner's
   MeshBoundaryValuesCC *pbval_fofc = nullptr;
   DvceArray5D<Real> fofc_x;
   void FofcExchangeFlags();

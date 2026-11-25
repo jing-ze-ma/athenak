@@ -113,9 +113,9 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     const Real g = kT2G;
     t2_tab = 0;
     {
-      // default of a fresh run: sdirk2 (mhd: not wired, hesdirk2); restart: hesdirk2
-      recipe::Old(pin, "rad_vet", "time2_tableau", "hesdirk2");
-      const bool sd = !global_variable::restart_run && pmy_pack->pmhd == nullptr;
+      // default: sdirk2 (mhd: not wired, hesdirk2)
+      const bool sd = pmy_pack->pmhd == nullptr &&
+          recipe::Fix(pin, "rad_vet", "time2_tableau", "sdirk2", "hesdirk2");
       std::string tb = pin->GetOrAddString("rad_vet", "time2_tableau",
                                            sd ? "sdirk2" : "hesdirk2");
       if (tb.compare("hesdirk2") == 0) {
@@ -144,11 +144,12 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
         std::cout << "<rad_vet> time2_tableau = sdirk2: no explicit K1, Heun hydro"
                   << (t2_gtm ? "" : ", time2_gtime_mom = false") << std::endl;
       }
-      // time2_gtime_slope: Time2GasTime's slope-limited exchange.  Default true on a
-      // fresh run (with time2_gtime_mom), false on a restart whose file lacks the key
+      // time2_gtime_slope: Time2GasTime's slope-limited exchange.  Default true (with
+      // time2_gtime_mom)
       const bool nm = pin->DoesParameterExist("rad_vet", "time2_gtime_slope");
-      t2_gts = pin->GetOrAddBoolean("rad_vet", "time2_gtime_slope",
-                                    t2_gtm && !global_variable::restart_run);
+      t2_gts = pin->GetOrAddBoolean("rad_vet", "time2_gtime_slope", t2_gtm &&
+          recipe::Fix(pin, "rad_vet", "time2_gtime_slope", "true", "false"));
+      recipe::OldStored(pin, "rad_vet", "time2_gtime_slope", "false", "true");
       if (t2_gts && !t2_gtm) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_vet>/time2_gtime_slope needs time2_gtime_mom = "
@@ -157,15 +158,14 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       }
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> time2_gtime_slope = " << (t2_gts ? "true" : "false")
-                  << (nm ? "" : (global_variable::restart_run ?
-                                 " (not in the restart file)" : " (default)"))
-                  << std::endl;
+                  << (nm ? "" : " (default)") << std::endl;
       }
       // time2_gtime_pos: the positive form of the flux state (always with
-      // time2_gtime_slope).  Default true, false on a restart whose file lacks the key
+      // time2_gtime_slope).  Default true
       const bool np = pin->DoesParameterExist("rad_vet", "time2_gtime_pos");
-      t2_gtp = pin->GetOrAddBoolean("rad_vet", "time2_gtime_pos",
-                                    t2_gts || !global_variable::restart_run);
+      t2_gtp = pin->GetOrAddBoolean("rad_vet", "time2_gtime_pos", t2_gts ||
+          recipe::Fix(pin, "rad_vet", "time2_gtime_pos", "true", "false"));
+      recipe::OldStored(pin, "rad_vet", "time2_gtime_pos", "false", "true");
       if (t2_gts && !t2_gtp) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_vet>/time2_gtime_slope = true needs "
@@ -174,9 +174,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       }
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> time2_gtime_pos = " << (t2_gtp ? "true" : "false")
-                  << (np ? "" : (global_variable::restart_run ?
-                                 " (not in the restart file)" : " (default)"))
-                  << std::endl;
+                  << (np ? "" : " (default)") << std::endl;
       }
     }
     if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {  // no mhd path
@@ -201,9 +199,8 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   // time2_enth_be: the backward-Euler solves of a hesdirk2 run take the stage solves'
   // enthalpy face rule too (else the operator changes for one step: an O(dt) error)
-  recipe::Old(pin, "rad_vet", "time2_enth_be", "false");
   t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
-                                    !global_variable::restart_run);
+      recipe::Fix(pin, "rad_vet", "time2_enth_be", "true", "false"));
   // time2_vet_extrap: stage solves use D* = D^n + (dt/dt_prev)(D^n - D^{n-1})
   t2_vext = false;
   if (pin->DoesParameterExist("rad_vet", "time2_vet_extrap")) {
@@ -343,12 +340,8 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   // time2_face_fct: Zalesak limiter of the stage increment (Time2FaceFct); on for a fresh
   // run.  The clean solve stores the energy flux Phi that moved E (CleanWriteBack)
-  const bool cfd = !global_variable::restart_run;
-  recipe::Old(pin, "rad_vet", "time2_face_fct", "false");
-  t2_ffct = cfd;
-  if (pin->DoesParameterExist("rad_vet", "time2_face_fct") || cfd) {
-    t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct", t2_ffct);
-  }
+  t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct",
+      recipe::Fix(pin, "rad_vet", "time2_face_fct", "true", "false"));
   t2_pfst = true;
   t2_ffct_emin = 0.1;   // (rad_vet.hpp)
   // time2_accept_fallback (read only when named)
@@ -454,7 +447,7 @@ bool RadiationVet::Time2Active() {
 //! the caps and floors left, in the Patankar form where it is negative (positive).  Its
 //! floors act on the primitives only: u0 is restored to U* + d as it was, so they
 //! create no energy and nothing is paid.
-//! time2_gtime_pos = false (restart files without the key): the old flux state U* + f d,
+//! time2_gtime_pos = false: the old flux state U* + f d,
 //! formed at which = 2 on the gas before the caps, its floors kept in u0.
 
 //----------------------------------------------------------------------------------------

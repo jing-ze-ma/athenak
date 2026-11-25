@@ -15,7 +15,7 @@
 //! operators, before SendU) and after every write of the gas by the implicit
 //! radiation solve (RadiationVet::FluidRefresh), the conserved state of each group is
 //! replaced by its group value, <hydro>/merge_lat_mom =
-//!   radial (default of a fresh run): rho and the scalars by their VOLUME average, the
+//!   radial (default): rho and the scalars by their VOLUME average, the
 //!   momentum by rho times the velocity v = V rhat + Omega x rhat (one radial velocity
 //!   and a rigid rotation about the origin, MlatModes) that keeps sum V m_r and the three
 //!   components of L = sum V x_i x m_i of the group (x_i = x1v rhat at the cell centre,
@@ -31,7 +31,7 @@
 //!   e0 <= 0 before the merge is left to the C2P floors (nfb in MLATDIAG, amin the
 //!   smallest a). The CFL width of a group (3) shrinks to the cell's with its density
 //!   contrast (MlatWidth).
-//!   rigid (restarts without the key): rho, E and the scalars by their VOLUME average,
+//!   rigid: rho, E and the scalars by their VOLUME average,
 //!   the momentum as a Cartesian field m_i = P/V + Omega x d_i (d_i = cell centre - group
 //!   centroid) that keeps sum V m_i and L, but drops Omega (L lost, nfb) where the
 //!   rotation would take more than half of the thermal energy, and turns a radial flow
