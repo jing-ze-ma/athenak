@@ -802,13 +802,6 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
                            "vet_d23"};
       for (int n = 0; n < 6; ++n) outvars.emplace_back(dn[n],n,&(derived_var));
       out_params.n_derived += 6;
-    } else if (variable.compare("vet_vet") == 0) {
-      out_params.contains_derived = true;
-      outvars.emplace_back("vet_fk",0,&(derived_var));
-      outvars.emplace_back("vet_d11",1,&(derived_var));
-      outvars.emplace_back("vet_d22",2,&(derived_var));
-      outvars.emplace_back("vet_d33",3,&(derived_var));
-      out_params.n_derived += 4;
     }
 
     // the face-normal comoving fluxes the implicit transport carries (f0x1/f0x2/f0x3),

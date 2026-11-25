@@ -1896,9 +1896,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   Kokkos::realloc(opac, nmb, vscat ? (VET_NOPAC + 1) : VET_NOPAC, ncells3, ncells2,
                   ncells1);
   Kokkos::deep_copy(opac, 0.0);
-  if (coupling) {
-    Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
-  }
   // force_reference: a valid View to capture; the pgen replaces it (SetForceReference)
   if (force_ref != VET_FREF_NONE) {
     Kokkos::realloc(arad_ref, nmb, ncells3, ncells2, ncells1);

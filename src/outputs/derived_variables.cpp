@@ -1360,63 +1360,6 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       }
     });
     i_dv += 6;
-  } else if (name.compare("vet_vet") == 0) {
-    if (derived_var.extent(4) <= 1)
-      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
-    auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradvet;
-    auto u0_ = prm->u0;
-    auto iw_ = prm->iw;
-    auto vc_ = prm->vet_cell;
-    const bool impl = (prm->impl_nstep > 0.0) && (iw_.extent_int(1) >
-                                                  radvet::VET_IW_WCHI);
-    const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radvet::VET_IW_N3);
-    const bool dfull = prm->vet_sc && prm->vet_full;
-    const bool notens = !impl && (prm->tau_closure || prm->vet_col);
-    const bool edd = prm->eddington;
-    const int chk = prm->chi_kind;
-    const Real cl = prm->c_light;
-    const Real efl = prm->e_floor;
-    par_for("vet_vet_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real chi = 1.0/3.0, n1 = 1.0, n2 = 0.0, n3 = 0.0;
-      if (impl) {
-        chi = iw_(m,radvet::VET_IW_WCHI,k,j,i);
-        if (itrans) {
-          n1 = iw_(m,radvet::VET_IW_N1,k,j,i);
-          n2 = iw_(m,radvet::VET_IW_N2,k,j,i);
-          n3 = iw_(m,radvet::VET_IW_N3,k,j,i);
-        }
-      } else if (!notens) {
-        Real e = fmax(u0_(m,radvet::VET_E,k,j,i), efl);
-        Real f1 = u0_(m,radvet::VET_F1,k,j,i);
-        Real f2 = u0_(m,radvet::VET_F2,k,j,i);
-        Real f3 = u0_(m,radvet::VET_F3,k,j,i);
-        Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
-        chi = edd ? (1.0/3.0) : radvet::VetChi(fmin(fm/(cl*e), 1.0), chk);
-        if (fm > 0.0) {
-          n1 = f1/fm;
-          n2 = f2/fm;
-          n3 = f3/fm;
-        }
-      }
-      Real d11 = radvet::VetEddDiag(chi, n1);
-      Real d22 = radvet::VetEddDiag(chi, n2);
-      Real d33 = radvet::VetEddDiag(chi, n3);
-      if (dfull) {
-        d11 = vc_(m,radvet::VETRAY_D11,k,j,i);
-        d22 = vc_(m,radvet::VETRAY_D11+1,k,j,i);
-        d33 = vc_(m,radvet::VETRAY_D11+2,k,j,i);
-      }
-      if (notens) {
-        chi = -1.0;
-      }
-      dv(m,i_dv  ,k,j,i) = chi;
-      dv(m,i_dv+1,k,j,i) = d11;
-      dv(m,i_dv+2,k,j,i) = d22;
-      dv(m,i_dv+3,k,j,i) = d33;
-    });
-    i_dv += 4;
   }
 
   // vet_comov: the comoving residuals of the old implicit solve's iterate (its iw slots,

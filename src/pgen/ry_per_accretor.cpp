@@ -2115,9 +2115,7 @@ void RyPerRadBook(Mesh *pm) {
 //! Dirichlet row of the solve, so it supplies whatever its faces carry.  Book, for the
 //! solve just taken and with the weights of RyPerRadBook, the outward energy flux of the
 //! held set: per face of a held cell the comoving face flux the solve applied (f0x1..3;
-//! the K1 part from the stage-start faces t2f1..3) plus the first-order upwind enthalpy
-//! flux a E' of the face (iw ADV/A2/A3, EP; the plm enthalpy correction is left out),
-//! x (c_hat/c) x face area.  Faces between two held cells cancel; a held cell's physical
+//! the K1 part from the stage-start faces t2f1..3), x (c_hat/c) x face area.  Faces between two held cells cancel; a held cell's physical
 //! boundary face counts too (the boundary booking of RyPerRadBook books it as out).
 //! Added to erinj_ (a plain sum, like the held cells' stage resets, which now vanish).
 void RyPerHoldBook(Mesh *pm) {
@@ -2140,7 +2138,6 @@ void RyPerHoldBook(Mesh *pm) {
   auto &area = pmbp->pcoord->area;
   auto &mbbcs = pmbp->pmb->mb_bcs;
   auto hm = pvet->hold_m;
-  auto iw = pvet->iw;
   auto f1 = pvet->f0x1, f2 = pvet->f0x2, f3 = pvet->f0x3;
   auto k1 = pvet->t2f1, k2 = pvet->t2f2, k3 = pvet->t2f3;
   const bool tr2 = pvet->trans_on, tr3 = pvet->trans_on && pvet->trans_x3;
@@ -2163,52 +2160,26 @@ void RyPerHoldBook(Mesh *pm) {
       const BoundaryFlag b = mbbcs.d_view(m, f);
       return (b != BoundaryFlag::block) && (b != BoundaryFlag::periodic);
     };
-    // the upwind enthalpy flux a E' of the face between cells l (lower) and u (upper)
-    auto adv = [&](int ca, int cv, int kl, int jl, int il, int ku, int ju, int iu) {
-      const Real vf = 0.5*(iw(m,cv,kl,jl,il) + iw(m,cv,ku,ju,iu));
-      return (vf > 0.0) ? iw(m,ca,kl,jl,il)*iw(m,radvet::VET_IW_EP,kl,jl,il)
-                        : iw(m,ca,ku,ju,iu)*iw(m,radvet::VET_IW_EP,ku,ju,iu);
-    };
     Real o = 0.0;
     // x1: face i+1 outward +, face i outward -
     {
       const bool ph = (i == ie) && phys(BoundaryFace::outer_x1);
       Real f = wy*f1(m,k,j,i+1) + (hk ? wk*k1(m,k,j,i+1) : 0.0);
-      if (ph) {
-        if (hbdv) f += (wy + wk)*bdv(m,k,j);
-      } else {
-        f += (wy + wk)*adv(radvet::VET_IW_ADV, radvet::VET_IW_V1, k, j, i, k, j, i+1);
-      }
+      if (ph && hbdv) f += (wy + wk)*bdv(m,k,j);
       o += f*area.x1f(m,k,j,i+1);
-      const bool pl = (i == is) && phys(BoundaryFace::inner_x1);
       Real g1 = wy*f1(m,k,j,i) + (hk ? wk*k1(m,k,j,i) : 0.0);
-      if (!pl) {
-        g1 += (wy + wk)*adv(radvet::VET_IW_ADV, radvet::VET_IW_V1, k, j, i-1, k, j, i);
-      }
       o -= g1*area.x1f(m,k,j,i);
     }
     if (tr2) {
       Real f = wy*f2(m,k,j+1,i) + (hk2 ? wk*k2(m,k,j+1,i) : 0.0);
-      if (!((j == je) && phys(BoundaryFace::outer_x2))) {
-        f += (wy + wk)*adv(radvet::VET_IW_A2, radvet::VET_IW_V2, k, j, i, k, j+1, i);
-      }
       o += f*area.x2f(m,k,j+1,i);
       Real g2 = wy*f2(m,k,j,i) + (hk2 ? wk*k2(m,k,j,i) : 0.0);
-      if (!((j == js) && phys(BoundaryFace::inner_x2))) {
-        g2 += (wy + wk)*adv(radvet::VET_IW_A2, radvet::VET_IW_V2, k, j-1, i, k, j, i);
-      }
       o -= g2*area.x2f(m,k,j,i);
     }
     if (tr3) {
       Real f = wy*f3(m,k+1,j,i) + (hk3 ? wk*k3(m,k+1,j,i) : 0.0);
-      if (!((k == ke) && phys(BoundaryFace::outer_x3))) {
-        f += (wy + wk)*adv(radvet::VET_IW_A3, radvet::VET_IW_V3, k, j, i, k+1, j, i);
-      }
       o += f*area.x3f(m,k+1,j,i);
       Real g3 = wy*f3(m,k,j,i) + (hk3 ? wk*k3(m,k,j,i) : 0.0);
-      if (!((k == ks) && phys(BoundaryFace::inner_x3))) {
-        g3 += (wy + wk)*adv(radvet::VET_IW_A3, radvet::VET_IW_V3, k-1, j, i, k, j, i);
-      }
       o -= g3*area.x3f(m,k,j,i);
     }
     acc += cr*o;
