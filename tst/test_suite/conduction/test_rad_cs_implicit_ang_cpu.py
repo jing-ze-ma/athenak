@@ -4,10 +4,13 @@ src/diffusion/conduction_transverse.cpp; design note docs/dev/cs_implicit_transv
 
 Same problem and same measurement as test_rad_cs_raddiff_cpu.py -- cs_test iprob 15,
 tst/inputs/cubed_sphere_raddiff.athinput: a uniform density at rest with
-T = T0 (1 + amp f), f a spherical harmonic of degree l with no radial dependence, so the
-radial fluxes vanish identically and the ANGULAR operator is the only thing that moves
-energy.  The source read off two dumps must equal -l(l+1) kappa (T - T0) r_fac, i.e. the
-harmonic must decay as exp(-l(l+1) D t/r^2); the fitted amplitude is the rate error.
+T = T0 (1 + amp f), f a spherical harmonic of degree l with no radial dependence.  The
+harmonic decays as R_i(t) on radial shell i, dR/dt = D (radial - l(l+1) r_fac) R: every
+shell has its own rate and the shells conduct to each other, so R is the exact solution
+of the code's own radial finite-volume system (no angular error in it).  The change of
+e between two dumps is fitted to (R - 1) times the initial harmonic: rate error, residual.
+kappa(T) makes the decay rate linear in amp: the runs come in pairs +-amp and the odd half
+is measured.  rad_kappa_fac is small so that the sound waves do not respond.
 
 What this guards that the explicit test does not: the cell VOLUME, the metric CROSS term
 carried explicitly through cap_g2/cap_g3, and the PANEL SEAM -- which is an open face for
@@ -40,10 +43,11 @@ BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_cs_impli
 
 L_CGS, M_CGS, T_CGS, MU = 1.0e8, 1.0e18, 527.0, 2.3
 AMU, KB, SIGMA = 1.66053906660e-24, 1.380649e-16, 5.670374419e-5
-KFAC, GAMMA = 0.01, 1.666667
+KFAC, GAMMA, AMP, TLIM = 1.0e-3, 1.666667, 0.01, 5.0e-5
 
-# (nx per panel edge, cfl, nlim): dt ~ dx^2 at a fixed final time
-LADDER = ((16, "0.03", "20"), (32, "0.0075", "80"))
+# (nx per panel edge, cfl): dt ~ dx^2 at a fixed final time; adi splits the seam faces
+# from the lines and needs the smaller dt
+LADDER = {"sts": ((16, "0.12"), (32, "0.03")), "adi": ((16, "0.03"), (32, "0.0075"))}
 
 
 def freedman(tk, p):
@@ -80,34 +84,50 @@ def run(binary, rundir, args):
     return proc.stdout
 
 
-def measure(rundir, lh):
-    """(rate amplitude, L1 residual, panel-edge residual, panel-interior residual)."""
+def dumps(rundir):
+    """(time between the two dumps, e at the first, e at the last, x1 faces)."""
     files = sorted(glob.glob(os.path.join(rundir, "bin", "lap.hydro_w.*.bin")))
     assert len(files) >= 2, "no dumps"
     r0, r1 = bin_convert.read_binary(files[0]), bin_convert.read_binary(files[-1])
-    dt = r1["time"] - r0["time"]
-    e0, e1 = np.asarray(r0["mb_data"]["eint"]), np.asarray(r1["mb_data"]["eint"])
-    rho = np.asarray(r0["mb_data"]["dens"])
-    src = (e1 - e0) / dt
-    temp = e0 * (GAMMA - 1.0) / rho
+    e0 = np.asarray(r0["mb_data"]["eint"], dtype=float)
+    e1 = np.asarray(r1["mb_data"]["eint"], dtype=float)
     g = np.asarray(r0["mb_geometry"])
-    ni = e0.shape[-1]
-    rf = g[0, 0] + (g[0, 1] - g[0, 0]) * np.arange(ni + 1) / ni
-    rl, rr = rf[:-1], rf[1:]
-    rfac = 1.5 * (rr ** 2 - rl ** 2) / ((rr ** 3 - rl ** 3) * 0.5 * (rl + rr))
-    lam0 = lh * (lh + 1.0)
-    kap = kappa_code()
-    expect = -lam0 * kap * (temp - 1.0) * rfac[None, None, None, :]
-    slope = np.sum(src * expect) / np.sum(expect * expect)
-    resid = src - slope * expect
-    lam = lam0 * kap * np.mean(rfac) / (1.0 / (GAMMA - 1.0))
-    decay = (1.0 - np.exp(-lam * dt)) / (lam * dt)
-    rn = np.abs(resid) / np.abs(expect).max()
+    rf = g[0, 0] + (g[0, 1] - g[0, 0]) * np.arange(e0.shape[-1] + 1) / e0.shape[-1]
+    return r1["time"] - r0["time"], e0, e1, rf
+
+
+def decay(rf, lh, dt):
+    """R(dt) - 1 per radial shell: the exact solution of the radial system of the code
+    (centroid radii, insulated walls) for a harmonic of degree lh and constant kappa."""
+    a, b, ni = rf[:-1], rf[1:], len(rf) - 1
+    vol = (b ** 3 - a ** 3) / 3.0
+    xc = 0.75 * (b ** 4 - a ** 4) / (b ** 3 - a ** 3)
+    m = np.diag(-lh * (lh + 1.0) * 0.5 * (b ** 2 - a ** 2) / (vol * xc))
+    for i in range(ni):
+        for k in (i - 1, i + 1):
+            if 0 <= k < ni:
+                c = rf[max(i, k)] ** 2 / abs(xc[k] - xc[i]) / vol[i]
+                m[i, k] += c
+                m[i, i] -= c
+    w, v = np.linalg.eig(m * kappa_code() * (GAMMA - 1.0) * dt)
+    return np.real(v @ (np.exp(w) * np.linalg.solve(v, np.ones(ni)))) - 1.0
+
+
+def measure(rundirs, lh):
+    """(rate amplitude, L1 residual, residual max over the panel edges, over the 2 x 2
+    cells at the cube vertices)."""
+    (dt, ep0, ep1, rf), (dt2, em0, em1, _) = (dumps(d) for d in rundirs)
+    assert abs(dt2 / dt - 1.0) < 1.0e-9, "the two dumps are at different times"
+    expect = 0.5 * (ep0 - em0) * decay(rf, lh, dt)
+    de = 0.5 * ((ep1 - ep0) - (em1 - em0))
+    slope = np.sum(de * expect) / np.sum(expect * expect)
+    resid = np.abs(de - expect)
+    rn = resid / np.abs(expect).max(axis=(0, 1, 2))
     edge = np.zeros(rn.shape, dtype=bool)
-    edge[:, 0, :, :] = edge[:, -1, :, :] = True
-    edge[:, :, 0, :] = edge[:, :, -1, :] = True
-    return (slope / decay, np.abs(resid).sum() / np.abs(expect).sum(),
-            rn[edge].max(), rn[~edge].max())
+    edge[:, [0, -1], :, :] = edge[:, :, [0, -1], :] = True
+    d = np.minimum(np.arange(rn.shape[2]), rn.shape[2] - 1 - np.arange(rn.shape[2]))
+    vert = (d[:, None] < 2) & (d[None, :] < 2)
+    return (slope, resid.sum() / np.abs(expect).sum(), rn[edge].max(), rn[:, vert].max())
 
 
 def violation(stdout):
@@ -117,16 +137,20 @@ def violation(stdout):
     return max(v) if v else 0.0
 
 
-def arm(binary, tag, n, cfl, nlim, solver, lharm=2, extra=()):
-    args = ["mesh/nx2=%d" % n, "mesh/nx3=%d" % n,
-            "meshblock/nx2=%d" % n, "meshblock/nx3=%d" % n,
-            "time/cfl_number=" + cfl, "time/nlim=" + nlim,
-            "problem/lharm=%d" % lharm,
-            "hydro/rad_implicit_ang=true", "hydro/rad_ang_solver=" + solver,
-            "hydro/rad_ang_verbose=true"] + list(extra)
-    rundir = os.path.join(BUILD, "run_" + tag)
-    out = run(binary, rundir, args)
-    return measure(rundir, lharm) + (violation(out),)
+def arm(binary, tag, n, cfl, solver, lharm=2):
+    rundirs, viol = [], 0.0
+    for sign in (1, -1):
+        rundirs.append(os.path.join(BUILD, "run_%s_%d" % (tag, sign)))
+        out = run(binary, rundirs[-1],
+                  ["mesh/nx2=%d" % n, "mesh/nx3=%d" % n,
+                   "meshblock/nx2=%d" % n, "meshblock/nx3=%d" % n,
+                   "time/cfl_number=" + cfl, "time/nlim=-1", "time/tlim=%g" % TLIM,
+                   "output1/dt=1.0e30", "problem/lharm=%d" % lharm,
+                   "problem/amp=%g" % (sign * AMP), "hydro/rad_kappa_fac=%g" % KFAC,
+                   "hydro/rad_implicit_ang=true", "hydro/rad_ang_solver=" + solver,
+                   "hydro/rad_ang_verbose=true"])
+        viol = max(viol, violation(out))
+    return measure(rundirs, lharm) + (viol,)
 
 
 def test_run():
@@ -141,34 +165,40 @@ def test_run():
         # ---- l = 2, both solvers, two resolutions
         for solver in ("sts", "adi"):
             prev = None
-            for n, cfl, nlim in LADDER:
-                amp, l1, edge, intr, viol = arm(binary, "%s_%d" % (solver, n),
-                                                n, cfl, nlim, solver)
-                assert abs(amp - 1.0) < 0.02, \
+            for n, cfl in LADDER[solver]:
+                amp, l1, edge, vert, viol = arm(binary, "%s_%d" % (solver, n),
+                                                n, cfl, solver)
+                print("%s n %d rate-1 %.3e L1 %.3e edge %.3e vert %.3e viol %.1e"
+                      % (solver, n, amp - 1.0, l1, edge, vert, viol))
+                assert abs(amp - 1.0) < 0.005, \
                     f"{solver} nx={n}: decay rate off by {100*abs(amp-1):.2f} %"
-                assert l1 < 0.05, f"{solver} nx={n}: residual L1 {l1:.3g}"
-                # the seam must not be a special place: a dropped cross term or a
-                # mishandled panel face shows up here first
-                assert edge < 3.0 * intr, \
-                    f"{solver} nx={n}: panel-edge residual {edge:.3g} vs " \
-                    f"interior {intr:.3g}"
-                # conservation: exact to round-off inside a panel, to the along-seam
-                # resample at a seam (which converges with resolution)
-                assert viol < 1.0e-4, \
+                assert l1 < 0.005, f"{solver} nx={n}: residual L1 {l1:.3g}"
+                # panel edges and cube vertices: a dropped cross term, a mishandled
+                # panel face or a first-order corner value shows up here first
+                assert edge < 0.02, f"{solver} nx={n}: panel-edge residual {edge:.3g}"
+                assert vert < 0.02, f"{solver} nx={n}: cube-vertex residual {vert:.3g}"
+                # conservation: the panel-seam faces carry one flux, shared by both sides
+                assert viol < 1.0e-13, \
                     f"{solver} nx={n}: |sum V de|/sum V|de| = {viol:.3g}"
                 if prev is not None:
-                    assert abs(amp - 1.0) < prev, \
-                        f"{solver}: the rate error did not improve with resolution"
-                prev = abs(amp - 1.0)
+                    assert abs(amp - 1.0) < prev[0] / 3.0, \
+                        f"{solver}: the rate error did not fall at second order"
+                    assert l1 < prev[1] / 2.0 and vert < prev[2] / 2.0, \
+                        f"{solver}: the residual did not fall with resolution"
+                prev = abs(amp - 1.0), l1, vert
 
-        # ---- l = 6: four times the eigenvalue and a much shorter wavelength, which is
+        # ---- l = 6: seven times the eigenvalue and a much shorter wavelength, which is
         # where the metric cross term is worth tens of per cent
         for solver in ("sts", "adi"):
-            amp, l1, edge, intr, viol = arm(binary, "l6_" + solver, 32, "0.0075",
-                                            "80", solver, lharm=6)
-            assert abs(amp - 1.0) < 0.03, \
+            amp, l1, edge, vert, viol = arm(binary, "l6_" + solver, 32, "0.03",
+                                            solver, lharm=6)
+            print("%s l 6 rate-1 %.3e L1 %.3e edge %.3e vert %.3e"
+                  % (solver, amp - 1.0, l1, edge, vert))
+            assert abs(amp - 1.0) < 0.01, \
                 f"{solver} l=6: decay rate off by {100*abs(amp-1):.2f} %"
-            assert l1 < 0.05, f"{solver} l=6: residual L1 {l1:.3g}"
+            assert l1 < 0.01, f"{solver} l=6: residual L1 {l1:.3g}"
+            assert vert < 0.01, f"{solver} l=6: cube-vertex residual {vert:.3g}"
+            assert viol < 1.0e-13, f"{solver} l=6: |sum V de|/sum V|de| = {viol:.3g}"
 
         # ---- STABILITY at a transverse diffusion number ~ 2e3 (rad_implicit_x1 as
         # well, or the radial conduction step would shrink dt with the conductivity).

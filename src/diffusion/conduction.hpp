@@ -289,6 +289,9 @@ class Conduction {
   // so the dedicated MeshBoundaryValuesCC below can exchange whichever one is current
   DvceArray5D<Real> tr_ya, tr_yb, tr_yc, tr_ycoar;
   MeshBoundaryValuesCC *pbval_tr = nullptr;
+  // cubed sphere: the fluxes through the panel-seam faces, made single-valued by the
+  // seam exchange of the hydro fluxes (average of the two panels' values)
+  DvceFaceFld5D<Real> *tr_fs = nullptr;
   int ang_lines = 0;
   // ---- rad_ang_solver (<hydro>/ or <mhd>/rad_ang_solver, "sts" by default): WHICH
   // solver advances the transverse system.  "sts" is the RKL1 super-time-stepping loop
@@ -579,6 +582,7 @@ class Conduction {
   // 5-point transverse operator (rad_implicit_ang), true the 7-point unified one
   // (rad_sts_all).  See conduction_transverse.cpp.  Public only because nvcc forbids
   // extended (device) lambdas inside private/protected member functions.
+  void ShareSeamFluxes();
   void RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                            const Real beta_dt, const bool with_x1);
 

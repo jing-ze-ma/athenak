@@ -70,30 +70,30 @@ Real CsVertex3n(const A &a, const int m, const int n, const CsVtx3 &v, const int
 
 //! a stencil read of cell (k, j) that may fall in the made-up cube-
 //! vertex corner block (k outside [ks,ke] AND j outside [js,je] at a corner whose two
-//! flanking block faces are panel edges): the parallelogram value
-//!   f(k, jv) + f(kv, j) - f(kv, jv)   (jv, kv = the nearest active column / row)
-//! from the seam ghost row cell, the seam ghost column cell and this block's own corner
-//! cell -- linear-exact in the block's extended chart, so a difference stencil through
-//! it stays second order (the same construction as the corner-cell edges of
-//! CsVertexJFix).  Every other (k, j): f(k, j) unchanged.
-KOKKOS_INLINE_FUNCTION
-bool CsCornerRead(const RegionSize &z, const int k, const int j, const int js,
-                  const int je, const int ks, const int ke, int &kv, int &jv) {
-  const bool jl = (j < js), jh = (j > je), kl = (k < ks), kh = (k > ke);
-  if (!((jl || jh) && (kl || kh))) return false;
-  const bool pj = jl ? (z.x2min <= -1.0 + 1.0e-12) : (z.x2max >= 1.0 - 1.0e-12);
-  const bool pk = kl ? (z.x3min <= -1.0 + 1.0e-12) : (z.x3max >= 1.0 - 1.0e-12);
-  if (!(pj && pk)) return false;
-  jv = jl ? js : je; kv = kl ? ks : ke;
-  return true;
-}
+//! flanking block faces are panel edges): the mean of the two quadratic extrapolations
+//! into it, along the seam ghost column j (from the three nearest active rows) and along
+//! the seam ghost row k (from the three nearest active columns), all real cells. Linear
+//! in f and quadratic-exact in the block's extended chart, so a centred difference
+//! through it keeps its second-order truncation (the parallelogram value lacks the mixed
+//! derivative: first order).  Every other (k, j): f(k, j) unchanged.  wabs: |weights|
+//! (the row radius of the stencil).
 template <class F>
 KOKKOS_INLINE_FUNCTION
 Real CsCornerCell(const F &f, const RegionSize &z, const int k, const int j,
-                  const int js, const int je, const int ks, const int ke) {
-  int kv, jv;
-  if (!CsCornerRead(z, k, j, js, je, ks, ke, kv, jv)) return f(k, j);
-  return f(k, jv) + f(kv, j) - f(kv, jv);
+                  const int js, const int je, const int ks, const int ke,
+                  const bool wabs = false) {
+  const bool jl = (j < js), jh = (j > je), kl = (k < ks), kh = (k > ke);
+  if (!((jl || jh) && (kl || kh))) return f(k, j);
+  const bool pj = jl ? (z.x2min <= -1.0 + 1.0e-12) : (z.x2max >= 1.0 - 1.0e-12);
+  const bool pk = kl ? (z.x3min <= -1.0 + 1.0e-12) : (z.x3max >= 1.0 - 1.0e-12);
+  if (!(pj && pk)) return f(k, j);
+  const int jv = jl ? js : je, kv = kl ? ks : ke, dj = jl ? 1 : -1, dk = kl ? 1 : -1;
+  const Real xj = jl ? js - j : j - je, xk = kl ? ks - k : k - ke;
+  const Real sg = wabs ? 1.0 : -1.0;
+  return 0.25*((xk + 1.0)*(xk + 2.0)*f(kv, j) + sg*2.0*xk*(xk + 2.0)*f(kv+dk, j)
+               + xk*(xk + 1.0)*f(kv+2*dk, j)
+               + (xj + 1.0)*(xj + 2.0)*f(k, jv) + sg*2.0*xj*(xj + 2.0)*f(k, jv+dj)
+               + xj*(xj + 1.0)*f(k, jv+2*dj));
 }
 
 #endif  // DIFFUSION_CS_VERTEX_RES_HPP_
