@@ -32,3 +32,5 @@
   - LZB0f s/cyc 0.6669; dt min/max 169.375/169.398; CW 0 FATAL 0 DT_RETRY 0; e_floor sum 0; floor_pay sum 0.000e+00
   - LZB0e s/cyc 0.6666; dt min/max 169.375/169.398; CW 0 FATAL 0 DT_RETRY 0; e_floor sum 0; floor_pay sum 0.000e+00
 - No verdict of mine; the reading (r RMS at 3e31, or well below 3e33 = this bug is the residual) is yours.
+
+- The ten listed tests of zzzzh8 are not run (zzzzi3: they wait for the final sha).
