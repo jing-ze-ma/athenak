@@ -1200,6 +1200,9 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
     } else if (vgd_on && !rev_named && fresh) {
       vgd_rot_auto = vgd_rot_unc = true;
       rot_phys = true;
+    } else if (vet_sc && !sc_pin && !rev_named && fresh) {
+      vgd_rot_auto = vgd_rot_unc = true;
+      rot_phys = true;
     }
     if (rot_phys && vet_sc && sc_pin) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
