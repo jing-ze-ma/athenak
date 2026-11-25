@@ -46,7 +46,7 @@ SKIP_NAMES = {'hi_seq', 'cln_pcrl', 'cln_fwr', 'cln_sgv', 'cln_sga0', 'cln_sga1'
               'cln_sgtg', 'cln_wci', 'cln_pdh', 'cln_fpv', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb',
               'vgd_csmw_h', 'vgd_csmw_r', 'cln_dbginf'}
-NESTED = ['VgdTabHost', 'VgdTabDev', 'VetOpacTab', 'CleanW', 'CleanGeo']   # structs holding Views
+NESTED = ['VgdTabHost', 'VgdTabDev', 'VetOpacTab', 'CleanW', 'CleanF', 'CleanGeo']   # structs holding Views
 
 def ast(header, name):
     tu = '#include "athena.hpp"\n#include "mesh/mesh.hpp"\n#include "%s"\n' % header

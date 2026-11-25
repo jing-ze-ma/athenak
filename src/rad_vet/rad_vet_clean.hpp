@@ -176,24 +176,28 @@ inline int CleanRstSlot(const int n) {
   return s[g] + n - o[g];
 }
 
-// face variables (arrays cln_fc1, cln_fc2, cln_fc3)
-constexpr int CLF_W = 0;     // blend weight w
-constexpr int CLF_TH = 1;    // theta = 1/(1 + h c chi_f)
-constexpr int CLF_G = 2;     // flux of the old vector G_f
-constexpr int CLF_HP = 3;    // h+_f
-constexpr int CLF_HM = 4;    // h-_f
-constexpr int CLF_N = 5;     // (shared slots)
-// staggered slots after CLF_N; clean_stag_fsolve: CLF_N .. CLF_N + 3 hold F, the
-// dissipation term, F^H and (clean_stag_fkin) the energy flux's memory d
-constexpr int CLF_QL = CLF_N + 4;   // al, ar (CleanFaceWeights), cross factor
-                                    // -(1-w) theta h c^2 (3)
-constexpr int CLF_PT = CLF_QL;      // outside the solve: face momentum terms
-                                    // (CleanStagDrag) and the RHS's a E (cln_rhsaf)
-constexpr int CLF_SR = CLF_QL + 1;  //   and the RHS's face sources (CleanFaceSource)
-constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d at the stage-loop start
-constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta),
-constexpr int CLF_DQ = CLF_N + 9;   //   face momentum Q = G - c^2 dm_f of the iterate
-constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: slopes K1, K2 of d (2)
+// face variables (cln_fc1, cln_fc2, cln_fc3: CleanF).  Slots below CLF_NS live across a
+// closure build; the others are rebuilt after one before they are read
+constexpr int CLF_N = 0;     // clean_stag_fsolve: CLF_N .. CLF_N + 3 hold F, the
+                             // dissipation term, F^H and (clean_stag_fkin) the energy
+                             // flux's memory d
+constexpr int CLF_DS = 4;    // clean_stag_fkin: d at the stage-loop start
+constexpr int CLF_DB = 5;    // clean_stag_vimp: drag share b = beta/(1 + beta),
+constexpr int CLF_DQ = 6;    //   face momentum Q = G - c^2 dm_f of the iterate
+constexpr int CLF_KD = 7;    // clean_stag_fkin: slopes K1, K2 of d (2)
+constexpr int CLF_XC = 9;    // clean_stag_xdonor: C(E_k) and its last change (2)
+// (CLF_NS = 11, rad_vet.hpp)
+constexpr int CLF_W = CLF_NS;         // blend weight w
+constexpr int CLF_TH = CLF_NS + 1;    // theta = 1/(1 + h c chi_f)
+constexpr int CLF_G = CLF_NS + 2;     // flux of the old vector G_f
+constexpr int CLF_HP = CLF_NS + 3;    // h+_f
+constexpr int CLF_HM = CLF_NS + 4;    // h-_f
+constexpr int CLF_QL = CLF_NS + 5;    // al, ar (CleanFaceWeights), cross factor
+                                      // -(1-w) theta h c^2 (3)
+constexpr int CLF_PT = CLF_QL;        // outside the solve: face momentum terms
+                                      // (CleanStagDrag) and the RHS's a E (cln_rhsaf)
+constexpr int CLF_SR = CLF_QL + 1;    //   and the RHS's face sources (CleanFaceSource)
+constexpr int CLF_NF = CLF_QL + 3;    // (clean_stag_xdonor, the bracket: more slots)
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: memory outflow above this share
                                      // of the donor's E_old goes upwind
 
@@ -249,7 +253,7 @@ constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
 struct CleanArgs {
   DvceArray5D<Real> cs;        // closure of the stage
   CleanW w;                    // work vectors
-  DvceArray5D<Real> fc[3];     // face variables in x1, x2, x3
+  CleanF fc[3];                // face variables in x1, x2, x3
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
   DvceArray4D<Real> bstress;   // beam stress column c K_b1 at x1min (m, b, k-ks, j-js)
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
@@ -1241,7 +1245,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStagXSplit
-//! \brief clean_stag_xdonor: split the lagged cross flux C(E_k) (slot xq + 3) and face
+//! \brief clean_stag_xdonor: split the lagged cross flux C(E_k) (slot CLF_XC) and face
 //! source S (from xr) into a donor part q E_donor (q <= c; slots xq, xq + 1) and an
 //! explicit part (xq + 2).  Without xlag C is all donor; with xlag (and xsrc for S) the
 //! explicit share s keeps the outflow h (A/V) |s L| <= CLN_MEMUP E_old,donor, so the RHS
@@ -1280,7 +1284,7 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       if (up) ql += q;
       if (!up) qr -= q;
     };
-    const Real cf = f(m,x.xq+3,k,j,i);
+    const Real cf = f(m,CLF_XC,k,j,i);
     const Real sx = x.xsrc ? sr : 0.0;   // (the face source in the split)
     if (!x.xsrc) ex += sr;
     if (x.xlag) {

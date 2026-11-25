@@ -1624,8 +1624,8 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
         break;
       }
       if (fc.extent_int(0) < m0 + nmb) continue;
-      put(c + d, 1, fc, CLF_N + 3);
-      put(c + 3 + d, 1, fc, CLF_KD);
+      put(c + d, 1, fc.s, CLF_N + 3);
+      put(c + 3 + d, 1, fc.s, CLF_KD);
     }
     c += 6;
   }
