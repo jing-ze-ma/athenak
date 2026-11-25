@@ -23,3 +23,18 @@
 - M_tot LZB0z vs LZB0f: max rel 6.439e-15, last -2.776e-15
 - Etot LZB0z vs LZB0f: max rel 7.272e-11, last -1.491e-11
 - No verdict of mine.
+
+## The listed tests (02-09, 2 at a time; srun rc=0): 11 passed, 0 failed, 161 s; lines 11 of 11
+```
+PASS conservation_cs       9 s  dE 1.2e-16 dM 1.3e-16 dLz 1.17e-16 dLz_gr 6.48e-05
+PASS conservation_lz      37 s  sp_dE 3.33e-16 sp_dM 9.44e-16 sp_dLz 2.94e-16 sp_dLz_gr 1.47e-16 cs_dE 1.2e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.54e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+PASS floorcap_spin        55 s  sp_dE 3.33e-16 sp_dM 8.09e-16 sp_dLz 1.47e-16 sp_dLz_gr 1.47e-16 n_v 5.85e+04 cs_dE 1.2e-16 cs_dM 1.3e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.3e-05 nospin_sp_dLz_gr 0.366 restart_maxdiff 0 retry_maxdiff 0 layout_maxd
+PASS mpi_ranks            42 s  warnings 0 fcone_lz 8 files 15 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
+PASS restart_sp           18 s  files 4 maxdiff 0
+PASS dt_retry             16 s  files 6 maxdiff 0 retries_fac1 1 retries_fac05 1
+PASS wb_cs                21 s  vmax_over_cs 5.11e-10 vmax_over_cs_rot 7.4e-09
+PASS restart_fixes        91 s  warnings 0 notes 6 stored 6 maxdiff_lat_wb 0 moved_lat_wb 0.00092 maxdiff_fofc 0 moved_fofc 0.00448 maxdiff_merge 0 moved_merge 0.00787 maxdiff_blockend 0 moved_blockend 0.000195 maxdiff_gtime 0 moved_gtime 6
+PASS star_smoke            4 s  dev 4.31e-06 warnings 0 worst L_bot
+PASS floor_pay            25 s  dE 3.33e-16 dE0 1.67e-16 paid 0.153 unpaid 0 warnings 0 worst_lines 185 worst_bitwise True ekin_floor_dE 3.33e-16 ekin_floor_dM 1.08e-15 ekin_dE 3.33e-16 ekin_dM 5.4e-16 ekin_dLz 1.47e-16
+PASS wb_star               3 s  v_in 0.00309 v_all 0.672 lat_mid 1.21e-11 warnings 0
+```
