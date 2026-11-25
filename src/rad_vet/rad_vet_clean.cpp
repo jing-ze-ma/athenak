@@ -473,7 +473,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/clean_stag_kreal", "!"}, {"rad_vet/clean_stag_xsweep", "!"},
     {"rad_vet/clean_stag_xpat", "!"}, {"rad_vet/clean_thin_donor", "!"},
     {"rad_vet/clean_stag_stencil", "=true"}, {"rad_vet/clean_stag_sbimp", "!"},
-    {"rad_vet/clean_stag_thinf_held", "!"}, {"rad_vet/clean_face_hclat", "!"},
+    {"rad_vet/clean_lz_bnd_free", "!"}, {"rad_vet/clean_stag_thinf_held", "!"},
+    {"rad_vet/clean_face_hclat", "!"},
     {"rad_vet/clean_ray_source_relaxed", "!"},
     // removed, named by decks or restart files: seam clamp, pass print, fixed set's band
     // reach (covered by the bound's band); halo depth cap and ray cut only at kept values
