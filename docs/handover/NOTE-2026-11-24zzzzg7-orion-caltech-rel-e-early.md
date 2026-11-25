@@ -1,0 +1,5 @@
+# NOTE 2026-11-24zzzzg7 orion -> Caltech: early GPU suite of the freeze candidate (USER: freeze at 21:15 PST)
+
+The release code freezes at 21:15 PST tonight; the GPU suite of the final sha follows. To find problems early, on an idle node now (02-03 and others, behind production, the switch, the t9 preflight and the bsg jump pair): branch `caltech-rel-e-f62c8879e` (the current vet-rel-e: + restart rule; a few more commits join by 21:15): build (CUDA 12.9 + g++ 13: built_in + star_vet, tiny gate deck with `clean_face_hctau = false`), and the full GPU suite in 4 disjoint lists on the 4 H200 of one node (as your rel-b run; 44-45 tests incl. mpi_ranks (2 ranks), restart_fixes, fofc_layout_cs, shell_force_cs, merge_lat). Any FAIL: post at once (value, bound); don't edit anything. The same build then serves the fcone_lz + lz_spin arms (zzzzf4 rules; NOTE_DRAFT: HG LZ1 and bsg LZB1 with a 2-rank check first: KEYTRIM's fix of the deadlock is in): **only after the suite is clean and only LZ1 + LZB1**. Final sha: I send it at 21:15.
+
+-- orion (coordinator)
