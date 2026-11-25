@@ -822,11 +822,6 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 5;
     }
 
-    // the moments of the vet_gd formal solution of the LAST build (closure = vet_col with
-    // vet_gd): vet_jfs = sum_d w_d I_d (E units, compare vet_e) and vet_hfs = sum_d w_d
-    // (n_d . r_hat) I_d (= F_r/c, compare vet_f1/c).  Zero where vet_gd is off or below
-    // its first shell.  Diagnostic (GATE2); derived, not part of vet.
-    // vet_sfs, vet_cfs: the source S and extinction chi the sweep used.
     if (variable.compare("vet_gw") == 0) {   // diagnostic
       out_params.contains_derived = true;
       outvars.emplace_back("vet_gl",0,&(derived_var));
@@ -836,30 +831,13 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("vet_cef",4,&(derived_var));
       out_params.n_derived += 5;
     }
-    if (variable.compare("vet_fs") == 0) {
-      out_params.contains_derived = true;
-      outvars.emplace_back("vet_jfs",0,&(derived_var));
-      outvars.emplace_back("vet_hfs",1,&(derived_var));
-      outvars.emplace_back("vet_sfs",2,&(derived_var));
-      outvars.emplace_back("vet_cfs",3,&(derived_var));
-      out_params.n_derived += 4;
-    }
-
-    // vet_lat = the closure tensor the implicit operator reads (VlatTT()):
-    // vet_tt0 = slot 0 (vet_col f_K), vet_lat0..5 = the vet_col_lat slots (sp: D_rr -
-    // f_K, D_rt, D_rp, D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2; cs: D_rr - f_K,
-    // the Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cell tangent frame), the
-    // cell unit vector vet_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of
-    // the
-    // current vet_gd formal solution about that vector (vet_jg, vet_hg; E units).
-    // Derived.
-    if (variable.compare("vet_lat") == 0) {
-      out_params.contains_derived = true;
-      const char *nm[12] = {"vet_tt0", "vet_lat0", "vet_lat1", "vet_lat2", "vet_lat3",
-                            "vet_lat4", "vet_lat5", "vet_rx", "vet_ry", "vet_rz",
-                            "vet_jg", "vet_hg"};
-      for (int c = 0; c < 12; ++c) {outvars.emplace_back(nm[c],c,&(derived_var));}
-      out_params.n_derived += 12;
+    // vet_fs, vet_lat read the rays' intensities, whose memory is scratch of the solve
+    if (variable.compare("vet_fs") == 0 || variable.compare("vet_lat") == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "output variable " << variable << " was removed (the "
+                << "rays' intensities are not kept after a closure build); vet_vet gives "
+                << "the closure" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
 
     // turbulent forcing

@@ -118,7 +118,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   // solve (f0x1/f0x2/f0x3), the flux whose face sums are the luminosities (162)
   "vet_face",
 
-  // grey VET radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
+  // (vet_fs: removed, 163)
   "vet_fs",
   "vet_gw",
 
@@ -132,8 +132,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   // with ambipolar diffusion) the resistive EMF uses, code units (167)
   "mhd_eta",
 
-  // the closure tensor handed to the implicit operator (tau_ten slot 0 and
-  // the vet_col_lat slots LAT0..5), the cell unit vector and the vet_gd J, H_r (168)
+  // (removed, 168)
   "vet_lat"
 };
 
