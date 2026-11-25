@@ -2346,7 +2346,8 @@ void RadiationVet::CleanClosureFromRays() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureFill
 //! \brief cells without ray radiation take the mean closure (D, h+-, k+) of their valid
-//! neighbours, one layer per pass (clean_fill_passes passes)
+//! neighbours (clean_stag_thinf: weighted by their E, so that a neighbour the rays hardly
+//! light does not count as much as a beam), one layer per pass (clean_fill_passes passes)
 
 void RadiationVet::CleanClosureFill() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2364,6 +2365,16 @@ void RadiationVet::CleanClosureFill() {
   // axes (CleanCsSlot); families the seam turns, and diagonal neighbours, left out)
   const bool rmp = cln_fillcs && pmy_pack->pmesh->use_cubed_sphere;
   CleanArgs x = CleanMakeArgs();
+  auto iw_ = iw;
+  const bool thf = cln_thinf;
+  const Real efl = fmax(e_floor, 1.0e-300);
+  if (thf) {   // the weight, E
+    par_for("cln_fill_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      valid(m,2,k,j,i) = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+    });
+    CleanGhostFill(cln_v, 2, 1);
+  }
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
     // (only what cln_fill reads, D, h+- and valid(0), depth 1, in one exchange; callers
@@ -2383,13 +2394,13 @@ void RadiationVet::CleanClosureFill() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       valid(m,1,k,j,i) = valid(m,0,k,j,i);
       if (valid(m,0,k,j,i) > 0.0) return;
-      Real sum[CLN_C1 + 9] = {0.0}, nh[6] = {0.0};
-      int nv = 0;
+      Real sum[CLN_C1 + 9] = {0.0}, nh[6] = {0.0}, nv = 0.0;
       for (int kk = k-dk; kk <= k+dk; ++kk) {
         for (int jj = j-dj; jj <= j+dj; ++jj) {
           for (int ii = i-1; ii <= i+1; ++ii) {
             if (valid(m,0,kk,jj,ii) <= 0.0) continue;
-            ++nv;
+            const Real wt = thf ? valid(m,2,kk,jj,ii) : 1.0;
+            nv += wt;
             // (rmp: the families q[a] of its h+- slots in our axes, sign sg[a], -1: none)
             int q[3] = {0, 1, 2};
             Real sg[3] = {1.0, 1.0, 1.0};
@@ -2407,19 +2418,19 @@ void RadiationVet::CleanClosureFill() {
             for (int t = 0; t < nfl; ++t) {
               const int a = (t >= CLN_HP && t < CLN_HP + 6) ? (t - CLN_HP)%3 : -1;
               if (a < 0) {
-                sum[t] += cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
+                sum[t] += wt*cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
                 continue;
               }
               if (q[a] < 0) continue;
               const bool hp = t < CLN_HM;   // (a reversed axis: h+ = -h- of the other)
               const int u = ((hp == (sg[a] > 0.0)) ? CLN_HP : CLN_HM) + q[a];
-              sum[t] += sg[a]*cs(m,u,kk,jj,ii);
-              nh[t - CLN_HP] += 1.0;
+              sum[t] += wt*sg[a]*cs(m,u,kk,jj,ii);
+              nh[t - CLN_HP] += wt;
             }
           }
         }
       }
-      if (nv == 0) return;
+      if (nv == 0.0) return;
       valid(m,1,k,j,i) = 1.0;
       for (int t = 0; t < nfl; ++t) {
         const bool h = rmp && t >= CLN_HP && t < CLN_HP + 6;
