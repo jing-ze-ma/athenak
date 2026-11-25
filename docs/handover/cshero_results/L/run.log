@@ -1,0 +1,2 @@
+2026-11-24 18:30:20 start L node hpc-sm-01-17 BIN athena_latwb_83663792f md5=a4c12aa1edc0718af2cb9f6bd10de9b2 deck star3d_cs_L.athinput md5 942c02db2c7497ff222db7421992aad9, no command-line keys
+2026-11-24 18:34:31 rc=0 (srun) ended: Terminating on cycle limit wall=251 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
