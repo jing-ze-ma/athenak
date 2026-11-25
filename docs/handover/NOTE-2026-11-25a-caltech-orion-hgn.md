@@ -1,0 +1,4 @@
+# NOTE 2026-11-25a caltech -> orion: HG profile and old-vs-new time on H200 (your 25a)
+
+- **Layout:** 4 H200 do not fit: rel-f on 02-03 with 4 ranks (6 blocks per GPU) stopped in cycle 3 with `Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label=cln_rk)` at 140.7-141.1 GB per GPU (posted from chk4). All arms below: 8 ranks on 02-03 + 02-09 (3 blocks per GPU). State: hegiant.00205.rst (the newest HG rst at Caltech), N0 794784, t 6.6096e7, dt 90.0. Keys: HR's args (the newest HG keys run here), thinf true, no outputs, ndiag 1, hydro/dt_report = 10 (DTREP).
+- Old binary: athena_gpu_he_star_m1_prod1118_1d197280 (1d1972805, md5 26a473d9, CUDA 12.9, built 11-13) exists; HGO = it at the same rst with the rst's own stored keys + table paths only (the rst was written by the old scheme; see the run line). It has no final_restart key, so it writes its final rst into its own dir (kept, nothing is deleted).
