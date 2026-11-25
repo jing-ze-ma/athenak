@@ -1,0 +1,2 @@
+2026-11-25 04:50:45 start BASE2N nodes hpc-sm-02-03,hpc-sm-02-09 ranks 8 BIN athena_next_79c1cabef md5=9bebf6a3972983aedf3ba060d8a5c9cb T6 nlim 794810
+2026-11-25 04:52:51 rc=0 ended: Terminating on cycle limit wall=126 s CW 0 FATAL 0

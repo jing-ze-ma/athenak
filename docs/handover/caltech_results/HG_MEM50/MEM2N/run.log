@@ -1,0 +1,2 @@
+2026-11-25 04:52:51 start MEM2N nodes hpc-sm-02-03,hpc-sm-02-09 ranks 8 BIN athena_mem50_9b9d05f90 md5=18080c4e098c252f342b02739c69766b T6 nlim 794810
+2026-11-25 04:54:58 rc=0 ended: Terminating on cycle limit wall=127 s CW 0 FATAL 0

@@ -1,0 +1,6 @@
+| arm | ranks/nodes | s/cyc mean / median (first, last dropped) | peak MiB per GPU (min / max) | peak sum | last nonzero sample (min / max) | CW/FATAL | end | user.hst / hydro.hst |
+|---|---|---|---|---|---|---|---|---|
+| BASE2N | 8 / 2 | 2.8430 / 2.7828 | 75583 / 76015 (8 GPUs) | 606212 | 3739 / 74021 | 0/0 | rc=0 ended: Terminating on cycle limit wall=126 s CW 0 FATAL | bitwise(26) / bitwise(26) |
+| MEM2N | 8 / 2 | 2.8143 / 2.7574 | 52837 / 53673 (8 GPUs) | 425914 | 157 / 52889 | 0/0 | rc=0 ended: Terminating on cycle limit wall=127 s CW 0 FATAL | bitwise(26) / bitwise(26) |
+| MEM1N | 4 / 1 | 4.2022 / 4.0747 | 104305 / 104813 (4 GPUs) | 418240 | 87203 / 87917 | 0/0 | rc=0 ended: Terminating on cycle limit wall=182 s CW 0 FATAL | bitwise(26) / bitwise(26) |
+| MEM1NT | 4 / 1 (timer) | 4.2073 / 4.0937 | 103711 / 104207 (4 GPUs) | 415836 | 70413 / 82713 | 0/0 | rc=0 ended: Terminating on cycle limit wall=181 s CW 0 FATAL | bitwise(26) / bitwise(26) |
