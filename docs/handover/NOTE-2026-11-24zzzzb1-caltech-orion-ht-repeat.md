@@ -29,3 +29,34 @@ hegiant.m1.02296.bin r/R 1.1-1.5 d 0.00-0.02: 0.0255 (N 3048) d 0.02-0.05: 0.021
 -- H0 hegiant.m1.02296.bin cycle 794790 CSCALE=0.5 range 1.5 2
 hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.6139 (N 3048) d 0.02-0.05: 0.6156 (N 5952) d 0.05-0.10: 0.6188 (N 8568) d 0.10-0.20: 0.6146 (N 18312) d 0.20-0.40: 0.6245 (N 27768) d 0.40-0.70: 0.6231 (N 25992) d 0.70-1.01: 0.6414 (N 8664)
 ```
+
+## HTX (11-24 17:26)
+- 2026-11-24 17:26:15 rc=0 (srun) ended: Terminating on cycle limit wall=226 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps ; peak GPU memory 75879 MiB; stage time clean stage steps 1.747711e+02; bins kept: 11 files in /resnick/groups/carnegie_poc/jingze/b1_1124/hg/HTX/bin
+| arm | rows | dt min/max | e_floor sum | pos_gas | ffct_left | floor_pay sum | audit paid | SDO max ratio / cells>1 / ef<=0 (lines) | CW/FATAL/inf/DT_RETRY | fallback/BE | loop s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| H0 | 51 | 90.00/90.00 | 1 | 1.42312e+06 | 1.12075e+06 | 4.055e+31 | 4.036e+31 | 0.147 / 0 / 0 (51) | 0/0/0/0 | 0/0 | 194.6 |
+| HTX | 51 | 90.00/90.00 | 30 | 1.46147e+06 | 1.12861e+06 | 3.960e+31 | 3.947e+31 | 0.0311 / 0 / 0 (51) | 0/0/0/0 | 0/0 | 184.7 |
+| HT (24zzzt, older source) | 51 | 90.00/90.00 | 10955 | 2.31112e+06 | 1.14175e+06 | 9.056e+31 | 9.021e+31 | 78.2 / 3 / 3 (51) | 0/0/0/0 | 0/0 | 201.4 |
+- e_floor per cycle, cycles 0-9, H0: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+- e_floor per cycle, cycles 0-9, HTX: [9, 1, 5, 3, 7, 3, 2, 0, 0, 0]
+- e_floor per cycle, cycles 0-9, HT (24zzzt, older source): [4102, 2286, 1733, 870, 1260, 183, 368, 49, 5, 1]
+
+HTX vs H0 at matched time (relative): | +5 | +10 | +20 | +51 | max
+- L_top | 3.593e-04 | -5.752e-03 | -8.685e-04 | -2.119e-03 | max 6.915e-03
+- L_mid | -7.056e-03 | -6.184e-03 | -1.470e-03 | -1.967e-03 | max 7.796e-03
+- L_int | -7.045e-03 | -4.021e-03 | -2.121e-03 | -2.316e-03 | max 7.437e-03
+- L_bot | -1.234e-10 | -3.535e-10 | -2.289e-11 | -1.387e-10 | max 8.633e-10
+- positive control CSCALE 0.5, range 1.1 1.5: 0.00-0.02:0.0260 0.02-0.05:0.0215 0.05-0.10:0.0204 0.10-0.20:0.0207 0.20-0.40:0.0216 0.40-0.70:0.0188 0.70-1.01:0.0182
+- positive control CSCALE 0.5, range 1.5 2: 0.00-0.02:0.6160 0.02-0.05:0.6159 0.05-0.10:0.6188 0.10-0.20:0.6154 0.20-0.40:0.6252 0.40-0.70:0.6236 0.70-1.01:0.6422
+
+**NOT PASS: e_floor sum 30 > 10** (rules of 24zzzzb1; seam values are compared as printed, 4 decimals)
+```
+-- HTX hegiant.m1.02296.bin cycle 794790 CSCALE=1 range 1.1 1.5
+hegiant.m1.02296.bin r/R 1.1-1.5 d 0.00-0.02: 0.0000 (N 3048) d 0.02-0.05: 0.0000 (N 5952) d 0.05-0.10: 0.0000 (N 8568) d 0.10-0.20: 0.0000 (N 18312) d 0.20-0.40: 0.0000 (N 27768) d 0.40-0.70: 0.0000 (N 25992) d 0.70-1.01: 0.0000 (N 8664)
+-- HTX hegiant.m1.02296.bin cycle 794790 CSCALE=1 range 1.5 2
+hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.0000 (N 3048) d 0.02-0.05: 0.0001 (N 5952) d 0.05-0.10: 0.0000 (N 8568) d 0.10-0.20: 0.0000 (N 18312) d 0.20-0.40: 0.0000 (N 27768) d 0.40-0.70: 0.0000 (N 25992) d 0.70-1.01: 0.0000 (N 8664)
+-- HTX hegiant.m1.02296.bin cycle 794790 CSCALE=0.5 range 1.1 1.5
+hegiant.m1.02296.bin r/R 1.1-1.5 d 0.00-0.02: 0.0260 (N 3048) d 0.02-0.05: 0.0215 (N 5952) d 0.05-0.10: 0.0204 (N 8568) d 0.10-0.20: 0.0207 (N 18312) d 0.20-0.40: 0.0216 (N 27768) d 0.40-0.70: 0.0188 (N 25992) d 0.70-1.01: 0.0182 (N 8664)
+-- HTX hegiant.m1.02296.bin cycle 794790 CSCALE=0.5 range 1.5 2
+hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.6160 (N 3048) d 0.02-0.05: 0.6159 (N 5952) d 0.05-0.10: 0.6188 (N 8568) d 0.10-0.20: 0.6154 (N 18312) d 0.20-0.40: 0.6252 (N 27768) d 0.40-0.70: 0.6236 (N 25992) d 0.70-1.01: 0.6422 (N 8664)
+```
