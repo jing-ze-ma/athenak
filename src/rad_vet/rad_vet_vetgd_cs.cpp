@@ -50,7 +50,7 @@ namespace radvet {
 
 // build generation per compact-list cache entry; not a member, so the dt-retry
 // checkpoint keeps it and DtRetryAfterRestore drops entries rebuilt by the failed try
-int64_t g_vgd_csgen[16] = {0};        // M1_VGD_CSCL_MAX
+int64_t g_vgd_csgen[16] = {0};        // VET_VGD_CSCL_MAX
 int64_t g_vgd_csgen_save[16] = {0};
 
 namespace {
@@ -663,7 +663,7 @@ void RadiationVet::VetGdCsInit() {
   // vgd_csncl stay unallocated
   vgd_csncl = 2;
   if (vgd_cscomp) {
-    vgd_csncl = std::min(std::max(2, vra_k), static_cast<int>(M1_VGD_CSCL_MAX));
+    vgd_csncl = std::min(std::max(2, vra_k), static_cast<int>(VET_VGD_CSCL_MAX));
   }
   vgd_csper = static_cast<int64_t>(vgd_n)*indcs.nx1;
   vgd_csper = 16*((vgd_csper + 15)/16);   // padded for the packed-word lists
@@ -1442,9 +1442,9 @@ void RadiationVet::VetGdCsSweep() {
   const int spe = VetSegMode();
   const int vim = vet_interp;
   const bool emi = VetBcEmit() && (lcut == 0) &&
-                   (ibc_x1min != M1_IBC_REFLECT);
+                   (ibc_x1min != VET_IBC_REFLECT);
   const Real iemit = VetBathLo();
-  const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
+  const bool tbh = vgd_tbath && (ibc_x1max == VET_IBC_MARSHAK) && (iebath_x1max != 0.0);
   const Real itop = tbh ? iebath_x1max : 0.0;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -1671,9 +1671,9 @@ void RadiationVet::VetGdCsSweep() {
       const int lo = pass*nlt;
       // shell body for one (cell, direction): run over the pass's list and (early send)
       // first over the compact send list with cnt = false (counters counted once)
-#define M1_VGDCS_SHELL_NAME shell_
+#define VET_VGDCS_SHELL_NAME shell_
 #include "rad_vet_vetgd_cs_shell.inc"
-#undef M1_VGDCS_SHELL_NAME
+#undef VET_VGDCS_SHELL_NAME
       // early send: compute and pack this shell's send values first, record an event;
       // the full shell kernel overlaps the host exchange (finished at the halo point)
       if (early) {
@@ -1723,7 +1723,7 @@ void RadiationVet::VetGdCsSweep() {
       }
       // fused two-set shell kernel: this pass's list of the current set, then the next
       // set's, one launch (next set's body: the include with its names)
-#define M1_VGDCS_LAUNCHN(F, N) \
+#define VET_VGDCS_LAUNCHN(F, N) \
       Kokkos::parallel_for("vet_vgdcs_shell_xff", Kokkos::Experimental::require(        \
           Kokkos::RangePolicy<Kokkos::LaunchBounds<128, kLb>>(DevExeSpace(), 0, N),    \
           Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);
@@ -1735,9 +1735,9 @@ void RadiationVet::VetGdCsSweep() {
           auto mr_ = vgd_tabd.mr;
           auto vi_ = vgd_i_xb;
           auto msk_ = vgd_cscl[(xcurb >= 0) ? xcurb : vgd_cscur].msk;
-#define M1_VGDCS_SHELL_NAME shellx_
+#define VET_VGDCS_SHELL_NAME shellx_
 #include "rad_vet_vetgd_cs_shell.inc"
-#undef M1_VGDCS_SHELL_NAME
+#undef VET_VGDCS_SHELL_NAME
           return shellx_;
         }();
         const int nA = nlist[pass], nB = nlistb[pass];
@@ -1756,7 +1756,7 @@ void RadiationVet::VetGdCsSweep() {
             shell_(m, k, j, d, true);
           }
         };
-        if (nA + nB > 0) {M1_VGDCS_LAUNCHN(mainx_, nA + nB)}
+        if (nA + nB > 0) {VET_VGDCS_LAUNCHN(mainx_, nA + nB)}
       } else {
       auto mainf_ = KOKKOS_LAMBDA(const int c) {
         int t = lst_(lo + c);
@@ -1774,7 +1774,7 @@ void RadiationVet::VetGdCsSweep() {
           Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
       }   // !xffs
       if (esid_ != 0) {eev.StreamWait(DevExeSpace());}   // the send cells
-#undef M1_VGDCS_LAUNCHN
+#undef VET_VGDCS_LAUNCHN
       if (rga) {
         // previous shell read: save its inward band values (inward pass), interior back
         // to the compact slab; the next shell gets a slab after this exchange

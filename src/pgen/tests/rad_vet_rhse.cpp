@@ -185,10 +185,10 @@ void ProblemGenerator::RadiationVetRhse(ParameterInput *pin, const bool restart)
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     uh(m,IEN,k,j,i) = d*tt/gm1;
-    u0(m,radvet::M1_E,k,j,i) = fmax(e, efl);
-    u0(m,radvet::M1_F1,k,j,i) = f;
-    u0(m,radvet::M1_F2,k,j,i) = 0.0;
-    u0(m,radvet::M1_F3,k,j,i) = 0.0;
+    u0(m,radvet::VET_E,k,j,i) = fmax(e, efl);
+    u0(m,radvet::VET_F1,k,j,i) = f;
+    u0(m,radvet::VET_F2,k,j,i) = 0.0;
+    u0(m,radvet::VET_F3,k,j,i) = 0.0;
   });
   if (ph->use_wellbalance_static) RhseBackground(pmy_mesh_);
 }
@@ -316,8 +316,8 @@ void RhseHist(HistoryData *pdata, Mesh *pm) {
     s0 += dv*d*w0(m,IVX,k,j,i);
     s1 += dv*0.5*d*v2;
     s2 = fmax(s2, std::sqrt(v2*d/(gam*(gam - 1.0)*w0(m,IEN,k,j,i))));
-    s3 += dv*ur(m,radvet::M1_E,k,j,i);
-    s4 += dv*ic*ur(m,radvet::M1_F1,k,j,i);
+    s3 += dv*ur(m,radvet::VET_E,k,j,i);
+    s4 += dv*ic*ur(m,radvet::VET_F1,k,j,i);
   }, Kokkos::Sum<Real>(s[0]), Kokkos::Sum<Real>(s[1]), Kokkos::Max<Real>(s[2]),
   Kokkos::Sum<Real>(s[3]), Kokkos::Sum<Real>(s[4]));
 #if MPI_PARALLEL_ENABLED   // (the maximum on the master only: the history writer sums)

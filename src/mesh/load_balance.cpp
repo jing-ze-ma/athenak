@@ -150,7 +150,7 @@ void MeshRefinement::InitRecvAMR(int nleaf) {
     ncc_tosend += (pmy_mesh->pmb_pack->prad->prgeo->nangles);
   }
   if (pmy_mesh->pmb_pack->pradvet != nullptr) {
-    ncc_tosend += (radvet::M1_NVAR);
+    ncc_tosend += (radvet::VET_NVAR);
   }
   if (pmy_mesh->pmb_pack->pz4c != nullptr) {
     ncc_tosend += (pmy_mesh->pmb_pack->pz4c->nz4c);
@@ -410,7 +410,7 @@ void MeshRefinement::PackAndSendAMR(int nleaf) {
     ncc_tosend += (pmy_mesh->pmb_pack->prad->prgeo->nangles);
   }
   if (pmy_mesh->pmb_pack->pradvet != nullptr) {
-    ncc_tosend += (radvet::M1_NVAR);
+    ncc_tosend += (radvet::VET_NVAR);
   }
   if (pmy_mesh->pmb_pack->pz4c != nullptr) {
     ncc_tosend += (pmy_mesh->pmb_pack->pz4c->nz4c);
@@ -560,7 +560,7 @@ void MeshRefinement::PackAndSendAMR(int nleaf) {
   }
   if (pradvet != nullptr) {
     PackAMRBuffersCC(pradvet->u0, pradvet->coarse_u0, ncc_sent, nfc_sent);
-    ncc_sent += radvet::M1_NVAR;
+    ncc_sent += radvet::VET_NVAR;
   }
   if (pz4c != nullptr) {
     PackAMRBuffersCC(pz4c->u0, pz4c->coarse_u0, ncc_sent, nfc_sent);
@@ -855,7 +855,7 @@ void MeshRefinement::ClearRecvAndUnpackAMR() {
   }
   if (pradvet != nullptr) {
     UnpackAMRBuffersCC(pradvet->u0, pradvet->coarse_u0, ncc_recv, nfc_recv);
-    ncc_recv += radvet::M1_NVAR;
+    ncc_recv += radvet::VET_NVAR;
   }
   if (pz4c != nullptr) {
     UnpackAMRBuffersCC(pz4c->u0, pz4c->coarse_u0, ncc_recv, nfc_recv);

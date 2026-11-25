@@ -5,25 +5,25 @@
 //========================================================================================
 //! \file rad_vet_vetgd_body.inc
 //! \brief shell kernel body of RadiationVet::VetGdSweep, included twice:
-//! M1_VGD_BODY_MIR 0 (default) and 1 (vet_gd_theta_wall = mirror), so the mirror read
-//! costs the default kernel nothing. Needs M1_VGD_BODY_NAME and M1_VGD_BODY_MIR.
+//! VET_VGD_BODY_MIR 0 (default) and 1 (vet_gd_theta_wall = mirror), so the mirror read
+//! costs the default kernel nothing. Needs VET_VGD_BODY_NAME and VET_VGD_BODY_MIR.
 //! The last two lambda arguments are unused (bools or std::false_type).
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA the arguments are plain bools
-#if defined(KOKKOS_ENABLE_CUDA) && defined(M1_VGD_BODY_GX0)
-      auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
+#if defined(KOKKOS_ENABLE_CUDA) && defined(VET_VGD_BODY_GX0)
+      auto VET_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
                                             const bool, const bool) {
 #else
 #if defined(KOKKOS_ENABLE_CUDA)
-#define M1_VGD_TT bool
+#define VET_VGD_TT bool
 #else
-#define M1_VGD_TT auto
+#define VET_VGD_TT auto
 #endif
-      auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
+      auto VET_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
-                                            const M1_VGD_TT, const M1_VGD_TT) {
-#undef M1_VGD_TT
+                                            const VET_VGD_TT, const VET_VGD_TT) {
+#undef VET_VGD_TT
 #endif
         // several MeshBlocks in x1: first shell / top face of the innermost / outermost
         const int lcb = (x1f_(m) & 1) ? lcut : -1;
@@ -80,7 +80,7 @@
           auto rdq = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             // theta_wall = mirror (flag 2): a theta ghost reads its mirror row (no extra
             // capture: the closure stays below the launch limit)
-#if M1_VGD_BODY_MIR
+#if VET_VGD_BODY_MIR
             if ((jj < wb || jj >= wb + nx2b) && wl_(m,kk,jj) >= 2) {
               const bool hi = (jj >= wb + nx2b);
               // vacuum (flag 3): zero; extrap (4): the edge row's (zero gradient)
@@ -186,7 +186,7 @@
             // branch n . r_hat of a stencil cell
             auto mrq = [&](const int kk, const int jj) -> Real {return mr_(m,kk,jj,d);};
             bool bdone = false;
-#if M1_VGD_BODY_MIR
+#if VET_VGD_BODY_MIR
             // theta_wall = vacuum, upwind point beyond the wall (flag 3): the ray
             // starts at its exact crossing of the cone theta = theta_wall with I = 0;
             // chi, S from the row next to the wall (linear in phi index and r)

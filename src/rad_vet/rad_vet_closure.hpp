@@ -23,18 +23,18 @@ namespace radvet {
 //!   KERSHAW   (1976): (1 + 2 f^2)/3
 //! The explicit HLL wave speeds assume Levermore (others: implicit transports only).
 
-constexpr int M1_CHI_LEVERMORE = 0;
-constexpr int M1_CHI_MINERBO   = 1;
-constexpr int M1_CHI_KERSHAW   = 2;
+constexpr int VET_CHI_LEVERMORE = 0;
+constexpr int VET_CHI_MINERBO   = 1;
+constexpr int VET_CHI_KERSHAW   = 2;
 
 KOKKOS_INLINE_FUNCTION
-Real M1Chi(const Real fnorm, const int kind = M1_CHI_LEVERMORE) {
+Real M1Chi(const Real fnorm, const int kind = VET_CHI_LEVERMORE) {
   Real f2 = fnorm*fnorm;
   if (f2 > 1.0) {f2 = 1.0;}
-  if (kind == M1_CHI_MINERBO) {
+  if (kind == VET_CHI_MINERBO) {
     Real f = sqrt(f2);
     return 1.0/3.0 + (2.0*f2/15.0)*(3.0 - f + 3.0*f2);
-  } else if (kind == M1_CHI_KERSHAW) {
+  } else if (kind == VET_CHI_KERSHAW) {
     return (1.0 + 2.0*f2)/3.0;
   }
   Real s = sqrt(fmax(4.0 - 3.0*f2, 0.0));
@@ -54,10 +54,10 @@ void M1FillGhost(const DvceArray5D<Real> &u, const int m,
                  const int ka, const int ja, const int ia,
                  const int inorm, const int mode, const Real sgn,
                  const Real cl, const Real efl) {
-  Real e  = u(m,M1_E, ka,ja,ia);
-  Real f1 = u(m,M1_F1,ka,ja,ia);
-  Real f2 = u(m,M1_F2,ka,ja,ia);
-  Real f3 = u(m,M1_F3,ka,ja,ia);
+  Real e  = u(m,VET_E, ka,ja,ia);
+  Real f1 = u(m,VET_F1,ka,ja,ia);
+  Real f2 = u(m,VET_F2,ka,ja,ia);
+  Real f3 = u(m,VET_F3,ka,ja,ia);
   if (mode == 1) {
     if (inorm == 1) {
       f1 = -f1;
@@ -77,10 +77,10 @@ void M1FillGhost(const DvceArray5D<Real> &u, const int m,
     f3 = 0.0;
   }
   (void) cl;
-  u(m,M1_E, kg,jg,ig) = e;
-  u(m,M1_F1,kg,jg,ig) = f1;
-  u(m,M1_F2,kg,jg,ig) = f2;
-  u(m,M1_F3,kg,jg,ig) = f3;
+  u(m,VET_E, kg,jg,ig) = e;
+  u(m,VET_F1,kg,jg,ig) = f1;
+  u(m,VET_F2,kg,jg,ig) = f2;
+  u(m,VET_F3,kg,jg,ig) = f3;
 }
 
 } // namespace radvet

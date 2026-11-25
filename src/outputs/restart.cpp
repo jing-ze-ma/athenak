@@ -91,7 +91,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nadm=0, nz4c=0;
   if (pradvet != nullptr) {
-    nm1 = radvet::M1_NVAR;
+    nm1 = radvet::VET_NVAR;
   }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -578,7 +578,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   // <rad_vet>/vet_rotate_avg: the averaging history, nra slabs behind
   // even the csk ones (radvet::kM1RaRstMagic; RadiationVet::RotAvgRstHdr)
-  std::int64_t ra_hdr[radvet::RadiationVet::M1_RA_RST_NH] = {0};
+  std::int64_t ra_hdr[radvet::RadiationVet::VET_RA_RST_NH] = {0};
   if (pradvet != nullptr) {pradvet->RotAvgRstHdr(&(ra_hdr[0]));}
   const int nra = static_cast<int>(ra_hdr[1]);
   // am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the nra ones
@@ -620,7 +620,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
   if (pradvet != nullptr) {
-    nm1 = radvet::M1_NVAR;
+    nm1 = radvet::VET_NVAR;
   }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;

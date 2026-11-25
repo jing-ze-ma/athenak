@@ -171,7 +171,7 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.dfloor_ke));
       if (pm->ecounter.m1on) {
-        for (int q = 0; q < EventCounters::kNM1Tot; ++q) {
+        for (int q = 0; q < EventCounters::kNVetTot; ++q) {
           std::fprintf(pfile, " %12.5e", static_cast<double>(pm->ecounter.m1tot[q]));
         }
       }

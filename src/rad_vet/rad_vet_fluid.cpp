@@ -54,7 +54,7 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
     hydro::Hydro *phm = pmy_pack->phydro;
     if (phm != nullptr && phm->pmlat != nullptr && phm->pmlat->on && phm->pmlat->rad) {
       DvceArray4D<Real> nophi;
-      phm->pmlat->Average(u0, M1_NVAR, M1_NVAR, 1, nophi, false);
+      phm->pmlat->Average(u0, VET_NVAR, VET_NVAR, 1, nophi, false);
     }
   }
   eint_ledger::Mark(pmy_pack->pmesh, "vet_ravg");
@@ -208,14 +208,14 @@ void RadiationVet::FloorGasCap() {
       const Real dk = 0.5*(qsq - msq)/dd;
       uh(m,IM1,k,j,i) = q[0]; uh(m,IM2,k,j,i) = q[1]; uh(m,IM3,k,j,i) = q[2];
       uh(m,IEN,k,j,i) += dk;
-      u0_(m,M1_E,k,j,i) -= dk;
+      u0_(m,VET_E,k,j,i) -= dk;
       CleanSlotAdd(sl, 5, m, k, j, i, -w*r*wv);
       return;
     }
     Real ekin = 0.5*msq/dd;
     const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
     Real etot = uh(m,IEN,k,j,i);
-    Real erad = u0_(m,M1_E,k,j,i);
+    Real erad = u0_(m,VET_E,k,j,i);
     if (vc > 0.0 && msq > SQR(vc*dd) && flz && !spn) {
       // (floorcap_lz: the part pf = m.phi_hat that carries L_z never scaled, EkinScale)
       Real fs;
@@ -271,7 +271,7 @@ void RadiationVet::FloorGasCap() {
       }
     }
     uh(m,IEN,k,j,i) = etot;
-    u0_(m,M1_E,k,j,i) = erad;
+    u0_(m,VET_E,k,j,i) = erad;
   });
   CleanSlotSum(sl, cnt_.d_view, 6);
   const int rep = fcap_report;
@@ -393,7 +393,7 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
   if (fl_mhd && !emag_hold) EmagBuild(false);
   if (opac_zero) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
-  if (opacity_type == M1_OPAC_TABLE && otab.nT <= 0) {
+  if (opacity_type == VET_OPAC_TABLE && otab.nT <= 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/opacity = table, but no tables were handed to the "
       << "module: the problem generator must call RadiationVet::SetOpacityTables"
@@ -422,10 +422,10 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
   int otype = opacity_type;
   Real kp = kappa_p, ke = kappa_e, kf = kappa_f, ks = kappa_s;
   Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
-  bool need_t = (otype != M1_OPAC_CONST);
+  bool need_t = (otype != VET_OPAC_CONST);
   // copy the tables (held by value) into the closure instead of capturing this
   M1OpacTab ot = otab;
-  const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
+  const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(VET_OP_S)
   if (ot.scat == 2 && !eos.tbl.active) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/vet_scatter_kappa_e = eos needs a general (tabulated) "
@@ -454,10 +454,10 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
     Real op, oe, of, os;
     M1CellOpacities(otype, ot, eos, d, t, kp, ke, kf, ks, rref, tref, aa, bb, op, oe, of,
                     os);
-    opac_(m,M1_OP_P,k,j,i) = d*op;
-    opac_(m,M1_OP_E,k,j,i) = d*oe;
-    opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-    if (osc) opac_(m,M1_OP_S,k,j,i) = d*os;
+    opac_(m,VET_OP_P,k,j,i) = d*op;
+    opac_(m,VET_OP_E,k,j,i) = d*oe;
+    opac_(m,VET_OP_T,k,j,i) = d*(of + os);
+    if (osc) opac_(m,VET_OP_S,k,j,i) = d*os;
   });
 
   if (!rsla_done) RSLACheck();
@@ -486,7 +486,7 @@ void RadiationVet::RSLACheck() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, Real &lmax) {
     Real tau = 0.0;
     for (int i=is; i<=ie; ++i) {
-      tau += opac_(m,M1_OP_T,k,j,i)*size.d_view(m).dx1;
+      tau += opac_(m,VET_OP_T,k,j,i)*size.d_view(m).dx1;
     }
     lmax = (tau > lmax) ? tau : lmax;
   }, Kokkos::Max<Real>(taumax));

@@ -260,10 +260,10 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
           // <mhd>/rad_signal_speed: the same closure diagonal, equilibrium sound speed
           // and taper as hydro_newdt.cpp, then the fast speed with a^2 -> c_d^2
           const Real d = w_d;
-          const Real er = fmax(erad_(m,radvet::M1_E,k,j,i), 0.0);
+          const Real er = fmax(erad_(m,radvet::VET_E,k,j,i), 0.0);
           Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
           if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
-            const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::M1_VET_D11;
+            const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::VETRAY_D11;
             if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
               for (int a = 0; a < 3; ++a) {
                 dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
@@ -278,14 +278,14 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
               chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
               n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
             } else if (rss_mode == 3) {
-              chi = vcel_(m,radvet::M1_VET_CHI,k,j,i);
-              n1 = vcel_(m,radvet::M1_VET_N1,k,j,i);
-              n2 = vcel_(m,radvet::M1_VET_N1+1,k,j,i);
-              n3 = vcel_(m,radvet::M1_VET_N1+2,k,j,i);
+              chi = vcel_(m,radvet::VETRAY_CHI,k,j,i);
+              n1 = vcel_(m,radvet::VETRAY_N1,k,j,i);
+              n2 = vcel_(m,radvet::VETRAY_N1+1,k,j,i);
+              n3 = vcel_(m,radvet::VETRAY_N1+2,k,j,i);
             } else {
-              const Real f1 = erad_(m,radvet::M1_F1,k,j,i);
-              const Real f2 = erad_(m,radvet::M1_F2,k,j,i);
-              const Real f3 = erad_(m,radvet::M1_F3,k,j,i);
+              const Real f1 = erad_(m,radvet::VET_F1,k,j,i);
+              const Real f2 = erad_(m,radvet::VET_F2,k,j,i);
+              const Real f3 = erad_(m,radvet::VET_F3,k,j,i);
               const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
               const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
               chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
@@ -307,7 +307,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
           } else {
             cg2 = eos.iso_cs*eos.iso_cs;
           }
-          const Real kt = fmax(kopc_(m,radvet::M1_OP_T,k,j,i), 0.0);
+          const Real kt = fmax(kopc_(m,radvet::VET_OP_T,k,j,i), 0.0);
           Real h[3];
           if (use_cubed_sphere || use_spherical_polar) {
             h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);

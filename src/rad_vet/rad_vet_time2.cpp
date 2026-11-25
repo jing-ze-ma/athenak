@@ -58,13 +58,13 @@ const Real kT2G = imex_sdirk2::Gamma();   // shared tableau
 //! allocates the stage state
 
 void RadiationVet::Time2Init(ParameterInput *pin) {
-  time_scheme = M1_TIME_BE;
+  time_scheme = VET_TIME_BE;
   if (pin->DoesParameterExist("rad_vet", "time_scheme")) {
     std::string s = pin->GetString("rad_vet", "time_scheme");
     if (s.compare("be") == 0) {
-      time_scheme = M1_TIME_BE;
+      time_scheme = VET_TIME_BE;
     } else if (s.compare("hesdirk2") == 0) {
-      time_scheme = M1_TIME_HESDIRK2;
+      time_scheme = VET_TIME_HESDIRK2;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/time_scheme = '" << s
@@ -82,20 +82,20 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     std::exit(EXIT_FAILURE);
   }
   // be with t2_beonly runs as hesdirk2 with every step on the backward-Euler path
-  if (time_scheme == M1_TIME_BE && t2_beonly) {
-    time_scheme = M1_TIME_HESDIRK2;
+  if (time_scheme == VET_TIME_BE && t2_beonly) {
+    time_scheme = VET_TIME_HESDIRK2;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> time_scheme = be: the hesdirk2 backward-Euler path on "
                    "every "
                 << "step (be_legacy = true for the old step)" << std::endl;
     }
-  } else if (time_scheme == M1_TIME_HESDIRK2 && t2_beonly &&
+  } else if (time_scheme == VET_TIME_HESDIRK2 && t2_beonly &&
              global_variable::my_rank == 0) {
     std::cout << "<rad_vet> time2_be_only = true: every step takes the backward-Euler "
                  "path"
               << std::endl;
   }
-  if (time_scheme == M1_TIME_BE) {t2_beonly = false; return;}
+  if (time_scheme == VET_TIME_BE) {t2_beonly = false; return;}
 
   std::string integ = pin->GetString("time", "integrator");
   if (integ.compare("rk2") != 0) {
@@ -375,9 +375,9 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(t2k1, nmb, M1_T2_NK, n3, n2, n1);
-  Kokkos::realloc(t2k2, nmb, M1_T2_NK, n3, n2, n1);
-  Kokkos::realloc(t2inc, nmb, M1_T2_NK, n3, n2, n1);
+  Kokkos::realloc(t2k1, nmb, VET_T2_NK, n3, n2, n1);
+  Kokkos::realloc(t2k2, nmb, VET_T2_NK, n3, n2, n1);
+  Kokkos::realloc(t2inc, nmb, VET_T2_NK, n3, n2, n1);
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
@@ -395,9 +395,9 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     if (trans_x3) {Kokkos::realloc(t2f3, nmb, n3+1, n2, n1);}
   }
   if (vet_sc) {
-    Kokkos::realloc(vet_prev, nmb, M1_T2_NVET, n3, n2, n1);
-    Kokkos::realloc(vet_now, nmb, M1_T2_NVET, n3, n2, n1);
-    Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2,
+    Kokkos::realloc(vet_prev, nmb, VET_T2_NVET, n3, n2, n1);
+    Kokkos::realloc(vet_now, nmb, VET_T2_NVET, n3, n2, n1);
+    Kokkos::realloc(vet_opac, nmb, vscat ? (VET_NOPAC + 1) : VET_NOPAC, n3, n2,
                     n1);
     Kokkos::deep_copy(vet_prev, 0.0);
   }
@@ -427,7 +427,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
 //! \brief true when the next step runs the two stage solves
 
 bool RadiationVet::Time2Active() {
-  if (time_scheme != M1_TIME_HESDIRK2) return false;
+  if (time_scheme != VET_TIME_HESDIRK2) return false;
   if (static_cast<int>(t2k1.extent(0)) < pmy_pack->nmb_thispack) {t2_ok = false;}
   return t2_ok;
 }
@@ -489,19 +489,19 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
                       u0_(m,IM3,k,j,i), csk ? ccl(m,k,j) : 0.0)/dd -
                       (etg ? dd*phc(m,k,j,i) : 0.0);
       const Real tk = (eg > 0.0) ? eos.Temperature(dd, eg) : 0.0;
-      const Real z = dt*(ch*op_(m,M1_OP_E,k,j,i) + ((eg > 0.0) ?
-                     4.0*cl*op_(m,M1_OP_P,k,j,i)*ar*SQR(SQR(tk))/eg : 0.0));
+      const Real z = dt*(ch*op_(m,VET_OP_E,k,j,i) + ((eg > 0.0) ?
+                     4.0*cl*op_(m,VET_OP_P,k,j,i)*ar*SQR(SQR(tk))/eg : 0.0));
       e = (1.0 + g*z)/(g*(1.0 + z)) - 1.0;
       if (gs) {
         const Real cc = csk ? ccl(m,k,j) : 0.0, r = u1_(m,IDN,k,j,i);
         Real p[3], q[3], s[3];   // momenta of U^n, U^n + g dt K1 and S
         for (int n = 0; n < 3; ++n) {
           p[n] = u1_(m,IM1+n,k,j,i);
-          q[n] = p[n] + g*dt*k1_(m,M1_T2_M1+n,k,j,i);
+          q[n] = p[n] + g*dt*k1_(m,VET_T2_M1+n,k,j,i);
           s[n] = p[n] + g*(hs_(m,IM1+n,k,j,i) - p[n]);
         }
         // the eint changes g dt K1 and g dt K2 = d
-        const Real a = g*dt*k1_(m,M1_T2_EN,k,j,i) -
+        const Real a = g*dt*k1_(m,VET_T2_EN,k,j,i) -
                        (CsKeMom(q[0], q[1], q[2], cc) - CsKeMom(p[0], p[1], p[2], cc))/r;
         const Real es = u1_(m,IEN,k,j,i) + g*(hs_(m,IEN,k,j,i) - u1_(m,IEN,k,j,i)) -
                         CsKeMom(s[0], s[1], s[2], cc)/dd -
@@ -636,17 +636,17 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
           if (!(eg > 0.0)) return;
           const Real tk = eos.Temperature(dd, eg);
           if (!(tk > 0.0)) return;
-          const Real rkp = op_(m,M1_OP_P,k,j,i), rke = op_(m,M1_OP_E,k,j,i);
+          const Real rkp = op_(m,VET_OP_P,k,j,i), rke = op_(m,VET_OP_E,k,j,i);
           const Real rate = ch*rke + 4.0*cl*rkp*ar*tk*tk*tk*tk/eg;
           if (!(rate*dtl > sth)) return;
-          const Real n1 = m1 + ca*k1s_(m,M1_T2_M1,k,j,i);
-          const Real n2 = m2 + ca*k1s_(m,M1_T2_M1+1,k,j,i);
-          const Real n3 = m3 + ca*k1s_(m,M1_T2_M1+2,k,j,i);
+          const Real n1 = m1 + ca*k1s_(m,VET_T2_M1,k,j,i);
+          const Real n2 = m2 + ca*k1s_(m,VET_T2_M1+1,k,j,i);
+          const Real n3 = m3 + ca*k1s_(m,VET_T2_M1+2,k,j,i);
           const Real ek1 = CsKeMom(n1, n2, n3, cc)*idd;
           const Real kw = (ca != 0.0) ? (ek1 - ek0)/ca : 0.0;
-          const Real dex = k1s_(m,M1_T2_EN,k,j,i) - kw;
-          k1s_(m,M1_T2_EN,k,j,i) = kw;
-          k1s_(m,M1_T2_E,k,j,i) += (ch/cl)*dex;
+          const Real dex = k1s_(m,VET_T2_EN,k,j,i) - kw;
+          k1s_(m,VET_T2_EN,k,j,i) = kw;
+          k1s_(m,VET_T2_E,k,j,i) += (ch/cl)*dex;
           sum += 1.0;
         }, Kokkos::Sum<Real>(ns));
         t2_k1stiff_n += ns;
@@ -656,7 +656,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
     int n3 = static_cast<int>(u0.extent(2)), n2 = static_cast<int>(u0.extent(3));
     int n1 = static_cast<int>(u0.extent(4));
-    par_for("vet_t2_avg", DevExeSpace(), 0, nmb1, 0, M1_NVAR-1, 0, n3-1, 0, n2-1,
+    par_for("vet_t2_avg", DevExeSpace(), 0, nmb1, 0, VET_NVAR-1, 0, n3-1, 0, n2-1,
             0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       u0_(m,n,k,j,i) = heun ? 0.5*(u1_(m,n,k,j,i) + u0_(m,n,k,j,i))
@@ -689,7 +689,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   int n3 = static_cast<int>(t2inc.extent(2)), n2 = static_cast<int>(t2inc.extent(3));
   int n1 = static_cast<int>(t2inc.extent(4));
   const bool two = (stage != 1);
-  par_for("vet_t2_inc", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  par_for("vet_t2_inc", DevExeSpace(), 0, nmb1, 0, VET_T2_NK-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
     Real v = c1*k1_(m,n,k,j,i);
     if (two) {v += c2*k2_(m,n,k,j,i);}
@@ -714,7 +714,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   }
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
-  t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
+  t2_solve = (stage == 1) ? VET_T2S_STAGE1 : VET_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
   dt_sub = g*dt;
@@ -820,7 +820,7 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
   // U^n (extrapolating them again can grow without bound)
   pred_ok = false;
   pred2_ok = false;
-  t2_solve = M1_T2S_NONE;
+  t2_solve = VET_T2S_NONE;
 }
 
 //----------------------------------------------------------------------------------------
@@ -953,7 +953,7 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
         if (rn < 1.0) {dw += (1.0 - rn)*g; lim = true;}
       }
     }
-    w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
+    w = cvol(m,k,j,i)*(u0_(m,VET_E,k,j,i) + in_(m,VET_T2_E,k,j,i));
   };
   // R = 1 everywhere incl. ghosts (physical ghosts stay unlimited); rounds read slot sa
   // and write sb, then swap (both slots keep the same ghosts)
@@ -1025,7 +1025,7 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
         Real w, po, pi, pl, dw;
         bool lim;
         cell(m, k, j, i, w, po, pi, pl, dw, lim, s0);
-        const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
+        const Real wf = eth*cvol(m,k,j,i)*un_(m,VET_E,k,j,i);
         if (!(w + dw > wf)) {
           // held without face transport + remaining inflow, above th V E^n
           const Real q = w + po - pi + pl - wf;
@@ -1100,11 +1100,11 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     bool lim;
     cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
     const Real rc = iw_(m,ca,k,j,i);
-    if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
+    if (lim) {in_(m,VET_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
     if (rc < 1.0) {sw += (1.0 - rc)*po;}
     if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
     if (lim) {   // (the limited old vector against E^n)
-      const Real q = (u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i))/un_(m,M1_E,k,j,i);
+      const Real q = (u0_(m,VET_E,k,j,i) + in_(m,VET_T2_E,k,j,i))/un_(m,VET_E,k,j,i);
       if (q < eth) {se += 1.0;}
       sq = fmin(sq, q);
     }
@@ -1259,7 +1259,7 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
 bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (!t2_rotcorr) return false;
   t2_rotcorr = false;
-  if (time_scheme != M1_TIME_HESDIRK2 || !Time2Active()) return false;
+  if (time_scheme != VET_TIME_HESDIRK2 || !Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
   const Real dtc = vgd_rot_cfrac*dt;
   // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
@@ -1284,7 +1284,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
     int nmb1 = static_cast<int>(t2inc.extent(0)) - 1;
     int n3 = static_cast<int>(t2inc.extent(2)), n2 = static_cast<int>(t2inc.extent(3));
     int n1 = static_cast<int>(t2inc.extent(4));
-    par_for("vet_t2_rcinc", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1,
+    par_for("vet_t2_rcinc", DevExeSpace(), 0, nmb1, 0, VET_T2_NK-1, 0, n3-1, 0, n2-1,
             0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
@@ -1295,7 +1295,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   impl_pred = false;
   Mesh *pmesh = pmy_pack->pmesh;
   t2_inprobe = true;
-  t2_solve = M1_T2S_STAGE1;
+  t2_solve = VET_T2S_STAGE1;
   t2_fail = false;
   nsub = 1;
   dt_sub = dtc;
@@ -1330,7 +1330,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
     FluidRefresh(pdrive);
     if (fl.mhd) EmagBuild(false);   // b0 untouched; same faces
   }
-  t2_solve = M1_T2S_NONE;
+  t2_solve = VET_T2S_NONE;
   t2_fail = false;
   // the stage-1 solve keeps this build (vet_col predict | rebuild only)
   t2_vcreuse = ok && vgd_rot_creuse && vet_col && !vet_sc &&
@@ -1380,7 +1380,7 @@ void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
 }
 
 int RadiationVet::Time2FctSlot(const int q) const {
-  return q ? M1_IW_S2 : M1_IW_S1;
+  return q ? VET_IW_S2 : VET_IW_S1;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1411,7 +1411,7 @@ int RadiationVet::CleanRstNfv() const {
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::Time2Rst*
-//! \brief the restart channels: K1 (M1_T2_NK), vet_prev (M1_T2_NVET, vet_sc), then the
+//! \brief the restart channels: K1 (VET_T2_NK), vet_prev (VET_T2_NVET, vet_sc), then the
 //! clean scheme's state; files of version < 4 also hold ipred2 and extrap2 channels
 //! (read past)
 
@@ -1419,11 +1419,11 @@ int RadiationVet::Time2RstNchWant() {
   // version >= 4: no ipred2 / extrap2 channels, ring offsets dense (CleanRingRstCopy)
   const bool sk = t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
-  const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
-         M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
-         + ((vet_col && t2_vcmode == 4 && !sk) ? M1_X2_NCH : 0);   // extrap2
-  return nt + ((force_ref == M1_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
-         + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
+  const int nt = (time_scheme != VET_TIME_HESDIRK2) ? 0 :
+         VET_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? VET_T2_NVET : 0)
+         + ((vet_col && t2_vcmode == 4 && !sk) ? VET_X2_NCH : 0);   // extrap2
+  return nt + ((force_ref == VET_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
+         + ((force_ref == VET_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
          + CleanRstNcl()                                     // iterate: the closure
          + (cln_ring ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
@@ -1505,7 +1505,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   auto mb = std::make_pair(0, nmb);
   auto ms = std::make_pair(m0, m0 + nmb);
   auto AL = Kokkos::ALL;
-  const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
+  const bool h2 = (time_scheme == VET_TIME_HESDIRK2);
   // a holds the record's channels w0 .. w1-1 (the writer streams the record in windows);
   // put copies the record channels c0 .. c0+n-1 = src's s0 .. s0+n-1 that fall inside,
   // one sets channel cc to v
@@ -1529,18 +1529,18 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   const int na1 = static_cast<int>(a.extent(4)), nw = a.extent_int(1);
   int c = 0;
   if (h2) {
-    put(c, M1_T2_NK, t2k1, 0);
-    c += M1_T2_NK;
+    put(c, VET_T2_NK, t2k1, 0);
+    c += VET_T2_NK;
   }
   // version >= 4 layout: no predictor / extrap2 channels
   if (h2 && vet_sc) {
-    put(c, M1_T2_NVET, vet_prev, 0);
-    c += M1_T2_NVET;
+    put(c, VET_T2_NVET, vet_prev, 0);
+    c += VET_T2_NVET;
   }
   // force_reference = clean (wb_arad_md): the reference force (and potentials) and
   // whether it is set
-  if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
-    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3 + cln_lzt;
+  if (force_ref == VET_FREF_CLEAN || force_ref == VET_FREF_WB_MD) {
+    const int nr = (force_ref == VET_FREF_WB_MD) ? 9 : 3 + cln_lzt;
     const bool have = (cln_fref.extent_int(0) >= m0 + nmb);
     if (have) put(c, nr, cln_fref, 0);
     one(c + nr, (have && cln_fref_set) ? 1.0 : 0.0);
@@ -1633,7 +1633,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
 void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
-  const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
+  const bool h2 = (time_scheme == VET_TIME_HESDIRK2);
   // a file's predictor / extrap2 channels are read past (a NOTE once if nonzero)
   auto skip = [&w]() {
     static bool said = false;
@@ -1662,11 +1662,11 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     DeepCopyAcross(Kokkos::subview(fv, mb, ch - nfv0, AL, AL, AL), w);
     return;
   }
-  if (h2 && ch < M1_T2_NK) {
+  if (h2 && ch < VET_T2_NK) {
     DeepCopyAcross(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), w);
     return;
   }
-  if (h2) ch -= M1_T2_NK;
+  if (h2) ch -= VET_T2_NK;
   if (h2 && impl_pred && t2_rstv < 4) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
@@ -1676,14 +1676,14 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     ch -= np;
   }
   if (h2 && vet_sc) {
-    if (ch < M1_T2_NVET) {
+    if (ch < VET_T2_NVET) {
       DeepCopyAcross(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);
       return;
     }
-    ch -= M1_T2_NVET;
+    ch -= VET_T2_NVET;
   }
-  if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
-    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3 + cln_lzt;
+  if (force_ref == VET_FREF_CLEAN || force_ref == VET_FREF_WB_MD) {
+    const int nr = (force_ref == VET_FREF_WB_MD) ? 9 : 3 + cln_lzt;
     if (ch < nr) {
       if (cln_fref.extent_int(0) != nmb) {
         Kokkos::realloc(cln_fref, nmb, nr, w.extent_int(1), w.extent_int(2),
@@ -1809,15 +1809,15 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
 bool RadiationVet::Time2AutoBeBegin() {
   t2_abe_now = false;
   // t2_beonly: every step (the first too) is a skip step
-  const bool bo = t2_beonly && (time_scheme == M1_TIME_HESDIRK2);
-  if (!bo && (t2_abe <= 0 || time_scheme != M1_TIME_HESDIRK2 || t2_abe_left <= 0)) {
+  const bool bo = t2_beonly && (time_scheme == VET_TIME_HESDIRK2);
+  if (!bo && (t2_abe <= 0 || time_scheme != VET_TIME_HESDIRK2 || t2_abe_left <= 0)) {
     return false;
   }
   if (!bo && !Time2Active()) return false;   // no slope anyway (the BE path follows)
   t2_abe_now = true;
   t2_ok = false;
   t2_fail = false;
-  t2_solve = M1_T2S_NONE;
+  t2_solve = VET_T2S_NONE;
   pred_ok = false;
   pred2_ok = false;
   // as the redo of a rejected stage under time2_reject = retry (arms dt_retry_t2_be)
@@ -1859,7 +1859,7 @@ void RadiationVet::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b) {
 //! \brief end-of-run counters of the hesdirk2 steps (rank 0)
 
 void RadiationVet::Time2Report() {
-  if (time_scheme != M1_TIME_HESDIRK2) return;
+  if (time_scheme != VET_TIME_HESDIRK2) return;
   if (global_variable::my_rank != 0) return;
   std::cout << "<rad_vet> time_scheme=" << (t2_beonly ? "hesdirk2(be_only)" : "hesdirk2")
             << ": stage steps=" << t2_nstep
@@ -1935,8 +1935,8 @@ void RadiationVet::Time2Report() {
 
 bool RadiationVet::VsrcNoes() const {
   if (!vsrc_noes) return false;
-  if (time_scheme == M1_TIME_BE) return true;
-  return vsrc_noes_h2be && (t2_solve != M1_T2S_STAGE1) && (t2_solve != M1_T2S_STAGE2);
+  if (time_scheme == VET_TIME_BE) return true;
+  return vsrc_noes_h2be && (t2_solve != VET_T2S_STAGE1) && (t2_solve != VET_T2S_STAGE2);
 }
 
 }  // namespace radvet

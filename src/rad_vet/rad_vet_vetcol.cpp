@@ -58,7 +58,7 @@ void RadiationVet::VetColInit() {
   if (mindcs.nx1 != indcs.nx1 && !vgd_on) {
     VcolFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)");
   }
-  if (ibc_x1min == M1_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
+  if (ibc_x1min == VET_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
   // cubed sphere: x1 = r on every panel, one block spans the column; the tensor is
   // uniaxial about r_hat.  The flux axis needs the skewed panel basis: refused.
   if (pm->use_cubed_sphere && vcol_axis_flux) {
@@ -70,7 +70,7 @@ void RadiationVet::VetColInit() {
   }
   vcol_sph = sph_geom;
   // vet_col_reflect_top: sp with a reflecting outer x1 only
-  vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == M1_IBC_REFLECT);
+  vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == VET_IBC_REFLECT);
   vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
   const int ie = indcs.ie;
   // vet_gd reads tau_ten, vcol_q and the spherical Marshak coefficients set here
@@ -90,15 +90,15 @@ void RadiationVet::VetColInit() {
   if (vcol_sq) {
     Kokkos::realloc(vcol_q, nmb, c3, c2);
     Kokkos::deep_copy(vcol_q, marshak_q);
-    if (ibc_x1max != M1_IBC_MARSHAK && global_variable::my_rank == 0) {
+    if (ibc_x1max != VET_IBC_MARSHAK && global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_col_surface_q: the outer x1 boundary is not marshak; "
                 << "the q is built but unused" << std::endl;
     }
   }
-  // vet_col_lat and the cubed sphere: M1_TT_NLAT more slots for the lateral D_ab
+  // vet_col_lat and the cubed sphere: VET_TT_NLAT more slots for the lateral D_ab
   // (cs: basis r, xi, eta); elsewhere 4 slots
   Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
-                  (M1_TT_LAT0 + M1_TT_NLAT) : 4, c3, c2, c1);
+                  (VET_TT_LAT0 + VET_TT_NLAT) : 4, c3, c2, c1);
   Kokkos::deep_copy(tau_ten, 0.0);
   tau_ready = true;
   if (vlat_on) {VetLatInit();}
@@ -333,12 +333,12 @@ void RadiationVet::VetLatOdMax() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (M1CsVtxDist(k, j, ks, ke, js, je, cse(m,0) != 0, cse(m,1) != 0, cse(m,2) != 0,
                       cse(m,3) != 0) <= vr) {
-        tt_(m,M1_TT_LAT0+1,k,j,i) = 0.0;
-        tt_(m,M1_TT_LAT0+2,k,j,i) = 0.0;
-        tt_(m,M1_TT_LAT0+3,k,j,i) = 0.0;
+        tt_(m,VET_TT_LAT0+1,k,j,i) = 0.0;
+        tt_(m,VET_TT_LAT0+2,k,j,i) = 0.0;
+        tt_(m,VET_TT_LAT0+3,k,j,i) = 0.0;
         if (cst) {
-          tt_(m,M1_TT_LAT0+4,k,j,i) = 0.0;
-          tt_(m,M1_TT_LAT0+5,k,j,i) = 0.0;
+          tt_(m,VET_TT_LAT0+4,k,j,i) = 0.0;
+          tt_(m,VET_TT_LAT0+5,k,j,i) = 0.0;
         }
       }
     });
@@ -355,16 +355,16 @@ void RadiationVet::VetLatOdMax() {
         t /= nj;
         const int k = ks + (t % nk);
         const int m = t/nk;
-        Real v = fmax(fabs(tt_(m,M1_TT_LAT0+1,k,j,i)),
-                      fabs(tt_(m,M1_TT_LAT0+2,k,j,i)));
+        Real v = fmax(fabs(tt_(m,VET_TT_LAT0+1,k,j,i)),
+                      fabs(tt_(m,VET_TT_LAT0+2,k,j,i)));
         if (tn) {
-          v = fmax(v, fmax(fabs(tt_(m,M1_TT_LAT0+3,k,j,i)),
-                           fabs(tt_(m,M1_TT_LAT0+4,k,j,i))));
+          v = fmax(v, fmax(fabs(tt_(m,VET_TT_LAT0+3,k,j,i)),
+                           fabs(tt_(m,VET_TT_LAT0+4,k,j,i))));
         }
-        if (c3) {v = fmax(v, fabs(tt_(m,M1_TT_LAT0+3,k,j,i)));}
+        if (c3) {v = fmax(v, fabs(tt_(m,VET_TT_LAT0+3,k,j,i)));}
         if (cst) {
-          v = fmax(v, fmax(fabs(tt_(m,M1_TT_LAT0+4,k,j,i)),
-                           fabs(tt_(m,M1_TT_LAT0+5,k,j,i))));
+          v = fmax(v, fmax(fabs(tt_(m,VET_TT_LAT0+4,k,j,i)),
+                           fabs(tt_(m,VET_TT_LAT0+5,k,j,i))));
         }
         mx = (v > mx) ? v : mx;
       }, Kokkos::Max<Real>(omx));
@@ -426,17 +426,18 @@ void RadiationVet::VetLatSweep() {
   const bool cvx = cln_srccvx;   // clean_source_convex: kappa_P capped at chi
   par_for_lb("vet_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
-    Real e = fmax((noes && !srcep) ? ur_(m,M1_E,k,j,i)
-                                   : iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i), efl);
+    const Real chi = fmax(iw_(m,VET_IW_KT,k,j,i), 1.0e-300);
+    Real e = fmax((noes && !srcep) ? ur_(m,VET_E,k,j,i)
+                                   : iw_(m,srcep ? VET_IW_EP : VET_IW_EN,k,j,i), efl);
     Real s = e;
     if (thermal) {
-      Real tg = iw_(m,M1_IW_TP,k,j,i);
+      Real tg = iw_(m,VET_IW_TP,k,j,i);
       Real t2 = tg*tg;
-      Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
-      const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
+      Real eth = fmin(opac_(m,VET_OP_P,k,j,i)/chi, 1.0);
+      const Real rks = (vsf != 0) ? opac_(m,VET_OP_S,k,j,i) : 0.0;
       if (vsf != 0) {
-        const Real rkp = cvx ? fmin(opac_(m,M1_OP_P,k,j,i), chi) : opac_(m,M1_OP_P,k,j,i);
+        const Real rkp = cvx ? fmin(opac_(m,VET_OP_P,k,j,i), chi) :
+            opac_(m,VET_OP_P,k,j,i);
         s = VetScatterMix(vsf, rkp, chi, rks, ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;

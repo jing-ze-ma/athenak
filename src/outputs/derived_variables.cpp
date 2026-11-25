@@ -1298,7 +1298,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     par_for("vet_vsc_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int c = 0; c < 4; ++c) {
-        dv(m,i_dv+c,k,j,i) = hv ? vc_(m,radvet::M1_VET_J+((c == 0) ? 0 : (6 + c)),k,j,i)
+        dv(m,i_dv+c,k,j,i) = hv ? vc_(m,radvet::VETRAY_J+((c == 0) ? 0 : (6 + c)),k,j,i)
                                 : 0.0;
       }
     });
@@ -1368,8 +1368,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto u0_ = prm->u0;
     auto iw_ = prm->iw;
     auto vc_ = prm->vet_cell;
-    const bool impl = (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_WCHI);
-    const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radvet::M1_IW_N3);
+    const bool impl = (prm->impl_nstep > 0.0) && (iw_.extent_int(1) >
+                                                  radvet::VET_IW_WCHI);
+    const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radvet::VET_IW_N3);
     const bool dfull = prm->vet_sc && prm->vet_full;
     const bool notens = !impl && (prm->tau_closure || prm->vet_col);
     const bool edd = prm->eddington;
@@ -1380,17 +1381,17 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real chi = 1.0/3.0, n1 = 1.0, n2 = 0.0, n3 = 0.0;
       if (impl) {
-        chi = iw_(m,radvet::M1_IW_WCHI,k,j,i);
+        chi = iw_(m,radvet::VET_IW_WCHI,k,j,i);
         if (itrans) {
-          n1 = iw_(m,radvet::M1_IW_N1,k,j,i);
-          n2 = iw_(m,radvet::M1_IW_N2,k,j,i);
-          n3 = iw_(m,radvet::M1_IW_N3,k,j,i);
+          n1 = iw_(m,radvet::VET_IW_N1,k,j,i);
+          n2 = iw_(m,radvet::VET_IW_N2,k,j,i);
+          n3 = iw_(m,radvet::VET_IW_N3,k,j,i);
         }
       } else if (!notens) {
-        Real e = fmax(u0_(m,radvet::M1_E,k,j,i), efl);
-        Real f1 = u0_(m,radvet::M1_F1,k,j,i);
-        Real f2 = u0_(m,radvet::M1_F2,k,j,i);
-        Real f3 = u0_(m,radvet::M1_F3,k,j,i);
+        Real e = fmax(u0_(m,radvet::VET_E,k,j,i), efl);
+        Real f1 = u0_(m,radvet::VET_F1,k,j,i);
+        Real f2 = u0_(m,radvet::VET_F2,k,j,i);
+        Real f3 = u0_(m,radvet::VET_F3,k,j,i);
         Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
         chi = edd ? (1.0/3.0) : radvet::M1Chi(fmin(fm/(cl*e), 1.0), chk);
         if (fm > 0.0) {
@@ -1403,9 +1404,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       Real d22 = radvet::M1EddDiag(chi, n2);
       Real d33 = radvet::M1EddDiag(chi, n3);
       if (dfull) {
-        d11 = vc_(m,radvet::M1_VET_D11,k,j,i);
-        d22 = vc_(m,radvet::M1_VET_D11+1,k,j,i);
-        d33 = vc_(m,radvet::M1_VET_D11+2,k,j,i);
+        d11 = vc_(m,radvet::VETRAY_D11,k,j,i);
+        d22 = vc_(m,radvet::VETRAY_D11+1,k,j,i);
+        d33 = vc_(m,radvet::VETRAY_D11+2,k,j,i);
       }
       if (notens) {
         chi = -1.0;
@@ -1519,7 +1520,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto prm = pm->pmb_pack->pradvet;
     auto tt_ = prm->VlatTT();
     const bool htt = (tt_.extent_int(0) >= nmb) &&
-                     (tt_.extent_int(1) >= radvet::M1_TT_LAT0 + radvet::M1_TT_NLAT);
+                     (tt_.extent_int(1) >= radvet::VET_TT_LAT0 + radvet::VET_TT_NLAT);
     auto vi_ = prm->vgd_i;
     auto dir_ = prm->vgd_dir;
     auto cr_ = prm->vgd_csr;
@@ -1534,7 +1535,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     par_for("vet_lat_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int c = 0; c < 7; ++c) {
-        dv(m,i_dv+c,k,j,i) = htt ? tt_(m,(c == 0) ? 0 : radvet::M1_TT_LAT0 + c - 1,k,j,i)
+        dv(m,i_dv+c,k,j,i) = htt ? tt_(m,(c == 0) ? 0 : radvet::VET_TT_LAT0 + c - 1,k,j,i)
                                  : 0.0;
       }
       Real rx = 0.0, ry = 0.0, rz = 0.0;
@@ -1593,29 +1594,29 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto vc_ = prm->vet_cell;
     auto gh_ = prm->vgd_hr;
     const bool hsc = prm->vet_sc && (vc_.extent_int(0) >= nmb) &&
-                     (vc_.extent_int(1) > radvet::M1_VET_EPS);
+                     (vc_.extent_int(1) > radvet::VETRAY_EPS);
     const bool hgd = !hsc && prm->vgd_on && (gh_.extent_int(0) >= nmb);
-    const bool gx = hgd && (gh_.extent_int(1) >= radvet::M1_VGD_HRNX);
+    const bool gx = hgd && (gh_.extent_int(1) >= radvet::VET_VGD_HRNX);
     const bool c1v = hsc && prm->thsw_c1;
     const int mode = prm->impl_thsw;
-    const bool fs = (mode == radvet::M1_THSW_FS || mode == radvet::M1_THSW_FSKN ||
-                     mode == radvet::M1_THSW_FSQ || mode == radvet::M1_THSW_FSI ||
-                     mode == radvet::M1_THSW_FSE);
-    const bool fse = (mode == radvet::M1_THSW_FSE);
+    const bool fs = (mode == radvet::VET_THSW_FS || mode == radvet::VET_THSW_FSKN ||
+                     mode == radvet::VET_THSW_FSQ || mode == radvet::VET_THSW_FSI ||
+                     mode == radvet::VET_THSW_FSE);
+    const bool fse = (mode == radvet::VET_THSW_FSE);
     const Real h0 = prm->thsw_h0, h1 = prm->thsw_h1;
     par_for("vet_thsw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real fb = -1.0, c1 = -1.0, ep = -1.0, jj = -1.0;
       if (hsc) {
-        jj = vc_(m,radvet::M1_VET_J,k,j,i);
+        jj = vc_(m,radvet::VETRAY_J,k,j,i);
         if (jj > 0.0) {
-          const Real a = vc_(m,radvet::M1_VET_H1,k,j,i);
-          const Real b = vc_(m,radvet::M1_VET_H1+1,k,j,i);
-          const Real c = vc_(m,radvet::M1_VET_H1+2,k,j,i);
+          const Real a = vc_(m,radvet::VETRAY_H1,k,j,i);
+          const Real b = vc_(m,radvet::VETRAY_H1+1,k,j,i);
+          const Real c = vc_(m,radvet::VETRAY_H1+2,k,j,i);
           fb = fmin(sqrt(a*a + b*b + c*c)/jj, 1.0);
           if (c1v) {
-            c1 = vc_(m,radvet::M1_VET_NL,k,j,i)/jj;
-            ep = vc_(m,radvet::M1_VET_EPS,k,j,i);
+            c1 = vc_(m,radvet::VETRAY_NL,k,j,i)/jj;
+            ep = vc_(m,radvet::VETRAY_EPS,k,j,i);
           }
         }
       } else if (hgd && gh_(m,0,k,j,i) >= 0.0) {
@@ -1625,9 +1626,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         }
         fb = fmin(sqrt(f2), 1.0);
         if (gx) {
-          c1 = gh_(m,radvet::M1_VGD_HRC1,k,j,i);
-          ep = gh_(m,radvet::M1_VGD_HREP,k,j,i);
-          jj = gh_(m,radvet::M1_VGD_HRJ,k,j,i);
+          c1 = gh_(m,radvet::VET_VGD_HRC1,k,j,i);
+          ep = gh_(m,radvet::VET_VGD_HREP,k,j,i);
+          jj = gh_(m,radvet::VET_VGD_HRJ,k,j,i);
         }
       }
       Real w = -1.0;

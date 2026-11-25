@@ -654,7 +654,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       StarFatal("problem/star_gravity = pointmass needs <hydro>/etotgrav = true and "
                 "wellbalance_dynamic = false", __LINE__);
     }
-    if (pm1->force_ref != radvet::M1_FREF_NONE) {
+    if (pm1->force_ref != radvet::VET_FREF_NONE) {
       StarFatal("problem/star_gravity = pointmass needs <rad_vet>/force_reference = none "
                 "(no well-balanced pair to carry a reference force)", __LINE__);
     }
@@ -668,12 +668,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       StarFatal("needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = "
                 "true (the gravity source reads the x1 well-balanced cache)", __LINE__);
     }
-    if (pm1->force_ref != radvet::M1_FREF_WB_ARAD) {
+    if (pm1->force_ref != radvet::VET_FREF_WB_ARAD) {
       StarFatal("needs <rad_vet>/force_reference = wb_arad (the well-balanced pair "
                 "carries the reference force of the initial column)", __LINE__);
     }
   }
-  if (pm1->opacity_type != radvet::M1_OPAC_TABLE) {
+  if (pm1->opacity_type != radvet::VET_OPAC_TABLE) {
     StarFatal("needs <rad_vet>/opacity = table", __LINE__);
   }
 
@@ -975,7 +975,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool hatm_on = false;
   std::vector<Real> hatm_c, hatm_f;
   const bool icrdef = !global_variable::restart_run &&
-      (pm1->opacity_type == radvet::M1_OPAC_TABLE) && !wic &&
+      (pm1->opacity_type == radvet::VET_OPAC_TABLE) && !wic &&
       !(pin->DoesParameterExist("problem","star_ic_rad_thin") &&
         pin->GetBoolean("problem","star_ic_rad_thin"));
   const std::string icr0 = pin->GetOrAddString("problem","star_ic_rad",
@@ -2724,7 +2724,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     star_ad_ = (mc == "adaptive" || mc == "pressure");
     star_adp_ = (mc == "pressure");
-    const bool tab2 = pm1->time_scheme == radvet::M1_TIME_HESDIRK2 && pm1->t2_tab != 0;
+    const bool tab2 = pm1->time_scheme == radvet::VET_TIME_HESDIRK2 && pm1->t2_tab != 0;
     StarOldDefault(pin, "mlt_src_time", "start");
     const std::string tc = pin->GetOrAddString("problem","mlt_src_time",
         (!global_variable::restart_run && !tab2) ? "stage" : "start");
@@ -3454,10 +3454,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       uh(m,IEN,k,j,i) = e + d*gm*(1.0/rin - 1.0/r);
     }
     if (wic) uh(m,IEN,k,j,i) += 0.5*d*vr*vr;
-    ur(m,radvet::M1_E,k,j,i) = fmax(er, efl);
-    ur(m,radvet::M1_F1,k,j,i) = StarLinInterp(cF, rlo, dr, nf, r);
-    ur(m,radvet::M1_F2,k,j,i) = 0.0;
-    ur(m,radvet::M1_F3,k,j,i) = 0.0;
+    ur(m,radvet::VET_E,k,j,i) = fmax(er, efl);
+    ur(m,radvet::VET_F1,k,j,i) = StarLinInterp(cF, rlo, dr, nf, r);
+    ur(m,radvet::VET_F2,k,j,i) = 0.0;
+    ur(m,radvet::VET_F3,k,j,i) = 0.0;
   });
   // the comoving x1 face fluxes of the implicit transport (allocated only there)
   auto ff0 = pm1->f0x1;
@@ -3606,10 +3606,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else {
         uh(m,IEN,k,j,i) = eg + d*gm*(1.0/rin - 1.0/r);
       }
-      ur(m,radvet::M1_E,k,j,i) = fmax(lr(m,i), efl);
-      ur(m,radvet::M1_F1,k,j,i) = lf(m,i);
-      ur(m,radvet::M1_F2,k,j,i) = 0.0;
-      ur(m,radvet::M1_F3,k,j,i) = 0.0;
+      ur(m,radvet::VET_E,k,j,i) = fmax(lr(m,i), efl);
+      ur(m,radvet::VET_F1,k,j,i) = lf(m,i);
+      ur(m,radvet::VET_F2,k,j,i) = 0.0;
+      ur(m,radvet::VET_F3,k,j,i) = 0.0;
     });
     if (ff0.extent_int(0) >= nmb1 + 1) {
       const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
@@ -4204,13 +4204,13 @@ void StarBC(Mesh *pm) {
         const Real ga = gmc ? StarLinInterp(cgm, rlo, dr, nf, ra)/SQR(ra) : gm/SQR(ra);
         const Real ar0 = aref(m,k,j,ia);
         Real arad = ar0;
-        if (haveop && opac(m,radvet::M1_OP_T,k,j,ia) > 0.0) {
+        if (haveop && opac(m,radvet::VET_OP_T,k,j,ia) > 0.0) {
           // face (star_bc_hse_flux): the comoving radial flux the transport carries, the
           // mean of the cell's two x1 faces = the unclipped cell F1 minus its lab-frame
           // (v + v.D) E; cell: the clipped lab-frame cell F1 (old)
           const Real f1 = bhfc ? 0.5*(ff1(m,k,j,ia) + ff1(m,k,j,ia+1))
-                               : ur(m,radvet::M1_F1,k,j,ia);
-          arad = opac(m,radvet::M1_OP_T,k,j,ia)*f1/(cl*da);
+                               : ur(m,radvet::VET_F1,k,j,ia);
+          arad = opac(m,radvet::VET_OP_T,k,j,ia)*f1/(cl*da);
         }
         Real gam = arad/ga;
         gam = (gam < 0.0) ? 0.0 : ((gam > gmax) ? gmax : gam);
@@ -4401,8 +4401,8 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
       }
       if (i == ie) h.the_array[3] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
     }
-    const Real cof = (w0(m,IVX,k,j,i-1) + w0(m,IVX,k,j,i))*(ur(m,radvet::M1_E,k,j,i-1) +
-                     ur(m,radvet::M1_E,k,j,i))*area1(m,k,j,i)/3.0;
+    const Real cof = (w0(m,IVX,k,j,i-1) + w0(m,IVX,k,j,i))*(ur(m,radvet::VET_E,k,j,i-1) +
+                     ur(m,radvet::VET_E,k,j,i))*area1(m,k,j,i)/3.0;
     if (hpf && i == imid) h.the_array[24] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
     if (hpf && i == imid) h.the_array[26] = h.the_array[24] - cof;
     if (hpf && i == is + 1) h.the_array[0] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i) - cof;
@@ -4412,7 +4412,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
     }
     if (i == ie && lac) h.the_array[3] = lacc(m,1,k,j)*ildt;
     if (i == is) h.the_array[4] = lac ? lacc(m,0,k,j)*ildt : fin*area1(m,k,j,i);
-    h.the_array[5] = ur(m,radvet::M1_E,k,j,i)*vol;
+    h.the_array[5] = ur(m,radvet::VET_E,k,j,i)*vol;
     h.the_array[6] = w0(m,IEN,k,j,i)*vol;
     h.the_array[13] = w0(m,IDN,k,j,i)*vol;
     if (i == ie) {
@@ -4424,7 +4424,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
       h.the_array[15] = fl1(m,IDN,k,j,i)*area1(m,k,j,i);
       h.the_array[18] = SQR(w0(m,IVX,k,j,i))*inwall;
     }
-    h.the_array[16] = (u0(m,IEN,k,j,i) + ur(m,radvet::M1_E,k,j,i))*vol;
+    h.the_array[16] = (u0(m,IEN,k,j,i) + ur(m,radvet::VET_E,k,j,i))*vol;
     if (eso) h.the_array[22] = chc*es_(m,k,j,i)*vol;
     if (sprate > 0.0) {
       const Real r = x1v(m,i);
@@ -4593,7 +4593,7 @@ void StarAdaptiveUpdate(Mesh *pm) {
             const Real vol = volume(m,k,j,i);
             const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
             const Real h = e + eos.Pressure(d, e);
-            const Real v = w0(m,IVX,k,j,i), er = ur(m,radvet::M1_E,k,j,i);
+            const Real v = w0(m,IVX,k,j,i), er = ur(m,radvet::VET_E,k,j,i);
             s2 += vol;
             s3 += vol*v;
             s4 += vol*h;
@@ -4624,7 +4624,7 @@ void StarAdaptiveUpdate(Mesh *pm) {
       if (q == 2) {return vol;}
       const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
       const Real h = e + eos.Pressure(d, e);
-      const Real v = w0(m,IVX,k,j,i), er = ur(m,radvet::M1_E,k,j,i);
+      const Real v = w0(m,IVX,k,j,i), er = ur(m,radvet::VET_E,k,j,i);
       if (q == 3) {return vol*v;}
       if (q == 4) {return vol*h;}
       if (q == 5) {return vol*er;}
@@ -4670,7 +4670,7 @@ void StarAdaptiveUpdate(Mesh *pm) {
             const Real vol = vv(m,k,j,i);
             s0 += vol;
             s1 += vol*eo.Pressure(ww(m,IDN,k,j,i), ww(m,IEN,k,j,i));
-            s2 += vol*uu(m,radvet::M1_E,k,j,i);
+            s2 += vol*uu(m,radvet::VET_E,k,j,i);
           }
         }
       }
@@ -4688,7 +4688,7 @@ void StarAdaptiveUpdate(Mesh *pm) {
         const Real vol = vv(m,k,j,i);
         if (q == 0) {return vol;}
         if (q == 1) {return vol*eo.Pressure(ww(m,IDN,k,j,i), ww(m,IEN,k,j,i));}
-        return vol*uu(m,radvet::M1_E,k,j,i);
+        return vol*uu(m,radvet::VET_E,k,j,i);
       }, rs);
       for (int i=is; i<=ie; ++i) {
         for (int q=0; q<3; ++q) {hsp(i,q) = rs[static_cast<size_t>(q)*nsp + i];}
@@ -5424,7 +5424,7 @@ void StarIcEquil(Mesh *pm) {
                                    SQR(hu(m,IM3,k,j,i)))/d;
               const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
               hu(m,IEN,k,j,i) = e*fac + ek + d*hp0(m,k,j,i);
-              if (star_eq_srad_) hr(m,radvet::M1_E,k,j,i) *= SQR(SQR(fac));
+              if (star_eq_srad_) hr(m,radvet::VET_E,k,j,i) *= SQR(SQR(fac));
             }
           }
         }

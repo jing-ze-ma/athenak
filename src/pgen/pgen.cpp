@@ -245,7 +245,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   radvet::RadiationVet* pradvet = pm->pmb_pack->pradvet;
   int nrad = 0, nm1 = 0, nhydro = 0, nmhd = 0, nforce = 3, nadm = 0, nz4c = 0;
   if (pradvet != nullptr) {
-    nm1 = radvet::M1_NVAR;
+    nm1 = radvet::VET_NVAR;
   }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -974,7 +974,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // behind the vet_gd_async one: nra_file slabs of the averaging history (densely
   // packed), the LAST of each record, and the scalars (RadiationVet::RotAvgRstHdr)
   int nra_file = 0;
-  std::int64_t ra_hdr[radvet::RadiationVet::M1_RA_RST_NH] = {0};
+  std::int64_t ra_hdr[radvet::RadiationVet::VET_RA_RST_NH] = {0};
   if (std::memcmp(variabledata, &(radvet::kM1RaRstMagic[0]),
                   sizeof(radvet::kM1RaRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
@@ -1905,7 +1905,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // a be_only run never uses the slope (each step is backward Euler); the same block
   // carries the clean scheme's state, with any time scheme
   const bool t2_h2 = (pradvet != nullptr) &&
-                     (pradvet->time_scheme == radvet::M1_TIME_HESDIRK2);
+                     (pradvet->time_scheme == radvet::VET_TIME_HESDIRK2);
   const bool t2_want = t2_h2 && !pradvet->t2_beonly;
   const bool t2_acc = (pradvet != nullptr) && (nt2_file > 0) &&
                       pradvet->Time2RstAccept(nt2_file, nt2_ver);
@@ -1921,7 +1921,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     pradvet->t2_rstd3 = false;
     pradvet->t2_nfv = 0;
   }
-  const bool t2_k1 = t2_old && t2_want && nt2_file >= radvet::M1_T2_NK &&
+  const bool t2_k1 = t2_old && t2_want && nt2_file >= radvet::VET_T2_NK &&
                      static_cast<int>(pradvet->t2k1.extent(0)) >= nmb;
   if (t2_want && !t2_read && !t2_k1 && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_vet> hesdirk2 slope; the first "
@@ -2119,7 +2119,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
-      for (int n=0; n<(t2_read ? nt2_file : radvet::M1_T2_NK); ++n) {
+      for (int n=0; n<(t2_read ? nt2_file : radvet::VET_T2_NK); ++n) {
         read_slab("rad_vet hesdirk2 slope");
         pradvet->Time2RstSet(n, wtin, nmb);
       }

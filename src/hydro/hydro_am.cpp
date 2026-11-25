@@ -554,8 +554,8 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
       }
       if (hrad) {
         Real fc[3], lr[3];
-        cart(ur_(m,radvet::M1_F1,k,j,i), ur_(m,radvet::M1_F2,k,j,i),
-             ur_(m,radvet::M1_F3,k,j,i), fc);
+        cart(ur_(m,radvet::VET_F1,k,j,i), ur_(m,radvet::VET_F2,k,j,i),
+             ur_(m,radvet::VET_F3,k,j,i), fc);
         for (int q = 0; q < 3; ++q) {
           fc[q] *= dv*icc;
         }

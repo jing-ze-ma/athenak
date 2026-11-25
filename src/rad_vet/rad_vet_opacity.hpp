@@ -145,7 +145,7 @@ void M1Opacities(const int otype, const Real d, const Real t,
                  const Real kp, const Real ke, const Real kf, const Real ks,
                  const Real rho_ref, const Real t_ref, const Real aa, const Real bb,
                  Real &op, Real &oe, Real &of, Real &os) {
-  if (otype == M1_OPAC_POWERLAW) {
+  if (otype == VET_OPAC_POWERLAW) {
     Real fd = (aa == 0.0) ? 1.0 : pow(fmax(d, 0.0)/rho_ref, aa);
     Real ft = (bb == 0.0) ? 1.0 : pow(fmax(t, 0.0)/t_ref, bb);
     Real sc = fd*ft;
@@ -153,7 +153,7 @@ void M1Opacities(const int otype, const Real d, const Real t,
     oe = ke*sc;
     of = kf*sc;
     os = ks*sc;
-  } else if (otype == M1_OPAC_USER) {
+  } else if (otype == VET_OPAC_USER) {
     M1UserOpacity(d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
   } else {
     op = kp;
@@ -174,7 +174,7 @@ void M1CellOpacities(const int otype, const M1OpacTab &ot, const EosT &eos, cons
                      const Real t, const Real kp, const Real ke, const Real kf,
                      const Real ks, const Real rho_ref, const Real t_ref, const Real aa,
                      const Real bb, Real &op, Real &oe, Real &of, Real &os) {
-  if (otype == M1_OPAC_TABLE) {
+  if (otype == VET_OPAC_TABLE) {
     M1TableOpacities(ot, d, t, op, oe, of, os);
     M1ScatterEos(ot, eos, d, t, of, os);
   } else {

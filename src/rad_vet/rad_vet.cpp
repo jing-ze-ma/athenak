@@ -890,11 +890,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cs_geom = true;
     }
   }
-  nstage = M1_NSTAGE;
+  nstage = VET_NSTAGE;
   impl_cfl = -1.0;
   marshak_q = 0.5;
-  ibc_x1min = M1_IBC_MARSHAK;
-  ibc_x1max = M1_IBC_MARSHAK;
+  ibc_x1min = VET_IBC_MARSHAK;
+  ibc_x1max = VET_IBC_MARSHAK;
   iflux_x1min = 0.0;
   iflux_x1max = 0.0;
   iebath_x1min = 0.0;
@@ -902,7 +902,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_nstep = 0.0;
   impl_itsum = 0.0;
   impl_itmax = 0.0;
-  impl_solver = M1_ISOLV_LINE_JACOBI;
+  impl_solver = VET_ISOLV_LINE_JACOBI;
   trans_on = false;
   trans_x3 = false;
   bicg_on = false;
@@ -914,8 +914,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_pred = false;
   pred_ok = false;
   pred_dt = 0.0;
-  impl_offdiag = M1_OD_LAGGED;
-  od_now = M1_OD_LAGGED;
+  impl_offdiag = VET_OD_LAGGED;
+  od_now = VET_OD_LAGGED;
   impl_vimp = false;
   vimp_now = false;
   t2_enth_be = false;
@@ -935,7 +935,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   pred2_dt = 0.0;
   t2_lin_save = 0.0;
   t2_onep_s = -1.0;
-  impl_tlim = M1_TLIM_NONE;
+  impl_tlim = VET_TLIM_NONE;
   // Anderson acceleration
   aa_nh = 0;
   aa_head = 0;
@@ -957,13 +957,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   // opacities per unit mass (code units); kappa_e and kappa_f default to kappa_p
   {std::string op = pin->GetOrAddString("rad_vet","opacity","const");
   if (op.compare("const") == 0) {
-    opacity_type = M1_OPAC_CONST;
+    opacity_type = VET_OPAC_CONST;
   } else if (op.compare("powerlaw") == 0) {
-    opacity_type = M1_OPAC_POWERLAW;
+    opacity_type = VET_OPAC_POWERLAW;
   } else if (op.compare("user") == 0) {
-    opacity_type = M1_OPAC_USER;
+    opacity_type = VET_OPAC_USER;
   } else if (op.compare("table") == 0) {
-    opacity_type = M1_OPAC_TABLE;
+    opacity_type = VET_OPAC_TABLE;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/opacity = '" << op << "' is not a valid choice "
@@ -1015,12 +1015,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   opac_zero = (kappa_p == 0.0 && kappa_e == 0.0 && kappa_f == 0.0 && kappa_s == 0.0 &&
-               opacity_type != M1_OPAC_USER && opacity_type != M1_OPAC_TABLE);
+               opacity_type != VET_OPAC_USER && opacity_type != VET_OPAC_TABLE);
   // vet_scatter: electron scattering.
   //  (i) opacity split: table os = kappa_e, of = kappa_a = kappa_R - kappa_e (guarded,
   //      kappa_a >= vet_kappa_floor), kappa_e = vet_kappa_es (const) or
   //      sigma_T x_e/(mu m_u) (eos); other laws: kappa_f, kappa_s. rho kappa_e goes to
-  //      opac(M1_OP_S); the extinction stays the total M1_OP_T; scattering exchanges no
+  //      opac(VET_OP_S); the extinction stays the total VET_OP_T; scattering exchanges no
   //      energy.
   //  (ii) closure source VetScatterMix: vet_scatter_form = ma | absorption,
   //      vet_scatter_j = relaxed | current.
@@ -1044,7 +1044,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 && pin->GetBoolean("rad_vet","vet_gd"));
   }
   vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter", fresh && vet_rays &&
-                               opacity_type == M1_OPAC_TABLE);
+                               opacity_type == VET_OPAC_TABLE);
   if (vscat) {
     std::string sf = pin->GetOrAddString("rad_vet","vet_scatter_form","ma");
     if (sf.compare("ma") == 0) {
@@ -1082,7 +1082,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     std::string km = "const";
-    if (opacity_type == M1_OPAC_TABLE) {
+    if (opacity_type == VET_OPAC_TABLE) {
       // eos where a tabulated general EOS supplies x_e
       km = pin->GetOrAddString("rad_vet","vet_scatter_kappa_e",
                                (fresh && gen_eos_tab) ? "eos" : "const");
@@ -1105,7 +1105,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (global_variable::my_rank == 0) {
       std::cout << "rad_vet: vet_scatter on, form " << sf << ", J (relaxed source) " << sj
                 << (vscat_jrel ? " (default)" : "");
-      if (opacity_type == M1_OPAC_TABLE) {
+      if (opacity_type == VET_OPAC_TABLE) {
         std::cout << ", table split kappa_e = " << km << " (kappa_e " << otab.kes
                   << ", floor " << otab.kfl << ", sigma_T/m_u " << otab.kxe
                   << ", code units)";
@@ -1183,8 +1183,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   // radiation constant in code units (equilibrium E = arad*T^4, T the EOS's code
   // temperature), required with emission/absorption
   if (coupling && (kappa_p > 0.0 || kappa_e > 0.0 ||
-                   opacity_type == M1_OPAC_USER ||
-                   opacity_type == M1_OPAC_TABLE)) {
+                   opacity_type == VET_OPAC_USER ||
+                   opacity_type == VET_OPAC_TABLE)) {
     arad = pin->GetReal("rad_vet","arad");
     if (!(arad > 0.0)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1272,13 +1272,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   // first coupled solve, the hydro's static well-balanced background
   {std::string fr = pin->GetOrAddString("rad_vet","force_reference","none");
   if (fr.compare("none") == 0) {
-    force_ref = M1_FREF_NONE;
+    force_ref = VET_FREF_NONE;
   } else if (fr.compare("wb_arad") == 0) {
-    force_ref = M1_FREF_WB_ARAD;
+    force_ref = VET_FREF_WB_ARAD;
   } else if (fr.compare("clean") == 0) {
-    force_ref = M1_FREF_CLEAN;
+    force_ref = VET_FREF_CLEAN;
   } else if (fr.compare("wb_arad_md") == 0) {
-    force_ref = M1_FREF_WB_MD;
+    force_ref = VET_FREF_WB_MD;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/force_reference = '" << fr << "' is not a valid choice "
@@ -1290,7 +1290,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   // reference work (fref_wsplit_ok before SetForceReference), else full
   fref_wsplit = false;
   fref_wsplit_auto = false;
-  const bool fwb = (force_ref == M1_FREF_WB_ARAD) || (force_ref == M1_FREF_WB_MD);
+  const bool fwb = (force_ref == VET_FREF_WB_ARAD) || (force_ref == VET_FREF_WB_MD);
   if (fwb || pin->DoesParameterExist("rad_vet", "force_reference_work")) {
     const std::string fw = pin->GetOrAddString("rad_vet", "force_reference_work",
                                                "auto");
@@ -1334,7 +1334,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       fref_hgam0[2] = 2.0/3.0;  fref_hbeta[2] = 2.0/3.0;
     }
   }
-  if (force_ref != M1_FREF_NONE && !(coupling && gas_feedback)) {
+  if (force_ref != VET_FREF_NONE && !(coupling && gas_feedback)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/force_reference needs coupling = true and "
       << "gas_feedback = true: it modifies the momentum handed to the gas" << std::endl;
@@ -1370,15 +1370,15 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vcol_qmin = vcol_qmax = 0.0;
   vcol_lc = 1;
   {std::string cl = pin->GetOrAddString("rad_vet","closure","m1");
-  chi_kind = M1_CHI_LEVERMORE;
+  chi_kind = VET_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
     eddington = false;
   } else if (cl.compare("minerbo") == 0) {
     eddington = false;
-    chi_kind = M1_CHI_MINERBO;
+    chi_kind = VET_CHI_MINERBO;
   } else if (cl.compare("kershaw") == 0) {
     eddington = false;
-    chi_kind = M1_CHI_KERSHAW;
+    chi_kind = VET_CHI_KERSHAW;
   } else if (cl.compare("eddington") == 0) {
     eddington = true;
   } else if (cl.compare("vet_sc") == 0) {
@@ -1702,7 +1702,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (decided before a restart file's channels are counted)
     if (!cln_ring_named && vgd_on && vra_on && g_vra_adv &&
         vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
-        vra_k <= M1_RA_NF) {
+        vra_k <= VET_RA_NF) {
       cln_ring = 1;
     }
     // vet_bc_bath: the top shell's inward rays start from the incident bath
@@ -1892,21 +1892,21 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(u0, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(u1, nmb, M1_NVAR, ncells3, ncells2, ncells1);
+  Kokkos::realloc(u0, nmb, VET_NVAR, ncells3, ncells2, ncells1);
+  Kokkos::realloc(u1, nmb, VET_NVAR, ncells3, ncells2, ncells1);
   // face fluxes of the explicit stage tasks (never in the implicit task list): dummies
-  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, 1, 1, 1);
-  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, 1, 1, 1);
-  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, 1, 1, 1);
+  Kokkos::realloc(uflx.x1f, nmb, VET_NVAR, 1, 1, 1);
+  Kokkos::realloc(uflx.x2f, nmb, VET_NVAR, 1, 1, 1);
+  Kokkos::realloc(uflx.x3f, nmb, VET_NVAR, 1, 1, 1);
   // rho*kappa in the ghost cells too; vet_scatter: a 4th component, rho kappa_e
-  Kokkos::realloc(opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, ncells3, ncells2,
+  Kokkos::realloc(opac, nmb, vscat ? (VET_NOPAC + 1) : VET_NOPAC, ncells3, ncells2,
                   ncells1);
   Kokkos::deep_copy(opac, 0.0);
   if (coupling) {
     Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
   }
   // force_reference: a valid View to capture; the pgen replaces it (SetForceReference)
-  if (force_ref != M1_FREF_NONE) {
+  if (force_ref != VET_FREF_NONE) {
     Kokkos::realloc(arad_ref, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(arad_ref, 0.0);
   }
@@ -1918,8 +1918,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     Kokkos::realloc(emag0, 1, 1, 1, 1);
     Kokkos::realloc(emag1, 1, 1, 1, 1);
   }
-  Kokkos::realloc(cnt, M1_NCNT);
-  for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = 0.0;}
+  Kokkos::realloc(cnt, VET_NCNT);
+  for (int n=0; n<VET_NCNT; ++n) {cnt.h_view(n) = 0.0;}
   cnt.modify_host();
   cnt.sync_device();
 
@@ -1927,13 +1927,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     int nccells1 = indcs.cnx1 + 2*(indcs.ng);
     int nccells2 = (indcs.cnx2 > 1)? (indcs.cnx2 + 2*(indcs.ng)) : 1;
     int nccells3 = (indcs.cnx3 > 1)? (indcs.cnx3 + 2*(indcs.ng)) : 1;
-    Kokkos::realloc(coarse_u0, nmb, M1_NVAR, nccells3, nccells2, nccells1);
+    Kokkos::realloc(coarse_u0, nmb, VET_NVAR, nccells3, nccells2, nccells1);
   }
 
   // the implicit solver's parameters, checks and arrays
   ImplicitInit(pin);
   // clean sc rays with a reflecting top: the mirror reads the last build
-  cln_scmem = vgd_on && sph_geom && ibc_x1max == M1_IBC_REFLECT;
+  cln_scmem = vgd_on && sph_geom && ibc_x1max == VET_IBC_REFLECT;
   // the ray cut (CleanRayCut): sc rays on 3-D sp, one MeshBlock along x1, no reflecting
   // top
   const Mesh *pm = ppack->pmesh;
@@ -1974,9 +1974,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
   // <mesh>/cs_seam_blockend = extend also on E, F (bvals_cc.cpp's along-seam resample)
   pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);
-  pbval_u->InitializeBuffers(M1_NVAR);
+  pbval_u->InitializeBuffers(VET_NVAR);
   // (F2, F3) is the tangential pair; E and F1 (radial) are scalars
-  pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
+  pbval_u->SetVectorPairs(VET_NVAR, {{VET_F2, VET_F3}});
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet>: c=" << c_light << " chat/c=" << chat_over_c
@@ -1984,19 +1984,19 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
               // the closure as named in the input
               << " closure=" << (vet_col ? "vet_col" : vet_sc ? "vet_sc" :
                                  tau_closure ? "tau" : eddington ? "eddington" :
-                                 (chi_kind == M1_CHI_MINERBO) ? "minerbo" :
-                                 (chi_kind == M1_CHI_KERSHAW) ? "kershaw" : "m1")
+                                 (chi_kind == VET_CHI_MINERBO) ? "minerbo" :
+                                 (chi_kind == VET_CHI_KERSHAW) ? "kershaw" : "m1")
               << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
               << " kappa_f=" << kappa_f << " kappa_s=" << kappa_s
               << " coupling=" << (coupling ? "true" : "false")
               << " gas_feedback=" << (gas_feedback ? "true" : "false")
               << " arad=" << arad << std::endl;
-    std::cout << "         opacity=" << (opacity_type == M1_OPAC_TABLE ? "table" : "")
+    std::cout << "         opacity=" << (opacity_type == VET_OPAC_TABLE ? "table" : "")
               << " force_reference="
-              << (force_ref == M1_FREF_WB_ARAD ? "wb_arad" :
-                  (force_ref == M1_FREF_CLEAN ? "clean" :
-                  (force_ref == M1_FREF_WB_MD ? "wb_arad_md" : "none")))
+              << (force_ref == VET_FREF_WB_ARAD ? "wb_arad" :
+                  (force_ref == VET_FREF_CLEAN ? "clean" :
+                  (force_ref == VET_FREF_WB_MD ? "wb_arad_md" : "none")))
               << " temp_unit_kelvin=" << otab.tunit
               << " rho_unit_cgs=" << otab.dunit << std::endl;
   }
@@ -2068,9 +2068,9 @@ void RadiationVet::SetX2FaceFlux(const DvceArray3D<Real> &flo,
 bool RadiationVet::FrefWaccOn() const {
   // time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (first step, a
   // redo; not a helper solve)
-  const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) &&
+  const bool t2be = fref_wacc_t2 && (time_scheme == VET_TIME_HESDIRK2) &&
                     (!t2_ok || FrefWaccStage()) && !t2_inprobe;
-  return fref_wsplit && ((time_scheme == M1_TIME_BE) || t2be);
+  return fref_wsplit && ((time_scheme == VET_TIME_BE) || t2be);
 }
 
 bool RadiationVet::FrefWaccStage() const {
@@ -2138,16 +2138,16 @@ void RadiationVet::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
     const int b = mode - 16, nb = RssRstNch(b), nop = opac.extent_int(1) - 1;
     if (n < nb) {RssSlot(b, n, a, c); return;}
     const int k = n - nb;
-    if (k < nop) {a = &opac; c = (k < M1_OP_T) ? k : (k + 1); return;}
+    if (k < nop) {a = &opac; c = (k < VET_OP_T) ? k : (k + 1); return;}
     a = &tau_ten;
     c = 4 + (k - nop);
     return;
   }
-  if (n == 0) {a = &opac; c = M1_OP_T; return;}
+  if (n == 0) {a = &opac; c = VET_OP_T; return;}
   if (mode == 2) {a = &tau_ten; c = n - 1; return;}
   if (mode == 5) {a = &cln_s; c = CLN_D11 + n - 1; return;}
   a = &vet_cell;
-  c = (mode == 3) ? (M1_VET_CHI + n - 1) : (M1_VET_D11 + n - 1);
+  c = (mode == 3) ? (VETRAY_CHI + n - 1) : (VETRAY_D11 + n - 1);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2319,11 +2319,11 @@ void RadiationVet::VetBcInit(ParameterInput *pin, const bool gd) {
 //! \brief vet_bc_inner resolves to emit at the current inner x1 face
 
 bool RadiationVet::VetBcEmit() const {
-  if (ibc_x1min == M1_IBC_OUTFLOW) {return true;}   // clean: nothing enters
+  if (ibc_x1min == VET_IBC_OUTFLOW) {return true;}   // clean: nothing enters
   if (vet_bc_inner == 1) {
-    return (ibc_x1min == M1_IBC_MARSHAK) || (ibc_x1min == M1_IBC_FLUX);
+    return (ibc_x1min == VET_IBC_MARSHAK) || (ibc_x1min == VET_IBC_FLUX);
   }
-  if (vet_bc_inner == 2) {return (ibc_x1min == M1_IBC_MARSHAK);}
+  if (vet_bc_inner == 2) {return (ibc_x1min == VET_IBC_MARSHAK);}
   return false;
 }
 
@@ -2376,25 +2376,25 @@ void RadiationVet::ReportCounters() {
   if (!coupling) return;
   cnt.modify_device();
   cnt.sync_host();
-  Real nsolve = cnt.h_view(M1_CNT_NSOLVE);
+  Real nsolve = cnt.h_view(VET_CNT_NSOLVE);
 #if MPI_PARALLEL_ENABLED
   {
-    Real loc[M1_NCNT], glob[M1_NCNT];
-    for (int n=0; n<M1_NCNT; ++n) {loc[n] = cnt.h_view(n);}
-    MPI_Reduce(loc, glob, M1_NCNT, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
-    Real lmax = cnt.h_view(M1_CNT_ITMAX), gmax;
+    Real loc[VET_NCNT], glob[VET_NCNT];
+    for (int n=0; n<VET_NCNT; ++n) {loc[n] = cnt.h_view(n);}
+    MPI_Reduce(loc, glob, VET_NCNT, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+    Real lmax = cnt.h_view(VET_CNT_ITMAX), gmax;
     MPI_Reduce(&lmax, &gmax, 1, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
-    for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = glob[n];}
-    cnt.h_view(M1_CNT_ITMAX) = gmax;
-    nsolve = cnt.h_view(M1_CNT_NSOLVE);
+    for (int n=0; n<VET_NCNT; ++n) {cnt.h_view(n) = glob[n];}
+    cnt.h_view(VET_CNT_ITMAX) = gmax;
+    nsolve = cnt.h_view(VET_CNT_NSOLVE);
   }
 #endif
   if (global_variable::my_rank != 0) return;
-  Real mean = (nsolve > 0.0) ? (cnt.h_view(M1_CNT_ITSUM)/nsolve) : 0.0;
+  Real mean = (nsolve > 0.0) ? (cnt.h_view(VET_CNT_ITSUM)/nsolve) : 0.0;
   std::cout << "<rad_vet> implicit energy solve: cells=" << nsolve
-            << " iterations mean=" << mean << " max=" << cnt.h_view(M1_CNT_ITMAX)
-            << " FAILURES=" << cnt.h_view(M1_CNT_NFAIL)
-            << " (no bracket: " << cnt.h_view(M1_CNT_NBRAK) << ")" << std::endl;
+            << " iterations mean=" << mean << " max=" << cnt.h_view(VET_CNT_ITMAX)
+            << " FAILURES=" << cnt.h_view(VET_CNT_NFAIL)
+            << " (no bracket: " << cnt.h_view(VET_CNT_NBRAK) << ")" << std::endl;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2418,9 +2418,9 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
   // K rotated sets (rad_vet_rotavg.cpp)
   if (pin->DoesParameterExist("rad_vet","vet_rotate_avg")) {
     vra_k = pin->GetInteger("rad_vet","vet_rotate_avg");
-    if (vra_k > M1_RA_NF) {
+    if (vra_k > VET_RA_NF) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/vet_rotate_avg must be <= " << M1_RA_NF
+                << std::endl << "<rad_vet>/vet_rotate_avg must be <= " << VET_RA_NF
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }

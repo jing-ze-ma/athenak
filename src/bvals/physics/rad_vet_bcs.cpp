@@ -43,7 +43,7 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng) : 1;
   int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng) : 1;
   int nmb = ppack->nmb_thispack;
-  int nvar = radvet::M1_NVAR;
+  int nvar = radvet::VET_NVAR;
 
   //--------------------------------------------------------------------------------- x1
   if (pm->mesh_bcs[BoundaryFace::inner_x1] != BoundaryFlag::periodic) {

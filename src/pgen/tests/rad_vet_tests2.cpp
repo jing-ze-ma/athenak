@@ -295,10 +295,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = (peq ? rho0 : d)*t0/gm1;
-      u0(m,radvet::M1_E,k,j,i) = e_amb;
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = e_amb;
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("cyl") == 0) {
     // crossing beams / shadow by opaque cylinders (RadVetCylGas)
@@ -332,10 +332,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     const Real eb = fmax(ar*SQR(SQR(m1_cy_tb)), efl);
     par_for("vet_cyl_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      u0(m,radvet::M1_E,k,j,i) = eb;
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = eb;
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("radshock") == 0) {
     // the two far-field states, in the cgs scaling printed by t7_radshock.py --athinput
@@ -447,12 +447,12 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tg/gm1 + 0.5*d*v*v;
-      u0(m,radvet::M1_E,k,j,i) = fmax(erad, efl);
+      u0(m,radvet::VET_E,k,j,i) = fmax(erad, efl);
       // the comoving flux is small in these thick shocks; the lab flux is dominated by
       // the enthalpy term, which the stiff source relaxes to within a few substeps
-      u0(m,radvet::M1_F1,k,j,i) = (4.0/3.0)*v*erad;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_F1,k,j,i) = (4.0/3.0)*v*erad;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("atmosphere") == 0) {
     // milestone 3a2, gate I6b: the static grey plane-parallel column.  See the file
@@ -516,18 +516,18 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*egas;
       // the EDDINGTON guess, deliberately not the M1 answer
-      u0(m,radvet::M1_E,k,j,i) = fmax(3.0*(fin/cl)*(tau + 2.0/3.0), efl);
+      u0(m,radvet::VET_E,k,j,i) = fmax(3.0*(fin/cl)*(tau + 2.0/3.0), efl);
       if (aseed != 0.0) {
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
         Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
         Real sm = (aseedk > 0) ? cos(2.0*M_PI*aseedk*(x2v - ax2min)/ax2len)
                                : ((((j - js) & 1) == 0) ? 1.0 : -1.0);
-        u0(m,radvet::M1_E,k,j,i) *= 1.0 + aseed*sm;
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + aseed*sm;
       }
-      u0(m,radvet::M1_F1,k,j,i) = fin;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_F1,k,j,i) = fin;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("radwave") == 0) {
     // MILESTONE 3b phase E (design sect. 14).  LINEAR RADIATION-MODIFIED ACOUSTIC WAVE
@@ -703,10 +703,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         uh(m,IM2,k,j,i) = d*vxi;
         uh(m,IM3,k,j,i) = d*veta;
         uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
-        u0(m,radvet::M1_E,k,j,i) = fmax(er0_ + derad_c*sr, efl);
-        u0(m,radvet::M1_F1,k,j,i) = 0.0;
-        u0(m,radvet::M1_F2,k,j,i) = fxi;
-        u0(m,radvet::M1_F3,k,j,i) = feta;
+        u0(m,radvet::VET_E,k,j,i) = fmax(er0_ + derad_c*sr, efl);
+        u0(m,radvet::VET_F1,k,j,i) = 0.0;
+        u0(m,radvet::VET_F2,k,j,i) = fxi;
+        u0(m,radvet::VET_F3,k,j,i) = feta;
       });
       return;
     }
@@ -757,14 +757,14 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
         if (mhdw) uh(m,IEN,k,j,i) += ebw;
         Real ff = amp*ce0*(fre*cp - fim*sp);
-        u0(m,radvet::M1_E,k,j,i) = fmax(er0*(1.0 + amp*(ere*cp - eim*sp)), efl);
+        u0(m,radvet::VET_E,k,j,i) = fmax(er0*(1.0 + amp*(ere*cp - eim*sp)), efl);
         if (drift) {
-          ff += (4.0/3.0)*v0*(u0(m,radvet::M1_E,k,j,i) - er0)
+          ff += (4.0/3.0)*v0*(u0(m,radvet::VET_E,k,j,i) - er0)
                 + (4.0/3.0)*v0*er0;
         }
-        u0(m,radvet::M1_F1,k,j,i) = ff*nx;
-        u0(m,radvet::M1_F2,k,j,i) = ff*ny;
-        u0(m,radvet::M1_F3,k,j,i) = ff*nz;
+        u0(m,radvet::VET_F1,k,j,i) = ff*nx;
+        u0(m,radvet::VET_F2,k,j,i) = ff*ny;
+        u0(m,radvet::VET_F3,k,j,i) = ff*nz;
       });
       // the comoving face fluxes of the implicit transport (allocated only there)
       const Real f0re = ce0*fre - (4.0/3.0)*er0*vre;
@@ -820,10 +820,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       if (mhdw) uh(m,IEN,k,j,i) += ebw;
       Real ee = er0 + derad*cp;
       Real ff = (4.0/3.0)*vv*er0 + fdif*sp;
-      u0(m,radvet::M1_E,k,j,i) = fmax(ee, efl);
-      u0(m,radvet::M1_F1,k,j,i) = ff*nx;
-      u0(m,radvet::M1_F2,k,j,i) = ff*ny;
-      u0(m,radvet::M1_F3,k,j,i) = ff*nz;
+      u0(m,radvet::VET_E,k,j,i) = fmax(ee, efl);
+      u0(m,radvet::VET_F1,k,j,i) = ff*nx;
+      u0(m,radvet::VET_F2,k,j,i) = ff*ny;
+      u0(m,radvet::VET_F3,k,j,i) = ff*nz;
     });
   } else if (test.compare("sph_shell") == 0) {
     // STAGE S1 (tests_m1/runs_5a_sp_s1): a static uniform gas on a spherical-polar
@@ -1101,16 +1101,16 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         uh(m,IEN,k,j,i) += ebz;
       }
       Real x = (r - r0)/wid;
-      u0(m,radvet::M1_E,k,j,i) = fmax(eout + eamp*exp(-x*x), efl);
+      u0(m,radvet::VET_E,k,j,i) = fmax(eout + eamp*exp(-x*x), efl);
       if (lamp != 0.0 && sp) {
-        u0(m,radvet::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
       }
       if (lamp != 0.0 && csm && csl > 0) {
         const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
-        u0(m,radvet::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
       if (rla != 0.0) {
         const Real mr = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
@@ -1133,7 +1133,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       }
       if (gteq) {
         // CSMHD: the gas in equilibrium with E keeps the field's |B|^2/2 (b_azi) in IEN
-        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radvet::M1_E,k,j,i)/ara))/gm1 + ebz;
+        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radvet::VET_E,k,j,i)/ara))/gm1 + ebz;
       }
       if (gvr != 0.0) {
         Real vr = gvr*sin(M_PI*(r - x1a)/x1l);
@@ -1182,13 +1182,13 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         uh(m,IM3,k,j,i) = dgas*(w[0]*tb[0] + w[1]*tb[1] + w[2]*tb[2]);
         uh(m,IEN,k,j,i) += 0.5*dgas*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
       }
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
-        u0(m,radvet::M1_E,k,j,i) = ein;
-        u0(m,radvet::M1_F1,k,j,i) = cl*ein;
+        u0(m,radvet::VET_E,k,j,i) = ein;
+        u0(m,radvet::VET_F1,k,j,i) = cl*ein;
       }
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
       if (reqb) {
         // the moving radiative equilibrium of the cell velocity (gas_rot,
         // gas_vr, gas_vth), the exact fixed point F0 = 0, E0 = arad T^4 for D = chi(f)
@@ -1212,10 +1212,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         }
         const Real er = ara*SQR(SQR(tgas))/((1.0 + bb*bb) - 2.0*bb*ff + bb*bb*chq);
         const Real fs = (bb > 0.0) ? cl*er*ff/(bb*cl) : 0.0;   // F = fs v
-        u0(m,radvet::M1_E,k,j,i) = er;
-        u0(m,radvet::M1_F1,k,j,i) = fs*w1;
-        u0(m,radvet::M1_F2,k,j,i) = fs*w2;
-        u0(m,radvet::M1_F3,k,j,i) = fs*w3;
+        u0(m,radvet::VET_E,k,j,i) = er;
+        u0(m,radvet::VET_F1,k,j,i) = fs*w1;
+        u0(m,radvet::VET_F2,k,j,i) = fs*w2;
+        u0(m,radvet::VET_F3,k,j,i) = fs*w3;
       }
     });
     // (read only when named): beam_f = f > 0 makes the shell a radially
@@ -1230,7 +1230,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       auto xf = pmbp->pcoord->xx1f;
       par_for("vet_sph_beam", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        u0(m,radvet::M1_F1,k,j,i) = bf*cl*u0(m,radvet::M1_E,k,j,i);
+        u0(m,radvet::VET_F1,k,j,i) = bf*cl*u0(m,radvet::VET_E,k,j,i);
         if (i >= is && i <= is+nx1) {
           Real rf = spr ? xf(m,i) : LeftEdgeX(i-is, nx1, size.d_view(m).x1min,
                                               size.d_view(m).x1max);
@@ -1265,7 +1265,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     // STAGE CS1: on the cubed sphere x1 is r as well
     const bool sp = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
     const bool csm = pmy_mesh_->use_cubed_sphere;
-    if (pmbp->pradvet->force_ref == radvet::M1_FREF_WB_ARAD) {
+    if (pmbp->pradvet->force_ref == radvet::VET_FREF_WB_ARAD) {
       Real fin = pin->GetOrAddReal("rad_vet","implicit_flux_x1min",0.0);
       Real kt = pmbp->pradvet->kappa_f + pmbp->pradvet->kappa_s;
       Real rin = m1_sa_rin;
@@ -1357,20 +1357,20 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1;
-      u0(m,radvet::M1_E,k,j,i) = e*(1.0 + seed*cos(2.3*j + 1.7*k + 0.9*i));
+      u0(m,radvet::VET_E,k,j,i) = e*(1.0 + seed*cos(2.3*j + 1.7*k + 0.9*i));
       if (lamp != 0.0 && sp && !csm) {
-        u0(m,radvet::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
       }
       if (lamp != 0.0 && csm && csl > 0) {
         const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
-        u0(m,radvet::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
-      u0(m,radvet::M1_F1,k,j,i) = f;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_F1,k,j,i) = f;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
     // the comoving x1 face fluxes of the implicit transport (allocated only there)
     auto ff0 = pmbp->pradvet->f0x1;
@@ -1528,10 +1528,10 @@ void RadVetShockBC(Mesh *pm) {
         uh(m,IM2,k,j,is-i-1) = 0.0;
         uh(m,IM3,k,j,is-i-1) = 0.0;
         uh(m,IEN,k,j,is-i-1) = el;
-        u0(m,radvet::M1_E,k,j,is-i-1) = rl;
-        u0(m,radvet::M1_F1,k,j,is-i-1) = (4.0/3.0)*(ml/dl)*rl;
-        u0(m,radvet::M1_F2,k,j,is-i-1) = 0.0;
-        u0(m,radvet::M1_F3,k,j,is-i-1) = 0.0;
+        u0(m,radvet::VET_E,k,j,is-i-1) = rl;
+        u0(m,radvet::VET_F1,k,j,is-i-1) = (4.0/3.0)*(ml/dl)*rl;
+        u0(m,radvet::VET_F2,k,j,is-i-1) = 0.0;
+        u0(m,radvet::VET_F3,k,j,is-i-1) = 0.0;
       }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
@@ -1541,10 +1541,10 @@ void RadVetShockBC(Mesh *pm) {
         uh(m,IM2,k,j,ie+i+1) = 0.0;
         uh(m,IM3,k,j,ie+i+1) = 0.0;
         uh(m,IEN,k,j,ie+i+1) = er;
-        u0(m,radvet::M1_E,k,j,ie+i+1) = rr;
-        u0(m,radvet::M1_F1,k,j,ie+i+1) = (4.0/3.0)*(mr/dr)*rr;
-        u0(m,radvet::M1_F2,k,j,ie+i+1) = 0.0;
-        u0(m,radvet::M1_F3,k,j,ie+i+1) = 0.0;
+        u0(m,radvet::VET_E,k,j,ie+i+1) = rr;
+        u0(m,radvet::VET_F1,k,j,ie+i+1) = (4.0/3.0)*(mr/dr)*rr;
+        u0(m,radvet::VET_F2,k,j,ie+i+1) = 0.0;
+        u0(m,radvet::VET_F3,k,j,ie+i+1) = 0.0;
       }
     }
   });
@@ -1682,8 +1682,8 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
       const Real th[3] = {ph[1]*rh[2], -ph[0]*rh[2], ph[0]*rh[1] - ph[1]*rh[0]};
       Real p[3];
       for (int q = 0; q < 3; ++q) {
-        p[q] = u0(m,radvet::M1_F1,k,j,i)*rh[q] + u0(m,radvet::M1_F2,k,j,i)*th[q] +
-               u0(m,radvet::M1_F3,k,j,i)*ph[q];
+        p[q] = u0(m,radvet::VET_F1,k,j,i)*rh[q] + u0(m,radvet::VET_F2,k,j,i)*th[q] +
+               u0(m,radvet::VET_F3,k,j,i)*ph[q];
       }
       lr[0] = r*(rh[1]*p[2] - rh[2]*p[1]);
       lr[1] = r*(rh[2]*p[0] - rh[0]*p[2]);
@@ -1692,11 +1692,12 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
       lv(0.5*(g1(m,k,j,i) + g1(m,k,j,i+1)), md ? 0.5*(g2(m,k,j,i) + g2(m,k,j+1,i)) : 0.0,
          td ? 0.5*(g3(m,k,j,i) + g3(m,k+1,j,i)) : 0.0, lr);
     } else {
-      lv(u0(m,radvet::M1_F1,k,j,i), u0(m,radvet::M1_F2,k,j,i), u0(m,radvet::M1_F3,k,j,i),
+      lv(u0(m,radvet::VET_F1,k,j,i), u0(m,radvet::VET_F2,k,j,i),
+         u0(m,radvet::VET_F3,k,j,i),
          lr);
     }
     hv.the_array[0] = v*uh(m,IEN,k,j,i);
-    hv.the_array[1] = v*u0(m,radvet::M1_E,k,j,i);
+    hv.the_array[1] = v*u0(m,radvet::VET_E,k,j,i);
     for (int q = 0; q < 3; ++q) {
       hv.the_array[2+q] = v*lg[q];
       hv.the_array[5+q] = v*lr[q]*ic2;
