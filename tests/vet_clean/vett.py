@@ -156,13 +156,15 @@ def make_deck(src, dst, overrides=None, drop=()):
         f.write('\n'.join(out) + '\n')
 
 
-def run(exe, rundir, args, ranks=1, threads=1, mpirun='mpirun', timeout=3600):
+def run(exe, rundir, args, ranks=1, threads=1, mpirun='mpirun', timeout=3600, env_add=None):
     """Run exe with args in rundir; returns (returncode, wall seconds, log text)."""
     os.makedirs(rundir, exist_ok=True)
     cmd = list(exe) + list(args)
     if ranks > 1:
         cmd = mpirun.split() + ['-np', str(ranks)] + cmd
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), OMP_PROC_BIND='false')
+    for k, v in (env_add or {}).items():   # (a value set by the caller is kept)
+        env.setdefault(k, v)
     if ranks > 1:   # (Open MPI: more ranks than the job's slots are allowed)
         env.setdefault('OMPI_MCA_rmaps_base_oversubscribe', '1')
         env.setdefault('OMPI_MCA_hwloc_base_binding_policy', 'none')
