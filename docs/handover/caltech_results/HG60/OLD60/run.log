@@ -1,0 +1,2 @@
+2026-11-25 06:02:19 start OLD60 nodes hpc-sm-02-03,hpc-sm-02-09 ranks 8 BIN athena_gpu_he_star_m1_prod1118_1d197280_fmadoff md5=26a473d92edf5e38c8c2626d44db1cce T6
+2026-11-25 06:08:01 rc=0 ended: Terminating on cycle limit wall=342 s CW 0 FATAL 0
