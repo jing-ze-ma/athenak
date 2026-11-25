@@ -697,3 +697,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 14:00 02-09: pg_d26z -> mhdrep_c3f133b44
 - 11-25 14:02 02-03: mhdrep_b5ade8753 -> mhdrep_b5ade8753 pg_m3
 - 11-25 14:02 02-09: mhdrep_c3f133b44 -> mhdrep_c3f133b44 pg_m3
+- 11-25 14:03 02-03: mhdrep_b5ade8753 pg_m3 -> mhdrep_b5ade8753 pg_d26z pg_d26z pg_m3 pg_m3
+- 11-25 14:03 02-09: mhdrep_c3f133b44 pg_m3 -> mhdrep_c3f133b44 pg_d26z pg_d26z pg_m3 pg_m3
+- 11-25 14:03 02-11: IDLE -> pg_m3
+- 11-25 14:05 02-03: mhdrep_b5ade8753 pg_d26z pg_d26z pg_m3 pg_m3 -> mhdrep_b5ade8753
+- 11-25 14:05 02-09: mhdrep_c3f133b44 pg_d26z pg_d26z pg_m3 pg_m3 -> mhdrep_c3f133b44 pg_m3 pg_m3
+- 11-25 14:05 02-11: pg_m3 -> IDLE
+- 11-25 14:06 02-09: mhdrep_c3f133b44 pg_m3 pg_m3 -> mhdrep_c3f133b44
