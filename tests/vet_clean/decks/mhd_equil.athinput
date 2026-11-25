@@ -44,7 +44,6 @@ reconstruct = plm
 rsolver = hlld
 
 <rad_vet>
-closure = vet_sc
 c_light = 100.0
 arad = 1.0
 e_floor = 1.0e-30

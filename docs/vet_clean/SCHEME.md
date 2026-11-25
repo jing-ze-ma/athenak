@@ -30,7 +30,7 @@ formal solution of the grey transfer equation $\hat n\cdot\nabla I = \chi(S - I)
 fixed set of global directions (the `vet_gd` rays: a Gauss-Legendre product set,
 level-symmetric, geodesic or HEALPix set). The sweep is a short-characteristics sweep over
 the whole mesh, shell by shell on spherical-polar and cubed-sphere meshes (Cartesian meshes
-use the `vet_sc` short-characteristics sweep, optionally with the same sets). The source
+use a Cartesian short-characteristics sweep, optionally with the same sets). The source
 function is the state's own ($\epsilon\,aT^4 + (1-\epsilon)E$, or an absorption/scattering
 split), so the closure does not depend on $\Delta t$. Besides $\mathsf D$, the rays give the
 half-range fluxes (outgoing and incoming parts of the flux) and the rays' own flux through
@@ -248,7 +248,7 @@ EMA ring takes up the pattern change of a turn in its offsets (the boundary's sa
 Delta, weight a = a_ch alone, a_ch the change test of one set at two times): a set change
 then moves the closure only where the state moved, so a static state keeps its closure, its
 force and its equilibrium for any turn and cross-fade weight. On the cubed sphere the ring
-also carries the cells' face half ranges (`CleanCellHalf`). The K-set
+also carries the cells' face half ranges. The K-set
 window (`vet_rotate_avg` without the EMA) has no such form: its window changes the closure of
 a static state at every turn.
 
@@ -462,7 +462,7 @@ Paths relative to `src/`.
 | stage solve, face fluxes, write-back | `rad_vet/rad_vet_clean.cpp`, `rad_vet/rad_vet_clean.hpp` (`CleanSolve`, `CleanFaceFlux`, `CleanWriteBack`) |
 | linear solver and preconditioner | `rad_vet/rad_vet_clean_solver.cpp` (`CleanBiCGStab`, `CleanStagVCycle`) |
 | closure from the rays | `rad_vet/rad_vet_clean_closure.cpp` |
-| ray sweeps and direction sets | `rad_vet/rad_vet_vetgd.cpp` (spherical polar), `rad_vet/rad_vet_vetgd_cs.cpp` (cubed sphere), `rad_vet/rad_vet_vet.cpp` (Cartesian) |
+| ray sweeps and direction sets | `rad_vet/rad_vet_vetgd.cpp` (spherical polar), `rad_vet/rad_vet_vetgd_cs.cpp` (cubed sphere), `rad_vet/rad_vet_vetray.cpp` (their set-up and source), `rad_vet/rad_vet_vet.cpp` (Cartesian) |
 | IMEX stages, restart state | `rad_vet/rad_vet_time2.cpp`, `utils/imex_sdirk2.hpp` |
 | task lists | `rad_vet/rad_vet_tasks.cpp`, `driver/driver.cpp` |
 | dt retry checkpoint | `driver/dt_retry.cpp` |

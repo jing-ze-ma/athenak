@@ -76,7 +76,6 @@ clean_stag_fcone_gas = false
 clean_layout = staggered
 c_light = 40.0
 chat_over_c = 1.0
-closure = vet_sc
 vet_nmu = 4
 vet_nphi = 8
 vet_tensor = full

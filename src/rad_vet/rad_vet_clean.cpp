@@ -436,7 +436,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_gd_hr_split", "=none"}, {"rad_vet/vet_gd_hr_split_*", ""},
     {"rad_vet/vet_gd_hr_latfit", "=-1"}, {"rad_vet/vet_gd_hr_latfit_*", ""},
     {"rad_vet/sp_face_sync", "!"}, {"rad_vet/sp_face_sync_relax", ""},
-    // the column formal solution (vet_col without vet_gd), its lateral correction and
+    // the column formal solution, its lateral correction and
     // the relaxed source of lagged builds: no effect; only the values the rays had
     {"rad_vet/vet_col_ncore", ""}, {"rad_vet/vet_col_nsub", ""},
     {"rad_vet/vet_col_nmu", ""}, {"rad_vet/vet_col_fk_min", ""},
@@ -709,9 +709,8 @@ void RadiationVet::CleanInit() {
     if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
         pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_vet>/scheme = clean on the cubed sphere needs "
-                 "clean_closure = sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (clean_rays = sc) and "
-                 "an even <mesh>/nx2");
+                 "clean_closure = sphere | eddington (no clean_consistency) or the "
+                 "rays (closure = sc) and an even <mesh>/nx2");
     }
     if (!vgd_on) {
       if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
@@ -727,18 +726,18 @@ void RadiationVet::CleanInit() {
     if (!(cln_sphere || vgd_on || cln_edd) ||
         (cln_consist && !vgd_on)) {
       CleanFatal("<rad_vet>/scheme = clean on spherical polar needs clean_closure = "
-                 "sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd");
+                 "sphere | eddington (no clean_consistency) or the "
+                 "rays (closure = sc)");
     }
     // theta walls: vet_gd_theta_wall or the mesh's (rad_vet.cpp); the sweep starts at the
-    // first shell or the ray cut (vlat_icut).  No clean solve reads the half-range ratios
+    // first shell or the ray cut (vray_icut).  No clean solve reads the half-range ratios
     // vgd_hr, so implicit_flux_beam = halfrange has no effect.
     impl_beam_hr = false;
     cln_init = true;
     return;
   }
   if (cln_sphere || !vet_sc || !vet_full) {
-    CleanFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs closure = vet_sc with "
+    CleanFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs "
                "vet_tensor = full (clean_closure = sphere is for spherical polar)");
   }
   // the formal solution provides the half-range sums and C1
@@ -1151,7 +1150,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
 TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   if (!cln_init) CleanInit();
   // the vet_gd direction set first (a restart's first solve reads it before any build)
-  if (vgd_on && !tau_ready) VetColInit();
+  if (vgd_on && !vray_ready) VetRayInit();
   // sc rays' ring on the cubed sphere: the union's directions and weights too
   if (vgd_on && cln_cssc && cln_ring && cln_fvn == 0) {
     CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);

@@ -686,7 +686,7 @@ void RadiationVet::CleanRays() {
     CleanClosureFromRays();
     return;
   }
-  if (!tau_ready) VetColInit();
+  if (!vray_ready) VetRayInit();
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto iw_ = iw;
   auto opac_ = opac;
@@ -1112,11 +1112,11 @@ void RadiationVet::CleanRingMoments() {
   // own tables and intensities each); the loop below then takes each set's moments
   const bool fuse = vgd_on && cln_rfuse && !cln_scmem && ns == 2 && !fill && VetGdXffOk();
   // (the cut below the sets' shared slabs, VgdRagThick: the same cut on every rank)
-  const bool low = vgd_rag_cut > vlat_icut;
+  const bool low = vgd_rag_cut > vray_icut;
   if (vgd_on && cln_rfuse && !fuse && ns == 2 && !fill) {
     vgd_xff_nfb += 1.0;
     if (low && !vgd_rag_said && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> clean_rot_fuse: the ray cut (shell " << vlat_icut << ") is "
+      std::cout << "<rad_vet> clean_rot_fuse: the ray cut (shell " << vray_icut << ") is "
                 << "below the shells whose slabs the two sets share (" << vgd_rag_cut
                 << "): two sweeps per build while it does; a restart shares fewer shells"
                 << std::endl;
@@ -1132,7 +1132,7 @@ void RadiationVet::CleanRingMoments() {
   }
   if (fuse) {
     const int qa = (cln_fvblk[0] < cln_fvblk[1]) ? 0 : 1, qb = 1 - qa;
-    vgd_scut = vlat_icut;
+    vgd_scut = vray_icut;
     VgdXfTables(cln_fvkey[qb]);
     vgd_xff_prep = true;
     VetGdSweep();
@@ -1160,7 +1160,7 @@ void RadiationVet::CleanRingMoments() {
       cln_rq = q;
       cln_rqm = static_cast<int>(cln_fvblk[q] & 1);
       VgdXfTables(cln_fvkey[q]);
-      vgd_scut = vlat_icut;
+      vgd_scut = vray_icut;
       if (!fuse) VetGdSweep();
       if (cln_scmem) VetGdTopCopy();
       CleanClosureFromGd();
@@ -1448,7 +1448,7 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRayCut
-//! \brief clean_ray_cut: first swept shell vlat_icut (global min over columns); below
+//! \brief clean_ray_cut: first swept shell vray_icut (global min over columns); below
 //! it the closure is the diffusion limit (CleanThickI, error O(R^2),
 //! R = |grad S|/(chi S)).
 //! A column's cut: clean_ray_cut_margin optical depths below its lowest cell with R >=
@@ -1459,16 +1459,16 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 #if VET_TU_PART(1)
 void RadiationVet::CleanRayCut() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  vlat_icut = 0;
+  vray_icut = 0;
   if (!cln_rcut_on || !cln_init || pmy_pack->pmesh->mesh_indcs.nx1 != indcs.nx1) return;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, n1 = indcs.nx1;
   const int nk = ke - ks + 1, nj = je - js + 1, nf = pmy_pack->pmesh->three_d ? 3 :
                                                   (pmy_pack->pmesh->multi_d ? 2 : 1);
-  const Real tcut = cln_rcut_tau, tthin = vlat_cut_thin, er = cln_rcut_r;
+  const Real tcut = cln_rcut_tau, tthin = vray_cut_thin, er = cln_rcut_r;
   const Real mg = cln_rcut_mg;
   CleanArgs x = CleanMakeArgs();
-  auto cs_ = vlat_cs;
+  auto cs_ = vray_cs;
   int lmin = 2*n1;
   Kokkos::parallel_reduce("cln_raycut", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           pmy_pack->nmb_thispack*nk*nj),
@@ -1519,7 +1519,7 @@ void RadiationVet::CleanRayCut() {
   }
   pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_now", cln_rcut);
   pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_count", cln_rcut_n);
-  vlat_icut = cln_rcut;
+  vray_icut = cln_rcut;
 }
 #endif  // VET_TU_PART(1)
 
@@ -1568,10 +1568,10 @@ void RadiationVet::CleanClosureFromGd() {
   cln_gdx = CleanDevArgs(x, 3);
   const CleanArgs *px = cln_gdx;
   // clean_ray_cut: below the cut vgd_i holds the diffusion limit
-  if (vgd_on && vlat_icut > 0) {
+  if (vgd_on && vray_icut > 0) {
     const Real ic = 1.0/c_light;
     // (one team per cell, lanes along the directions: contiguous stores)
-    const int nc = vlat_icut, nj = je - js + 1, nk = ke - ks + 1;
+    const int nc = vray_icut, nj = je - js + 1, nk = ke - ks + 1;
     const int tsz =
         std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ? 1 : 32;
     Kokkos::parallel_for("cln_gd_thk",

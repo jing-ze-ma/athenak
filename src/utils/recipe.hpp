@@ -35,9 +35,8 @@ void PrintLog();                          // the start-up block (rank 0), then c
 void PgenEarlyDefaults(ParameterInput *pin);
 // a fresh VET run's defaults of keys read before <rad_vet> exists (main.cpp, after
 // PgenEarlyDefaults): <rad_vet>/transport = implicit; with scheme = clean (named or
-// the default with transport = implicit) closure = vet_col + vet_gd on spherical polar
-// and the cubed sphere, <time>/cfl_number = 0.3, evolution = dynamic, <mesh>/nghost = 3,
-// <hydro>/rsolver = hllc (rad_vet.cpp holds the rest)
+// the default with transport = implicit) <time>/cfl_number = 0.3, evolution = dynamic,
+// <mesh>/nghost = 3, <hydro>/rsolver = hllc (rad_vet.cpp holds the rest)
 void CleanDefaults(ParameterInput *pin);
 // star_vet sets it: the star defaults of PgenEarlyDefaults (star_wb_defaults.cpp)
 inline bool star_pgen = false;
