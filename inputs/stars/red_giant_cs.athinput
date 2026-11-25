@@ -1,7 +1,7 @@
 # red_giant on the CUBED SPHERE: the envelope of a 1.5 Msun, 500 Lsun, Teff 4000 K red
 # giant branch star (R ~ 3.2e12 cm) from 0.5 R to 1.1 R, tabulated EOS with radiation,
-# stellar Rosseland opacities, radiative diffusion with the tau blend and the thin-layer
-# relaxation, point-mass gravity, well-balanced.  Build with -DPROBLEM=red_giant.
+# stellar Rosseland opacities, radiative diffusion with the tau blend and the spherical
+# grey two-stream, point-mass gravity, well-balanced.  Build with -DPROBLEM=red_giant.
 #
 # A SMOKE resolution: 6 panels x 16 x 16 with 128 radial cells.  Convection is resolved
 # here, not modelled: mlt_alpha stays 0 and vpert seeds the flow.
@@ -116,13 +116,12 @@ inner_bc    = wall
 s_relax_cs  = 0.1
 s_relax_cp  = 0.3
 mlt_dump    =                # if set: dump one column's MLT faces at the first call
-# --- the correlated-k two-stream for the optically thin layers.  DEFAULT ON here: the
-# grey Eddington relaxation it replaces cannot represent the line blanketing that sets a
-# cool giant's atmospheric structure, and measured over 200 cycles from the same state it
-# let the top run away by ~70x in density where the band solver held it to 0.7.  Set false
-# to fall back to the relaxation, which is cheaper and is the only path the 1-D column
-# tests can use.  Self-luminous: no irradiation, T_int = teff.
-rt_ck       = true
+# --- the two-stream for the optically thin layers: the spherical grey one (rt_grey).  The
+# correlated-k one (rt_ck, keys below) is plane-parallel in this problem generator, so on a
+# curvilinear mesh with the tau blend (rad_tau_hi > 0) it does not conserve energy and is
+# refused; it serves the 1-D Cartesian columns.  Self-luminous: no irradiation, T_int = teff.
+rt_grey     = true
+rt_ck       = false
 ck_table    = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
 ck_data_dir = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck
 ck_swflux   = sw_band_flux_W121_11.txt
@@ -155,7 +154,7 @@ ck_dump_j   = -1             # -1 = the meshblock centre in that direction
 ck_dump_k   = -1
 ck_dump_t2  = -1.0           # >= 0: dump a SECOND column once t reaches this
 ck_dump_file2 =
-opac_table  = /orion/u/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt
+opac_table  = data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt
 column_dump = column.txt
 
 <output1>
