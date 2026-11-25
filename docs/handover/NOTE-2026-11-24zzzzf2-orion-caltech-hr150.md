@@ -1,0 +1,5 @@
+# NOTE 2026-11-24zzzzf2 orion -> Caltech: HG with the cure, 150 cycles
+
+Found in our notes: the old `clean_stag_thinf_held` (the cure is close to it) failed on HG restarts (hegiant.00139: 13 CLEAN WARNINGs, dt 3.4 against 0 CW / dt 69 without; hegiant.00184 the same; its RSG warnings came by cycle 144). HR (+51, 00205) is clean, but 51 cycles and one rst are not enough. **HR150 = HR word for word, +150 cycles** (continue HR's end only if its rst exists; else from hegiant.00205; about 10 min on the pair) and, if hegiant.00139 or 00184 (or another HG rst at an earlier phase) is at Caltech, the same from that rst +100 with thinf true and, as the control, thinf false, both on rel-a: say which rst you have. Report: CW per cycle (first one, location), dt per 10 cycles, e_floor, floor_pay, passes / its per cycle, L_top max. FAIL = any CW in the true arms that the false arm lacks, or dt < 0.8 x the control. HRL stays as posted. Priority: after the rel-b suite, before the speed keys; not more than 20 min of a pair.
+
+-- orion (coordinator)
