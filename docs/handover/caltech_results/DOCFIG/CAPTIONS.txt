@@ -1,0 +1,17 @@
+Captions for the documentation figures and movies (NOTE 2026-11-26o items 3-4, 26p). One node = 4 H200 GPUs. Plain numbers only; no claim on convergence or resolution.
+Panels of every star figure: left v_r [km/s] on one shell (cmasher fusion), middle T_eff [10^3 K] of each column from the comoving flux at its tau_R = 2/3 (bsg: tau_R = 1) (cmocean ice, low dark, high light), right density relative to the shell mean, delta rho/<rho>, on a radial-lateral slice (cmocean balance, x and y in R_sun; grey: floor gas, density at most 1.5 x the floor). Axis scales are in R_sun and degrees.
+
+doc_bsg.png - bsg: 16.8 million cells, 57.0 d of model time, 6.0 h on one node of 4 H200. Final dump, t = 57.00 d. v_r at 40.7 R_sun; slice 34-54 R_sun in the plane phi = 0.
+doc_m35mms.png - m35mms: 22.0 million cells, 10.0 d of model time, 19.9 h on one node of 4 H200 (two binaries, one restart). Final dump, t = 10.00 d. v_r at R_ph,IC (13.7 R_sun); slice 0.86-1.06 R_ph,IC in the equatorial plane. Surface and envelope only; the velocity of the deep stable layer is not shown.
+doc_m35zams.png - m35zams: 6.3 million cells, 10.0 d of model time, 20.1 h on one node of 4 H200 (two binaries, one restart). Final dump, t = 10.00 d. v_r at R_ph,IC (7.90 R_sun); slice 0.95-1.02 R_ph,IC in the equatorial plane.
+doc_t9l62.png - t9l62: 67.1 million cells, 26.5 d of model time shown, 18.6 h on one node of 4 H200 up to that dump (two binaries, one restart; the run continues). v_r at 3.8 R_ph,IC (357 R_sun); slice 0.42-7.0 R_ph,IC in the equatorial plane. Surface and envelope only; the velocity of the deep stable layer is not shown.
+doc_t9mlt.png - t9mlt (adaptive MLT start): 67.1 million cells, 21.5 d of model time shown, 16.0 h on one node of 4 H200 up to that dump (one binary so far; the run continues; partial-test run, not a validated prediction). v_r at 0.98 R_ph,IC (55.3 R_sun); slice 0.62-1.12 R_ph,IC in the equatorial plane. Surface and envelope only; the velocity of the deep stable layer is not shown.
+doc_strip.png - the five stars side by side: v_r (top) and T_eff (bottom) at their newest dumps (bsg 57.0 d, m35mms 10.0 d, m35zams 10.0 d, t9l62 26.5 d, t9mlt 21.5 d); wedge widths differ (see the axes: longitude and latitude in degrees); each panel has its own colour limits.
+
+Movies (H.264, yuv420p, 1200 px wide, 24 fps, 10 s, no audio; limits fixed over the whole movie; same panels as the figures; every movie starts at t = 0, nothing cut):
+mov_bsg.mp4 - t = 0-57.0 d, all 115 dumps (12 h apart), 6.0 h on one node of 4 H200.
+mov_m35mms.mp4 - t = 0-10.0 d, every 2nd of 481 dumps (1800 s apart), 19.9 h on one node. Surface and envelope only.
+mov_m35zams.mp4 - t = 0-10.0 d, every 2nd of 481 dumps (1800 s apart), 20.1 h on one node.
+mov_t9l62.mp4 - t = 0-26.5 d, all 213 dumps (3 h apart), 18.6 h on one node up to the last dump. T_eff limits fitted to the cool later part (6.5-12.5 10^3 K): the first days, when the star is hotter, are saturated. Surface and envelope only.
+mov_t9mlt.mp4 - t = 0-21.5 d, all 173 dumps (3 h apart), 16.0 h on one node up to the last dump. Surface and envelope only.
+Posters: mov_<star>_poster.png = last frame. Wall times: sacct step times (NOTE 2026-11-26o) for the finished runs; for t9l62 and t9mlt the log `elapsed` values up to the dump shown.
