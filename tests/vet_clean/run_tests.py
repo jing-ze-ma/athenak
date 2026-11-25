@@ -1544,23 +1544,28 @@ def t_mlt_time(c):
 
 
 def t_wb_star(c):
-    """the well-balance mode of the stars (wellbalance_dynamic, wb_x1, force_reference =
-    wb_arad, fixed GL 7 x 18 rays) on the unseeded BSG column, 20 cycles.  A report, not a
-    criterion: the BSG column is not in discrete equilibrium with its own opacities, so
-    v/c_s does not stay at 1e-8 (see README); it passes when the run completes with no
-    CLEAN WARNING.  v_in: largest |v|/c_s where r < 2.9e12 (the interior); v_all: over the
-    mesh; lat_mid: largest lateral |v|/c_s at 2.44e12 < r < 2.95e12 (outside the
-    merged-cell radius), ~1e-11 in a symmetric star."""
-    d = star_run(c, 'run', {'problem/star_ic_profile_amp': 0.0})
-    r = vett.cell_centres(d)[0]
-    h = vett.last_bin(d, 'hydro_w')
-    cs = np.sqrt((5.0/3.0)*(2.0/3.0)*h['eint']/h['dens'])
-    vt = np.sqrt(h['vely']**2 + h['velz']**2)
-    v = np.sqrt(h['velx']**2 + vt**2)/cs
-    m = (r > 2.44e12) & (r < 2.95e12)
-    return dict(v_in=float(v[:, :, r < 2.9e12].max()), v_all=float(v.max()),
-                lat_mid=float((vt/cs)[:, :, m].max()),
-                warnings=vett.warnings(open(os.path.join(d, 'run.log')).read()))
+    """the stars' well-balance mode (wellbalance_dynamic, wb_x1, force_reference = wb_arad,
+    fixed GL 7 x 18 rays) on the unseeded BSG column, 20 cycles; largest velocities / c_s.
+    prof: the production start (the MESA profile as supplied, point mass); in_vr, r <
+    2.4e12: the profile's own residual (0.6 - 0.9 % g: M(r) is 1 % above star_gm, mu), so
+    it is bounded from below; in_lat, r < 3.2e12 (merged and free cells): a symmetric star
+    has no lateral velocity; rigid: merge_lat_mom = rigid, whose spurious lateral flow must
+    show.  eq: the column of star_ic_file, gravity of its M(r), balanced on the code's own
+    operators (star_ic_balance + one star_ic_equil round): the interior stays at rest."""
+    eq = {'problem/star_ic_profile': 'false', 'problem/star_gm_column': 'true',
+          'problem/star_ic_balance': 'true', 'problem/star_ic_balance_rmax': '3.6e12',
+          'problem/star_ic_equil': 'true', 'problem/star_ic_equil_maxit': 1,
+          'problem/star_ic_equil_last_march': 'true'}
+    out = {'warnings': 0}
+    for tag, o in (('prof', {}), ('rigid', {'hydro/merge_lat_mom': 'rigid'}), ('eq', eq)):
+        d = star_run(c, tag, dict(o, **{'problem/star_ic_profile_amp': 0.0}))
+        h = vett.last_bin(d, 'hydro_w')
+        r, cs = h['_x1v'], np.sqrt((10.0/9.0)*h['eint']/h['dens'])
+        vt = np.sqrt(h['vely']**2 + h['velz']**2)/cs
+        out[tag + '_in_vr'] = float((np.abs(h['velx'])/cs)[:, :, r < 2.4e12].max())
+        out[tag + '_in_lat'] = float(vt[:, :, r < 3.2e12].max())
+        out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
+    return out
 
 
 TESTS = [  # name, function, in --quick

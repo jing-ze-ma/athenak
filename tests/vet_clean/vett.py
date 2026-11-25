@@ -2,7 +2,8 @@
 
 - read_bin(path): an AthenaK .bin dump as {variable: global array (nx3, nx2, nx1)} plus
   'time' and 'cycle' (single-level meshes; MeshBlocks placed by their logical location;
-  cubed sphere: its six panels one after another along x3).
+  cubed sphere: its six panels one after another along x3); on a stretched radial grid
+  also '_x1v', the cells' radii (cell_centres is for uniform meshes only).
 - read_blocks(path): the same dump as a list of (extent, {variable: (n3, n2, n1)}) per
   MeshBlock in file (gid) order (the cubed sphere: one panel after another).
 - read_hst(path): a .hst file as (labels, 2-D array).
@@ -50,8 +51,10 @@ def read_bin(path):
             lx = np.frombuffer(fp.read(16), dtype=np.int32)   # logical location, level
             fp.read(6*lsz)                                      # MeshBlock extent
             n1, n2, n3 = ind[1] - ind[0] + 1, ind[3] - ind[2] + 1, ind[5] - ind[4] + 1
-            if coord_arrays:
-                fp.read((2*(n1 + n2 + n3) + 3)*lsz)
+            if coord_arrays:   # x1f, x1v, x2f, ... (one MeshBlock along x1)
+                x = np.frombuffer(fp.read((2*(n1 + n2 + n3) + 3)*lsz),
+                                  np.float64 if lsz == 8 else np.float32)
+                out['_x1v'] = x[n1 + 1:2*n1 + 1]
             a = np.fromfile(fp, dtype=vdt, count=n1*n2*n3*len(names))
             a = a.reshape(len(names), n3, n2, n1)
             o1, o2, o3 = lx[0]*mb[0], lx[1]*mb[1], lx[2]*mb[2] + (nb//nbp)*nx[2]
