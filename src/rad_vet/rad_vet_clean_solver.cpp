@@ -898,6 +898,12 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
     std::exit(EXIT_FAILURE);
   }
   q.state = 1;
+  // (the lists replace cln_hpb's buffers from here on)
+  Kokkos::fence();
+  for (int b = 0; b < 56; ++b) {
+    cln_hpb->sendbuf[b].vars = cln_hpb->recvbuf[b].vars = DvceArray2D<Real>();
+    cln_hpb->sendbuf[b].flux = cln_hpb->recvbuf[b].flux = DvceArray2D<Real>();
+  }
   if (me == 0) {
     std::cout << "<rad_vet> clean_halo_direct: ON, rank 0 copies " << q.nl
               << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
