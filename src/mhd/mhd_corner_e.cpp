@@ -247,6 +247,7 @@ Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int 
 // \brief calculate the corner electric fields.
 
 TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
+  if (cs_seam_emf_x) CsSeamEmfX();
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;

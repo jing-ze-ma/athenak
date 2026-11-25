@@ -30,6 +30,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
+#include "utils/recipe.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cubed_sphere.hpp"
@@ -387,6 +388,81 @@ void CsSeamMoveRadialGhosts(MeshBlockPack *pp, DvceFaceFld5D<Real> &fs, const in
       f3(m,n,kf,j,ig) = f3(m,nfs1+n,kf,j,ib);
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::CsSeamEmfXInit
+//! \brief <mhd>/cs_seam_emf_exchange: its record (the two seam mass fluxes of a cell)
+
+void MHD::CsSeamEmfXInit(ParameterInput *pin) {
+  auto *pp = pmy_pack;
+  if (!pp->pmesh->use_cubed_sphere || !pp->pmesh->three_d || pp->pmesh->multilevel ||
+      emf_uct || emf_uct_hlld || use_bs_emf || pp->pmesh->nmb_total == 6) return;
+  recipe::OldStored(pin, "mhd", "cs_seam_emf_exchange", "false", "true");
+  cs_seam_emf_x = pin->GetOrAddBoolean("mhd", "cs_seam_emf_exchange",
+      recipe::Fix(pin, "mhd", "cs_seam_emf_exchange", "true", "false"));
+  if (!cs_seam_emf_x) return;
+  auto &ind = pp->pmesh->mb_indcs;
+  Kokkos::realloc(xrec_, pp->nmb_thispack, 2, ind.nx3 + 2*ind.ng, ind.nx2 + 2*ind.ng,
+                  ind.nx1 + 2*ind.ng);
+  pbx_ = new MeshBoundaryValuesCC(pp, pin, false);
+  pbx_->exch_depth = 1;
+  pbx_->InitializeBuffers(2);
+  pbx_->SetVectorPairs(2, {});
+  pbx_->cs_noresample = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::CsSeamEmfX
+//! \brief The seam flux is shared over the active rows only, so the GS07 upwind side of
+//! an edge where a panel seam meets a MeshBlock edge was taken from the block's own seam
+//! mass flux in the ghost row: the mass fluxes of the same-panel ghost rows' seam faces
+//! are the owner's (shared) ones.
+
+void MHD::CsSeamEmfX() {
+  auto &ind = pmy_pack->pmesh->mb_indcs;
+  const int is = ind.is, ie = ind.ie, js = ind.js, je = ind.je, ks = ind.ks, ke = ind.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto f2 = uflx.x2f, f3 = uflx.x3f;
+  auto X = xrec_;
+  auto size = pmy_pack->pmb->mb_size;
+  auto bcs = pmy_pack->pmb->mb_bcs;
+  // pass 0: the active cells' seam fluxes into the record; pass 1: out of its ghosts
+  for (int p = 0; p < 2; ++p) {
+    par_for("cs_seam_emf_x", DevExeSpace(), 0, nmb1, ks-p, ke+p, js-p, je+p, is-p, ie+p,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const auto &z = size.d_view(m);
+      const bool jl = z.x2min <= -1.0 + 1.0e-12, jh = z.x2max >= 1.0 - 1.0e-12;
+      const bool kl = z.x3min <= -1.0 + 1.0e-12, kh = z.x3max >= 1.0 - 1.0e-12;
+      const int nout = (i < is || i > ie) + (j < js || j > je) + (k < ks || k > ke);
+      if (nout != p || (j < js && jl) || (j > je && jh) || (k < ks && kl) ||
+          (k > ke && kh) ||
+          (i < is && bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) ||
+          (i > ie && bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::block)) return;
+      const int jf = (j == js && jl) ? js : ((j == je && jh) ? je+1 : -1);
+      const int kf = (k == ks && kl) ? ks : ((k == ke && kh) ? ke+1 : -1);
+      if (jf >= 0) {
+        if (p == 0) {
+          X(m,0,k,j,i) = f2(m,IDN,k,jf,i);
+        } else {
+          f2(m,IDN,k,jf,i) = X(m,0,k,j,i);
+        }
+      }
+      if (kf >= 0) {
+        if (p == 0) {
+          X(m,1,k,j,i) = f3(m,IDN,kf,j,i);
+        } else {
+          f3(m,IDN,kf,j,i) = X(m,1,k,j,i);
+        }
+      }
+    });
+    if (p == 1) return;
+    while (pbx_->InitRecv(2) == TaskStatus::incomplete) {}
+    while (pbx_->PackAndSendCC(X, X) == TaskStatus::incomplete) {}
+    while (pbx_->RecvAndUnpackCC(X, X) == TaskStatus::incomplete) {}
+    while (pbx_->ClearSend() == TaskStatus::incomplete) {}
+    while (pbx_->ClearRecv() == TaskStatus::incomplete) {}
+  }
 }
 
 //----------------------------------------------------------------------------------------

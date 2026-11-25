@@ -6,7 +6,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file fofc_flags.hpp
-//! \brief the owner's FOFC flags in the face ghosts (<block>/fofc_flag_exchange).  The
+//! \brief the owner's FOFC flags in the ghosts (<hydro|mhd>/fofc_flag_exchange; the edge
+//! ghosts for the corner EMFs).  The
 //! trial state that FOFC tests is the update of a cell, also of a ghost cell from the
 //! block's own copy of its neighbour: the two differ by the block's positions and areas
 //! (round-off) and, where a panel seam meets a block edge, by the seam states.  A trial
@@ -15,9 +16,14 @@
 //! conserved.  Ghosts across a physical boundary or a cubed-sphere panel seam (resampled
 //! ghosts) keep their own flags.
 
+#include <string>
+
 #include "athena.hpp"
+#include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/coordinates.hpp"
 #include "bvals/bvals.hpp"
+#include "utils/recipe.hpp"
 
 namespace fofc_flags {
 
@@ -36,7 +42,20 @@ inline bool Needed(Mesh *pm) {
   return pm->nmb_total > 1 || (pm->use_spherical_polar && per);
 }
 
-//! flags of the face ghosts of fofc (m,k,j,i) from their owner; fx: scratch, pbv: a
+//! the boundary object of the flags of <blk> (default true where Needed), else nullptr
+inline MeshBoundaryValuesCC *Init(MeshBlockPack *pack, ParameterInput *pin,
+                                  const std::string &blk) {
+  if (!Needed(pack->pmesh) || pack->pcoord->is_dynamical_relativistic) return nullptr;
+  recipe::OldStored(pin, blk, "fofc_flag_exchange", "false", "true");
+  if (!pin->GetOrAddBoolean(blk, "fofc_flag_exchange",
+          recipe::Fix(pin, blk, "fofc_flag_exchange", "true", "false"))) return nullptr;
+  auto *pbv = new MeshBoundaryValuesCC(pack, pin, false);
+  pbv->SetVectorPairs(1, {});   // (the flag is a scalar)
+  pbv->InitializeBuffers(1);
+  return pbv;
+}
+
+//! flags of the ghosts of fofc (m,k,j,i) from their owner; fx: scratch, pbv: a
 //! boundary object of one scalar
 inline void Exchange(MeshBlockPack *pack, MeshBoundaryValuesCC *pbv,
                      DvceArray5D<Real> &fx, DvceArray4D<bool> &fofc) {
@@ -70,8 +89,7 @@ inline void Exchange(MeshBlockPack *pack, MeshBoundaryValuesCC *pbv,
                              (j > je && sz.x2max >= 1.0 - 1.0e-12) ||
                              (k < ks && sz.x3min <= -1.0 + 1.0e-12) ||
                              (k > ke && sz.x3max >= 1.0 - 1.0e-12));
-    const int nout = (i < is || i > ie) + (j < js || j > je) + (k < ks || k > ke);
-    if (!seam && nout == 1) fofc_(m,k,j,i) = (fx_(m,0,k,j,i) != 0.0);
+    if (!seam) fofc_(m,k,j,i) = (fx_(m,0,k,j,i) != 0.0);
   });
 }
 

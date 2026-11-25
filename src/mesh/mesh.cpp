@@ -635,6 +635,14 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    if (use_spherical_polar && !use_polar_boundary &&
+        (mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar ||
+         mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/ix2_bc, ox2_bc = polar need use_polar_boundary = "
+                << "true (the pole ghosts are not filled without it)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (use_polar_boundary &&
         (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar ||
          mesh_bcs[BoundaryFace::outer_x2] != BoundaryFlag::polar)) {

@@ -1,0 +1,86 @@
+# Gas with a strong azimuthal density pattern, velocity noise and a tangential field in a
+# closed shell (or, with run_tests.py's overrides, a spherical-polar wedge or a periodic
+# Cartesian box), Ohmic and ambipolar diffusion, no gravity, no radiation: FOFC replaces
+# fluxes.  Used by: mhd_layout.
+
+<job>
+basename = mn
+
+<mesh>
+nghost = 3
+nx1 = 24
+x1min = 1.0
+x1max = 4.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 16
+x2min = -1.0
+x2max = 1.0
+ix2_bc = panel
+ox2_bc = panel
+nx3 = 16
+x3min = -1.0
+x3max = 1.0
+ix3_bc = panel
+ox3_bc = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1 = 24
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 8
+tlim = 1e30
+ndiag = 1000000
+
+<mhd>
+eos = ideal
+reconstruct = plm
+rsolver = hlld
+emf_scheme = gs07
+gamma = 1.666666666666667
+fofc = true
+dfloor = 0.5
+am_transport = true
+ohmic_resistivity = constant
+eta_ohm_const = 0.01
+ambipolar = constant
+eta_ad = 0.01
+
+<problem>
+pgen_name = am_wb
+user_srcs = true
+user_hist = true
+gm = 0.0
+cs2 = 0.5
+rho0 = 1.0
+rot = 1.0
+pert = 0.75
+v_rand = 0.3
+bnoise = 0.05
+
+<output1>
+file_type = bin
+bin_double = true
+variable = mhd_w_bcc
+dt = 1.0e30
+
+<output2>
+file_type = hst
+data_format = %24.16e
+dt = 1.0e-12
+
+<output3>
+file_type = bin
+bin_double = true
+variable = mhd_divb
+dt = 1.0e30
+
+<output4>
+file_type = log
+dcycle = 1

@@ -73,6 +73,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
   v.view("fofc_cnt", fofc_cnt);
+  v.view("fofc_x", fofc_x);
   v.value("fofc_hlle", fofc_hlle);
   v.value("use_bs_emf", use_bs_emf);
   v.value("emf_smooth", emf_smooth);
@@ -83,6 +84,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("uct3", uct3);
   v.value("cs_seam_mhd", cs_seam_mhd);
   v.value("cs_seam_nfs", cs_seam_nfs);
+  v.value("cs_seam_emf_x", cs_seam_emf_x);
   v.value("use_polar_emf_diss", use_polar_emf_diss);
   v.value("cs_lowbeta_fallback", cs_lowbeta_fallback);
   v.value("use_etotgrav", use_etotgrav);
@@ -176,6 +178,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
 //   presist : Resistivity *
 //   pcond : Conduction *
 //   psrc : SourceTerms *
+//   pbval_fofc : MeshBoundaryValuesCC *
 //   fofc_rep : FofcReport
 //   pbval_fs : MeshBoundaryValuesCC *
 //   pbval_us : MeshBoundaryValuesCC *
