@@ -835,6 +835,7 @@ void RadiationVet::MemArenaBind() {
   // (cubed sphere: cln_st holds the build's face-layer chunks, CleanGdFaceSums)
   if (!pmy_pack->pmesh->use_cubed_sphere) bind(cln_st);
   bind(cln_yl);
+  bind(cln_vf);
   for (auto &a : cln_mg) bind(a);
   // (the closure built once per stage: no pass keeps the faces' coefficients over one)
   if (!cln_closit && !(cln_fwbst && t2_tab == 0)) {
