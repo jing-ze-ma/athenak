@@ -308,6 +308,7 @@
   "max": {
    "ekin_floor_dE": 1e-13,
    "ekin_floor_dM": 1e-13,
+   "ekin_cart_dM": 1e-13,
    "dE": 1e-13,
    "ekin_dE": 1e-13,
    "ekin_dM": 1e-13,

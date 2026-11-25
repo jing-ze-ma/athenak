@@ -16,6 +16,7 @@
 
 #include "athena.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "mesh/mesh.hpp"
 #include "hydro/hydro.hpp"
 #include "units/units.hpp"
 #include "eos/eos.hpp"
@@ -57,6 +58,11 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   auto mbs_ = pmy_pack->pmb->mb_size;
   auto &ind_ = pmy_pack->pmesh->mb_indcs;
   const int is_ = ind_.is, js_ = ind_.js, nx1_ = ind_.nx1, nx2_ = ind_.nx2;
+  auto &mbc_ = pmy_pack->pmesh->mesh_bcs;
+  const bool per1_ = fphi_ && mbc_[BoundaryFace::inner_x1] == BoundaryFlag::periodic;
+  const bool per2_ = fphi_ && mbc_[BoundaryFace::inner_x2] == BoundaryFlag::periodic;
+  const RegionSize ms_ = pmy_pack->pmesh->mesh_size;
+  const Real lx1_ = ms_.x1max - ms_.x1min, lx2_ = ms_.x2max - ms_.x2min;
   Real fdm_ = 0.0, fde_ = 0.0;   // mass and energy created by the floors
   int fdn_ = 0;   // active cells the density floor raised
   const auto fvw_ = FloorVol();
@@ -114,8 +120,11 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     Real phx = 0.0, phy = 0.0;
     if (fphi_) {
       auto &sz = mbs_.d_view(m);
-      const Real x = CellCenterX(i - is_, nx1_, sz.x1min, sz.x1max);
-      const Real y = CellCenterX(j - js_, nx2_, sz.x2min, sz.x2max);
+      Real x = CellCenterX(i - is_, nx1_, sz.x1min, sz.x1max);
+      Real y = CellCenterX(j - js_, nx2_, sz.x2min, sz.x2max);
+      // (a ghost across a periodic wrap is its owner: the owner's position)
+      if (per1_) x += (x < ms_.x1min) ? lx1_ : ((x > ms_.x1max) ? -lx1_ : 0.0);
+      if (per2_) y += (y < ms_.x2min) ? lx2_ : ((y > ms_.x2max) ? -lx2_ : 0.0);
       const Real r = sqrt(x*x + y*y);
       if (r > 0.0) {
         phx = -y/r;
