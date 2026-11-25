@@ -692,44 +692,172 @@ def t_mhd_layout(c):
     return out
 
 
+TABLE_EOS = {'mhd/eos': 'general', 'mhd/general_eos': 'table', 'mhd/eos_h2': 'false',
+             'mhd/eos_metal_ionization': 'false', 'mhd/eos_radiation': 'false',
+             'mhd/eos_xh': 0.653848, 'mhd/eos_yhe': 0.326395, 'mhd/eos_a_metal': 16,
+             'mhd/eos_logd_min': -21, 'mhd/eos_logd_max': -1, 'mhd/eos_logt_min': 2.9,
+             'mhd/eos_logt_max': 6.8, 'mhd/eos_dlog': 0.02}
+
+
+def mhd_budgets(c, deck, g, over):
+    """the closed <mhd> + <rad_vet> problems of mhd_vet / mhd_geneos, 8 cycles: a second
+    MeshBlock layout, 2 MPI ranks, restart (4 + 4 cycles), a forced dt_retry with factor 1
+    and div B; mass, energy (gas + magnetic + radiation) and L_z drifts"""
+    def diff(x, y):
+        return max(vett._bin_diff(p, q)[0] for p, q in zip(vett.bins(x), vett.bins(y)))
+    mb = dict(over, **{'meshblock/nx3': 8})
+    if g == 'cs':
+        mb['meshblock/nx2'] = 8
+    a = c.run(deck, g, over)
+    b = c.run(deck, g + '_mb', mb)
+    r = c.run(deck, g + '_mpi', mb, ranks=2)
+    t = c.run(deck, g + '_retry', dict(over, **{'time/dt_retry_force_cycle': 4,
+                                                'time/dt_retry_force_fac': 1.0}))
+    out = {g + '_layout': diff(a, b), g + '_ranks': diff(b, r), g + '_retry': diff(a, t),
+           g + '_divb': divb_max(a)}
+    sub = copy.copy(c)
+    sub.dir = os.path.join(c.dir, g + '_rst')
+    os.makedirs(sub.dir, exist_ok=True)
+    out[g + '_restart'] = restart_pair(sub, deck, 8, 4, over)['maxdiff']
+    base = {'ct': 'rw'}.get(g, g)
+    out[g + '_dM'] = rel_drift(hst_col(os.path.join(a, base + '.mhd.hst'), 'mass'))
+    if g == 'ct':
+        er = np.array([vett.read_bin(q)['vet_e'].mean() for q in vett.bins(a, 'vet')])
+        e = er + np.array([vett.read_bin(p)['ener'].mean()
+                           for p in vett.bins(a, 'mhd_u_bcc')])
+    else:
+        u = os.path.join(a, base + '.user.hst')
+        er = hst_col(u, 'Er')
+        e = hst_col(u, 'Eg') + er
+        lz = hst_col(u, 'Lz_tot')[1:]
+        out[g + '_dLz'] = float(np.abs(lz - lz[0]).max()/np.abs(hst_col(u, 'Lgz')).max())
+    out[g + '_dE'], out[g + '_moved'] = rel_drift(e), rel_drift(er)
+    out['warnings'] = sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
+                          for d in (a, b, r, t))
+    return out
+
+
+MHD_CASES = (('cs', 'mhd_shell_cs.athinput'), ('sp', 'mhd_shell_sp.athinput'),
+             ('ct', 'mhd_box.athinput'))
+
+
+def mhd_cases(c, over):
+    out = {'warnings': 0}
+    for g, deck in MHD_CASES:
+        r = mhd_budgets(c, deck, g, over.get(g, {}))
+        out['warnings'] += r.pop('warnings')
+        out.update(r)
+    return out
+
+
 def t_mhd_vet(c):
     """<mhd> + <rad_vet> with Ohmic and ambipolar diffusion and FOFC, 8 cycles: closed
     shells on the cubed sphere and spherical polar, a periodic Cartesian box.  Energy (gas +
-    magnetic + radiation; moved: the radiation's change), mass and L_z drifts, div B; a second MeshBlock layout, 2 MPI
-    ranks, restart (4 + 4 cycles) and a forced dt_retry with factor 1."""
-    mb = {'meshblock/nx3': 8}
-    out = {'warnings': 0}
+    magnetic + radiation; moved: the radiation's change), mass and L_z drifts, div B; a
+    second MeshBlock layout, 2 MPI ranks, restart (4 + 4 cycles) and a forced dt_retry with
+    factor 1."""
+    return mhd_cases(c, {})
 
-    def diff(x, y):
-        return max(vett._bin_diff(p, q)[0] for p, q in zip(vett.bins(x), vett.bins(y)))
-    for g, deck, o in (('cs', 'mhd_shell_cs.athinput', dict(mb, **{'meshblock/nx2': 8})),
-                       ('sp', 'mhd_shell_sp.athinput', mb), ('ct', 'mhd_box.athinput', mb)):
-        a = c.run(deck, g)
-        b = c.run(deck, g + '_mb', o)
-        r = c.run(deck, g + '_mpi', o, ranks=2)
-        t = c.run(deck, g + '_retry', {'time/dt_retry_force_cycle': 4,
-                                       'time/dt_retry_force_fac': 1.0})
-        out.update({g + '_layout': diff(a, b), g + '_ranks': diff(b, r),
-                    g + '_retry': diff(a, t), g + '_divb': divb_max(a)})
-        sub = copy.copy(c)
-        sub.dir = os.path.join(c.dir, g + '_rst')
-        os.makedirs(sub.dir, exist_ok=True)
-        out[g + '_restart'] = restart_pair(sub, deck, 8, 4)['maxdiff']
-        base = {'ct': 'rw'}.get(g, g)
-        out[g + '_dM'] = rel_drift(hst_col(os.path.join(a, base + '.mhd.hst'), 'mass'))
-        if g == 'ct':
-            er = np.array([vett.read_bin(q)['vet_e'].mean() for q in vett.bins(a, 'vet')])
-            e = er + np.array([vett.read_bin(p)['ener'].mean()
-                               for p in vett.bins(a, 'mhd_u_bcc')])
+
+def t_mhd_geneos(c):
+    """mhd_vet with eos = general and the ionizing table (general_eos = table, the
+    composition of star3d_cs; built at start-up), with absorption: the gas and the radiation
+    exchange energy through the table."""
+    u = {'units/length_cgs': 1e11, 'units/mass_cgs': 1e27, 'units/time_cgs': 1e5}
+    sh = dict(TABLE_EOS, **{'units/length_cgs': 1e11, 'units/mass_cgs': 1e25,
+                            'units/time_cgs': 1.1e3, 'rad_vet/kappa_p': 1e-4,
+                            'rad_vet/kappa_e': 1e-4})
+    return mhd_cases(c, {'cs': sh, 'sp': sh, 'ct': dict(TABLE_EOS, **u)})
+
+
+MHDWAVE = (  # mode, P_rad/P_gas, x (as RADWAVE), direction, cells, other keys
+    ('fast', 0.01, 1.0, 'x1', (32, 64)), ('slow', 0.01, 1.0, 'x1', (32, 64)),
+    ('fast', 1.0, 100.0, 'x1', (32, 64)), ('slow', 1.0, 100.0, 'x1', (32, 64)),
+    ('fast', 100.0, 0.1, 'x1', (32, 64)), ('slow', 100.0, 0.1, 'x1', (32, 64)),
+    ('fast', 10.0, 0.01, 'x1', (32, 64)), ('slow', 10.0, 0.01, 'x1', (32, 64)),
+    ('alfven', 1.0, 1.0, 'x1', (32, 64)), ('fast', 1.0, 100.0, 'xy', (16, 32)),
+    ('slow', 1.0, 100.0, 'xy', (16, 32)), ('alfven', 1.0, 1.0, 'xy', (16, 32)),
+    ('fast', 1.0, 100.0, 'xyz', (16, 32)), ('slow', 1.0, 100.0, 'xyz', (16, 32)))
+
+
+def mhd_wave(c, tag, mode, prat, x, di, n, eta=0.0, ead=0.0, over=None):
+    """one radiation-MHD wave, one period: (d c_ph/c_ph, d damping / omega, exact damping
+    per radian, warnings); the mode's amplitude = the left eigenvector . the k Fourier
+    amplitudes of the dumps."""
+    cl, amp = 1.0e3, 1.0e-3
+    kap = x*cl*64/vett.radmhd_root(prat, 1.0, cl, 'alfven')[3]
+    w, ar, eig, b0, left = vett.radmhd_root(prat, kap, cl, mode, eta=eta, ead=ead)
+    m, L, kv = {'x1': ((n, 4, 1), (1.0, 4.0/n, 1.0), (1.0, 0.0, 0.0)),
+                'xy': ((n, 2*n, 1), (0.5*5**0.5, 5**0.5, 1.0), (2/5**0.5, 1/5**0.5, 0.0)),
+                'xyz': ((n, n, n), (3**0.5,)*3, (3**-0.5,)*3)}[di]
+    kv = np.array(kv)
+    t = np.array([-kv[1], kv[0], 0.0])/np.hypot(kv[0], kv[1])
+    s, B = np.cross(kv, t), b0*(kv + t)*0.5**0.5
+    tl = 2.0*np.pi/w.real
+    o = {'time/tlim': tl, 'rad_vet/c_light': cl, 'rad_vet/arad': ar,
+         'rad_vet/implicit_cfl': -1.0, 'problem/radwave_amp': amp,
+         'problem/radwave_dir': di, 'output1/dt': tl/16, 'output2/dt': tl/16}
+    for q in range(3):
+        o.update({'mesh/nx%d' % (q+1): m[q], 'meshblock/nx%d' % (q+1): m[q],
+                  'mesh/x%dmax' % (q+1): L[q], 'problem/vet_b0_%d' % (q+1): B[q]})
+    if di != 'x1':
+        o['mesh/layout_tile'] = 8
+    if eta > 0.0:
+        o.update({'mhd/ohmic_resistivity': 'constant', 'mhd/eta_ohm_const': eta})
+    if ead > 0.0:
+        o.update({'mhd/ambipolar': 'constant', 'mhd/eta_ad': ead})
+    o.update({'rad_vet/kappa_' + q: kap for q in 'pef'})
+    o.update({'problem/' + q: v for q, v in eig.items()})
+    d = c.run('mhd_wave.athinput', tag, dict(o, **(over or {})))
+    ts, a = [], []
+    xs = vett.cell_centres(d)
+    ph = 2.0*np.pi*(kv[0]*xs[0][None, None, :] + kv[1]*xs[1][None, :, None] +
+                    kv[2]*xs[2][:, None, None])
+    for f, g in zip(vett.bins(d, 'mhd_w_bcc'), vett.bins(d, 'vet')):
+        u, r = vett.read_bin(f), vett.read_bin(g)
+
+        def dot(names, q):
+            return sum(u[nm]*q[i] for i, nm in enumerate(names))
+        vel, bcc = ('velx', 'vely', 'velz'), ('bcc1', 'bcc2', 'bcc3')
+        if mode == 'alfven':
+            y = [dot(vel, s), dot(bcc, s)]
         else:
-            u = os.path.join(a, base + '.user.hst')
-            er = hst_col(u, 'Er')
-            e = hst_col(u, 'Eg') + er
-            lz = hst_col(u, 'Lz_tot')[1:]
-            out[g + '_dLz'] = float(np.abs(lz - lz[0]).max()/np.abs(hst_col(u, 'Lgz')).max())
-        out[g + '_dE'], out[g + '_moved'] = rel_drift(e), rel_drift(er)
-        out['warnings'] += sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
-                               for d in (a, b, r, t))
+            y = [u['dens'], dot(vel, kv), dot(vel, t), dot(bcc, t),
+                 2.0/3.0*u['eint']/u['dens'], r['vet_e']]
+            y.append(sum(r['vet_f%d' % (i+1)]*kv[i] for i in range(3)) - 4/3*y[5]*y[1])
+        a.append(left @ np.array([2.0*np.mean(z*np.exp(-1j*ph))/amp for z in y]))
+        ts.append(u['time'])
+    ts, a = np.array(ts), np.array(a)
+    wm = complex(-np.polyfit(ts, np.unwrap(np.angle(a)), 1)[0],
+                 np.polyfit(ts, np.log(np.abs(a)), 1)[0])
+    return (float(wm.real/w.real - 1.0), float((wm.imag - w.imag)/w.real),
+            float(-w.imag/w.real), vett.warnings(open(os.path.join(d, 'run.log')).read()))
+
+
+def t_mhd_radwave(c):
+    """radiation-modified fast and slow magnetosonic and Alfven waves (<mhd>, Eddington
+    closure, field at 45 deg to k, Alfven speed = the sound speed of gas + radiation, one
+    period; as Jiang, Stone & Davis 2012 sect. 6.1.2 with our own linear system,
+    vett.radmhd_root): phase speed and damping errors at two resolutions, along x1, on an
+    inclined 2-D box (n cells per 1.118 wavelengths) and the 3-D diagonal; P_rad/P_gas
+    0.01 - 100, thin to trapped; nonideal: fast and Alfven with Ohmic and ambipolar
+    diffusion; geneos: eos = general (gamma) against ideal, same wave."""
+    out = {'err_cph': [], 'err_damp': [], 'ord_damp': [], 'warnings': 0}
+    for i, (mode, p, x, di, ns) in enumerate(MHDWAVE):
+        r = [mhd_wave(c, '%d_%s_%d' % (i, mode, n), mode, p, x, di, n) for n in ns]
+        out['err_cph'].append(abs(r[1][0]))
+        out['err_damp'].append(abs(r[1][1]))
+        out['ord_damp'].append(float(np.log2(abs(r[0][1])/abs(r[1][1]))))
+        out['warnings'] += r[0][3] + r[1][3]
+    ni = [mhd_wave(c, 'ni_' + q, q, 1.0, 1.0, 'x1', 64, 0.02, 0.005)
+          for q in ('fast', 'alfven')]
+    ge = mhd_wave(c, 'geneos', 'fast', 1.0, 100.0, 'x1', 64, over={
+        'mhd/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+        'units/time_cgs': 1.0})
+    out['warnings'] += ge[3] + ni[0][3] + ni[1][3]
+    out['nonideal_cph'] = [abs(z[0]) for z in ni]
+    out['nonideal_damp'] = [abs(z[1]) for z in ni]
+    out['geneos'] = [abs(ge[0]), abs(ge[1])]
     return out
 
 
@@ -763,6 +891,42 @@ def t_wb_sp(c):
 
 def t_wb_cs(c):
     return t_wb(c, 'rhse_cs.athinput', WB_ROT_CS)
+
+
+def t_mhd_wb(c):
+    """wb_sp / wb_cs under <mhd>: max v / c_s of the envelope at rest on sp, cs and
+    Cartesian, static WB without a field, with a force-free one (field: the monopole 1e-3 on
+    sp and cs, an oblique uniform field on Cartesian) and with eos = general (geneos, not cs);
+    restart: sp with the field, 10 + 10 cycles.  dyn: Cartesian with wellbalance_dynamic
+    (wb_dirs = all, wb_arad_md), without a field, with the field and with eos = general.
+    monopole: the field 0.1 on sp, whose J x B truncation the static background does not
+    hold (second order)."""
+    ge = {'mhd/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+          'units/time_cgs': 1.0}
+    dyn = {'mhd/wellbalance_static': 'false', 'mhd/wellbalance_static_reconst': 'false',
+           'mhd/wellbalance_dynamic': 'true', 'mhd/wb_x1': 'true', 'mhd/wb_dirs': 'all',
+           'mhd/wb_option': 'isothermal', 'rad_vet/force_reference': 'wb_arad_md',
+           'rad_vet/implicit_bc_x1min': 'flux', 'rad_vet/implicit_flux_x1min': 0.024}
+    mono = {'problem/rh_b1': 1e-3}
+    unif = {'problem/rh_b%d' % q: 0.02 for q in (1, 2, 3)}
+    out = {'static': [], 'field': [], 'geneos': [], 'dyn': [], 'warnings': 0}
+
+    def vmax(g, tag, o):
+        d = c.run('mhd_rhse_%s.athinput' % g, g + tag, o)
+        out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
+        return float(hst_col(os.path.join(d, 'rh.user.hst'), 'vcs_max').max())
+    for g, fld in (('sp', mono), ('cs', mono), ('ct', unif)):
+        out['static'].append(vmax(g, '', {}))
+        out['field'].append(vmax(g, '_field', fld))
+        if g != 'cs':
+            out['geneos'].append(vmax(g, '_geneos', ge))
+    for tag, o in (('_dyn', {}), ('_dyn_field', unif), ('_dyn_geneos', ge)):
+        out['dyn'].append(vmax('ct', tag, dict(dyn, **o)))
+    out['monopole'] = vmax('sp', '_mono', {'problem/rh_b1': 0.1})
+    out['restart_maxdiff'] = restart_pair(c, 'mhd_rhse_sp.athinput', 20, 10, dict(mono, **{
+        'output2/file_type': 'bin', 'output2/bin_double': 'true', 'output2/dt': 1e30,
+        'output2/variable': 'mhd_w_bcc'}))['maxdiff']
+    return out
 
 
 def t_shell_force_cs(c):
@@ -1611,6 +1775,9 @@ TESTS = [  # name, function, in --quick
     ('thermal_eq', t_thermal_eq, False),
     ('mhd_equil', t_mhd_equil, True),
     ('mhd_layout', t_mhd_layout, True),
+    ('mhd_geneos', t_mhd_geneos, False),
+    ('mhd_radwave', t_mhd_radwave, False),
+    ('mhd_wb', t_mhd_wb, False),
     ('mhd_vet', t_mhd_vet, False),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),

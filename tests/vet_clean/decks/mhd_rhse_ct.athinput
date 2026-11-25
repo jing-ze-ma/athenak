@@ -1,0 +1,128 @@
+# Grey scattering envelope in hydrostatic + radiative equilibrium (2-D Cartesian, uniform gravity) with <mhd>:
+# must stay at rest, without and with a force-free field (rh_b1 ...), well-balanced
+# statically or (from the test) dynamically. Used by: mhd_wb.
+
+<job>
+basename = rh
+
+<mesh>
+layout_invariant = true
+nghost = 3
+nx1 = 48
+x1min = 1.0
+x1max = 2.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 4
+x2min = 0.0
+x2max = 0.25
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 0.25
+ix3_bc = periodic
+ox3_bc = periodic
+layout_invariant_mode = tile
+layout_tile = 4
+
+<meshblock>
+nx1 = 48
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = -1
+tlim = 2.5
+ndiag = 1
+dt_retry = true
+dt_retry_fac_t2 = 0.9
+dt_retry_grow = 1.1
+dt_retry_ngood = 20
+
+<mhd>
+eos = ideal
+reconstruct = plm
+rsolver = hlld
+gamma = 1.666666666666667
+rad_signal_speed = true
+wellbalance_static = true
+wellbalance_static_reconst = true
+fofc = true
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+c_light = 40.0
+chat_over_c = 1.0
+closure = vet_sc
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 0.0
+kappa_e = 0.0
+kappa_f = 0.0
+kappa_s = 500.0
+arad = 1.0
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 1.0e4
+implicit_bc_x1min = marshak
+implicit_bc_x1max = marshak
+implicit_ebath_x1min = 0.0
+implicit_ebath_x1max = 0.0
+time_scheme = hesdirk2
+scheme = clean
+time2_tableau = hesdirk2
+clean_init = steady
+clean_init_n = 50
+force_reference = clean
+clean_w_c0 = 0.1
+clean_w_c1 = 0.5
+clean_maxit = 200
+clean_predict = true
+clean_init_dtfac = 1000000
+clean_init_tol = 1e-08
+clean_clos1_budget = true
+clean_bud_maxnorm = true
+clean_wb_exch_local = true
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = rhse
+user_srcs = true
+user_hist = true
+rh_gm = 1.0
+rh_eddf = 0.3
+rh_rho0 = 1.0
+rh_temp = 0.1
+rh_seed = 0.0
+
+<output1>
+file_type = hst
+data_format = %24.16e
+dt = 0.25

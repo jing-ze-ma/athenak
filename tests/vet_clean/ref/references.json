@@ -300,6 +300,67 @@
    "sp_dLz": 1e-13
   }
  },
+ "mhd_geneos": {
+  "equal": {
+   "cs_ranks": 0.0,
+   "cs_restart": 0.0,
+   "cs_retry": 0.0,
+   "sp_ranks": 0.0,
+   "sp_restart": 0.0,
+   "sp_retry": 0.0,
+   "ct_ranks": 0.0,
+   "ct_restart": 0.0,
+   "ct_retry": 0.0,
+   "warnings": 0
+  },
+  "min": {
+   "cs_moved": 1e-06,
+   "sp_moved": 1e-06,
+   "ct_moved": 1e-06
+  },
+  "max": {
+   "cs_layout": 1e-12,
+   "cs_dE": 1e-12,
+   "cs_dM": 1e-13,
+   "cs_divb": 1e-13,
+   "sp_layout": 1e-12,
+   "sp_dE": 1e-12,
+   "sp_dM": 1e-13,
+   "sp_divb": 1e-13,
+   "ct_layout": 1e-12,
+   "ct_dE": 1e-12,
+   "ct_dM": 1e-13,
+   "ct_divb": 1e-13,
+   "cs_dLz": 1e-13,
+   "sp_dLz": 1e-13
+  }
+ },
+ "mhd_radwave": {
+  "_about": "14 waves of MHDWAVE (fast, slow, Alfven; x1, inclined 2-D, 3-D diagonal) at the finer resolution: |c_ph/c_ph,exact - 1|, |d(damping)|/omega, log2 of the damping error's ratio between the two resolutions (3: third order; reported); nonideal: Ohm + ambipolar; geneos: eos = general",
+  "max": {
+   "err_cph": 0.002,
+   "err_damp": 0.004,
+   "nonideal_cph": 0.001,
+   "nonideal_damp": 0.0005,
+   "geneos": 0.0005
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "mhd_wb": {
+  "max": {
+   "static": 5e-08,
+   "field": 5e-08,
+   "geneos": 5e-08,
+   "dyn": 5e-08,
+   "monopole": 2e-05,
+   "restart_maxdiff": 0.0
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
  "wb_sp": {
   "max": {
    "vmax_over_cs": 1e-08,

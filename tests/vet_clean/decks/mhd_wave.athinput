@@ -1,0 +1,137 @@
+# Linear radiation-modified magnetosonic and Alfven waves (<mhd>, Eddington closure, uniform
+# oblique field, Cartesian, periodic); grid, field, opacity, eigenmode and time limit come
+# from the test. Used by: mhd_radwave.
+
+<job>
+basename = rw
+
+<mesh>
+layout_invariant = true
+nghost = 3
+nx1 = 128
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+layout_invariant_mode = tile
+layout_tile = 4
+
+<meshblock>
+nx1 = 128
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = -1
+tlim = 0.78540321427322368
+ndiag = 1000000
+dt_retry = true
+dt_retry_fac_t2 = 0.9
+dt_retry_grow = 1.1
+dt_retry_ngood = 20
+
+<mhd>
+eos = ideal
+reconstruct = plm
+rsolver = hlld
+emf_scheme = gs07
+gamma = 1.666666666666667
+fofc = true
+rad_signal_speed = true
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+scheme = clean
+time2_tableau = hesdirk2
+clean_closure = eddington
+clean_cs_lz_abs = 2
+clean_stag_csvec_radial = true
+c_light = 10
+chat_over_c = 1.0
+closure = vet_sc
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 0.10000000000000001
+kappa_e = 0.10000000000000001
+kappa_f = 0.10000000000000001
+kappa_s = 0.0
+arad = 0.99999899999999997
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 3.9270160713661184
+implicit_maxit = 200
+implicit_lin_maxit = 400
+time_scheme = hesdirk2
+vet_gd_rotate_dt = 0
+vet_x1_ptol = 1e-14
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 134
+clean_clos1_budget = false
+clean_bud_maxnorm = false
+clean_maxit = 200
+clean_wb_exch_local = true
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = radwave
+radwave_dir = x1
+radwave_amp = 0.001
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.032155385993023734
+radwave_eig_e_re = 0.018340471605928423
+radwave_eig_f_im = -0.043031774358025882
+radwave_eig_f_re = -0.0105636070755267
+radwave_eig_t_im = -0.20649942415320247
+radwave_eig_t_re = 0.61384761086627249
+radwave_eig_v_im = -0.082219710533449439
+radwave_eig_v_re = 1.2732313566164284
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 1.0e30
+
+<output2>
+file_type = bin
+bin_double = true
+variable = mhd_w_bcc
+dt = 1.0e30
