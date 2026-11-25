@@ -103,9 +103,9 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   // is >= the gas fast speed and -> it in thin cells (tau_d -> 0); at B = 0 it is the
   // hydro signal speed.  Off: no change (the gas fast speed, bitwise).
   const bool rss_ = rad_signal_speed;
-  DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
+  DvceArray5D<Real> erad_, kopc_, vcel_;
   radvet::CleanGeo gn_;
-  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 3 vet_sc, 4 vet full, 5 clean
   int rss_kind = 0;
   Real rss_cl = 1.0;
   if (rss_) {
@@ -122,7 +122,6 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
     rss_kind = prm->chi_kind;
     // the same selection decides what a restart file carries (RadiationVet::RssPrime)
     rss_mode = prm->RssMode();
-    if (rss_mode == 2) tten_ = prm->tau_ten;
     if (rss_mode >= 3) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
     if (rss_mode == 5) gn_ = prm->cln_gn;   // (cubed sphere: D Cartesian)
   }
@@ -274,10 +273,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
             }
           } else if (rss_mode >= 1) {
             Real chi, n1, n2, n3;
-            if (rss_mode == 2) {
-              chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
-              n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
-            } else if (rss_mode == 3) {
+            if (rss_mode == 3) {
               chi = vcel_(m,radvet::VETRAY_CHI,k,j,i);
               n1 = vcel_(m,radvet::VETRAY_N1,k,j,i);
               n2 = vcel_(m,radvet::VETRAY_N1+1,k,j,i);
@@ -291,7 +287,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
               chi = (er > 0.0) ? radvet::VetChi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
               n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
             }
-            if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
+            if (chi > 0.0) {   // (vet_cell is zero before its first build: keep 1/3)
               const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
               dd[0] = dg + an*n1*n1;
               dd[1] = dg + an*n2*n2;

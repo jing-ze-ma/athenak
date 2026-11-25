@@ -78,11 +78,11 @@ void ImplFatal(const std::string &msg) {
 
 void RadiationVet::ImplicitInit(ParameterInput *pin) {
   // time_scheme (read by Time2Init): hesdirk2 on a fresh run where accepted (no polar
-  // boundary, not tau unless vet_col, integrator rk2), else be
+  // boundary, integrator rk2), else be
   {auto *pmh = pmy_pack->pmesh;
   const std::string integ = pin->DoesParameterExist("time","integrator") ?
                             pin->GetString("time","integrator") : "rk2";
-  const bool h2ok = !pmh->use_polar_boundary && (!tau_closure || vet_col) &&
+  const bool h2ok = !pmh->use_polar_boundary &&
                     (integ.compare("rk2") == 0);
   (void) pin->GetOrAddString("rad_vet","time_scheme",
                              (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
@@ -151,7 +151,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   impl_ctrelax = 0.0;
   ctr_init = false;
-  {const bool chif = !(eddington || vet_sc || tau_closure);
+  {const bool chif = !(eddington || vet_sc || vet_col);
   if (chif && md_full && clag_step) {
     impl_ctrelax = pin->GetOrAddReal("rad_vet","implicit_closure_thin_relax",
                                      global_variable::restart_run ? 0.0 : 1.5);
@@ -177,7 +177,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   }
   dbg_etally = pin->GetOrAddBoolean("rad_vet","dbg_energy_tally",false);
-  const bool fixcl = eddington || vet_sc || tau_closure;
+  const bool fixcl = eddington || vet_sc || vet_col;
   impl_onep = 0;
   for (int t = 0; t < 3; ++t) {
     onep_qa[t] = -1.0;
@@ -230,7 +230,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   // implicit_marshak_face: cell | linear (Marshak face value; spherical wedge only)
   if (sph_geom || pin->DoesParameterExist("rad_vet","implicit_marshak_face")) {
     const bool mfdef = !global_variable::restart_run &&
-                       (eddington || vet_sc || tau_closure);
+                       (eddington || vet_sc || vet_col);
     const std::string smf = sph_geom ?
         pin->GetOrAddString("rad_vet","implicit_marshak_face",
                             mfdef ? "linear" : "cell") :

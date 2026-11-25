@@ -4,9 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetcol.cpp
-//! \brief Set-up read by the vet_gd closure (VetColInit: checks, tau_ten, outer Marshak
-//! q vcol_q, spherical Marshak coefficients) and the end-of-run cost report; then the
-//! lateral part (vet_col_lat): checks, buffers, LAT-slot reduction and the vet_gd source.
+//! \brief Set-up read by the vet_gd closure (VetColInit: checks, outer Marshak q
+//! vcol_q, spherical Marshak coefficients) and the end-of-run cost report; then the checks,
+//! the buffers and the source (ln chi, ln S) of the vet_gd rays.
 
 #include <algorithm>
 #include <cmath>
@@ -46,7 +46,7 @@ void VcolFatal(const std::string &msg) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetColInit
-//! \brief the checks, the spherical Marshak coefficients, vcol_q and tau_ten
+//! \brief the checks, the spherical Marshak coefficients and vcol_q
 
 void RadiationVet::VetColInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -73,7 +73,6 @@ void RadiationVet::VetColInit() {
   vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == VET_IBC_REFLECT);
   vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
   const int ie = indcs.ie;
-  // vet_gd reads tau_ten, vcol_q and the spherical Marshak coefficients set here
   if (vcol_sph) {
     auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->x1v);
@@ -84,7 +83,6 @@ void RadiationVet::VetColInit() {
     vcol_jcap = 2.0*SQR(x1v_h(0, ie)/rtop);
   }
   const int nmb = pmy_pack->nmb_thispack;
-  int c1 = indcs.nx1 + 2*(indcs.ng);
   int c2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int c3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   if (vcol_sq) {
@@ -94,12 +92,6 @@ void RadiationVet::VetColInit() {
       std::cout << "<rad_vet> vet_col_surface_q: the outer x1 boundary is not marshak; "
                 << "the q is built but unused" << std::endl;
     }
-  }
-  // an old file's signal-speed tensor (RssPrime), read until the first clean solve
-  if (rss_stage_mode == 2 || rss_stage_mode == 18) {
-    Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
-                    (VET_TT_LAT0 + VET_TT_NLAT) : 4, c3, c2, c1);
-    Kokkos::deep_copy(tau_ten, 0.0);
   }
   tau_ready = true;
   if (vlat_on) {VetLatInit();}
@@ -111,16 +103,10 @@ void RadiationVet::VetColInit() {
 
 void RadiationVet::VetColReport() {
   if (global_variable::my_rank != 0) return;
-  std::cout << "<rad_vet> closure = vet_col: " << vcol_ncall << " tensor builds ("
-            << vcol_nskip << " skipped), " << vcol_time << " s (rank 0, fenced), "
-            << ((vcol_ncall > 0.0) ? (1.0e3*vcol_time/vcol_ncall) : 0.0)
-            << " ms per build" << std::endl;
   if (vlat_on) {
-    std::cout << "<rad_vet> vet_col_lat: " << vlat_ncall << " sweeps, " << vlat_time
-              << " s (rank 0, fenced), "
-              << ((vlat_ncall > 0.0) ? (1.0e3*vlat_time/vlat_ncall) : 0.0)
-              << " ms per sweep; lateral reads clamped to the ghost band (rank 0, "
-              << "all sweeps): " << vlat_nclamp << std::endl;
+    std::cout << "<rad_vet> vet_col_lat: " << vlat_ncall << " builds checked; lateral "
+              << "reads clamped to the ghost band (rank 0, all sweeps): " << vlat_nclamp
+              << std::endl;
     if (vgd_on) {
       std::cout << "<rad_vet> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
                 << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
@@ -302,9 +288,8 @@ void RadiationVet::VetLatInit() {
   pbval_vs->SetVectorPairs(2, {});
   // follow <mesh>/cs_seam_blockend as pbval_u does
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
-  vlat_ready = true;
   if (vgd_on) {VetGdInit(); return;}
-  // without vet_gd no lateral sweep runs (LAT slots stay 0)
+  // without vet_gd no sweep runs
   if (global_variable::my_rank == 0) {
     std::cout << "### NOTE: <rad_vet>/vet_col_lat = true has no effect without vet_gd"
               << std::endl;

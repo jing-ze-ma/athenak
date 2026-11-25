@@ -1278,16 +1278,6 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       pdens(m,0,kp,jp,ip) += 1.0;
     });
   }
-  // grey VET: the Eddington factor f_K of the closure and the diagonal of D = P/E
-  // (coordinate basis) the transport used for the state being written.
-  //   implicit transport, after the first solve: the lagged closure (chi, n) the last
-  //     Picard pass handed to the operator, stored in the work array iw (every closure:
-  //     m1/minerbo/kershaw chi(|F|/cE), eddington 1/3, tau, vet_col via tau_ten, vet_sc);
-  //     vet_sc + vet_tensor = full: the guarded D of the formal solution (vet_cell).
-  //     implicit_x1 (or a 1-D mesh): chi along x1.
-  //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
-  //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
-  //     written and D = 1/3 (isotropic) as a placeholder.
   // vet_vsc: J and F/c of the vet_sc formal solution
   if (name.compare("vet_vsc") == 0) {
     if (derived_var.extent(4) <= 1)
