@@ -157,6 +157,23 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
                                  " (not in the restart file)" : " (default)"))
                   << std::endl;
       }
+      // time2_gtime_pos: the positive form of the flux state (always with
+      // time2_gtime_slope).  Default true, false on a restart whose file lacks the key
+      const bool np = pin->DoesParameterExist("rad_vet", "time2_gtime_pos");
+      t2_gtp = pin->GetOrAddBoolean("rad_vet", "time2_gtime_pos",
+                                    t2_gts || !global_variable::restart_run);
+      if (t2_gts && !t2_gtp) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_vet>/time2_gtime_slope = true needs "
+                  << "time2_gtime_pos = true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_vet> time2_gtime_pos = " << (t2_gtp ? "true" : "false")
+                  << (np ? "" : (global_variable::restart_run ?
+                                 " (not in the restart file)" : " (default)"))
+                  << std::endl;
+      }
     }
     if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {  // no mhd path
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -440,6 +457,8 @@ bool RadiationVet::Time2Active() {
 //! the caps and floors left, in the Patankar form where it is negative (positive).  Its
 //! floors act on the primitives only: u0 is restored to U* + d as it was, so they
 //! create no energy and nothing is paid.
+//! time2_gtime_pos = false (restart files without the key): the old flux state U* + f d,
+//! formed at which = 2 on the gas before the caps, its floors kept in u0.
 
 //----------------------------------------------------------------------------------------
 
@@ -468,7 +487,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   auto ccl = pmy_pack->pcoord->cos_cell;
   const bool etg = ph->use_etotgrav, csk = cs_geom;
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
-  const bool gm = t2_gtm, gs = t2_gts;
+  const bool gm = t2_gtm, gs = t2_gts, ps = t2_gtp;
   auto k1_ = t2k1;
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -501,7 +520,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         e = 0.0;
       }
     }
-    if (which == 3) {
+    if (which == 3 && ps) {
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i);
       const Real k0 = CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i), u0_(m,IM3,k,j,i), c)/r;
       const Real k1 = CsKeMom(u0_(m,IM1,k,j,i) + hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
@@ -522,24 +541,26 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         hs_(m,n,k,j,i) = ((gm && n >= IM1 && n <= IM3) ? 1.0/g - 1.0 : e)*d;
       } else {
         u0_(m,n,k,j,i) = u + us;
-        hs_(m,n,k,j,i) = u;   // (the register to restore)
+        if (ps) {hs_(m,n,k,j,i) = u;}   // (the register to restore)
       }
     }
     if (which == 2 && gs) {
       hs_(m,IEN,k,j,i) = xs;
-    } else if (which == 2) {   // (f - 1) d of the total energy less that of the kinetic
+    } else if (which == 2 && (ps || gm)) {
+      // ps: (f - 1) d of the total energy less that of the kinetic; else IEN's with the
+      // momentum's f
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i) + hs_(m,IDN,k,j,i);
       const Real s = gm ? e*g/(1.0 - g) : 1.0;
       auto ke = [&](const Real q) {
         return CsKeMom(u0_(m,IM1,k,j,i) + q*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
                        q*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + q*hs_(m,IM3,k,j,i), c)/r;
       };
-      hs_(m,IEN,k,j,i) -= ke(s) - ke(0.0);
+      hs_(m,IEN,k,j,i) += ps ? ke(0.0) - ke(s) : ke(1.0) - ke(s);
     }
   });
   if (which != 3) return;
   const bool dpay = ph->dual.pay;
-  ph->dual.pay = false;
+  if (ps) {ph->dual.pay = false;}
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
   ph->dual.pay = dpay;
   // u0 back to U* + d, in the ghosts the neighbour's (exchanged; the flux state at the
@@ -549,7 +570,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   par_for("vet_t2_gtime3g", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (k >= kl && k <= ku && j >= jl && j <= ju && i >= il && i <= iu) return;
-    for (int n = 0; n < nv; ++n) {hs_(m,n,k,j,i) = u0_(m,n,k,j,i);}
+    for (int n = 0; n < nv; ++n) {hs_(m,n,k,j,i) = ps ? u0_(m,n,k,j,i) : 0.0;}
   });
   (void) ph->pbval_u->InitRecv(nv);
   (void) ph->pbval_u->PackAndSendCC(hs_, ph->coarse_u0);
@@ -558,7 +579,9 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   (void) ph->pbval_u->RecvAndUnpackCC(hs_, ph->coarse_u0);
   par_for("vet_t2_gtime3", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int n = 0; n < nv; ++n) {u0_(m,n,k,j,i) = hs_(m,n,k,j,i);}
+    for (int n = 0; n < nv; ++n) {
+      u0_(m,n,k,j,i) = ps ? hs_(m,n,k,j,i) : u0_(m,n,k,j,i) - hs_(m,n,k,j,i);
+    }
   });
 }
 
