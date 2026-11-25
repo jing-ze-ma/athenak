@@ -380,8 +380,8 @@ void RadiationVet::RotAvgEmaChange(const int ilo) {
   const RaArr a{vra_a0, vra_a1, vra_c};
   const Tab t = vra_tab;
   const int o1 = t.nf + 1, od = (vra_k - 1)*(t.nf + 1);
-  const Real eps = vra_ema_eps;
-  const bool usej = vra_ema_chj, step = vra_ema_chstep;
+  const Real eps = kEmaEps;
+  const bool step = vra_ema_chstep;
   // J field of the test: jf, else the kind-2 ratio field (vet_gd registers J as jw only)
   int jt = t.jf;
   for (int f = 0; f < t.nf && jt < 0; ++f) {
@@ -390,19 +390,16 @@ void RadiationVet::RotAvgEmaChange(const int ilo) {
   par_for("vet_ra_ema_chg", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
-    Real ach = -1.0;
-    if (eps > 0.0) {
-      Real c = 0.0;
-      if (usej && jt >= 0 && t.arr[jt] != 2) {
-        const Real jn = d_(m,od+jt,kk,jj,ii), jo = d_(m,o1+jt,kk,jj,ii);
-        c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
-      }
-      if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
-        c = fmax(c, fabs(d_(m,od,kk,jj,ii) - d_(m,o1,kk,jj,ii)));
-      }
-      // linear: a_ch = c/eps; step: 0 below eps, 1 at 2 eps
-      ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
+    Real c = 0.0;
+    if (jt >= 0 && t.arr[jt] != 2) {
+      const Real jn = d_(m,od+jt,kk,jj,ii), jo = d_(m,o1+jt,kk,jj,ii);
+      c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
     }
+    if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
+      c = fmax(c, fabs(d_(m,od,kk,jj,ii) - d_(m,o1,kk,jj,ii)));
+    }
+    // linear: a_ch = c/eps; step: 0 below eps, 1 at 2 eps
+    const Real ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
     const Real jr = RaJ(a, t, m, k, j, i);
     for (int f = 0; f < t.nf; ++f) {
       Real g;

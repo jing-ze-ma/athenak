@@ -247,7 +247,7 @@ void RadiationVet::VetRaySource() {
   // vet_source_noesrc: the physical E^n = u0
   const bool noes = VsrcNoes();   // rad_vet.hpp
   auto ur_ = u0;
-  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const bool vsf = vscat;   // vet_scatter
   const Real ar = arad, efl = e_floor;
   par_for_lb("vet_ray_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -258,10 +258,9 @@ void RadiationVet::VetRaySource() {
       Real tg = iw_(m,VET_IW_TP,k,j,i);
       Real t2 = tg*tg;
       Real eth = fmin(opac_(m,VET_OP_P,k,j,i)/chi, 1.0);
-      const Real rks = (vsf != 0) ? opac_(m,VET_OP_S,k,j,i) : 0.0;
-      if (vsf != 0) {
+      if (vsf) {
         const Real rkp = fmin(opac_(m,VET_OP_P,k,j,i), chi);   // (S between J and B)
-        s = VetScatterMix(vsf, rkp, chi, rks, ar*t2*t2, e);
+        s = VetScatterMix(rkp, chi, ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }

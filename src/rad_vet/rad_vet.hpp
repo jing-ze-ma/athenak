@@ -266,16 +266,11 @@ struct VetOpacTab {
 //! \brief vet_scatter: grey source S (E units) of the VET formal solutions for total
 //! extinction chi = rho kappa_R, rkp = rho kappa_P, rkes = rho kappa_e, thermal source b
 //! and mean intensity e.
-//!   form 1 (ma, Jiang 2021 eq. 6): S = max(J + (rho k_P/chi)(B - J), 0)
-//!   form 2 (absorption): S = [(chi - rkes) B + rkes J]/chi
+//!   the ma form (Jiang 2021 eq. 6): S = max(J + (rho k_P/chi)(B - J), 0)
 KOKKOS_INLINE_FUNCTION
-Real VetScatterMix(const int form, const Real rkp, const Real chi, const Real rkes,
-                   const Real b, const Real e) {
-  if (form == 1) {
-    const Real ep = rkp/chi;
-    return fmax(e + ep*(b - e), 0.0);
-  }
-  return ((chi - rkes)*b + rkes*e)/chi;
+Real VetScatterMix(const Real rkp, const Real chi, const Real b, const Real e) {
+  const Real ep = rkp/chi;
+  return fmax(e + ep*(b - e), 0.0);
 }
 
 //! \fn VetScatterGuard
@@ -372,8 +367,6 @@ class RadiationVet {
   // vet_source_noesrc: the ray source reads E^n without the
   // explicit esrc deposit (be only)
   bool vsrc_noes = false;
-  // vet_source_noesrc_h2be: the same for the backward-Euler solves under hesdirk2
-  bool vsrc_noes_h2be = true;
   bool VsrcNoes() const;
 
   // the fluid is <hydro> or <mhd> (FluidRef). Under MHD the gas internal energy subtracts
@@ -414,8 +407,6 @@ class RadiationVet {
   // formal solution, once per hydro step from the start-of-step state
   bool vet_sc{};             // closure = sc on a Cartesian mesh
   int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
-  bool vsc_gd = false;       // vet_sc_set = gd: the vet_gd direction set, pole on x1
-  int vsc_gdmir = 0;         // ray r + nray/2 is the x1 mirror of ray r (1) or not (-1)
   bool vsc_rayk = false;     // vet_sc_kernel = ray: ray-parallel layer launch
   DvceArray4D<Real> vet_rayg;   // its per-ray face sums (block, 5 nray, k, j)
   bool vet_bc_bath = false;  // a Marshak x1 end gives the rays its bath
@@ -429,14 +420,6 @@ class RadiationVet {
   bool VetBcEmit() const;    // the inner rule at the current implicit_bc_x1min is emit
   Real VetBathLo() const;    // vet_sc: entering inner intensity of emit (-1: diff)
   bool vet_bc_face = false;  // vet_bc_diff = face: inner diffusion I at the face
-  bool vet_seg_split = false;  // vet_seg = split: SC segment u -> 0
-  bool vet_seg_emit = false;   // vet_seg = emit: split, limiter only where S_u > S_0
-  bool vet_seg_jump = false;   // vet_seg = jump: emit + the contrast rule
-  bool vet_seg_plateau = false; // vet_seg_plateau: jump's contrast only across a plateau
-  // VetSegSplit mode: 0 split, 1 emit, 2 jump with plateau weights, 3 jump without
-  int VetSegMode() const {
-    return vet_seg_emit ? (vet_seg_jump ? (vet_seg_plateau ? 2 : 3) : 1) : 0;
-  }
   bool vet_x1per = false;    // vet_x1_periodic: periodic x1 sweep
   int vet_x1npass = 0;       // its number of passes
   // vet_x1_ptol: stop the periodic sweep when d_p/(1 - q) < vet_x1_ptol (0: npass)
@@ -452,7 +435,6 @@ class RadiationVet {
   bool X1eRstUnpack(const DvceArray5D<Real> &src, const int nmb, const int nsl);
   Real vet_x1_nbuild = 0.0, vet_x1_npsum = 0.0, vet_x1_ncap = 0.0;
   int vet_x1_npmax = 0;
-  int vet_interp = 0;        // upwind stencil 0 lin, 1 log, 2 corner
   int vet_mirror_npass = 4;  // passes of a cavity mirrored at both x1 ends
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source
   // a non-periodic x2 (x3) mesh boundary is a vacuum face (I = 0) for the formal solution
@@ -464,7 +446,6 @@ class RadiationVet {
   bool vsc_rot = false;                 // vet_sc rotates (physical clock)
   Real vsc_beta = 0.0;                  // current rotation of the vet_sc set
   void VetBuildAngles(const Real beta);
-  void VetGdAngles(const Real beta);
   void VgdBuildSet(std::vector<double> &d) const;
   void VetRotInit(ParameterInput *pin);   // shared rotation keys (rad_vet_vetgd.cpp)
   void VetRotUpdate();
@@ -1335,12 +1316,8 @@ class RadiationVet {
 
   bool vray_ready{};            // VetRayInit has run
   // vet_scatter: electron scattering, the opacity split (otab.scat, opac VET_OP_S) and
-  // VetScatterMix; vscat_form 1 ma (Jiang 2021 eq. 6), 2 absorption
+  // VetScatterMix
   bool vscat = false;
-  int vscat_form = 1;
-  // vet_scatter_j: false current (J = E^n / iterate, absorption form only), true
-  // relaxed (J = E*, the end-of-step pair of B*)
-  bool vscat_jrel = false;
   void VetRayInit();           // checks, buffers, the direction set (first call)
   void VetRayReport();
 
@@ -1349,8 +1326,6 @@ class RadiationVet {
   // refuses them
   std::string vray_rat_keys;
   int vray_icut = 0;           // first shell of the sweep (CleanRayCut)
-  Real vray_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
-                               // this (0 off)
   Real vray_ncall = 0.0, vray_nclamp = 0.0;
   DvceArray5D<Real> vray_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vray_cs_c;
@@ -1373,27 +1348,22 @@ class RadiationVet {
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
   int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
   // vet_gd_rotate_dt > 0: rotate in physical time, block
-  // b = floor((t + dt/2 - t0)/dt_rot) (t0 = vet_gd_rotate_t0); vet_gd_rotate_align: steps
+  // b = floor((t + dt/2)/dt_rot); steps
   // land on block boundaries (VetGdAlignDt)
-  Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
+  Real vgd_rot_dt = 0.0;
   // vet_gd_rotate_dt = auto: vgd_rot_auto_fac x the first dt, recorded in pin_rot_
   bool vgd_rot_auto = false;
   // the unnamed default resolves from the uncapped first CFL dt (Mesh::dt_uncapped)
   bool vgd_rot_unc = false;
   Real vgd_rot_auto_fac = 20.0;
   ParameterInput *pin_rot_ = nullptr;
-  bool vgd_rot_align = false;
   double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
-  // vet_gd_rotate_slope = be | keep | correct: what the hesdirk2 FSAL slope K1 (of the
-  // old set) does on the first step of a new rotation block; be: a backward-Euler step
-  int vgd_rot_slope = 0;
   int64_t vgd_rot_lastblk = INT64_MIN;
   void VetGdRotStep();
-  // vet_gd_rotate_slope = correct: a correction solve (Time2RotCorrect) of size
-  // dt_c = vet_gd_rotate_slope_frac x dt from U^n with the new set turns K1 into
-  // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n)
+  // a Cartesian rotating set without the ring, the first step of a new rotation block: a
+  // correction solve (Time2RotCorrect) of size dt_c = kT2G dt from U^n with the new set
+  // turns K1 into K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n)
   bool t2_rotcorr = false;
-  Real vgd_rot_cfrac = 0.0;
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // current z-angle (-1: tables not built)
@@ -1425,10 +1395,9 @@ class RadiationVet {
   void RotAvgEmaInit(const int ilo);
   void RotAvgEmaShift(const int ds);
   void RotAvgEmaChange(const int ilo);
-  Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
-  bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
+  static constexpr Real kEmaEps = 0.05;   // the change test's relative change
   bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step | linear
-  // vet_rotate_avg_ema_wb (clean ring): a = a_ch alone (no 1/N floor, no 1/(n + 1)
+  // curved meshes (clean ring): a = a_ch alone (no 1/N floor, no 1/(n + 1)
   // count): a static state keeps its closure
   bool vra_ema_wb = false;
   void RotAvgEmaApply(const int ilo);
@@ -1469,7 +1438,6 @@ class RadiationVet {
   int vgd_esid = 0;                // stamp of the current early shell
   Real vgd_xf_alt = -9.0;        // angle of the tables in the second device set
   void VgdXfTables(const Real alpha);
-  bool vra_eq = false;        // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;
   DvceArray5D<Real> vra_a0, vra_a1;   // closure's field arrays (set per call)

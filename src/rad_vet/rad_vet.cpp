@@ -85,8 +85,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // a key it does not hold is not the only one left; name it to continue with that
     if (!nw && !pin->DoesParameterExist("rad_vet","rst_version")) {
       auto has = [&](const char *k) {return pin->DoesParameterExist("rad_vet", k);};
-      const bool crv = (pmy_pack->pmesh->use_spherical_polar ||
-                        pmy_pack->pmesh->use_cubed_sphere) && VetCurvedRays(pin);
+      const bool curved = pmy_pack->pmesh->use_spherical_polar ||
+                          pmy_pack->pmesh->use_cubed_sphere;
+      const bool crv = curved && VetCurvedRays(pin);
       const bool rot = has("vet_gd_rotate_dt") &&
                        (pin->GetString("rad_vet","vet_gd_rotate_dt") == "auto" ||
                         pin->GetReal("rad_vet","vet_gd_rotate_dt") > 0.0);
@@ -96,7 +97,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
           {"scheme", "clean", true}, {"clean_layout", "staggered", true},
           {"clean_rays", "sc", crv}, {"be_legacy", "false", be},
           {"implicit_enthalpy", "plm", true},
-          {"vet_gd_rotate_stretch", "0.02", rot}};
+          {"vet_gd_rotate_stretch", "0.02", rot},
+          {"vet_gd_rotate_slope", "correct", !curved && rot},
+          {"vet_rotate_advance", "true", crv && has("vet_rotate_avg") &&
+           pin->GetInteger("rad_vet","vet_rotate_avg") > 1},
+          {"vet_rotate_avg_ema_wb", "true", crv && has("vet_rotate_avg_ema") &&
+           pin->GetReal("rad_vet","vet_rotate_avg_ema") >= 1.0}};
       for (const auto &[k, v, need] : old) {
         if (!need || has(k)) continue;
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -645,7 +651,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   //      sigma_T x_e/(mu m_u) (eos); other laws: kappa_f, kappa_s. rho kappa_e goes to
   //      opac(VET_OP_S); the extinction stays the total VET_OP_T; scattering exchanges no
   //      energy.
-  //  (ii) closure source VetScatterMix: vet_scatter_form = ma | absorption,
+  //  (ii) closure source VetScatterMix: the ma form,
   //      vet_scatter_j = relaxed | current.
   // Default on for a fresh run with rays, opacity =
   // table and a tabulated general EOS (kappa_e = eos); else off.
@@ -664,41 +670,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter", fresh && vet_rays &&
                                opacity_type == VET_OPAC_TABLE);
   if (vscat) {
-    std::string sf = pin->GetOrAddString("rad_vet","vet_scatter_form","ma");
-    if (sf.compare("ma") == 0) {
-      vscat_form = 1;
-    } else if (sf.compare("absorption") == 0) {
-      vscat_form = 2;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/vet_scatter_form = '" << sf << "' not implemented "
-        << "(ma | absorption)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  // vet_scatter_j: relaxed (J = E*, the end-of-step pair of B*) | current
-    std::string sj = pin->GetOrAddString("rad_vet","vet_scatter_j","relaxed");
-    if (sj.compare("current") == 0) {
-      vscat_jrel = false;
-    } else if (sj.compare("relaxed") == 0) {
-      vscat_jrel = true;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/vet_scatter_j = '" << sj << "' not implemented "
-        << "(current | relaxed)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  // ma + current: kappa_P/kappa_R amplifies the lag between B* and J = E^n, the Picard
-  // loop does not converge
-    if (vscat_form == 1 && !vscat_jrel) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/vet_scatter_form = ma with vet_scatter_j = current "
-        << "is not allowed: the kappa_P/kappa_R factor of the ma form (~250-520 in an "
-        << "iron bump) amplifies the lag between the relaxed end-of-step B* and the "
-        << "start-of-step J = E^n, and the implicit Picard loop does not converge "
-        << "(no convergence). Use vet_scatter_j = relaxed (default) or "
-        << "vet_scatter_form = absorption." << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     std::string km = "const";
     if (opacity_type == VET_OPAC_TABLE) {
       // eos where a tabulated general EOS supplies x_e
@@ -721,8 +692,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       otab.kxe = otab.kunit*(6.6524587321e-25/1.66053906660e-24);
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "rad_vet: vet_scatter on, form " << sf << ", J (relaxed source) " << sj
-                << (vscat_jrel ? " (default)" : "");
+      std::cout << "rad_vet: vet_scatter on, the ma form, J of the relaxed source";
       if (opacity_type == VET_OPAC_TABLE) {
         std::cout << ", table split kappa_e = " << km << " (kappa_e " << otab.kes
                   << ", floor " << otab.kfl << ", sigma_T/m_u " << otab.kxe
@@ -1015,10 +985,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
     }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
-    // clean_rot_ring named: the rotating set on the clean ring (vet_gd_rotate_xfade)
-    if (vsc_rot && cln_ring) {
-      vgd_xf = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",false) && VgdRotOn();
-      vgd_rot_slope = 0;
+    // clean_rot_ring = live: the rotating set's cross-fade on the clean ring
+    vgd_xf = vsc_rot && cln_ring == 1 && VgdRotOn();
+    if (VgdRotOn()) {
+      recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
     }
     // vet_source_noesrc (rad_vet_vet.cpp)
     vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",
@@ -1042,34 +1012,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_vet>/vet_bc_diff must be cell or face"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-    // vet_seg = mean | split | emit | jump: mean integrates the SC segment with
-    // chi = (chi_u + chi_0)/2 and S linear in tau; split integrates its two parts at the
-    // face with a face S limited toward S_u at an opaque -> thin interface
-    // (rad_vet_vetseg.hpp); emit limits only where S_u > S_0; jump adds the
-    // opaque -> thin jump term
-    {
-      const char *sgd = fix("vet_seg", "jump", "mean") ? "jump" : "mean";
-      std::string sg = pin->GetOrAddString("rad_vet","vet_seg",sgd);
-      if (sg.compare("split") == 0) {
-        vet_seg_split = true;
-        vet_seg_emit = false;
-      } else if (sg.compare("emit") == 0) {
-        vet_seg_split = true;
-        vet_seg_emit = true;
-      } else if (sg.compare("jump") == 0) {
-        vet_seg_split = true;
-        vet_seg_emit = true;
-        vet_seg_jump = true;
-        vet_seg_plateau = pin->GetOrAddBoolean("rad_vet", "vet_seg_plateau", false);
-      } else if (sg.compare("mean") == 0) {
-        vet_seg_split = false;
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/vet_seg must be mean, split, emit or jump"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -1141,9 +1083,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
           pin->GetInteger("rad_vet","vet_gd_rotate_every") > 0;
       if (rdt || rev) {
         pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);
-        if (rdt && !rev) {
-          pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",true);
-        }
         recipe::Log("<rad_vet>/vet_rotate_avg = 4 (default with a rotating vet_gd set)");
       }
     }
@@ -1180,45 +1119,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // naming neither _dt nor _every and no vet_gd_beam. Sub-keys _t0, _align, _stretch,
     // _slope.
     VetRotInit(pin);   // shared with vet_sc (rad_vet_vetgd.cpp)
-    // clean sp / cs, fresh, rotating on the time clock: vet_rotate_avg = 4 with the
-    // cross-fade (recorded)
-    if ((sph_geom || cs_geom) && !global_variable::restart_run &&
-        VgdRotOn() &&
-        (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
-      pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);
-      pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",true);
-    }
-    // a restart with an averaged set and no cross-fade key takes the cross-fade
-    if (sph_geom && global_variable::restart_run &&
-        VgdRotOn() && pin->DoesParameterExist("rad_vet","vet_rotate_avg") &&
-        pin->GetInteger("rad_vet","vet_rotate_avg") > 1 &&
-        !pin->DoesParameterExist("rad_vet","vet_gd_rotate_xfade")) {
-      pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",true);
-    }
+    // clean sp / cs, fresh, rotating on the time clock: vet_rotate_avg = 4 (recorded)
+    const bool clk = vgd_on && VgdRotOn() && (vgd_rot_dt > 0.0 || vgd_rot_auto);
+    if (clk && nw) pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);
     RotAvgParse(pin);   // also after vet_sc's VetRotInit
-    // scheme = clean: no slope correction of a rotating set (set before the first
-    // VetGdRotStep); clean_rot_ring = jump: a block's first step is backward Euler
-    if (vgd_on && VgdRotOn()) vgd_rot_slope = 0;
-    if (cln_ring == 2) vgd_rot_slope = 2;
-    // vet_gd_rotate_xfade (read only when named)
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_rotate_xfade")) {
-      // a fixed set has nothing to cross-fade: inert there
-      vgd_xf = pin->GetBoolean("rad_vet","vet_gd_rotate_xfade") && VgdRotOn();
-      // vet_gd_rotate_xfade_m: 0 only
-      if (vgd_xf && pin->DoesParameterExist("rad_vet","vet_gd_rotate_xfade_m") &&
-          pin->GetInteger("rad_vet","vet_gd_rotate_xfade_m") != 0) {
-        std::cout << "### FATAL ERROR <rad_vet>/vet_gd_rotate_xfade_m = "
-                  << pin->GetInteger("rad_vet","vet_gd_rotate_xfade_m")
-                  << " was removed (only 0)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      // fused two-set sweep (VetGdXffOk decides where it applies)
-      if (vgd_xf) {vgd_xff = true;}
-      if (vgd_xf && global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> vet_gd_rotate_xfade = true: the closure is "
-                  << "cross-faded from the current to the next ray set over each "
-                  << "rotation block (two sweeps per build)" << std::endl;
-      }
+    // the mean of sets rotating in time is cross-faded from the current to the next ray
+    // set over each block (two sweeps per build, fused where VetGdXffOk allows), except
+    // under clean_rot_ring = jump
+    vgd_xf = vgd_xff = clk && vra_on && !(cln_ring_named && cln_ring != 1);
+    if (VgdRotOn()) {
+      recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
     cln_cssc = pmy_pack->pmesh->use_cubed_sphere && vgd_on;
@@ -1228,8 +1138,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_rot_ring unnamed: live where the vet_gd rays rotate in time with a cross-fade
     // (decided before a restart file's channels are counted)
     if (!cln_ring_named && vgd_on && vra_on && g_vra_adv &&
-        vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
-        vra_k <= VET_RA_NF) {
+        vgd_xf && vra_k <= VET_RA_NF) {
       cln_ring = 1;
     }
     // vet_bc_bath: the top shell's inward rays start from the incident bath
@@ -1239,65 +1148,27 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                        fix("vet_bc_bath", "true", "false"));
     }
     // vet_bc_inner / vet_bc_reflect shared with vet_sc (VetBcInit; alias vet_gd_inner).
-    // vet_interp = auto | log | corner: log bilinear in ln chi, ln S; corner one segment
-    // per stencil corner; auto corner where the chi contrast exceeds kVetCornerRatio
-    if (vgd_on) {
-      const std::string vi = pin->GetOrAddString("rad_vet","vet_interp",
-                                 fix("vet_interp", "auto", "log") ? "auto" : "log");
-      if (vi.compare("log") == 0) {
-        vet_interp = 1;
-      } else if (vi.compare("corner") == 0) {
-        vet_interp = 2;
-      } else if (vi.compare("auto") == 0) {
-        vet_interp = 3;
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/vet_interp = " << vi << " is not available "
-                  << "on vet_gd (auto | log | corner)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
     if (vgd_on) {VetBcInit(pin, true);}
     if (vgd_on) vgd_allow_clamp =
         pin->GetOrAddBoolean("rad_vet","vet_gd_allow_clamp",vgd_allow_clamp);
-    // vet_gd_band_global: default true on a fresh sp full-sphere vet_gd start
-    // (recipe::NewDefaults), recorded
+    // an sp full sphere: the global band
     {
       Mesh *pm = ppack->pmesh;
-      const bool fullsph = pm->use_spherical_polar && pm->use_polar_boundary &&
+      vgd_gband = vgd_on && pm->use_spherical_polar && pm->use_polar_boundary &&
       pin->GetOrAddString("mesh", "ix2_bc", "") == "polar" &&
       pin->GetOrAddString("mesh", "ox2_bc", "") == "polar" &&
       pin->GetOrAddString("mesh", "ix3_bc", "") == "periodic" &&
       std::abs(pm->mesh_size.x3max - pm->mesh_size.x3min - 2.0*M_PI) < 1.0e-8;
-      if (vgd_on && fullsph && !pin->DoesParameterExist("rad_vet","vet_gd_band_global")) {
-        if (fix("vet_gd_band_global", "true", "false")) {
-          pin->GetOrAddBoolean("rad_vet","vet_gd_band_global",true);
-          recipe::Log("<rad_vet>/vet_gd_band_global = true (default with vet_gd on an sp "
-                      "full sphere)");
-        }
+      if (vgd_on) {
+        recipe::Rule(pin, "rad_vet", "vet_gd_band_global", vgd_gband ? "true" : "false");
       }
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_band_global")) {
-      vgd_gband = pin->GetBoolean("rad_vet","vet_gd_band_global");
     }
     // vet_gd_band_ring (read only when named, VetGdInit): band intensities lent per shell
     // from a few slabs; unnamed: on where it applies
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_band_ring")) {
       vgd_ring_par = pin->GetBoolean("rad_vet","vet_gd_band_ring");
     }
-    // vet_gd_halo_compact: default 2 on a fresh vet_gd start (recipe::NewDefaults),
-    // recorded; VetGdInit switches it off where it does not apply
-    if (vgd_on && !pin->DoesParameterExist("rad_vet","vet_gd_halo_compact")) {
-      if (fix("vet_gd_halo_compact", "2", "0")) {
-        pin->GetOrAddInteger("rad_vet","vet_gd_halo_compact",2);
-        recipe::Log("<rad_vet>/vet_gd_halo_compact = 2 (default with vet_gd)");
-      }
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_compact")) {
-      vgd_hcomp = pin->GetInteger("rad_vet","vet_gd_halo_compact");
-    }
-    vsrc_noes_h2be =
-        pin->GetOrAddBoolean("rad_vet","vet_source_noesrc_h2be",vsrc_noes_h2be);
+    vgd_hcomp = vgd_on ? 2 : 0;   // (VetGdInit switches it off where it does not apply)
     // defaults of a fresh 3-D spherical-polar run: wall_interp; with a fixed product set
     // wall_sym, and theta_seam_sym on a theta-periodic wedge centred on the equator with
     // a set that is its equatorial mirror (odd nmu, or no stagger)
@@ -1345,10 +1216,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_ipc_on = pin->GetBoolean("rad_vet","vet_gd_halo_ipc");
     }
     // vet_col_lat_cut_thin (CleanRayCut)
-    if (vgd_on) {
-      vray_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
-          fix("vet_col_lat_cut_thin", "1", "0") ? 1.0 : 0.0);
-    }
   }
   }
 
@@ -1868,18 +1735,6 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
     vra_on = (vra_k >= 2) && (vgd_on || vet_sc);
-    // vet_rotate_avg_weight = j (sets weighted by their J) | equal
-    if (vra_on && pin->DoesParameterExist("rad_vet","vet_rotate_avg_weight")) {
-      const std::string w = pin->GetString("rad_vet","vet_rotate_avg_weight");
-      if (w.compare("equal") == 0) {
-        vra_eq = true;
-      } else if (w.compare("j") != 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/vet_rotate_avg_weight must be j or equal"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
     const bool rot = vgd_on ? VgdRotOn() : vsc_rot;
     if (vra_on && !rot && global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_rotate_avg = " << vra_k << ": the direction set does "
@@ -1900,22 +1755,9 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
   if (erot || pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema")) {
     vra_ema_n = pin->GetOrAddReal("rad_vet","vet_rotate_avg_ema",128.0);
   }
-  // vet_rotate_avg_ema_wb acts on the EMA ring only
-  if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_wb") &&
-      pin->GetBoolean("rad_vet","vet_rotate_avg_ema_wb") && vra_ema_n < 1.0) {
-    std::cout << "### FATAL ERROR <rad_vet>/vet_rotate_avg_ema_wb needs "
-              << "vet_rotate_avg_ema >= 1" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   if (vra_ema_n >= 1.0 && (vgd_on || vet_sc)) {
     vra_ema = true;
     vra_k = 3;   // slot 0 the EMA, slot 1 the change-test aux, slot 2 the Delta
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_change")) {
-      vra_ema_eps = pin->GetReal("rad_vet","vet_rotate_avg_ema_change");
-    }
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_change_j")) {
-      vra_ema_chj = pin->GetBoolean("rad_vet","vet_rotate_avg_ema_change_j");
-    }
     {
       // vet_rotate_avg_ema_change_form = linear | step
       const std::string fm = pin->GetOrAddString("rad_vet",
@@ -1929,17 +1771,13 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
         std::exit(EXIT_FAILURE);
       }
     }
-    // (default of a fresh vet_gd run)
-    recipe::Old(pin, "rad_vet", "vet_rotate_avg_ema_wb", "false");
-    vra_ema_wb = pin->GetOrAddBoolean("rad_vet","vet_rotate_avg_ema_wb",nw && vgd_on);
+    vra_ema_wb = vgd_on;
+    recipe::Rule(pin, "rad_vet", "vet_rotate_avg_ema_wb", vgd_on ? "true" : "false");
     vra_on = true;
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_weight")) {
-      vra_eq = (pin->GetString("rad_vet","vet_rotate_avg_weight").compare("equal") == 0);
-    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_rotate_avg_ema = " << vra_ema_n << ": "
                 << "the closure is an exponential moving average over the rotated sets "
-                << "(a = 1/N per block; change test eps " << vra_ema_eps << ")"
+                << "(a = 1/N per block; change test eps " << kEmaEps << ")"
                 << "; vet_rotate_avg is not used"
                 << std::endl;
     }

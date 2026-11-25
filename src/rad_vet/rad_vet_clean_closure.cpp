@@ -869,7 +869,7 @@ void RadiationVet::CleanRingShift(const int64_t b) {
   const int nr = vra_k - 1;
   Kokkos::Array<int, CLN_N> fm;
   const int nf = CleanRingFields(fm.data());
-  const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
+  const Real tk = static_cast<Real>(b)*vgd_rot_dt;
   if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
   vra_gen += 1;
   auto rr = cln_rr;
@@ -926,7 +926,7 @@ void RadiationVet::CleanRingShift(const int64_t b) {
 //! (cln_rfix).  CleanRingBlk: the block of a build at time + dt
 
 int64_t RadiationVet::CleanRingBlk(const Real dt) const {
-  const Real tau = (pmy_pack->pmesh->time + dt - vgd_rot_t0)/vgd_rot_dt;
+  const Real tau = (pmy_pack->pmesh->time + dt)/vgd_rot_dt;
   const int64_t b = static_cast<int64_t>(std::floor(tau));
   return (tau - static_cast<Real>(b) < 1.0e-9) ? b - 1 : b;   // (CleanFvSets)
 }
@@ -945,7 +945,7 @@ bool RadiationVet::CleanFhBuilt() const {
 
 void RadiationVet::CleanRingPreShift() {
   const Real dt = pmy_pack->pmesh->dt;
-  cln_rfix = CleanRingTwo() && vgd_rot_dt > 0.0 && vgd_rot_align && dt < vgd_rot_dt &&
+  cln_rfix = CleanRingTwo() && vgd_rot_dt > 0.0 && dt < vgd_rot_dt &&
              CleanRingBlk(dt) == CleanRingBlk(1.0e-6*dt);   // (any retry's dt)
   if (cln_rfix && cln_rok && cln_rpb == cln_rb && CleanRingBlk(dt) == cln_rb + 1) {
     CleanRingShift(cln_rb + 1);
@@ -1081,8 +1081,8 @@ void RadiationVet::CleanRingMoments() {
   }
   // vet_rotate_avg_ema: rr = EMA offsets, aux J and D11 (last boundary), set count n;
   // pd also a_ch and the next set's J and D11
-  const bool ema = vra_ema, chj = vra_ema_chj, estep = vra_ema_chstep;
-  const Real a0 = ema ? (vra_ema_wb ? -1.0 : 1.0/vra_ema_n) : 1.0, eps = vra_ema_eps;
+  const bool ema = vra_ema, estep = vra_ema_chstep;
+  const Real a0 = ema ? (vra_ema_wb ? -1.0 : 1.0/vra_ema_n) : 1.0, eps = kEmaEps;
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
   for (int q = 0; q < ns; ++q) {
     const int64_t p = cln_fvblk[q] - (b - nk + 1);
@@ -1269,7 +1269,7 @@ void RadiationVet::CleanRingMoments() {
       Real ach = -1.0;
       if (eps > 0.0) {
         const Real jo = rr(m,nfr,k,j,i);
-        Real c = !chj ? 0.0 : ((jb > 0.0 && jo > 0.0) ? fabs(log(jb/jo)) : 1.0e30);
+        Real c = (jb > 0.0 && jo > 0.0) ? fabs(log(jb/jo)) : 1.0e30;
         c = fmax(c, fabs(rl(m,qb,CLN_D11,k,j,i) - rr(m,nfr+1,k,j,i)));
         ach = estep ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
       }
@@ -1278,7 +1278,7 @@ void RadiationVet::CleanRingMoments() {
       pd(m,nfr+2,k,j,i) = rl(m,qn,CLN_D11,k,j,i);
     });
     cln_rpb = b;
-    cln_rpt = vgd_rot_t0 + (static_cast<Real>(b) + (cln_rlast ? 1.0 : s))*vgd_rot_dt;
+    cln_rpt = (static_cast<Real>(b) + (cln_rlast ? 1.0 : s))*vgd_rot_dt;
   }
   // the mixture; jump: at the block-closing build also the next block's window (cln_rnew)
   const bool ring = cln_rok;
@@ -1362,7 +1362,7 @@ void RadiationVet::CleanFvSets(const Real tc, const int cyc) {
   if (vgd_rot_dt > 0.0) {
     // (without the cross-fade the block of the step's midpoint, as VetGdBlock)
     const Real dt = (pm->dt < vgd_rot_dt) ? pm->dt : 0.0;
-    const Real tau = (tc - (xf ? 0.0 : 0.5*dt) - vgd_rot_t0)/vgd_rot_dt;
+    const Real tau = (tc - (xf ? 0.0 : 0.5*dt))/vgd_rot_dt;
     b = static_cast<int64_t>(std::floor(tau));
     if (xf) s = tau - static_cast<Real>(b);
     // clean_rot_ring = live: a build on a block boundary closes the block (s = 1)
@@ -1375,7 +1375,7 @@ void RadiationVet::CleanFvSets(const Real tc, const int cyc) {
   // jump: the next one (weight 0) only at the build that closes the block
   const bool two = cln_ring && cln_rok;
   cln_rlast = (cln_ring == 2) &&
-              tc >= vgd_rot_t0 + (static_cast<Real>(b) + 1.0 - 1.0e-9)*vgd_rot_dt;
+              tc >= (static_cast<Real>(b) + 1.0 - 1.0e-9)*vgd_rot_dt;
   const int nx = (xf || cln_rlast) ? 1 : 0;
   const int ns = (two ? 1 : nk) + nx;
   // (the sets' tables by their own count: CleanScUnion2 resets cln_fvn to two sets)
@@ -1452,7 +1452,7 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 //! it the closure is the diffusion limit (CleanThickI, error O(R^2),
 //! R = |grad S|/(chi S)).
 //! A column's cut: 10 optical depths below its lowest cell with R >= 0.01 or thinner than
-//! vet_col_lat_cut_thin.  Moves down at once, up after clean_ray_cut_wait builds (both
+//! one optical depth.  Moves down at once, up after clean_ray_cut_wait builds (both
 //! in the restart file).  sc rays only; no cut with several MeshBlocks along x1
 
 #if VET_TU_PART(1)
@@ -1464,7 +1464,6 @@ void RadiationVet::CleanRayCut() {
   const int ks = indcs.ks, ke = indcs.ke, n1 = indcs.nx1;
   const int nk = ke - ks + 1, nj = je - js + 1, nf = pmy_pack->pmesh->three_d ? 3 :
                                                   (pmy_pack->pmesh->multi_d ? 2 : 1);
-  const Real tthin = vray_cut_thin;
   CleanArgs x = CleanMakeArgs();
   auto cs_ = vray_cs;
   int lmin = n1;
@@ -1474,7 +1473,7 @@ void RadiationVet::CleanRayCut() {
     const int m = idx/(nk*nj), k = ks + (idx/nj) % nk, j = js + idx % nj;
     auto tc = [&](const int i) {return exp(cs_(m,0,k,j,i))*(x.x1f(m,i+1) - x.x1f(m,i));};
     int i = is;
-    for (; i <= ie && !(tthin > 0.0 && tc(i) < tthin); ++i) {
+    for (; i <= ie && !(tc(i) < 1.0); ++i) {
       Real r2 = 0.0;
       for (int dir = 0; dir < nf; ++dir) {
         const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);

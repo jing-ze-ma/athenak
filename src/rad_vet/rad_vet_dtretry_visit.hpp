@@ -49,7 +49,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("esrc", esrc);
   v.value("esrc_on", esrc_on);
   v.value("vsrc_noes", vsrc_noes);
-  v.value("vsrc_noes_h2be", vsrc_noes_h2be);
   v.value("fl_on", fl_on);
   v.value("fl_mhd", fl_mhd);
   v.value("emag_hold", emag_hold);
@@ -74,8 +73,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_nmu", vet_nmu);
   v.value("vet_nphi", vet_nphi);
   v.value("vet_nray", vet_nray);
-  v.value("vsc_gd", vsc_gd);
-  v.value("vsc_gdmir", vsc_gdmir);
   v.value("vsc_rayk", vsc_rayk);
   v.view("vet_rayg", vet_rayg);
   v.value("vet_bc_bath", vet_bc_bath);
@@ -83,10 +80,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_bc_mirror", vet_bc_mirror);
   v.value("vet_bc_mirror_hi", vet_bc_mirror_hi);
   v.value("vet_bc_face", vet_bc_face);
-  v.value("vet_seg_split", vet_seg_split);
-  v.value("vet_seg_emit", vet_seg_emit);
-  v.value("vet_seg_jump", vet_seg_jump);
-  v.value("vet_seg_plateau", vet_seg_plateau);
   v.value("vet_x1per", vet_x1per);
   v.value("vet_x1npass", vet_x1npass);
   v.value("vet_x1ptol", vet_x1ptol);
@@ -96,7 +89,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_x1_npsum", vet_x1_npsum);
   v.value("vet_x1_ncap", vet_x1_ncap);
   v.value("vet_x1_npmax", vet_x1_npmax);
-  v.value("vet_interp", vet_interp);
   v.value("vet_mirror_npass", vet_mirror_npass);
   v.value("vet_x1src", vet_x1src);
   v.value("vet_x2open", vet_x2open);
@@ -535,11 +527,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_nneg", cln_nneg);
   v.value("vray_ready", vray_ready);
   v.value("vscat", vscat);
-  v.value("vscat_form", vscat_form);
-  v.value("vscat_jrel", vscat_jrel);
   v.value("vray_rat_keys", vray_rat_keys);
   v.value("vray_icut", vray_icut);
-  v.value("vray_cut_thin", vray_cut_thin);
   v.value("vray_ncall", vray_ncall);
   v.value("vray_nclamp", vray_nclamp);
   v.view("vray_cs", vray_cs);
@@ -554,16 +543,12 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_gl_stag", vgd_gl_stag);
   v.value("vgd_rot", vgd_rot);
   v.value("vgd_rot_dt", vgd_rot_dt);
-  v.value("vgd_rot_t0", vgd_rot_t0);
   v.value("vgd_rot_auto", vgd_rot_auto);
   v.value("vgd_rot_unc", vgd_rot_unc);
   v.value("vgd_rot_auto_fac", vgd_rot_auto_fac);
-  v.value("vgd_rot_align", vgd_rot_align);
   v.value("vgd_rot_nalign", vgd_rot_nalign);
-  v.value("vgd_rot_slope", vgd_rot_slope);
   v.value("vgd_rot_lastblk", vgd_rot_lastblk);
   v.value("t2_rotcorr", t2_rotcorr);
-  v.value("vgd_rot_cfrac", vgd_rot_cfrac);
   v.value("vgd_rot_ncorr", vgd_rot_ncorr);
   v.value("vgd_rot_ncfail", vgd_rot_ncfail);
   v.value("vgd_rot_ncpass", vgd_rot_ncpass);
@@ -572,8 +557,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vra_k", vra_k);
   v.value("vra_ema", vra_ema);
   v.value("vra_ema_n", vra_ema_n);
-  v.value("vra_ema_eps", vra_ema_eps);
-  v.value("vra_ema_chj", vra_ema_chj);
   v.value("vra_ema_chstep", vra_ema_chstep);
   v.value("vra_ema_wb", vra_ema_wb);
   v.value("vgd_xf", vgd_xf);
@@ -591,7 +574,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_xff_nmsg", vgd_xff_nmsg);
   v.value("vgd_xff_nfb", vgd_xff_nfb);
   v.value("vgd_xf_alt", vgd_xf_alt);
-  v.value("vra_eq", vra_eq);
   v.value("vra_on", vra_on);
   v.value("vra_tab", vra_tab);
   v.view("vra_a0", vra_a0);
