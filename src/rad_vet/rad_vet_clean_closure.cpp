@@ -2386,18 +2386,11 @@ void RadiationVet::CleanClosureFill() {
   }
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
-    // (only what cln_fill reads, D, h+- and valid(0), depth 1, in one exchange; callers
-    // exchange all of cln_s afterwards; the last pass also valid(1))
-    const int ns = cln_s.extent_int(1), nf = (ns/cln_hmax)*cln_hmax;
-    if (nfl == CLN_C1 && cln_hmax > CLN_C1) {
-      CleanGhostDefer(cln_s, 0, CLN_C1);
-      cln_hpend.back().dep = 1;
-      CleanGhostFill(cln_v, 0, (pass + 1 < cln_fillpass) ? 1 : 2, true, 0, 1);
-    } else {
-      if (nf > 0) CleanGhostFill(cln_s, 0, nf);
-      if (ns > nf) CleanGhostDefer(cln_s, nf, ns - nf);
-      CleanGhostFill(cln_v, 0, 2);
-    }
+    // (only what cln_fill reads: D, h+- (and the held k+ or HO), valid(0), at depth 1;
+    // callers exchange all of cln_s afterwards; the last pass also valid(1))
+    CleanGhostDefer(cln_s, 0, CLN_C1, 1);
+    if (nfl > CLN_C1) CleanGhostDefer(cln_s, CLN_KP, nfl - CLN_C1, 1);
+    CleanGhostFill(cln_v, 0, (pass + 1 < cln_fillpass) ? 1 : 2, true, 0, 1);
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
