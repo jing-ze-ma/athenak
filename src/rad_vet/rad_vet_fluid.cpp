@@ -184,6 +184,8 @@ void RadiationVet::FloorGasCap() {
     }
     if (lx != 0.0) dom = lx/li;
   }
+  auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
+  Kokkos::deep_copy(sl, 0.0);
   par_for("vet_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
@@ -207,7 +209,7 @@ void RadiationVet::FloorGasCap() {
       uh(m,IM1,k,j,i) = q[0]; uh(m,IM2,k,j,i) = q[1]; uh(m,IM3,k,j,i) = q[2];
       uh(m,IEN,k,j,i) += dk;
       u0_(m,M1_E,k,j,i) -= dk;
-      Kokkos::atomic_add(&cnt_.d_view(5), -w*r*wv);
+      CleanSlotAdd(sl, 5, m, k, j, i, -w*r*wv);
       return;
     }
     Real ekin = 0.5*msq/dd;
@@ -219,7 +221,7 @@ void RadiationVet::FloorGasCap() {
       Real fs;
       const Real ek = EkinScale(ekin, 0.5*pf*pf/dd, 0.5*vc*vc*dd, fs);
       const Real dke = ekin - ek;
-      Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*sqrt(fmax(msq - pf*pf, 0.0))*wv);
+      CleanSlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*sqrt(fmax(msq - pf*pf, 0.0))*wv);
       m1 = fs*(m1 - pf*f[0]) + pf*f[0];
       m2 = fs*(m2 - pf*f[1]) + pf*f[1];
       m3 = fs*(m3 - pf*f[2]) + pf*f[2];
@@ -227,20 +229,20 @@ void RadiationVet::FloorGasCap() {
       ekin = ek;
       etot -= dke;
       erad += dke;
-      Kokkos::atomic_add(&cnt_.d_view(0), 1.0);
-      Kokkos::atomic_add(&cnt_.d_view(2), dke*wv);
+      CleanSlotAdd(sl, 0, m, k, j, i, 1.0);
+      CleanSlotAdd(sl, 2, m, k, j, i, dke*wv);
     } else if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
       // book the removed momentum |dp| V and its L_z
       Real p[3] = {m1, m2, m3};
       if (mv) CleanGasMomentum(x, uh, m, k, j, i, p);
-      Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
+      CleanSlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
                          p[2]*p[2]) : sqrt(msq))*wv);
       if (mv) {
-        Kokkos::atomic_add(&cnt_.d_view(5), (1.0 - fs)*CleanLzArm(x, m, k, j, i)*p[2]*wv);
+        CleanSlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*CleanLzArm(x, m, k, j, i)*p[2]*wv);
       } else if (hv) {
-        Kokkos::atomic_add(&cnt_.d_view(5), (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
+        CleanSlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
                            sin(0.5*(x2f(m,j) + x2f(m,j+1)))*wv);
       }
       m1 *= fs; m2 *= fs; m3 *= fs;
@@ -248,8 +250,8 @@ void RadiationVet::FloorGasCap() {
       ekin -= dke;
       etot -= dke;
       erad += dke;
-      Kokkos::atomic_add(&cnt_.d_view(0), 1.0);
-      Kokkos::atomic_add(&cnt_.d_view(2), dke*wv);
+      CleanSlotAdd(sl, 0, m, k, j, i, 1.0);
+      CleanSlotAdd(sl, 2, m, k, j, i, dke*wv);
     }
     const Real eg = etot - ekin - egrv;
     if (eg > 0.0) {
@@ -263,14 +265,15 @@ void RadiationVet::FloorGasCap() {
         if (de > 0.0) {
           etot -= de;
           erad += de;
-          Kokkos::atomic_add(&cnt_.d_view(1), 1.0);
-          Kokkos::atomic_add(&cnt_.d_view(3), de*wv);
+          CleanSlotAdd(sl, 1, m, k, j, i, 1.0);
+          CleanSlotAdd(sl, 3, m, k, j, i, de*wv);
         }
       }
     }
     uh(m,IEN,k,j,i) = etot;
     u0_(m,M1_E,k,j,i) = erad;
   });
+  CleanSlotSum(sl, cnt_.d_view, 6);
   const int rep = fcap_report;
   const int cyc = pmy_pack->pmesh->ncycle;
   if (rep > 0 && (cyc % rep) == 0) {

@@ -427,6 +427,32 @@ void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanSlotAdd, CleanSlotSum
+//! \brief counters of a kernel over many faces or cells: one atomic per thread in one of
+//! CLN_NSL slots (a single counter's atomics serialise all threads on a GPU), added to
+//! dst(n) after the kernel
+
+constexpr int CLN_NSL = 4096;
+
+KOKKOS_INLINE_FUNCTION
+void CleanSlotAdd(const DvceArray1D<Real> &v, const int n, const int m, const int k,
+                  const int j, const int i, const Real a) {
+  Kokkos::atomic_add(&v(n*CLN_NSL + ((i + 61*j + 1021*k + 131*m) & (CLN_NSL - 1))), a);
+}
+
+template <typename T>
+void CleanSlotSum(const DvceArray1D<Real> &v, const T &dst, const int nc) {
+  auto w = v;
+  auto d = dst;
+  Kokkos::parallel_for("cln_slot", Kokkos::RangePolicy<>(DevExeSpace(), 0, nc),
+  KOKKOS_LAMBDA(const int n) {
+    Real s = 0.0;
+    for (int q = 0; q < CLN_NSL; ++q) s += w(n*CLN_NSL + q);
+    d(n) += s;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \struct CleanLevel
 //! \brief one level of the staggered multigrid: its blocks, vectors and their slots
 

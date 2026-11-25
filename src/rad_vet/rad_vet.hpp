@@ -271,6 +271,14 @@ constexpr Real M1_RTOL  = 1.0e-12;
 //! \struct RadiationVetTaskIDs
 //! \brief container to hold TaskIDs of all rad_vet tasks
 
+//! \struct CleanRingMates
+//! \brief the MeshBlocks of each local block's line along a direction (CleanRingMatesInit)
+struct CleanRingMates {
+  int nmb = -1, nt = -1, nslot = 0;   // blocks here and in the mesh; received blocks
+  DvceArray2D<int> src;               // (m, position): local block or -1 - received slot
+  std::vector<std::array<int, 3>> snd, rcv;   // (block or slot, rank, source gid)
+};
+
 struct VetMBState;   // multi-block short-characteristics sweep (rad_vet_vet.cpp)
 
 struct RadiationVetTaskIDs {
@@ -1099,6 +1107,7 @@ class RadiationVet {
                           const int col, const int lim = -1);
   void CleanStagCoarseSetup();
   void CleanStagPcrFactors();
+  void CleanRingMatesInit(const int d, CleanRingMates &rm);
   void CleanStagVCycle(const int l, const int src, const int dst);
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
@@ -1295,6 +1304,7 @@ class RadiationVet {
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
   DvceArray3D<Real> cln_fsjt[3];   // (layout tile: the F join per tile, CleanFsjt)
+  std::array<CleanRingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fcgas = false;   // clean_stag_fcone_gas

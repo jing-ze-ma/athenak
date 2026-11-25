@@ -1095,6 +1095,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_pcrl : std::map<std::array<int, 8>, DvceArray1D<int>> (protocol counter, kept monotonic)
 //   cln_dbginf : int (one-shot test injection, kept)
 //   pin_rcut_ : ParameterInput *
+//   cln_fwr : std::array<CleanRingMates, 3> (protocol counter, kept monotonic)
 //   cln_lzpin : ParameterInput *
 //   cln_wci : DvceArray5D<Real> (protocol counter, kept monotonic)
 //   cln_sgv : DvceArray4D<Real> (protocol counter, kept monotonic)
