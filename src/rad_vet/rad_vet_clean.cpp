@@ -3763,11 +3763,14 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       std::printf("CLEAN FCONE cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
-    if (global_variable::my_rank == 0 && n > 0.0 && cln_fclz) {
-      std::printf("CLEAN FCONE_LZ cycle %d t2s %d momentum removed (signed, V/c^2) x1 "
-                  "%.6e x2 %.6e x3 %.6e\n", pmy_pack->pmesh->ncycle, t2_solve,
-                  CleanReduce(h(2), false), CleanReduce(h(3), false),
-                  CleanReduce(h(4), false));
+    if (n > 0.0 && cln_fclz) {
+      Real q[3];   // (every rank: the sums are collective)
+      for (int d = 0; d < 3; ++d) q[d] = CleanReduce(h(2+d), false);
+      if (global_variable::my_rank == 0) {
+        std::printf("CLEAN FCONE_LZ cycle %d t2s %d momentum removed (signed, V/c^2) x1 "
+                    "%.6e x2 %.6e x3 %.6e\n", pmy_pack->pmesh->ncycle, t2_solve, q[0],
+                    q[1], q[2]);
+      }
     }
   }
 }

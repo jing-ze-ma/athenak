@@ -154,6 +154,9 @@ def run(exe, rundir, args, ranks=1, threads=1, mpirun='mpirun', timeout=3600):
     if ranks > 1:
         cmd = mpirun.split() + ['-np', str(ranks)] + cmd
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), OMP_PROC_BIND='false')
+    if ranks > 1:   # (Open MPI: more ranks than the job's slots are allowed)
+        env.setdefault('OMPI_MCA_rmaps_base_oversubscribe', '1')
+        env.setdefault('OMPI_MCA_hwloc_base_binding_policy', 'none')
     if ranks == 1:
         # a single-rank run started without mpirun inside a Slurm job: the MPI library
         # would try to join the job's PMI and abort, so it runs as a singleton

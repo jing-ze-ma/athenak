@@ -14,6 +14,20 @@
    "dLz": 1e-13
   }
  },
+ "mpi_ranks": {
+  "equal": {
+   "maxdiff_sp": 0.0,
+   "maxdiff_cs": 0.0,
+   "maxdiff_pay": 0.0
+  },
+  "max": {
+   "warnings": 0
+  },
+  "min": {
+   "fcone_lz": 1,
+   "files": 1
+  }
+ },
  "conservation_lz": {
   "_about": "the L_z-exact caps / cuts all on (+ floorcap_lz on every cell): drifts as conservation_sp, dLz_gr without the ledger; restart and forced dt_retry bitwise; cs_dLz_gr is reported only (the cell-centred flux vector, as conservation_cs)",
   "max": {
