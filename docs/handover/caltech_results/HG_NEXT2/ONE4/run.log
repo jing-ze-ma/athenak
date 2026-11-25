@@ -1,0 +1,2 @@
+2026-11-25 05:32:41 start ONE4 nodes hpc-sm-02-03 ranks 4 BIN athena_next2_e8d3e64d9 md5=f3c50eae1b2ebb30a02dd3f498722bf6 T6 nlim 794810 tool {}
+2026-11-25 05:35:17 rc=0 ended: Terminating on cycle limit wall=156 s CW 0 FATAL 0

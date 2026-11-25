@@ -1,0 +1,13 @@
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+| BASE1 | 24 | 2.8703 | 2.7974 | 2.692/3.535 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=116 s CW 0 FATAL 0 |
+| NEW1 | 24 | 2.4765 | 2.4011 | 2.290/3.155 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=111 s CW 0 FATAL 0 |
+| NEW2 | 24 | 2.4322 | 2.3598 | 2.252/3.116 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0 |
+| BASE2 | 24 | 2.8495 | 2.7739 | 2.667/3.568 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=116 s CW 0 FATAL 0 |
+- base (both arms) mean 2.8599 median 2.7861; new mean 2.4544 median 2.3923; new / base mean 0.8582, median 0.8587; base arms 2.8703 vs 2.8495, new arms 2.4765 vs 2.4322 (mean)
+- NEW1 user.hst against BASE1: 26 / 26 rows, printed-bitwise
+- NEW1 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
+- NEW2 user.hst against BASE1: 26 / 26 rows, printed-bitwise
+- NEW2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
+- BASE2 user.hst against BASE1: 26 / 26 rows, printed-bitwise
+- BASE2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
