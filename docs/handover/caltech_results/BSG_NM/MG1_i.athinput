@@ -1,0 +1,4 @@
+<job>
+final_restart = false
+<hydro>
+dt_report = 10

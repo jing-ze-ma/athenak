@@ -1,0 +1,2 @@
+2026-11-24 20:17:40 start NM0b hpc-sm-02-09 BIN athena_c4_a000d803c md5=3ae130e97b13e5bdfa4a7f9a14370b9f ARGS: -i /resnick/groups/carnegie_poc/jingze/b1_1124/nm/decks/NM0b.athinput output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 time/nlim=100
+2026-11-24 20:19:36 rc=0 (srun) ended: Terminating on cycle limit wall=116 s CW 0 FATAL 0 inf 0 DT_RETRY 0 stage fallback 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 

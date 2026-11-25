@@ -1,0 +1,6 @@
+<job>
+final_restart = false
+<time>
+dt_fixed = 80.0
+<hydro>
+dt_report = 10
