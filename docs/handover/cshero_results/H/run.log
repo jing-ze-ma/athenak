@@ -1,0 +1,2 @@
+2026-11-24 18:23:46 start H node hpc-sm-02-03 BIN athena_sdosdo_53290b5af md5=573465bddd359381dd270fd0428e8683 deck star3d_cs_H.athinput md5 7f4a6ab7ce74556dd603ac7e6eba484d, no command-line keys
+2026-11-24 18:27:56 rc=0 (srun) ended: Terminating on cycle limit wall=250 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
