@@ -329,3 +329,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 02:12 02-03: kt_e77765501_6 -> kt_e77765501_26
 - 11-25 02:12 02-09: kt_e77765501_6 -> kt_e77765501_26
 - 11-25 02:12 02-16: IDLE -> b_fwbmem2
+- 11-25 02:14 02-03: kt_e77765501_26 -> IDLE
+- 11-25 02:14 02-09: kt_e77765501_26 -> IDLE
+- 11-25 02:15 02-03: IDLE -> kt_abcfc1e4a_6
+- 11-25 02:15 02-09: IDLE -> kt_abcfc1e4a_6
+- 11-25 02:16 02-03: kt_abcfc1e4a_6 -> kt_abcfc1e4a_26
+- 11-25 02:16 02-09: kt_abcfc1e4a_6 -> kt_abcfc1e4a_26
+- 11-25 02:16 02-16: b_fwbmem2 -> IDLE
