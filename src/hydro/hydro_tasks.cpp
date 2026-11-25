@@ -327,6 +327,7 @@ TaskStatus Hydro::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
+  if (pmy_pack->pradvet != nullptr) pmy_pack->pradvet->MemArenaHydro();
   // the next ConToPrim follows an update; a change of this stage's state
   // reaches the end of the step with the weight prod_{s > stage} gam0[s] (the 2S
   // register update u0 = gam0 u0 + gam1 u1 + ...; u1 is the step-start state)

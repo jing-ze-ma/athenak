@@ -18,14 +18,25 @@
 
 #include <Kokkos_Core.hpp>
 
-template <class V, class... I>
-V ScratchView(const std::string &key, const I... ext) {
+//! ScratchBind<V>(key, v): ScratchView's View of that key is v (caller-owned memory: its
+//! uses write it before they read it)
+
+template <class V>
+std::map<std::string, V> &ScratchMap() {
   static std::map<std::string, V> *m = nullptr;
   if (m == nullptr) {
     m = new std::map<std::string, V>();
     Kokkos::push_finalize_hook([]() {delete m; m = nullptr;});
   }
-  V &v = (*m)[key];
+  return *m;
+}
+
+template <class V>
+void ScratchBind(const std::string &key, const V &v) {ScratchMap<V>()[key] = v;}
+
+template <class V, class... I>
+V ScratchView(const std::string &key, const I... ext) {
+  V &v = ScratchMap<V>()[key];
   const std::size_t e[] = {static_cast<std::size_t>(ext)...};
   bool same = (v.data() != nullptr);
   for (std::size_t r = 0; r < sizeof...(I) && same; ++r) same = (v.extent(r) == e[r]);
