@@ -562,3 +562,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 10:06 02-09: IDLE for 10 min
 - 11-25 10:13 02-03: pg_mlt -> IDLE
 - 11-25 10:24 02-03: IDLE for 10 min
+- 11-25 10:26 02-03: IDLE -> pg_spB
+- 11-25 10:26 02-09: IDLE -> pg_spA
+- 11-25 10:27 02-03: pg_spB -> IDLE
+- 11-25 10:27 02-09: pg_spA -> IDLE
