@@ -87,3 +87,10 @@ FileNotFoundError: [Errno 2] No such file or directory: '/resnick/groups/carnegi
 - user.hst vs HGN: 30 rows in common, printed-bitwise
 - All CLEAN PASS lines and per-cycle prints: caltech_results/HGN/HGV/lines.txt.gz.
 - The hung nsys run, one line: no utilisation was logged; its memory samples (nvidia-smi every 2 s) stay at 73.6-74.1 GB per GPU on all 8 for the whole 26 min (no growth, no release), the log ended inside cycle 794786, no stack was taken.
+
+## PRF2 (25d item 2): nsys -t cuda only, 12 cycles, 8 ranks, one try
+- 2026-11-25 01:11:40 rc=137 (srun) ended:  wall=256 s CW 0 FATAL 0
+2026-11-25 01:11:39 HANG: no log progress for 3 min; step 7333072.576 cancelled; last: <hydro> floor_audit cycle 794785 pay: paid 1.610857971e+26 unpaid 0 given_to_rad 1.902320146e+16 cells 13 | fofc_retest:
+```
+```
+- Files: caltech_results/HGN/PRF2/ (kname_r0-3, gaps_r0-3, stats_r0). sqlite / nsys-rep stay in /resnick/groups/carnegie_poc/jingze/b1_1124/hgn/PRF2.
