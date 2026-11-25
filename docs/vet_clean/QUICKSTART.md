@@ -142,7 +142,7 @@ PASS conservation_sp       6 s  dE 1e-15 dM 6.74e-16 dLz 1.47e-16 dLz_gr 5.92e-0
 1 passed, 0 failed, 14 s
 ```
 
-Then run the quick suite, 20 tests (50 s on 48 cores). By default the suite runs one test
+Then run the quick suite, 21 tests (50 s on 48 cores). By default the suite runs one test
 per 4 cores of the machine; on a shared login node cap it with `--jobs` (12 jobs x 4
 threads = 48 cores):
 
@@ -152,7 +152,7 @@ tests/vet_clean/run_tests.sh --exe build_tests/src/athena --quick --jobs 12
 
 It ends with `20 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
 values`; a `FAIL` line names the failed criterion after `<-` and keeps the run directory in
-`vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (48 tests, 5 min on
+`vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (49 tests, 5 min on
 48 cores) runs without `--quick`. What each test checks: [tests/vet_clean/README.md](../../tests/vet_clean/README.md).
 
 On a GPU, run the same suite with the GPU `build_tests` binary, one test at a time (2 min

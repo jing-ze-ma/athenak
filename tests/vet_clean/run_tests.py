@@ -445,6 +445,28 @@ def t_layout_tile(c):
     return out
 
 
+def t_layout_cs(c):
+    """tile mode (8 x 8 tiles) on the cubed sphere, an optically thin rotating shell with
+    turning rays (GL 10 x 12, EMA ring): one MeshBlock per panel vs 2 x 2, 8 cycles:
+    identical; dark: the same with clean_ray_min = 1 (most cells hold no rays).  The rays'
+    flux through a lateral MeshBlock face is one value, the upper cell's.  dE, dLz of the
+    2 x 2 run."""
+    o = {'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
+         'meshblock/nx2': 16, 'meshblock/nx3': 16, 'rad_vet/kappa_p': 0.1,
+         'rad_vet/kappa_e': 0.1, 'rad_vet/kappa_s': 0.5, 'rad_vet/vet_gd_rotate_dt': 0.1,
+         'rad_vet/vet_rotate_avg_ema_wb': 'true'}
+    out = {'warnings': 0}
+    for tag, q in (('', {}), ('_dark', {'rad_vet/clean_ray_min': 1.0})):
+        a = c.run('shell_cs.athinput', 'mb1' + tag, dict(o, **q))
+        b = c.run('shell_cs.athinput', 'mb22' + tag, dict(o, **dict(q, **{
+            'meshblock/nx2': 8, 'meshblock/nx3': 8})))
+        out['maxdiff' + tag] = max(vett._bin_diff(x, y)[0]
+                                   for x, y in zip(vett.bins(a), vett.bins(b)))
+        out.update({k + tag: v for k, v in am_budget(b, 'cs').items() if k != 'dLz_gr'})
+        out['warnings'] += vett.warnings(open(os.path.join(b, 'run.log')).read())
+    return out
+
+
 def t_fofc_layout_cs(c):
     """FOFC on the cubed sphere (a hydro shell): one MeshBlock per panel vs 2 x 2 (_mb22),
     2 along r (_r2) and 2 x 2 x 2 (_r2mb22): identical, with the flags of the same-panel
@@ -1173,8 +1195,11 @@ def l1(a, b):
 def t_idort_beams(c):
     """two crossing beams in vacuum: E against the exact straight beams (L1 over the box;
     lum_top: the energy of the third row below the x1max face relative to the exact);
-    flux_err: the largest |x1 energy flux through a row (sum of vet_phi1) / injected - 1|"""
+    flux_err: the largest |x1 energy flux through a row (sum of vet_phi1) / injected - 1|;
+    F_nocone: the largest |F|/(c E_max) without the cone cut (clean_stag_fcone = false)"""
     d = c.run('idort_beams.athinput', 'run')
+    n = vett.last_bin(c.run('idort_beams.athinput', 'nocone',
+                            {'rad_vet/clean_stag_fcone': 'false'}), 'vet')
     m, Ex = vett.last_bin(d, 'vet'), beams_exact(d)
     E, x2 = m['vet_e'][0], vett.cell_centres(d)[1]
     cl = float(vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
@@ -1182,7 +1207,9 @@ def t_idort_beams(c):
     fin = sum(e*np.cos(np.radians(a))*(y1 - y0) for e, a, y0, y1 in beam_list(d))
     fx = m['vet_phi1'][0].sum(axis=0)*(x2[1] - x2[0])/cl
     return dict(L1=l1(E, Ex), lum_top=float(E[:, -3].sum()/Ex[:, -3].sum()),
-                flux_err=float(np.abs(fx/fin - 1.0).max()))
+                flux_err=float(np.abs(fx/fin - 1.0).max()),
+                F_nocone=float(max(np.abs(n['vet_f%d' % a]).max() for a in (1, 2))/
+                               (cl*n['vet_e'].max())))
 
 
 def t_idort_beams_mb(c):
@@ -1512,6 +1539,7 @@ TESTS = [  # name, function, in --quick
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),
     ('layout_tile', t_layout_tile, True),
+    ('layout_cs', t_layout_cs, True),
     ('fofc_layout_cs', t_fofc_layout_cs, True),
     ('order_time', t_order_time, True),
     ('order_stiff', t_order_stiff, False),

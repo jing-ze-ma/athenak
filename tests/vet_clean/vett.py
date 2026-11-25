@@ -1,7 +1,8 @@
 """vett.py: small helpers for the clean VET test suite (Python standard library + numpy).
 
 - read_bin(path): an AthenaK .bin dump as {variable: global array (nx3, nx2, nx1)} plus
-  'time' and 'cycle' (single-level meshes; MeshBlocks placed by their logical location).
+  'time' and 'cycle' (single-level meshes; MeshBlocks placed by their logical location;
+  cubed sphere: its six panels one after another along x3).
 - read_blocks(path): the same dump as a list of (extent, {variable: (n3, n2, n1)}) per
   MeshBlock in file (gid) order (the cubed sphere: one panel after another).
 - read_hst(path): a .hst file as (labels, 2-D array).
@@ -39,7 +40,11 @@ def read_bin(path):
         nx = [int(deck['mesh']['nx%d' % d]) for d in (1, 2, 3)]
         mb = [int(deck['meshblock'].get('nx%d' % d, nx[d - 1])) for d in (1, 2, 3)]
         vdt = np.float64 if vsz == 8 else np.float32
-        out = {n: np.zeros((nx[2], nx[1], nx[0])) for n in names}
+        # (a panel's MeshBlocks: consecutive in the file, their locations its own)
+        cub = deck['mesh'].get('use_cubed_sphere') == 'true'
+        nbp = (nx[0]//mb[0])*(nx[1]//mb[1])*(nx[2]//mb[2])
+        out = {n: np.zeros(((6 if cub else 1)*nx[2], nx[1], nx[0])) for n in names}
+        nb = 0
         while fp.tell() < size:
             ind = np.frombuffer(fp.read(24), dtype=np.int32).astype(np.int64)
             lx = np.frombuffer(fp.read(16), dtype=np.int32)   # logical location, level
@@ -49,7 +54,8 @@ def read_bin(path):
                 fp.read((2*(n1 + n2 + n3) + 3)*lsz)
             a = np.fromfile(fp, dtype=vdt, count=n1*n2*n3*len(names))
             a = a.reshape(len(names), n3, n2, n1)
-            o1, o2, o3 = lx[0]*mb[0], lx[1]*mb[1], lx[2]*mb[2]
+            o1, o2, o3 = lx[0]*mb[0], lx[1]*mb[1], lx[2]*mb[2] + (nb//nbp)*nx[2]
+            nb += 1
             for v, n in enumerate(names):
                 out[n][o3:o3 + n3, o2:o2 + n2, o1:o1 + n1] = a[v]
     out['time'] = float(par['time'])
