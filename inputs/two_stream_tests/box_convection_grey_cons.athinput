@@ -34,7 +34,7 @@ problem = grey plane-parallel atmosphere, two-stream RT conservation test
 basename = grey_cons
 
 <mesh>
-nghost = 2
+nghost = 3
 nx1    = 320
 x1min  = 0.0
 x1max  = 1.58528599e9
