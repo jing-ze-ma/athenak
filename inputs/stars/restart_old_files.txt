@@ -44,7 +44,7 @@ clean_pc_sweep = rb
 #clean_stag_xdonor_freeze = 8
 
 <hydro>
-# old star files store fofc = false
+# the HG, RSG, R136 files store true; named because other old star files may store false
 fofc = true
 # not stored in old files; a restart without them runs the old form
 fofc_retest = true

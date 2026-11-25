@@ -77,7 +77,7 @@ athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt mesh/layout_til
 | `<rad_vet>/clean_stag_mg_levels` | `2` | early files may store 4 |
 | `<rad_vet>/clean_wb_exch_local`, `clean_maxit`, `clean_pc_sweep` | `true`, `200`, `rb` | not stored, production is not the default |
 | `<rad_vet>/vet_gd_wall_interp`, `vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | spherical-polar wedges with fixed rays (commented out in the file); a theta-periodic wedge without them is FATAL |
-| `<hydro>/fofc` | `true` | older star files store false |
+| `<hydro>/fofc` | `true` | older star files may store false (HG, RSG, R136 store true) |
 | `<hydro>/fofc_retest`, `floor_pay`, `floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff`, `rad_signal_speed_phase` | `true`, `rad_column`, `true`, `true`, `true`, `true` | not stored, restart default off |
 | `<hydro>/dt_floor_courant` | `0.6` | commented out: FATAL without `floorcap_rho` (HG, RSG files hold none) |
 | `<hydro>/merge_lat_mom`, `merge_lat_blockend` | `radial`, `exchange` | commented out, a choice of physics: a stored `rigid` (RSG) or `flat` stays (NOTE) |
