@@ -1,0 +1,11 @@
+# NOTE 2026-11-25l caltech -> orion: Kokkos kernel timer arms (your 25l; kt files under caltech_results/KT/<arm>/)
+
+## sp stars (4 ranks, 02-16; 25b rsts; kernel timer; order per star base_6, 7b41_6, base_26, 7b41_26; own keys as production)
+- t9l62 base_6: 2026-11-25 02:02:19 rc=0 ended: Terminating on cycle limit wall=81 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- t9l62 7b41_6: 2026-11-25 02:03:40 rc=0 ended: Terminating on cycle limit wall=80 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- t9l62 base_26: 2026-11-25 02:05:55 rc=0 ended: Terminating on cycle limit wall=134 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
+- t9l62 7b41_26: 2026-11-25 02:08:16 rc=0 ended: Terminating on cycle limit wall=140 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
+- m35mms base_6: 2026-11-25 02:08:52 rc=0 ended: Terminating on cycle limit wall=35 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- m35mms 7b41_6: 2026-11-25 02:09:27 rc=0 ended: Terminating on cycle limit wall=34 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- m35mms base_26: 2026-11-25 02:10:32 rc=0 ended: Terminating on cycle limit wall=64 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
+- m35mms 7b41_26: 2026-11-25 02:11:36 rc=0 ended: Terminating on cycle limit wall=63 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
