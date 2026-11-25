@@ -31,7 +31,7 @@
 namespace {
 //----------------------------------------------------------------------------------------
 //! defaults. Each applies only when its key is NOT named and
-//! recipe::NewDefaults(pin) holds, i.e. on a FRESH start (or <job>/recipe = prod1019);
+//! recipe::NewDefaults(pin) holds, i.e. on a FRESH start;
 //! a restart whose embedded input lacks the key keeps the plain behaviour (off). The
 //! resolved value is written into the ParameterInput (GetOrAdd), so it is embedded in
 //! every restart the run writes and the restart continues with it. An explicit key in
@@ -49,7 +49,6 @@ void LogDefault(ParameterInput *pin, const std::string &key, const std::string &
     recipe::Log(key + " = " + on);
   } else {
     recipe::Log(key + " = off (" + std::string(
-        recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
         "restart input has no key") + ": the old default)");
   }
 }
@@ -288,7 +287,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                   "tracer)");
     } else {
       recipe::Log("<mhd>/tracer_strang = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
           "restart input has no key") + ": the old default)");
     }
   }
@@ -464,7 +462,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         recipe::Log("<mhd>/etotgrav = true (default where supported)");
       } else {
         recipe::Log("<mhd>/etotgrav = false (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old default)");
       }
     }
@@ -479,7 +476,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         recipe::Log("<mhd>/split_bval_fast = true (default on a fresh start)");
       } else {
         recipe::Log("<mhd>/split_bval_fast = false (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old default)");
       }
     }
@@ -534,7 +530,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                     "wb_x1; acts at closed / reflecting x1 walls)");
       } else {
         recipe::Log("<mhd>/wall_wb_onesided = false (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old wall cell)");
       }
     }
@@ -787,7 +782,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       if (!recipe::NewDefaults(pin)) {
         recipe::Log("<mhd>/emf_scheme = gs07 (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old default)");
       } else if (!no.empty()) {
         recipe::Log("<mhd>/emf_scheme = gs07 (uct_hlld default not applied: " + no + ")");
@@ -1066,7 +1060,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         }
         if (!recipe::NewDefaults(pin)) {
           recipe::Log("<mhd>/cs_seam_mhd = none (" + std::string(
-              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
               "restart input has no key") + ": the old default)");
         } else if (!no.empty()) {
           recipe::Log("<mhd>/cs_seam_mhd = none (shared_o default not applied: " + no +

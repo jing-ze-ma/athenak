@@ -729,9 +729,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
       recipe::Log(std::string("<rad_vet>/vet_source = ") + (nd ? "relaxed_esc (default)"
           : (alias ? "gas (the input names only vet_col_source, inert on vet_sc: the old "
                      "vet_sc default; name vet_source to choose)"
-          : (recipe::GetMode(pin) == recipe::Mode::none
-             ? "gas (recipe none: the old vet_sc default)"
-             : "gas (restart input has no key: the old vet_sc default)"))));
+          : "gas (restart input has no key: the old vet_sc default)")));
     }
     const std::string vs = pin->GetString("rad_vet", "vet_source");
     if (vs.compare("relaxed") == 0) {

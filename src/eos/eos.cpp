@@ -171,7 +171,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                       ")");
         } else {
           recipe::Log("<" + bk + ">/" + kc + " = false (" + std::string(
-              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
               "restart input has no key") + ": the old default)");
         }
       }
@@ -212,7 +211,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
         recipe::Log("<mhd>/lhlld_chi_normal = true (default with rsolver = lhlld)");
       } else {
         recipe::Log("<mhd>/lhlld_chi_normal = false (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old default)");
       }
     }
@@ -234,7 +232,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
         recipe::Log("<mhd>/lhlld_alfmach = true (default with rsolver = lhlld)");
       } else {
         recipe::Log("<mhd>/lhlld_alfmach = false (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old default)");
       }
     }

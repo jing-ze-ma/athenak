@@ -1179,7 +1179,7 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       recipe::Log("<rad_vet>/vet_rotate_advance = true (default on a fresh vet_gd run)");
     } else {
       recipe::Log("<rad_vet>/vet_rotate_advance = false (restart input has no key: the "
-                  "old default kept; set it true or <job>/recipe = prod1019 to switch)");
+                  "old default kept; set it true to switch)");
     }
   }
   if (pin->DoesParameterExist("rad_vet","vet_rotate_advance")) {

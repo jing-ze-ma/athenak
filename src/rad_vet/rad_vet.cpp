@@ -1453,9 +1453,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         const bool nd = recipe::NewDefaults(pin);
         pin->GetOrAddString("rad_vet", vk, nd ? "relaxed_esc" : "relaxed");
         recipe::Log(std::string("<rad_vet>/vet_source = ") + (nd ? "relaxed_esc (default)"
-            : (recipe::GetMode(pin) == recipe::Mode::none
-               ? "relaxed (recipe none: the old default)"
-               : "relaxed (restart input has no key: the old default)")));
+            : ("relaxed (restart input has no key: the old default)")));
       }
       std::string vs = pin->GetString("rad_vet", vk);
     if (vs.compare("relaxed") == 0) {
@@ -1587,8 +1585,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->GetOrAddInteger("rad_vet","vet_gd_gl_nphi",np);
         pin->GetOrAddBoolean("rad_vet","vet_gd_gl_stagger",true);
       }
-      recipe::Log(!fresh ? std::string("<rad_vet>/vet_gd: HEALPix nside 3 (") +
-          (global_variable::restart_run ? "restart input has no key)" : "recipe none)")
+      recipe::Log(!fresh ? std::string("<rad_vet>/vet_gd: HEALPix nside 3 (restart input "
+                                       "has no key)")
           : (ax2 ? "<rad_vet>/vet_gd_gl_nmu = 9, vet_gd_gl_nphi = " + std::to_string(np) +
                    ", stagger (default on 2-D axisymmetric sp: exact phi walls)"
            : sp3 ? std::string("<rad_vet>/vet_gd_gl_nmu = 7, vet_gd_gl_nphi = 18, "
@@ -1750,7 +1748,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                       "full-sphere start)");
         } else {
           recipe::Log("<rad_vet>/vet_gd_band_global = false (" + std::string(
-              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
               "restart input has no key") + ": the old default)");
         }
       }
@@ -1773,7 +1770,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                     "start)");
       } else {
         recipe::Log("<rad_vet>/vet_gd_halo_compact = 0 (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
             "restart input has no key") + ": the old default)");
       }
     }
@@ -1830,9 +1826,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on) vgd_replace = pin->GetOrAddBoolean("rad_vet","vet_gd_replace",
         fix("vet_gd_replace", "true", "false"));
-    // vet_gd_tangential: full tensor by default; recipe none on cs: D_rr only
-    if (vgd_on && pmy_pack->pmesh->use_cubed_sphere &&
-        recipe::GetMode(pin) == recipe::Mode::none) {vgd_tan = false;}
+    // vet_gd_tangential: full tensor by default
     if (vgd_on) vgd_tan = pin->GetOrAddBoolean("rad_vet","vet_gd_tangential",vgd_tan);
     if (vlat_on) {
       // vet_col_lat_cut_thin (VetLatCsFinish)

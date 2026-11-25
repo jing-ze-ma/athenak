@@ -2878,9 +2878,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // top sponge (default off) and hooks
   star_zflux_ = pin->GetOrAddBoolean("problem","star_wall_zero_flux",true);
-  // default true; with the window keys absent it is bitwise the plain branch; recipe
-  // none keeps false
-  star_wbwin_ = recipe::GetMode(pin) != recipe::Mode::none;
+  // default true; with the window keys absent it is bitwise the plain branch
+  star_wbwin_ = true;
   if (pin->DoesParameterExist("problem","star_wb_grav_window")) {
     star_wbwin_ = pin->GetBoolean("problem","star_wb_grav_window");
   }

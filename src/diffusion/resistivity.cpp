@@ -81,7 +81,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       const bool ld = nd && lean_ok;
       recipe::Log(std::string("<mhd>/rkg_lean = ") + (ld ? "true (default on a uniform "
                   "cubed sphere)" : (nd ? "false (needs a uniform cubed sphere)"
-                  : "false (old default: restart input or recipe none)")));
+                  : "false (old default: restart input)")));
       rkg_lean = pin->GetOrAddBoolean("mhd", "rkg_lean", ld);
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
@@ -110,8 +110,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                       " (default with STS on a single-level mesh)");
         } else {
           recipe::Log(std::string("<mhd>/") + ks[q] + (q < 2 ? " = false" : " = outputs")
-                      + " (" + (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
-                      : "restart input has no key") + ": the old default)");
+                      + " (" + "restart input has no key" + ": the old default)");
         }
       }
     }
@@ -133,7 +132,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       if (nd && curv) rkg_dt_safety = pin->GetOrAddReal("mhd", "rkg_dt_safety", 0.8);
       recipe::Log(std::string("<mhd>/rkg_dt_safety = ") + ((nd && curv) ? "0.8 (default "
                   "with STS on cs/sp)" : (nd ? "0 = off (cs/sp only)"
-                  : "0 = off (old default: restart input or recipe none)")));
+                  : "0 = off (old default: restart input)")));
     }
     rkg_dt_fe = (rkg_dt_safety > 0.0);
     if (rkg_dt_fe && !use_rkg_sts) {
@@ -171,8 +170,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                       "radial grid)");
         } else {
           recipe::Log(std::string("<mhd>/sp_resist_x1_centred = false (") +
-                      (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
-                       : "restart input has no key") + ": the old default)");
+                      "restart input has no key" + ": the old default)");
         }
       }
       sp_resist_x1_centred = sp_resist_x1_centred && sp_str;

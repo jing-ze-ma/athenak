@@ -321,7 +321,7 @@ class Hydro {
   void SplitBvalSnap(Driver *pdrive, int stage);
   // <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
   // operator-split source is user_split_once (RTOpSplitBvals converts already).
-  // Default true unless <job>/recipe = none (hydro.cpp).
+  // Default true (hydro.cpp).
   bool scp_once = false;
   bool SplitC2POnce() const;
   DvceArray2D<Real> c2p_acc;
@@ -346,8 +346,7 @@ class Hydro {
   // WB scheme, the wall cell of a closed x1 wall (reflect inner/outer, or a user inner
   // face under wall_closed_ix1; every geometry) reconstructs its WB deviation one-sided
   // towards the interior, and the wall face takes the mirror state. Removes the
-  // closed-wall odd-even v_r mode. Default true with WB x1 unless <job>/recipe = none
-  // (hydro.cpp).
+  // closed-wall odd-even v_r mode. Default true with WB x1 (hydro.cpp).
   bool wall_wb_onesided = false;
   // ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side

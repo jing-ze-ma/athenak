@@ -263,7 +263,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       recipe::Log("<hydro>/etotgrav = true (default where supported)");
     } else {
       recipe::Log("<hydro>/etotgrav = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
           "restart input has no key") + ": the old default)");
     }
   }
@@ -280,15 +279,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
            pin->GetBoolean("hydro","split_bval_fast") : true;
   // Default split_c2p_once = true on a fresh start and on a restart whose input lacks the
-  // key (the value is recorded); <job>/recipe = none keeps false and an explicit key
-  // wins.
+  // key (the value is recorded); an explicit key wins.
   if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
-    if (recipe::GetMode(pin) != recipe::Mode::none) {
-      pin->GetOrAddBoolean("hydro","split_c2p_once",true);
-      recipe::Log("<hydro>/split_c2p_once = true (default, fresh start and restart)");
-    } else {
-      recipe::Log("<hydro>/split_c2p_once = false (recipe none: the old default)");
-    }
+    pin->GetOrAddBoolean("hydro","split_c2p_once",true);
+    recipe::Log("<hydro>/split_c2p_once = true (default, fresh start and restart)");
   }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
@@ -335,18 +329,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
   // <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): default true whenever
   // the x1 dynamic WB scheme is on and the key is not named, on a fresh start and on a
-  // restart (recorded); it acts only at closed / reflecting x1 walls.  <job>/recipe =
-  // none keeps false and an explicit key always wins.
+  // restart (recorded); it acts only at closed / reflecting x1 walls.  An explicit key
+  // always wins.
   if (!pin->DoesParameterExist("hydro","wall_wb_onesided") &&
       use_wellbalance_dynamic && use_wb_x1) {
-    if (recipe::GetMode(pin) != recipe::Mode::none) {
-      pin->GetOrAddBoolean("hydro","wall_wb_onesided",true);
-      recipe::Log("<hydro>/wall_wb_onesided = true (default with wellbalance_dynamic + "
-                  "wb_x1, fresh start and restart; acts at closed / reflecting x1 "
-                  "walls)");
-    } else {
-      recipe::Log("<hydro>/wall_wb_onesided = false (recipe none: the old wall cell)");
-    }
+    pin->GetOrAddBoolean("hydro","wall_wb_onesided",true);
+    recipe::Log("<hydro>/wall_wb_onesided = true (default with wellbalance_dynamic + "
+                "wb_x1, fresh start and restart; acts at closed / reflecting x1 walls)");
   }
   if (pin->DoesParameterExist("hydro","wall_wb_onesided")) {
     wall_wb_onesided = pin->GetBoolean("hydro","wall_wb_onesided");

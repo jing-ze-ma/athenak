@@ -200,9 +200,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   } else if (global_variable::restart_run) {
     recipe::Log("<rad_vet>/implicit_resid_fatal = 0 (off: restart input has no key, the "
                 "old default kept; set it to switch)");
-  } else {
-    impl_res_fatal = pin->GetOrAddReal("rad_vet","implicit_resid_fatal",1.0e2);
-    recipe::Log("<rad_vet>/implicit_resid_fatal = 1e2 (recipe none: the old default)");
   }
   // implicit_predictor: step | none (the predictor state is in the restart)
   {std::string pr = pin->GetOrAddString("rad_vet","implicit_predictor",
@@ -336,7 +333,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   // cs_vertex_mono: two-point lateral faces near the 8 cube vertices (cs_vertex_mono_n)
   cs_vtx_mono = pin->GetOrAddBoolean("rad_vet","cs_vertex_mono",true) && cs_geom;
-  impl_pred_tcap = (recipe::GetMode(pin) == recipe::Mode::none) ? 2.0 : 1.1;
+  impl_pred_tcap = 1.1;
   impl_pred_tcap = pin->GetOrAddReal("rad_vet","implicit_predictor_tcap",impl_pred_tcap);
   if (pin->DoesParameterExist("rad_vet","cs_vertex_mono_n")) {
     cs_vtx_n = pin->GetInteger("rad_vet","cs_vertex_mono_n");

@@ -347,7 +347,6 @@ bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin) {
                   "per panel side)");
     } else {
       recipe::Log("<mesh>/cs_seam_blockend = clamp (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
           "restart input has no key") + ": the old default)");
     }
   }

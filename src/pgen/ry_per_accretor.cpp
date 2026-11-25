@@ -5974,8 +5974,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         recipe::Log("problem/theta_wall_closed = true (default with theta_bc = hse)");
       } else {
         recipe::Log(std::string("problem/theta_wall_closed = false (") +
-                    (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
-                     : "restart input has no key") + ": the old default)");
+                    "restart input has no key" + ": the old default)");
       }
     }
     if (pin->DoesParameterExist("problem", "theta_wall_closed")) {

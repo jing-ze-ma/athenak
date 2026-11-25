@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file recipe.cpp
-//! \brief <job>/recipe and the start-up defaults block (recipe.hpp)
+//! \brief the start-up defaults block (recipe.hpp)
 
 #include <cstdlib>
 #include <iostream>
@@ -24,22 +24,15 @@ std::vector<std::string> &Lines() {
 }
 }  // namespace
 
-Mode GetMode(ParameterInput *pin) {
-  if (!pin->DoesParameterExist("job", "recipe")) return Mode::standard;
-  const std::string r = pin->GetString("job", "recipe");
-  if (r == "prod1019") return Mode::prod1019;
-  if (r == "none") return Mode::none;
-  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-            << "<job>/recipe = '" << r
-            << "' is not a choice (prod1019 | none)" << std::endl;
-  std::exit(EXIT_FAILURE);
-}
+bool NewDefaults(ParameterInput *pin) {return !global_variable::restart_run;}
 
-bool NewDefaults(ParameterInput *pin) {
-  const Mode m = GetMode(pin);
-  if (m == Mode::none) return false;
-  if (m == Mode::prod1019) return true;
-  return !global_variable::restart_run;
+void CheckRemoved(ParameterInput *pin) {
+  if (!pin->DoesParameterExist("job", "recipe")) return;
+  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+            << "<job>/recipe was removed (it is named with value '"
+            << pin->GetString("job", "recipe") << "'): delete it and name every key the "
+            << "run needs" << std::endl;
+  std::exit(EXIT_FAILURE);
 }
 
 void Log(const std::string &line) {Lines().push_back(line);}
@@ -106,7 +99,7 @@ void PrintLog() {
   auto &v = Lines();
   if (global_variable::my_rank == 0 && !v.empty()) {
     std::cout
-        << "--- defaults (<job>/recipe sets the default set: prod1019 | none) ---"
+        << "--- defaults ---"
         << std::endl;
     for (const auto &s : v) {std::cout << "  " << s << std::endl;}
     std::cout << "--- end defaults ---" << std::endl;

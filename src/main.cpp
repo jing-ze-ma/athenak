@@ -549,6 +549,7 @@ int main(int argc, char *argv[]) {
   IOWrapper::collective = pinput->GetOrAddBoolean("job", "mpiio_collective", false);
   if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
   // the problem generator's pre-physics fresh-start defaults (recipe.hpp)
+  recipe::CheckRemoved(pinput);
   recipe::PgenEarlyDefaults(pinput);
   recipe::CleanDefaults(pinput);
 
@@ -614,7 +615,6 @@ int main(int argc, char *argv[]) {
   Driver* pdriver = new Driver(pinput, pmesh, wtlim, &timer);
   Outputs* pout = new Outputs(pinput, pmesh);
   // every key a default decided (utils/recipe.hpp), one block (rank 0)
-  recipe::GetMode(pinput);   // validates <job>/recipe also when nothing was defaulted
   recipe::PrintLog();
   pinput->PrintNonDefault();
 
