@@ -278,3 +278,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 01:42 02-03: s5b_BASE1 -> s5b_NEW1
 - 11-25 01:42 02-09: s5b_BASE1 -> s5b_NEW1
 - 11-25 01:42 02-16: s5s_t9l62_BASE1 -> s5s_t9l62_NEW1
+- 11-25 01:45 02-03: s5b_NEW1 -> IDLE
+- 11-25 01:45 02-09: s5b_NEW1 -> IDLE
+- 11-25 01:46 02-03: IDLE -> s5b_NEW2
+- 11-25 01:46 02-09: IDLE -> s5b_NEW2
+- 11-25 01:47 02-16: s5s_t9l62_NEW1 -> s5s_t9l62_NEW2
