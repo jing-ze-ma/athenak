@@ -352,7 +352,6 @@ class RadiationVet {
   Real chat_over_c{};  // reduced speed of light factor (default 1)
   Real chat{};         // = chat_over_c * c_light
   Real e_floor{};      // floor on E
-  bool advect_split{};          // the advective enthalpy-flux split of the E equation
 
   // opacities per unit mass (code units): kappa0, or kappa0 (rho/rho_ref)^a (T/t_ref)^b
   int opacity_type{};           // VET_OPAC_*
@@ -574,8 +573,6 @@ class RadiationVet {
   DvceArray4D<Real> FrefWacc();
 
   // ---- implicit face fluxes (constants: rad_vet_implicit.hpp)
-  int impl_flux{};              // VET_IFLUX_*: the spatial form of the implicit E-flux
-  int impl_recon{};             // VET_IRECON_*: dc, or plm by deferred correction
   int impl_enth{};              // VET_IENTH_*: face value of the enthalpy flux a E
   // half-range / thin-switch face options (read only when named):
   //  implicit_hr_wscale_x1 / _lat: scale the half-range face coefficients (diagnostic)
@@ -628,9 +625,6 @@ class RadiationVet {
   // curvilinear meshes); implicit_thin_recon = js (VetThinJs: ratios from the face mean
   // of H+-); implicit_thin_bq = lin (outer Marshak q from the face-extrapolated H+);
   // implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh (vet_sc), j: the cell J
-  // implicit_flux_faces = all: berthon | blend on every face of the multi-D solve
-  // (Cartesian and sp lateral; sp radial keeps its own): a transverse face's central
-  // part keeps 1 - AL through thx2/thx3.
   bool impl_beam_fs = false;    // implicit_flux_beam = fs: |f| = |H|/J of vet_sc
   // implicit_flux_beam = halfrange: F = (1 - w) F_central + w c (r+_L E_L + r-_R E_R),
   // r+- = H+-/J the half-range ratios along the normal, w = exp(-(tau_f/tau0)^2)
@@ -660,17 +654,14 @@ class RadiationVet {
   int CskRstNch() const {
     return (CskRstHdr() && csk1_ok && csk1.extent_int(0) > 0) ? 3 : 0;
   }
-  int cs2_vnp = 0;                      // implicit_cs2_vimp_npass
 
   // ---- implicit transverse (x2/x3) coupling
-  int impl_solver{};            // VET_ISOLV_*: line_jacobi | bicgstab
   bool trans_on{};              // transport == implicit and the mesh is multi-D
   bool trans_x3{};              // ...and three-dimensional
   DvceArray4D<Real> f0x2, f0x3;   // face-normal comoving x2 / x3 fluxes (m,k,j,i),
                                   // restart state (trans_on only)
 
-  // ---- implicit_solver = bicgstab (null under line_jacobi)
-  bool bicg_on{};               // impl_solver == VET_ISOLV_BICGSTAB and trans_on
+  // ---- the linear solve
   int impl_prec_fb{};           // implicit_precond_fallback: -1 none, else impl_prec code
   bool bcg_capped{};            // the last BiCGStab stopped at lin_maxit, test unmet
   // ---- Krylov GPU cost options (off: nothing allocated)
@@ -736,21 +727,11 @@ class RadiationVet {
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
-  // time2_accept_fallback: a stage whose solve took an operator positivity fallback is
-  // admissible when converged and positive (the backward-Euler redo uses the same
-  // operator)
-  bool t2_accfb = false;
-  // time2_adm_poslim: the admissibility test counts a gas eint fault only when the
-  // write-back's limiter (implicit_pos_gas) cannot cover it; E or T <= 0 stays a fault.
-  // Needs implicit_pos_gas.
-  bool t2_adm_pl = false;
-  Real t2_adm_pl_n = 0.0;       // stages admitted by it (would have been rejected)
   // implicit_hold: cells a pgen holds (hold_m = 1) are Dirichlet rows of every implicit
   // solve (E' = held E, no increment, kick or work); the write-back leaves them to the
   // pgen
   bool impl_hold = false;
   DvceArray4D<Real> hold_m;
-  Real t2_accfb_n = 0.0;        // stages accepted with a fallback (counter)
   Real t2_nstep{}, t2_nbe{}, t2_nfall{}; // stage steps, BE steps, fallbacks (counters)
   // time2_auto_be = N (0 off): after a stage fallback the next steps take the
   // backward-Euler redo path at once; stages are retried after 1, 2, 4, ... N skipped
@@ -776,15 +757,11 @@ class RadiationVet {
   void Time2AutoBeEnd(int kind, Real tw_a, Real tw_b);
   Real t2_dtprev{};             // dt of the previous step (vet_sc extrapolation)
   bool t2_vprev{};              // vet_prev holds the tensor of the previous step
-  bool t2_vext{};               // time2_vet_extrap (false: D^n)
-  int t2_vsmode = 0;            // time2_vet_sc: 0 lag, 1 predict, 2 rebuild
   // time2_tableau: 0 hesdirk2 (Heun + H-ESDIRK2), 1 trbdf2 (TR-BDF2, RK2 hydro with
   // c2 = 2 - sqrt 2). Time2FormStage: stage 1 t2inc = t2_a21 dt K1; stage 2 start =
   // t2_w0 Y2 + t2_w1 U^n, t2inc = dt (t2_c31 K1 + t2_c32 K2); diagonal g = 1 - 1/sqrt 2.
   int t2_tab = 0;
   Real t2_a21 = 0.0, t2_w0 = 0.5, t2_w1 = 0.5, t2_c31 = 0.0, t2_c32 = 0.0;
-  Real t2_onep_s{};             // time2_one_pass_safety of the stage solves (0: the
-                                // implicit_one_pass_safety)
   Real t2_lin_save{};           // implicit_lin_tol put back after a stage solve
   Real t2_nclip{};              // vet_sc cells whose extrapolated tensor was clipped
   DvceArray5D<Real> t2k1;       // (m,VET_T2_NK,k,j,i) the FSAL slope K1 (restart state)
@@ -825,12 +802,6 @@ class RadiationVet {
   bool impl_pos_gas_cons = false;
   DvceArray4D<Real> pgc_def;      // (m,k,j,i) uncovered gas raise x volume
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) uncovered floor energy of the cell
-  Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
-  // time2_pred_cap: predicted P = U^n + theta dt K1 with theta = min(1, cap/r), r the
-  // relative change of E and eint (0 = off)
-  Real t2_pcap = 0.0;
-  Real t2_pnlim = 0.0, t2_pncell = 0.0;   // limited / all cell-builds (Time2Report)
-  DvceArray4D<Real> t2pth;      // (m,k,j,i) theta of the current build
   // old files (version < 4) carry time2_vet_col = extrap2 channels: read past
   static constexpr int VET_X2_NCH = 24;
   void Time2Report();
@@ -853,8 +824,6 @@ class RadiationVet {
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- off-diagonal Eddington terms and the closure lag (multi-D implicit)
-  int impl_offdiag{};           // VET_OD_*: lagged | operator | none
-  int od_now{};                 // mode this step runs (impl_offdiag, or none/lagged)
   // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last VET
   // step: they travel in the restart (kVetRssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
@@ -870,16 +839,8 @@ class RadiationVet {
   DvceArray5D<Real> rss_stage;   // (nmb, nch, k, j, i) read from the restart file
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
 
-  // ---- transverse realizability limiter, implicit_trans_limit (see ImplicitTransTheta)
-  int impl_tlim{};              // VET_TLIM_*: none | lp
-  DvceArray4D<Real> thx2, thx3;  // theta_f = 1/(1 + c dt (kt_f + klim_f)) on the x2/x3
-
-  // implicit_vimp: the gas velocity of the enthalpy flux implicit through the solve's
-  // radiative force (Newton form)
-  bool impl_vimp{};
   // doppler_face = donor | central: central takes the x1 enthalpy flux a E,
-  // a = v (1 + chi), as the face mean 0.5 (a_L E_L + a_R E_R) (Athena++ reproduction;
-  // forces implicit_vimp = false)
+  // a = v (1 + chi), as the face mean 0.5 (a_L E_L + a_R E_R) (Athena++ reproduction)
   int dop_face = 0;
   // implicit_vimp_ewf: the lagged face enthalpy work E_f (1 + D_f) dv_f is taken as
   // (1 + D_f)(E_L dv_L + E_R dv_R)/2, each kick with its own cell's E
@@ -914,7 +875,7 @@ class RadiationVet {
   Real t2_ffct_emin = 0.0, t2_ffct_nemp = 0.0, t2_ffct_qmin = 1.0e300;
   void Time2FaceFct(int stage, Real c1, Real c2);
   bool am_vec = false;             // <hydro>/am_vector: the vector form
-  DvceArray4D<Real> amk1, amk2, aminc;   // spin slopes (FSAL / stage 1) and increment
+  DvceArray4D<Real> amk1, amk2;   // spin slopes (FSAL / stage 1)
 
   // ---- Anderson acceleration of the Picard map, implicit_accel (ImplicitAccelApply)
   DvceArray5D<Real> aa_xc;      // (m,nc,k,j,i) x_k, the scaled state entering the pass
