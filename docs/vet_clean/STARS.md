@@ -141,7 +141,7 @@ Checks:
 | deck | L_in | L_top at the end | L_top / L_in at the end | L_top / L_in over the second half |
 |---|---|---|---|---|
 | sp (over 4.9-9.8 d) | 4.651e37 (wedge) | 4.81e37 | 1.035 | 0.958 - 1.066 |
-| cs | 6.837e38 | 6.74e38 | 0.986 | 0.986 - 0.997 |
+| cs (at 13.9 d; falling, see below) | 6.837e38 | 6.74e38 | 0.986 | 0.986 - 0.997 |
 
 What the curves look like (the notebook plots them):
 
@@ -149,12 +149,29 @@ What the curves look like (the notebook plots them):
   atmosphere (E = a T^4, F = 0 above the photosphere) streams out. It falls to about
   1.3 `L_in` within 10 cycles; its mean over 0.5-1 d is 1.060 `L_in`, and over 2-3 d it
   ranges from 0.855 to 1.148 `L_in`. The numbers of the table refer to 4.9-9.8 d; after
-  about 8 d the model's iron-bump layer (N^2 < 0, growth time 0.5-0.6 d) starts convecting,
-  seeded by the 5 % noise of the start (inferred), and `L_top` is still rising at 12.2 d
-  (1.12 `L_in`, in a 12.2 d run), so the deck ends at 9.8 d. `L_bot` stays between 0.87 and 1.25 `L_in`
+  about 8 d the model's iron-bump layer (N^2 < 0 over 39-45 Rsun, growth time 0.5-0.6 d) starts
+  convecting, seeded by the 5 % noise of the start (inferred); there is no mixing-length scaffold
+  in this deck. In a 40 d run of the same deck the kinetic energy is steady from about 15 d
+  (1e42 erg on the wedge), the convective flux reaches 0.28 `L_in`, and `L_top` peaks at 1.31 `L_in`
+  (13.8 d) and falls by a damped oscillation with a period of 4.0-4.2 d (cause not identified) to a
+  5 d mean of 1.04 `L_in` over 35-40 d: it is not settled. On 32^2, 64^2 and 128^2 lateral
+  cells (15-20 d, the only interval all three cover) the maximum convective flux is 0.31, 0.27, 0.27
+  `L_in`, the mean `L_top / L_in` 1.108, 1.089, 1.089, the maximum rms radial velocity 19, 19, 20 km/s
+  and the peak of the power spectrum l = 24; the kinetic energy (7.9, 8.6, 9.6e41 erg) and its growth
+  rate (1.5, 1.8, 2.1 per d) still rise with resolution. The deck ends at 9.8 d
+  to stay short. `L_bot` stays between 0.87 and 1.25 `L_in`
   over the first 100 cycles while the inner wall adjusts, and within 0.9 % of `L_in` after the first day (1.004 - 1.008 over 4.9-9.8 d).
-- cs: `L_top / L_in` starts at 0.987, peaks at 1.10 after about 0.1 d and relaxes back to
-  0.986 - 0.997 over the second week. `L_bot / L_in` stays within 0.4 % of 1, and within
+- cs: `L_top / L_in` starts at 0.987, peaks at 1.10 after about 0.1 d and then falls, to
+  0.997 at the start and 0.986 at the end of the second week: **it is not a steady state**. The deck
+  carries the convective flux of the red supergiant by a mixing-length scaffold (`mlt_flux_frozen`,
+  `mlt_closure = adaptive`) that a ramp (`mlt_ramp_*`, automatic here) takes from 1 to 0 over 105 d
+  (`w_mlt` 0.96 at 13.9 d, 0.54 at 50 d, 0.01 at 100 d). At 32 cells per cube-face edge the resolved
+  convection does not take over: in a 100 d run `L_top / L_in` is 0.71 at 50 d and 0.19 at 100 d, while
+  `L_bot` stays at 1.00, the rms velocities in the unstable layer stay below 0.2 km/s (mixing length: 2-3 km/s) and the
+  surface cools. The decline follows `w_mlt` (correlation 0.995 over 25-100 d); other causes are not
+  separated. This deck tests the machinery on a cubed sphere, it does not show a convecting star: the
+  lateral cell at 32 per edge is 1.3-5.6 H_P wide at 800-830 Rsun (0.2 to 7 cells per H_P over the envelope).
+  `L_bot / L_in` stays within 0.4 % of 1, and within
   1.4e-3 of 1 after the first day (4e-4 over 4.9-13.9 d).
 
 The photosphere velocities of the sp deck are affected by the gap of the profile between
