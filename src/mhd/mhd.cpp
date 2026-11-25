@@ -228,6 +228,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  for (const char *k : {"fofc_flag_exchange", "dfloor_flux_limit", "dt_floor_courant",
+                        "rad_signal_speed_diff", "rad_signal_speed_phase",
+                        "rad_signal_speed_inertia", "merge_lat_rc"}) {
+    if (!pin->DoesParameterExist("mhd", k)) continue;
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<mhd>/" << k << " is not implemented (hydro only)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (floor_tracer) {
     peos->eos_data.ifltr = ifltr;
     if (pin->DoesParameterExist("mhd","floor_tracer_margin")) {

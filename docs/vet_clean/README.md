@@ -8,9 +8,8 @@ hydrodynamics), in a well-balanced formulation for stellar envelopes.
 
 Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 
-- energy and mass conserved to round-off (floors paid from the radiation), except that with
-  `hydro/floor_from_ekin = true` rare single steps change the total energy by 1e-9 to 5e-8 of
-  itself (cause not known, SCHEME.md);
+- energy and mass conserved to round-off (floors paid from the radiation: hydro with
+  `eos = general`; with an ideal gas the energy of the floors is only counted);
 - angular momentum L_z: exact on the cubed sphere; on spherical polar exact except where the
   face-flux cone cut acts (booked), and there too with `clean_stag_fcone_lz` + `clean_lz_spin`;
 - linear momentum: not conserved in general (cone cut, well-balancing residual, floor velocity

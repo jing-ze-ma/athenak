@@ -72,15 +72,17 @@
    "maxdiff_lat_wb": 0.0,
    "maxdiff_fofc": 0.0,
    "maxdiff_merge": 0.0,
+   "maxdiff_blockend": 0.0,
    "maxdiff_gtime": 0.0,
-   "notes": 5,
-   "stored": 5,
+   "notes": 6,
+   "stored": 6,
    "warnings": 0
   },
   "min": {
    "moved_lat_wb": 1e-30,
    "moved_fofc": 1e-30,
    "moved_merge": 1e-30,
+   "moved_blockend": 1e-30,
    "moved_gtime": 1e-30
   }
  },
@@ -216,6 +218,19 @@
    "errT_h2": 0.0002,
    "dEtot_h": 1e-13,
    "dEtot_h2": 1e-13
+  }
+ },
+ "mhd_equil": {
+  "equal": {
+   "fatal": 3,
+   "warnings": 0
+  },
+  "min": {
+   "moved": 0.001
+  },
+  "max": {
+   "dEtot": 1e-13,
+   "dB": 1e-13
   }
  },
  "wb_sp": {

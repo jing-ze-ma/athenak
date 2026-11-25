@@ -372,18 +372,14 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // <hydro>/merge_lat_blockend = flat (the old rule: a 'narrow' merged
   // group at EVERY MeshBlock edge takes a zero slope, so the result depends on the
   // MeshBlock layout) | exchange (internal block faces exchange the one cell the group
-  // PLM needs; layout-independent). Absent: exchange on a fresh start under the default
-  // recipe (recorded, so its restarts carry it), flat on a restart (bitwise the old run).
+  // PLM needs; layout-independent). Default exchange (recorded), also on a restart
+  // without the key
   if (pmlat != nullptr && pmlat->on) {
-    std::string mb;
-    if (pin->DoesParameterExist("hydro", "merge_lat_blockend")) {
-      mb = pin->GetString("hydro", "merge_lat_blockend");
-    } else if (recipe::NewDefaults(pin)) {
-      mb = pin->GetOrAddString("hydro", "merge_lat_blockend", "exchange");
-      recipe::Log("<hydro>/merge_lat_blockend = exchange (default on a fresh start)");
-    } else {
-      mb = "flat";
-    }
+    const bool ex = (global_variable::restart_run || recipe::NewDefaults(pin)) &&
+                    recipe::Fix(pin, "hydro", "merge_lat_blockend", "exchange", "flat");
+    const std::string mb = pin->GetOrAddString("hydro", "merge_lat_blockend",
+                                               ex ? "exchange" : "flat");
+    recipe::OldStored(pin, "hydro", "merge_lat_blockend", "flat", "exchange");
     if (mb == "exchange") {
       mlat_exch = true;
     } else if (mb != "flat") {
@@ -396,7 +392,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     if (mlat_exch && (ind.nx2 < 2*pmlat->fbig || ind.nx3 < 2*pmlat->fbig)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<hydro>/merge_lat_blockend = exchange needs MeshBlock "
-                << "nx2, nx3 >= 2 x the largest merge_lat_f (" << pmlat->fbig << ")"
+                << "nx2, nx3 >= 2 x the largest merge_lat_f (" << pmlat->fbig
+                << "), else name merge_lat_blockend=flat"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }

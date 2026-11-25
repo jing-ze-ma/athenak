@@ -333,7 +333,7 @@ def restart_pair(c, deck, n, nr, over=None):
 def t_restart_fixes(c):
     """a restart file without a key that corrects the scheme takes the new default, with a
     NOTE (recipe::Fix), and the old one when it is named; per key (cs clean_cs_lat_wb, cs
-    fofc_flag_exchange, merge_lat_mom, time2_gtime_slope / _pos): a run with the old value,
+    fofc_flag_exchange, merge_lat_mom / _blockend, time2_gtime_slope / _pos): a run with the old value,
     its restart file, the key's line removed from it.  named: that file restarted with the
     old value against the file as written: bitwise (maxdiff); fixed: without naming it: the
     NOTE, no CLEAN WARNING, a different run; stored: the file as written prints the NOTE on
@@ -344,6 +344,8 @@ def t_restart_fixes(c):
     cases = (('lat_wb', 'shell_cs.athinput', {}, {'rad_vet/clean_cs_lat_wb': 'false'}, 4),
              ('fofc', 'fofc_cs.athinput', fo, {'hydro/fofc_flag_exchange': 'false'}, 1),
              ('merge', 'merge_sp.athinput', {}, {'hydro/merge_lat_mom': 'rigid'}, 4),
+             ('blockend', 'merge_sp.athinput', {'meshblock/nx2': 8, 'meshblock/nx3': 8},
+              {'hydro/merge_lat_blockend': 'flat'}, 4),
              ('gtime', 'shell_sp.athinput', sp, {'rad_vet/time2_gtime_slope': 'false',
                                                  'rad_vet/time2_gtime_pos': 'false'}, 4))
     out = {'warnings': 0, 'notes': 0, 'stored': 0}
@@ -611,6 +613,33 @@ def t_thermal_eq(c):
         d = c.run('thermal_eq.athinput', 'dt' + tag, {'time/dt_fixed': dt})
         out['errT_' + tag], out['dEtot_' + tag] = relax_errors(d)
     out['order'] = float(np.log2(out['errT_h']/out['errT_h2']))
+    return out
+
+
+def t_mhd_equil(c):
+    """the relaxing uniform box with <mhd>, eos = general and a uniform field, every other
+    <mhd> key at its fresh default, 10 cycles: it starts, gas + radiation energy (dEtot)
+    and the field (dB) stay.  Keys of <hydro> only are FATAL (fatal: merge_lat_rc,
+    dfloor_flux_limit named under <mhd>, floorcap_rho)."""
+    d = c.run('mhd_equil.athinput', 'run')
+    dE = dB = 0.0
+    e0 = 101.5   # e_rad + gas_eint
+    for fm, fw in zip(vett.bins(d, 'vet'), vett.bins(d, 'mhd_w_bcc')):
+        m, w = vett.read_bin(fm), vett.read_bin(fw)
+        dE = max(dE, abs((m['vet_e'] + w['eint']).mean()/e0 - 1.0))
+        dB = max(dB, max(np.abs(w['bcc%d' % q] - b).max()
+                         for q, b in ((1, 3.0), (2, 2.0), (3, 1.0))))
+    out = dict(dEtot=float(dE), dB=float(dB), fatal=0,
+               moved=float(abs(m['vet_e'].mean()/100.0 - 1.0)),
+               warnings=vett.warnings(open(os.path.join(d, 'run.log')).read()))
+    for k, v in (('mhd/merge_lat_rc', '0.5'), ('mhd/dfloor_flux_limit', 'true'),
+                 ('rad_vet/floorcap_rho', 1e-3)):
+        s = k.split('/')[1]
+        try:
+            c.run('mhd_equil.athinput', s, {k: v})
+        except RuntimeError:
+            log = open(os.path.join(c.dir, s, 'run.log')).read()
+            out['fatal'] += int(s in log and 'hydro only' in log)
     return out
 
 
@@ -1463,6 +1492,7 @@ TESTS = [  # name, function, in --quick
     ('nlte_eps1e-1', t_nlte_eps1e_1, True),
     ('nlte_eps1e-4', t_nlte_eps1e_4, False),
     ('thermal_eq', t_thermal_eq, False),
+    ('mhd_equil', t_mhd_equil, True),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
     ('shell_force_cs', t_shell_force_cs, False),
@@ -1556,7 +1586,7 @@ def main():
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
                    '(star_smoke, wb_star; without it they are skipped)')
-    p.add_argument('--quick', action='store_true', help='the short subset (18 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (19 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')

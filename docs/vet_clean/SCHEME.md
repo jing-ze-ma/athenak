@@ -129,9 +129,7 @@ With `floor_pay_skip = true` (production) the energy changed by the density floo
 velocity ceiling is paid as well. The initial conversion's floors are paid before the t = 0 output.
 With `<hydro>/floor_from_ekin` (general EOS) a fast cell pays its floor deficit from its own
 r / theta kinetic energy instead (E kept, $L_z$ kept: the phi momentum is never scaled).
-Known failure: with `floor_from_ekin = true` the total energy of a run jumps by 1e-9 to 5e-8 of
-itself in rare single steps (2.19e-9 in the `floor_pay` deck; round-off with the key off; cause
-not known; not measured on a star run). Energy is created only when a column holds too little radiation to pay; each such event
+Energy is created only when a column holds too little radiation to pay; each such event
 prints a `CLEAN WARNING`.
 
 Test: `conservation_sp`, `conservation_cs` (closed rotating shells, dE/E <= 1e-13; measured

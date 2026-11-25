@@ -947,8 +947,8 @@ void ParameterInput::MarkAllAsRestart() {
 //----------------------------------------------------------------------------------------
 //! \fn void ParameterInput::PrintNonDefault()
 //  \brief the resolved scheme (rank 0, at start-up, runs with <rad_vet>): every
-//  <rad_vet>, <hydro>, <time>, <mesh> key read with a default (GetOrAdd*) whose value
-//  differs from it (on a restart the default of a file without the key), and where the
+//  <rad_vet>, <hydro>, <mhd>, <time>, <mesh> key read with a default (GetOrAdd*)
+//  whose value differs from it (on a restart the default of a file without the key), and where the
 //  value came from.
 
 void ParameterInput::PrintNonDefault() {
@@ -967,7 +967,7 @@ void ParameterInput::PrintNonDefault() {
   std::cout << "--- keys that differ from the default (file | cmdline | restart) ---"
             << std::endl;
   int n = 0;
-  for (const char *bk : {"rad_vet", "hydro", "time", "mesh"}) {
+  for (const char *bk : {"rad_vet", "hydro", "mhd", "time", "mesh"}) {
     InputBlock *pb = GetPtrToBlock(bk);
     if (pb == nullptr) continue;
     for (const auto &l : pb->line) {
