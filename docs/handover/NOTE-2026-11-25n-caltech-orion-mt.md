@@ -9,3 +9,9 @@
 - t9l62 mt_base_26: 2026-11-25 02:50:52 rc=0 ended: Terminating on cycle limit wall=136 s CW 0 FATAL 0 mt files 4; user.hst 26 rows vs KT base of the same length: printed-bitwise (26 common); hydro.hst 26 rows vs KT base of the same length: printed-bitwise (26 common)
 - m35mms mt_base_6: 2026-11-25 02:51:28 rc=0 ended: Terminating on cycle limit wall=35 s CW 0 FATAL 0 mt files 4; user.hst 6 rows vs KT base of the same length: printed-bitwise (6 common); hydro.hst 6 rows vs KT base of the same length: printed-bitwise (6 common)
 - m35mms mt_base_26: 2026-11-25 03:01:12 rc=0 ended: Terminating on cycle limit wall=583 s CW 0 FATAL 0 mt files 4; user.hst 26 rows vs KT base of the same length: printed-bitwise (26 common); hydro.hst 26 rows vs KT base of the same length: printed-bitwise (26 common)
+
+### m35mms mt_base_26: anomalous speed, results clean (hst printed-bitwise)
+- wall 583 s for 26 cycles, about 20 s per cycle (1.03 s normally; mt_base_6 with the same preload 35 s total, 1 s per cycle). GPU utilisation 0 % on all 4, the node had no other GPU work, load 5.5.
+- gdb of two ranks while it was slow: rank 0 in PMPI_Waitall <- CleanHaloFinish <- CleanGhostExchange <- CleanGhostFillT (UCX progress); rank 3 in ioctl <- ibv_reg_mr <- mlx5_reg_mr <- uct_ib_reg_mr <- ucp_memh_register <- ucp_datatype_iter_mem_reg_single (length 4128896).
+- mt.0.txt: Waitall totals vet_vgd_ring 192 s, cln_hd_unpack 161 s, cln_hd_pack 63 s, cln_apply_st 24 s (26 cycles). So the time is in registering memory for transfers (the same 4 MB buffers registered again, by the stack), on one node only, and did not happen in any other arm (mt_base_6, KT, ABBA) or in production (1.03 s). No variant tried. It may be the trigger to look for in a slow run of this star.
+- Other 25n arms as posted.
