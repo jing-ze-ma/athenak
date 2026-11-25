@@ -1506,6 +1506,43 @@ def t_star_smoke(c):
     return out
 
 
+def t_mlt_time(c):
+    """problem/mlt_src_time: the time order of the MLT source under sdirk2.  The BSG column
+    with F_MLT/F = 0.1 up to the inner wall: the deposit summed over the mesh is w(t)
+    L_MLT(r_in), so the energy the solves add (star_drive_ledger [19]) over T is exactly
+    L_MLT (T/2 + T_r/(2 pi) sin(pi T/T_r)) for the cosine ramp (T_r = 2 T).  err: relative
+    error at 4, 8, 16 steps; order of the finest pair; order_start of the old form."""
+    tend, src = 160.0, os.path.join(STAR_DATA, 'bsg_ic.txt')
+    os.makedirs(c.dir, exist_ok=True)
+    ic = os.path.join(c.dir, 'ic_mlt.txt')
+    with open(ic, 'w') as fp:
+        for ln in open(src):
+            q = ln.split()
+            if not ln.startswith('#'):
+                q[-1] = '%.6e' % (0.1/(1.0 + np.exp((float(q[0]) - 1.8e12)/5.0e10)))
+                ln = ' '.join(q) + '\n'
+            fp.write(ln)
+    out = {'warnings': 0}
+    for a in ('stage', 'start'):
+        err = []
+        for n in (4, 8, 16):
+            d = star_run(c, '%s_%d' % (a, n), {
+                'problem/star_ic_file': ic, 'problem/mlt_flux_frozen': 'true',
+                'problem/mlt_ramp_start': 0.0, 'problem/mlt_ramp_time': 2.0*tend,
+                'problem/mlt_src_time': a, 'problem/star_drive_ledger': 'true',
+                'time/dt_fixed': tend/n, 'time/nlim': n})
+            lum = hst_col(os.path.join(d, 'bsg3d.user.hst'), 'P_esrc')[0]
+            led = [float(x) for x in
+                   open(os.path.join(d, 'bsg3d.stardrive.txt')).readlines()[-1].split()]
+            t = led[1]
+            e = lum*(0.5*t + tend/np.pi*np.sin(0.5*np.pi*t/tend))
+            err.append(abs(led[18]/e - 1.0))
+            out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
+        out['err' if a == 'stage' else 'err_start'] = err
+        out['order' if a == 'stage' else 'order_start'] = float(np.log2(err[1]/err[2]))
+    return out
+
+
 def t_wb_star(c):
     """the well-balance mode of the stars (wellbalance_dynamic, wb_x1, force_reference =
     wb_arad, fixed GL 7 x 18 rays) on the unseeded BSG column, 20 cycles.  A report, not a
@@ -1561,6 +1598,7 @@ TESTS = [  # name, function, in --quick
     ('inf_reject', t_inf_reject, False),
     ('star_smoke', t_star_smoke, False),
     ('wb_star', t_wb_star, False),
+    ('mlt_time', t_mlt_time, False),
     ('idort_beams', t_idort_beams, False),
     ('idort_beams_mb', t_idort_beams_mb, False),
     ('idort_shadow', t_idort_shadow, True),
@@ -1642,7 +1680,7 @@ def main():
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
                    '(star_smoke, wb_star; without it they are skipped)')
-    p.add_argument('--quick', action='store_true', help='the short subset (20 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (21 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')
@@ -1657,11 +1695,11 @@ def main():
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]
     if not a.star_exe:
-        for n in ('star_smoke', 'wb_star'):
+        for n in ('star_smoke', 'wb_star', 'mlt_time'):
             if any(t[0] == n for t in sel):
                 print('SKIP %-16s        needs --star-exe (a binary built with '
                       '-D PROBLEM=star_vet)' % n)
-        sel = [t for t in sel if t[0] not in ('star_smoke', 'wb_star')]
+        sel = [t for t in sel if t[0] not in ('star_smoke', 'wb_star', 'mlt_time')]
     if any(t[0] == 'mpi_ranks' for t in sel) and not has_mpi(a):
         print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' %
               'mpi_ranks')
