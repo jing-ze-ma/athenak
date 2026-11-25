@@ -529,3 +529,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 05:59 02-16: IDLE -> hg60_ONE60
 - 11-25 06:02 02-03: hg60_NEW60 -> hg60_OLD60
 - 11-25 06:02 02-09: hg60_NEW60 -> hg60_OLD60
+- 11-25 06:04 02-16: hg60_ONE60 -> IDLE
