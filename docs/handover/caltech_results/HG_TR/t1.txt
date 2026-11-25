@@ -1,0 +1,14 @@
+| arm | environment | rc / end | s/cyc median | mean | Waitall cln_hd_copy ms/cycle mean (min/max rank) | calls/cycle | all Waitall ms/cycle | user.hst / hydro.hst vs T0 |
+|---|---|---|---|---|---|---|---|---|
+| T0 | current (UCX_TLS=^xpmem UCX_IB_GPU_DIRECT_RDMA=no UCX_RNDV_SCHEME=put_ppln) | rc=0 ended: Terminating on cycle limit wall=125 s CW 0  | 3.4033 | 3.4807 | 1165.9 (1131.3/1189.2) | 644 | 1339.5 | bitwise(26) / bitwise(26) |
+| T0b | current (UCX_TLS=^xpmem UCX_IB_GPU_DIRECT_RDMA=no UCX_RNDV_SCHEME=put_ppln) | rc=0 ended: Terminating on cycle limit wall=126 s CW 0  | 3.2559 | 3.3343 | 1052.1 (1029.1/1067.7) | 644 | 1207.2 | bitwise(26) / bitwise(26) |
+| T1 | UCX_IB_GPU_DIRECT_RDMA=n | rc=0 ended: Terminating on cycle limit wall=131 s CW 0  | 3.3148 | 3.4012 | 1097.8 (1068.3/1111.4) | 644 | 1260.1 | bitwise(26) / bitwise(26) |
+| T2 | UCX_IB_GPU_DIRECT_RDMA=yes | rc=0 ended: Terminating on cycle limit wall=135 s CW 0  | 3.3599 | 3.4213 | 1119.8 (1100.4/1141.7) | 644 | 1281.1 | bitwise(26) / bitwise(26) |
+| T3 | UCX_RNDV_SCHEME=get_zcopy | rc=0 ended: Terminating on cycle limit wall=121 s CW 0  | 2.9881 | 3.0638 | 788.2 (754.6/809.5) | 644 | 925.0 | bitwise(26) / bitwise(26) |
+| T3r | UCX_RNDV_SCHEME=get_zcopy | rc=0 ended: Terminating on cycle limit wall=121 s CW 0  | 2.8811 | 2.9488 | 688.6 (667.0/706.6) | 644 | 821.5 | bitwise(26) / bitwise(26) |
+| T4 | UCX_RNDV_SCHEME=put_zcopy | rc=137 ended:  wall=637 s CW 0 FATAL 0 | 30.1513 | 30.0669 | - | - | - | bitwise(20) / bitwise(20) |
+| T5 | UCX_PROTO_ENABLE=n | rc=137 ended:  wall=663 s CW 0 FATAL 0 | 30.6361 | 30.4904 | - | - | - | bitwise(20) / bitwise(20) |
+| T6 | UCX_RNDV_SCHEME=get_zcopy UCX_MAX_RNDV_RAILS=12 | rc=0 ended: Terminating on cycle limit wall=110 s CW 0  | 2.7766 | 2.8520 | 584.4 (565.4/601.8) | 644 | 714.4 | bitwise(26) / bitwise(26) |
+| T6r | UCX_RNDV_SCHEME=get_zcopy UCX_MAX_RNDV_RAILS=12 | rc=0 ended: Terminating on cycle limit wall=115 s CW 0  | 2.7734 | 2.8455 | 583.7 (563.6/600.9) | 644 | 706.5 | bitwise(26) / bitwise(26) |
+| T7 | UCX_RCACHE_MAX_REGIONS=100000 | rc=0 ended: Terminating on cycle limit wall=125 s CW 0  | 3.2565 | 3.3361 | 1042.7 (1021.3/1061.8) | 644 | 1201.5 | bitwise(26) / bitwise(26) |
+| T8 | UCX_MEMTYPE_CACHE=n | rc=0 ended: Terminating on cycle limit wall=131 s CW 0  | 3.4498 | 3.5334 | 1211.6 (1177.3/1237.4) | 644 | 1376.0 | bitwise(26) / bitwise(26) |

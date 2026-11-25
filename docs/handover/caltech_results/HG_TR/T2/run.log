@@ -1,0 +1,2 @@
+2026-11-25 03:24:41 start T2 ranks 8 nlim 794810 ENV: UCX_IB_GPU_DIRECT_RDMA=yes
+2026-11-25 03:26:56 rc=0 ended: Terminating on cycle limit wall=135 s CW 0 FATAL 0

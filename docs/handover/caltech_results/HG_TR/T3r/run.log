@@ -1,0 +1,2 @@
+2026-11-25 03:59:00 start T3r ranks 8 nlim 794810 ENV: UCX_RNDV_SCHEME=get_zcopy
+2026-11-25 04:01:01 rc=0 ended: Terminating on cycle limit wall=121 s CW 0 FATAL 0

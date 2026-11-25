@@ -1,0 +1,2 @@
+2026-11-25 03:39:34 start T5 ranks 8 nlim 794810 ENV: UCX_PROTO_ENABLE=n
+2026-11-25 03:50:37 rc=137 ended:  wall=663 s CW 0 FATAL 0

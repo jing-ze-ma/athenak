@@ -1,0 +1,2 @@
+2026-11-25 03:56:49 start T0b ranks 8 nlim 794810 ENV: current (UCX_TLS=^xpmem UCX_IB_GPU_DIRECT_RDMA=no UCX_RNDV_SCHEME=put_ppln)
+2026-11-25 03:58:55 rc=0 ended: Terminating on cycle limit wall=126 s CW 0 FATAL 0

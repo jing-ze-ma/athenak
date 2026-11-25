@@ -1,0 +1,2 @@
+2026-11-25 03:52:42 start T8 ranks 8 nlim 794810 ENV: UCX_MEMTYPE_CACHE=n
+2026-11-25 03:54:53 rc=0 ended: Terminating on cycle limit wall=131 s CW 0 FATAL 0

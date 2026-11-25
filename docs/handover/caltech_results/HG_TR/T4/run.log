@@ -1,0 +1,2 @@
+2026-11-25 03:28:57 start T4 ranks 8 nlim 794810 ENV: UCX_RNDV_SCHEME=put_zcopy
+2026-11-25 03:39:34 rc=137 ended:  wall=637 s CW 0 FATAL 0
