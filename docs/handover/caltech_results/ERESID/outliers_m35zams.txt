@@ -1,0 +1,2 @@
+# m35zams energy outliers: |R - med| > 10 MAD (MAD 7.669e-16 of Etot); columns at log lags -1, 0, +1 of the cycle (cycle index of the log line may be off by one)
+# mass outliers (MAD 7.440e-16 of M_tot)

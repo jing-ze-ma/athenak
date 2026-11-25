@@ -1,0 +1,111 @@
+
+##### bsg (prod_c1_1124/bsg): chunks 1; switch cycles named by the coordinator: none; log cycle prints 477; counters for 23849 cycles
+  chunk 0: rows 23860, t 0.000000e+00 - 3.959601e+06, first cycle 0; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 23859, of the previous row: 7037 of 23859
+  Etot ~ 1.5617e+46 erg, eps-scale 1.1e-16 x Etot = 1.72e+30 erg; printed %24.16e = 17 significant digits (round-trips a double), so the print is not the limit; the limit is the double sum over the cells
+  rate at row c   : MAD of (R - running median)/Etot = 1.757e-15
+  rate at row c-1 : MAD of (R - running median)/Etot = 3.245e-12
+  rate at mean    : MAD of (R - running median)/Etot = 1.623e-12
+  -> rate taken at: row c for every star (source: dt and L_top columns are the step that ended at the row); the MAD of 0 at row c-1 for t9l62 is a running-median artefact on a smooth monotone series, not a better closure
+  ENERGY rows used 23859 (consecutive), MAD 1.757e-15 of Etot; median(R/Etot) 6.556e-18; outliers (10 MAD) 0; of them > 1e-10 of Etot: 0; largest |R - med|/Etot 1.118e-14
+  MASS  rows used 23859, MAD of (dM + dt M_hflx)/M_tot 1.708e-15; median 1.918e-19; outliers (10 MAD) 0; of them > 1e-14: 0, > 1e-12: 0; largest 1.211e-14 | variant dM + dt(Mdot_top - Mdot_bot): MAD 1.708e-15, largest 1.195e-14
+  counter fofc_retested   cycles 23848: median 7.585e+06, p99 8.661e+06, max 9.264e+06 (nonzero 23848)
+  counter fofc_unflagged  cycles 23848: median 0, p99 0, max 0 (nonzero 0)
+  counter c2p_dfloor      cycles 23848: median 5.279e+05, p99 1.151e+06, max 3.383e+06 (nonzero 23848)
+  counter floored_update  cycles 23848: median 0, p99 0, max 0 (nonzero 0)
+  counter skip_update     cycles 23848: median 2.6e+05, p99 5.707e+05, max 1.727e+06 (nonzero 23848)
+  counter floor_pay       cycles 23848: median 0, p99 0, max 1.379e+17 (nonzero 45)
+  counter paid            cycles 23848: median 0, p99 0, max 1.379e+17 (nonzero 45)
+  counter fb_pos_gas      cycles 23848: median 0, p99 0, max 0 (nonzero 0)
+  counter fcap_v          cycles 23848: median 0, p99 0, max 0 (nonzero 0)
+  counter auto_be         cycles 23848: median 0, p99 0, max 0 (nonzero 0)
+
+##### t9l62 (prod_c4_1124/t9l62): chunks 2; switch cycles named by the coordinator: [3713]; log cycle prints 95; counters for 4738 cycles
+  chunk 0: rows 3714, t 0.000000e+00 - 3.595811e+05, first cycle 0; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 3713, of the previous row: 3713 of 3713
+  chunk 1: rows 1027, t 3.596779e+05 - 4.494393e+05, first cycle 3714; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 1026, of the previous row: 564 of 1026
+  Etot ~ 2.1556e+47 erg, eps-scale 1.1e-16 x Etot = 2.37e+31 erg; printed %24.16e = 17 significant digits (round-trips a double), so the print is not the limit; the limit is the double sum over the cells
+  rate at row c   : MAD of (R - running median)/Etot = 1.247e-15
+  rate at row c-1 : MAD of (R - running median)/Etot = 3.903e-16
+  rate at mean    : MAD of (R - running median)/Etot = 1.436e-15
+  -> rate taken at: row c for every star (source: dt and L_top columns are the step that ended at the row); the MAD of 0 at row c-1 for t9l62 is a running-median artefact on a smooth monotone series, not a better closure
+  ENERGY rows used 4739 (consecutive), MAD 1.247e-15 of Etot; median(R/Etot) 2.399e-17; outliers (10 MAD) 0; of them > 1e-10 of Etot: 0; largest |R - med|/Etot 6.943e-15
+  MASS  rows used 4739, MAD of (dM + dt M_hflx)/M_tot 1.236e-15; median 0.000e+00; outliers (10 MAD) 1; of them > 1e-14: 1, > 1e-12: 0; largest 4.049e-14 | variant dM + dt(Mdot_top - Mdot_bot): MAD 1.236e-15, largest 4.019e-14
+   M-outlier c1       t 9.685234e+01 dM/M=-4.049e-14 |lag-1 c2p_dfloor=0 fcap_v=0 fb_pos_gas=0 floor_pay=0 auto_be=0 |lag+0 fofc_retested=2.52824e+07 c2p_dfloor=0 fcap_v=0 fb_pos_gas=0 floor_pay=0 paid=0 floored_update=0 skip_update=0 auto_be=0 fofc_unflagged=0 |lag+1 fofc_retested=4.71972e+07 c2p_dfloor=0 fcap_v=0 fb_pos_gas=0 floor_pay=0 p
+  SWITCH residual (dE - dt rate of first row of the new chunk)/Etot +1.828e-15, (dM + dt M_hflx)/M_tot +1.082e-15, dt 9.6837e+01 (the rows straddle the two binaries; first new row vs last old row)
+  SWITCH chunk 0 -> 1: last row t 3.5958107745e+05 (Etot 2.1554604151070599e+47, M_tot 2.3310565725424804e+32), first row t 3.5967791482e+05: dt 9.6837e+01, dM/M 1.110e-15, dE/E -1.619e-07
+  counter fofc_retested   cycles 4736: median 4.048e+07, p99 4.204e+07, max 4.72e+07 (nonzero 4736)
+  counter fofc_unflagged  cycles 4736: median 0, p99 0, max 0 (nonzero 0)
+  counter c2p_dfloor      cycles 4737: median 0, p99 0, max 0 (nonzero 0)
+  counter floored_update  cycles 4736: median 1.118e+06, p99 1.173e+06, max 1.173e+06 (nonzero 4732)
+  counter skip_update     cycles 4736: median 147.5, p99 265, max 274 (nonzero 4729)
+  counter floor_pay       cycles 4737: median 3.31e+25, p99 5.443e+25, max 5.455e+25 (nonzero 4733)
+  counter paid            cycles 4736: median 3.309e+25, p99 5.443e+25, max 5.455e+25 (nonzero 4732)
+  counter fb_pos_gas      cycles 4737: median 1.238e+06, p99 1.314e+06, max 1.315e+06 (nonzero 4734)
+  counter fcap_v          cycles 4737: median 0, p99 12, max 23 (nonzero 175)
+  counter auto_be         cycles 4737: median 0, p99 0, max 0 (nonzero 0)
+
+##### m35mms (prod_c1_1124/m35mms): chunks 2; switch cycles named by the coordinator: [16340]; log cycle prints 368; counters for 18356 cycles
+  chunk 0: rows 16341, t 0.000000e+00 - 1.896754e+05, first cycle 0; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 16340, of the previous row: 11836 of 16340
+  chunk 1: rows 2024, t 1.896875e+05 - 2.139253e+05, first cycle 16341; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 2023, of the previous row: 1835 of 2023
+  Etot ~ 3.0100e+44 erg, eps-scale 1.1e-16 x Etot = 3.31e+28 erg; printed %24.16e = 17 significant digits (round-trips a double), so the print is not the limit; the limit is the double sum over the cells
+  rate at row c   : MAD of (R - running median)/Etot = 1.610e-15
+  rate at row c-1 : MAD of (R - running median)/Etot = 4.520e-12
+  rate at mean    : MAD of (R - running median)/Etot = 2.259e-12
+  -> rate taken at: row c for every star (source: dt and L_top columns are the step that ended at the row); the MAD of 0 at row c-1 for t9l62 is a running-median artefact on a smooth monotone series, not a better closure
+  ENERGY rows used 18363 (consecutive), MAD 1.610e-15 of Etot; median(R/Etot) 7.800e-18; outliers (10 MAD) 0; of them > 1e-10 of Etot: 0; largest |R - med|/Etot 1.043e-14
+  MASS  rows used 18363, MAD of (dM + dt M_hflx)/M_tot 1.700e-15; median 1.610e-33; outliers (10 MAD) 0; of them > 1e-14: 0, > 1e-12: 0; largest 1.096e-14 | variant dM + dt(Mdot_top - Mdot_bot): MAD 1.700e-15, largest 1.096e-14
+  SWITCH residual (dE - dt rate of first row of the new chunk)/Etot +2.053e-15, (dM + dt M_hflx)/M_tot -4.722e-15, dt 1.2007e+01 (the rows straddle the two binaries; first new row vs last old row)
+  SWITCH chunk 0 -> 1: last row t 1.8967544623e+05 (Etot 3.0100371103582569e+44, M_tot 3.7255257203517382e+29), first row t 1.8968745343e+05: dt 1.2007e+01, dM/M -4.774e-15, dE/E 2.782e-09
+  counter fofc_retested   cycles 18354: median 5.137e+06, p99 6.293e+06, max 6.444e+06 (nonzero 18354)
+  counter fofc_unflagged  cycles 18354: median 0, p99 0, max 0 (nonzero 0)
+  counter c2p_dfloor      cycles 18355: median 0, p99 1, max 2 (nonzero 363)
+  counter floored_update  cycles 18354: median 0, p99 35, max 65 (nonzero 8109)
+  counter skip_update     cycles 18354: median 0, p99 686, max 1217 (nonzero 4097)
+  counter floor_pay       cycles 18355: median 4.067e+11, p99 5.167e+23, max 1.231e+24 (nonzero 9384)
+  counter paid            cycles 18354: median 0, p99 5.167e+23, max 1.231e+24 (nonzero 8839)
+  counter fb_pos_gas      cycles 18355: median 0, p99 0, max 0 (nonzero 0)
+  counter fcap_v          cycles 18355: median 0, p99 1.844e+05, max 2.542e+05 (nonzero 2382)
+  counter auto_be         cycles 18355: median 0, p99 0, max 0 (nonzero 0)
+
+##### m35zams (prod_c1_1124/m35zams): chunks 2; switch cycles named by the coordinator: [50816]; log cycle prints 5543; counters for 55422 cycles
+  chunk 0: rows 50817, t 0.000000e+00 - 1.768656e+05, first cycle 0; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 50816, of the previous row: 50816 of 50816
+  chunk 1: rows 4637, t 1.768690e+05 - 1.930047e+05, first cycle 50817; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 4636, of the previous row: 4636 of 4636
+  Etot ~ 1.2953e+42 erg, eps-scale 1.1e-16 x Etot = 1.42e+26 erg; printed %24.16e = 17 significant digits (round-trips a double), so the print is not the limit; the limit is the double sum over the cells
+  rate at row c   : MAD of (R - running median)/Etot = 7.669e-16
+  rate at row c-1 : MAD of (R - running median)/Etot = 2.184e-13
+  rate at mean    : MAD of (R - running median)/Etot = 1.093e-13
+  -> rate taken at: row c for every star (source: dt and L_top columns are the step that ended at the row); the MAD of 0 at row c-1 for t9l62 is a running-median artefact on a smooth monotone series, not a better closure
+  ENERGY rows used 55452 (consecutive), MAD 7.669e-16 of Etot; median(R/Etot) 3.544e-18; outliers (10 MAD) 0; of them > 1e-10 of Etot: 0; largest |R - med|/Etot 5.212e-15
+  MASS  rows used 55452, MAD of (dM + dt M_hflx)/M_tot 7.440e-16; median 1.010e-33; outliers (10 MAD) 0; of them > 1e-14: 0, > 1e-12: 0; largest 5.456e-15 | variant dM + dt(Mdot_top - Mdot_bot): MAD 7.440e-16, largest 5.332e-15
+  SWITCH residual (dE - dt rate of first row of the new chunk)/Etot -9.348e-16, (dM + dt M_hflx)/M_tot +3.720e-16, dt 3.4805e+00 (the rows straddle the two binaries; first new row vs last old row)
+  SWITCH chunk 0 -> 1: last row t 1.7686555190e+05 (Etot 1.2952720425467541e+42, M_tot 2.2168024845442170e+27), first row t 1.7686903242e+05: dt 3.4805e+00, dM/M 4.441e-16, dE/E -8.297e-11
+  counter fofc_retested   cycles 55420: median 1.117e+06, p99 1.41e+06, max 1.417e+06 (nonzero 55420)
+  counter fofc_unflagged  cycles 55420: median 0, p99 0, max 0 (nonzero 0)
+  counter c2p_dfloor      cycles 55421: median 0, p99 0, max 2 (nonzero 400)
+  counter floored_update  cycles 55420: median 0, p99 0, max 0 (nonzero 0)
+  counter skip_update     cycles 55420: median 0, p99 0, max 2 (nonzero 402)
+  counter floor_pay       cycles 55421: median 0, p99 0, max 0 (nonzero 0)
+  counter paid            cycles 55420: median 0, p99 0, max 0 (nonzero 0)
+  counter fb_pos_gas      cycles 55421: median 0, p99 0, max 0 (nonzero 0)
+  counter fcap_v          cycles 55421: median 0, p99 0, max 0 (nonzero 0)
+  counter auto_be         cycles 55421: median 0, p99 0, max 0 (nonzero 0)
+
+##### t9mlt (prod_mlt_1125/t9mlt): chunks 1; switch cycles named by the coordinator: none; log cycle prints 12; counters for 559 cycles
+  chunk 0: rows 562, t 0.000000e+00 - 5.420634e+04, first cycle 0; row steps with dt <= 0: 0; rows with dt(time) = dt column of the same row: 561, of the previous row: 561 of 561
+  Etot ~ 2.1324e+47 erg, eps-scale 1.1e-16 x Etot = 2.35e+31 erg; printed %24.16e = 17 significant digits (round-trips a double), so the print is not the limit; the limit is the double sum over the cells
+  rate at row c   : MAD of (R - running median)/Etot = 1.210e-15
+  rate at row c-1 : MAD of (R - running median)/Etot = 5.303e-12
+  rate at mean    : MAD of (R - running median)/Etot = 2.652e-12
+  -> rate taken at: row c for every star (source: dt and L_top columns are the step that ended at the row); the MAD of 0 at row c-1 for t9l62 is a running-median artefact on a smooth monotone series, not a better closure
+  ENERGY rows used 561 (consecutive), MAD 1.210e-15 of Etot; median(R/Etot) 1.642e-16; outliers (10 MAD) 0; of them > 1e-10 of Etot: 0; largest |R - med|/Etot 5.393e-15
+  MASS  rows used 561, MAD of (dM + dt M_hflx)/M_tot 1.234e-15; median 0.000e+00; outliers (10 MAD) 1; of them > 1e-14: 1, > 1e-12: 0; largest 2.637e-14 | variant dM + dt(Mdot_top - Mdot_bot): MAD 1.234e-15, largest 2.637e-14
+   M-outlier c1       t 9.662509e+01 dM/M=+2.637e-14 |lag-1 c2p_dfloor=0 fcap_v=0 fb_pos_gas=0 floor_pay=0 auto_be=0 |lag+0 fofc_retested=5.05648e+07 c2p_dfloor=0 fcap_v=0 fb_pos_gas=8.17182e+06 floor_pay=9.292e+25 paid=0 floored_update=0 skip_update=0 auto_be=0 fofc_unflagged=0 |lag+1 fofc_retested=5.72297e+07 c2p_dfloor=0 fcap_v=0 fb_pos_g
+  counter fofc_retested   cycles 558: median 5.15e+07, p99 5.273e+07, max 5.723e+07 (nonzero 558)
+  counter fofc_unflagged  cycles 558: median 0, p99 0, max 0 (nonzero 0)
+  counter c2p_dfloor      cycles 558: median 0, p99 0, max 0 (nonzero 0)
+  counter floored_update  cycles 558: median 8.086e+06, p99 8.206e+06, max 8.206e+06 (nonzero 557)
+  counter skip_update     cycles 558: median 98, p99 173, max 197 (nonzero 557)
+  counter floor_pay       cycles 558: median 1.276e+26, p99 1.35e+26, max 1.353e+26 (nonzero 557)
+  counter paid            cycles 558: median 1.276e+26, p99 1.35e+26, max 1.353e+26 (nonzero 557)
+  counter fb_pos_gas      cycles 558: median 8.613e+06, p99 8.735e+06, max 8.735e+06 (nonzero 557)
+  counter fcap_v          cycles 558: median 0, p99 0, max 0 (nonzero 0)
+  counter auto_be         cycles 558: median 0, p99 0, max 0 (nonzero 0)

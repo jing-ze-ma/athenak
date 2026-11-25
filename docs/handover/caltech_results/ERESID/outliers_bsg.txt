@@ -1,0 +1,2 @@
+# bsg energy outliers: |R - med| > 10 MAD (MAD 1.757e-15 of Etot); columns at log lags -1, 0, +1 of the cycle (cycle index of the log line may be off by one)
+# mass outliers (MAD 1.708e-15 of M_tot)
