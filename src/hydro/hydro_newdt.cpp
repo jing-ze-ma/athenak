@@ -41,6 +41,8 @@ namespace hydro {
 int dt_report_key = 0;
 // <hydro>/dt_floor_courant (read only when named, in the Hydro constructor; 0 = off)
 Real dt_floor_courant_key = 0.0;
+// <hydro>/dt_courant_sum (read only when named, in the Hydro constructor; 0 = off)
+Real dt_courant_sum_key = 0.0;
 
 //----------------------------------------------------------------------------------------
 // \!fn void Hydro::NewTimeStep()
@@ -273,6 +275,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // instead of cfl_number h_d/(|v_d| + c_d), so the floor atmosphere does not set dt
   const Real dfc_ = (dt_floor_courant_key > 0.0) ?
                     dt_floor_courant_key/pmy_pack->pmesh->cfl_no : 0.0;
+  // <hydro>/dt_courant_sum = C (read only when named; 0 = off = bitwise): every other
+  // cell takes dt <= C/sum_d (|v_d| + c_d)/h_d, and <= 0.5 h_d/(|v_d| + c_d) per direction
+  // (the PLM TVD bound), instead of cfl_number h_d/(|v_d| + c_d).  C = 3 cfl_number is the
+  // largest sum the latter allows, never a smaller dt
+  const Real cfl_ = pmy_pack->pmesh->cfl_no, dcs_ = dt_courant_sum_key/cfl_;
   Real fcr_ = 0.0;
   if (dfc_ > 0.0) {
     if (pmy_pack->pradvet == nullptr || pmy_pack->pradvet->fcap_rho <= 0.0) {
@@ -419,6 +426,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         if (multi_d_) s += 1.0/q2;
         if (three_d_) s += 1.0/q3;
         q1 = q2 = q3 = dfc_/s;
+      } else if (dcs_ > 0.0) {
+        Real s = 1.0/q1, qm = q1;
+        if (multi_d_) {s += 1.0/q2; qm = fmin(qm, q2);}
+        if (three_d_) {s += 1.0/q3; qm = fmin(qm, q3);}
+        q1 = q2 = q3 = fmin(dcs_/s, 0.5*qm/cfl_);
       }
       min_dt1 = fmin(q1, min_dt1);
       min_dt2 = fmin(q2, min_dt2);
@@ -651,14 +663,15 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           if (t < best) {best = t; adir = a;}
         }
         Real fl = 0.0;   // dt_floor_courant: the floor cell's summed bound
-        if (dfc_ > 0.0 && d < fcr_) {
+        const bool fgas = dfc_ > 0.0 && d < fcr_;
+        if (fgas || dcs_ > 0.0) {
           Real sm = 0.0;
           for (int a = 0; a < 3; ++a) {
             if ((a == 1 && !multi_d_) || (a == 2 && !three_d_)) continue;
             sm += (fabs(v[a]) + csd[a]*(a > 0 ? sc : 1.0))/h[a];
           }
-          best = dfc_/sm;
-          fl = 1.0;
+          best = fgas ? dfc_/sm : fmin(dcs_/sm, 0.5*best/cfl_);
+          fl = fgas ? 1.0 : 0.0;
         }
         rv(0) = curv ? x1v_(m,i) : CellCenterX(i-is_, nx1_, mbsize.d_view(m).x1min,
                                                mbsize.d_view(m).x1max);
