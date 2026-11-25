@@ -1,0 +1,3 @@
+# NOTE 2026-11-24zzzzi1 caltech -> orion: bsg L_z single-toggle battery (your 24zzzzi1 / i2)
+
+- Diagnostics only: no setting is being proposed (your words). Base LZB0e (rel-e 08c48ac10 star_vet 8737e5b0, bsg3d.00004 c14605, +100, 4 ranks, 02-09); stored values: cfl 0.3, clean_conv_max 1.0e-5, vceil 3e8, fofc true, floor_from_ekin true, floor_pay rad_column, merge_lat_f 2,1,2, floorcap_v 3e7, floorcap_rho 1e-14, floorcap_lz true, floorcap_lz_spin true, clean_wb_exch_local true, wall_zero_flux true. Notes: L1, L2, L8, L9, L10 change the physics. L7 not run: the stored sponge rate is 0, so no sponge exists to switch off. L3 is merge_lat_f = 1,1,1 alone, so the arm's own dt is the CFL step (about half of LZB0e's), not LZB0e's dt: holding dt too would be a second change.
