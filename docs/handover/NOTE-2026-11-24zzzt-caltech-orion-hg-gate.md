@@ -137,3 +137,24 @@ H0h needed (L_top diff 0.9-2 %): no
 ## sdorder3 (your 24zzzzx), 11-24 15:48
 - BUILD rc=0 wall=291 s TUs=250 BUILD_OK md5=30d01765970051212176cc2eb81ea034 prov=95813cf85f2901d61e9dc1320b8d54f480810682 ; .prov: 95813cf85f2901d61e9dc1320b8d54f480810682 dir /resnick/groups/carnegie_poc/jingze/wt_orion1121/sdo3/build_sdo3; cmake flags as build2.sh;  ; own dir wt_orion1121/sdo3/build_sdo3, flags as sdorder2; GATE PASS: athena_sdorder3_95813cf85 md5 30d01765 node hpc-sm-02-09 pass1=3.686e-11 end: Terminating on cycle limit
 - Nothing runs with it until your explicit go. Prepared, not launched: hg_gate_1124/goG.PREPARED (H0G / H1G, 8 ranks, 51 cycles, floor_pay) and sdo_1124/nG.PREPARED (S3G, S5G as S3F / S5F).
+
+## H0G / H1G (fixed binary sdorder3 95813cf85), 11-24 16:01
+- Build: BUILD_OK md5=30d01765970051212176cc2eb81ea034 prov=95813cf85f2901d61e9dc1320b8d54f480810682; GATE PASS: athena_sdorder3_95813cf85 md5 30d01765 node hpc-sm-02-09 pass1=3.686e-11 end: Terminating on cycle limit; own dir wt_orion1121/sdo3/build_sdo3.
+- H0G: 2026-11-24 15:57:05 rc=0 (srun) ended: Terminating on cycle limit wall=213 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB over the whole arm 75807; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.808108e+02 | failed stage at`
+- H1G: 2026-11-24 16:00:47 rc=0 (srun) ended: Terminating on cycle limit wall=222 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB over the whole arm 76059; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.802509e+02 | failed stage at`
+| arm | floor_pay sum (FALLBACK lines) | floor_pay cumulative (audit) | rows | dt min/median(15-51)/max | s/cyc | s per sim s | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries/lines | SDO lines, K1K2<0 mean share, max ratio, cells >0.1, >1, ef<=0 | L_top/L_in start..end |
+|---|---|---|---|---|---|---|---|---|---|---|
+| H0G | 4.055e+31 | 4.036e+31 | 51 | 90.00 / 90.00 / 90.00 | 3.566 | 0.0396 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0, nan, nan, nan, nan, nan | 0.9628 .. 0.9777 |
+| H1G | 1.437e+29 | 1.414e+29 | 51 | 90.00 / 90.00 / 90.00 | 3.553 | 0.0395 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0, nan, nan, nan, nan, nan | 0.9628 .. 0.9775 |
+
+H1G vs H0G (reference H0G), interpolated to H0G times:
+| cycle +n | t [s] | dt H0G | dt H1G | L_top rel | L_mid rel | L_int rel | L_bot rel |
+|---|---|---|---|---|---|---|---|---|---|
+| 5 | 6.6096e+07 | 90.00 | 90.00 | -2.263e-07 | -1.175e-05 | 1.076e-05 | 1.914e-05 |
+| 10 | 6.6097e+07 | 90.00 | 90.00 | -6.462e-06 | 7.675e-05 | -2.295e-04 | 4.259e-05 |
+| 20 | 6.6098e+07 | 90.00 | 90.00 | 3.044e-05 | 7.072e-04 | 5.106e-04 | 2.479e-05 |
+| 51 | 6.6101e+07 | 90.00 | 90.00 | -2.027e-04 | 1.600e-03 | 1.122e-03 | -3.610e-05 |
+max |rel| over the run: L_top 4.638e-04 L_mid 1.607e-03 L_int 1.395e-03 L_bot 8.316e-05
+
+**PASS** (zzzr rules; H1 vs old O30 not tested here: needs O30.hst)
+H0h needed (L_top diff 0.9-2 %): no
