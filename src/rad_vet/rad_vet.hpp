@@ -493,12 +493,10 @@ class RadiationVet {
   int nstage{};                 // 1: one stage solve per task-list pass
   Real impl_cfl{};              // <rad_vet>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
   DvceArray1D<Real> opn_nskip_d;
-  // implicit_pos_gas: energy-conserving positivity limiter of the written-back gas eint;
+  // an energy-conserving positivity limiter of the written-back gas eint;
   // implicit_pos_floor: the E floor takes its energy from the gas. pos_cnt_d: device
   // counters (VET_POS_*), pos_cnt the all-rank totals
-  bool impl_pos_gas = false;
   bool impl_pos_floor = false;
-  Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
   Real pos_cnt[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   // E-floor energy created by discarded attempts (rank-local), not in pos_cnt
@@ -560,7 +558,6 @@ class RadiationVet {
   // as the gas energy combines) and the be write-back makes E pay exactly fref_wacc
   // (times dt_solve/dt_mesh)
   DvceArray4D<Real> fref_wacc;
-  bool fref_wacc_t2 = false;   // <rad_vet>/time2_fref_wacc (see FrefWaccOn)
   int fref_hnst = 0;
   Real fref_hgam0[4] = {0.0, 0.0, 0.0, 0.0}, fref_hbeta[4] = {0.0, 0.0, 0.0, 0.0};
   bool FrefWaccOn() const;
@@ -573,7 +570,6 @@ class RadiationVet {
   DvceArray4D<Real> FrefWacc();
 
   // ---- implicit face fluxes (constants: rad_vet_implicit.hpp)
-  int impl_enth{};              // VET_IENTH_*: face value of the enthalpy flux a E
   // half-range / thin-switch face options (read only when named):
   //  implicit_hr_wscale_x1 / _lat: scale the half-range face coefficients (diagnostic)
   //  implicit_hr_fcimp: dissipation form F = F_c(E') + w (c/2)(s_L E_L - s_R E_R),
@@ -608,12 +604,10 @@ class RadiationVet {
   // F_L = chat ((1 + s) E_lo - (1 - s) E_hi)/2; [12], [13] lagged off-diagonal part of
   // the x2 / x3 flux (lab units). iw iw_fmm+3..+6: dt A/V of x2+, x2-, x3+, x3- faces.
   DvceArray5D<Real> fmm_t;
-  // zalesak_halo_skip: Zalesak rounds exchange R only when a cell within 2 ng of a face
+  // Zalesak rounds exchange R only when a cell within 2 ng of a face
   // changed. Counters: rounds, exchanges done.
-  bool zl_hskip = true;
-  // zalesak_active: a Zalesak round evaluates only cells whose stencil changed in the
+  // A round evaluates only cells whose stencil changed in the
   // previous round or its R exchange (others cannot be newly limited: bitwise)
-  bool zl_active = false;
   Real zl_rounds = 0.0, zl_halos = 0.0;
   // implicit_thin_switch (VET_THSW_*): dt-free thin/thick weight frozen per solve
   // (formal-solution |H|/J, C1, E^n Knudsen number); implicit_thin_corr adds the lagged
@@ -641,20 +635,6 @@ class RadiationVet {
   // with implicit_thin_switch = fs* or implicit_thin_corr vgd_hr has VET_VGD_HRNX
   // components: + C1, eps, J
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_cnt;
-  // implicit_gas_src = matched (term-by-term deposit) | conservative: the gas takes minus
-  // the radiation's own source, dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_f Z_f, with
-  // F_c the stored cell flux and Z_f the face's transport part
-  bool impl_gas_src_cons = false;
-  DvceArray5D<Real> csk1;               // hesdirk2: slope of the cell F (3)
-  bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
-  bool gcs_first = true;                // the first conservative solve of this run
-  // restart (kVetCskRstMagic): the header once a conservative solve ran, 3 slabs when
-  // csk1 holds a slope
-  bool CskRstHdr() const {return impl_gas_src_cons && !gcs_first;}
-  int CskRstNch() const {
-    return (CskRstHdr() && csk1_ok && csk1.extent_int(0) > 0) ? 3 : 0;
-  }
-
   // ---- implicit transverse (x2/x3) coupling
   bool trans_on{};              // transport == implicit and the mesh is multi-D
   bool trans_x3{};              // ...and three-dimensional
@@ -677,7 +657,7 @@ class RadiationVet {
   Real onep_actr[3]{};          // on: eligible solves since the last one-pass acceptance;
                                 // off: switched-off solves since it was switched off
   Real onep_prb[3]{};           // 1: on as a re-probe, not yet confirmed by an acceptance
-  int impl_pord{};              // implicit_predictor_order: 1 or 2
+  int impl_pord = 2;            // implicit_predictor_order of an old restart file
   int impl_prec{};              // implicit_precond: 0 x1 line Jacobi, 1 symmetric
                                 // red-black transverse line Gauss-Seidel (block-local),
                                 // 2 its forward half, 3 mg (rbgs_fwd + block-local
@@ -687,8 +667,6 @@ class RadiationVet {
                                 // partials of VetLayReduce (sized on first use)
   Kokkos::View<Real*, Kokkos::HostSpace> lay_part_h;   // their host copy
   Real ew_fprev{}, ew_etaprev{}; // max|r0| and eta of the previous pass of this step
-  bool impl_pred{};             // implicit_predictor = step: start the Picard loop from
-                                // E^n + (dt/dt_prev) dE_prev (and T); none: cold start
   bool pred_ok{};               // a previous-step increment is stored
   Real pred_dt{};               // dt of that step
   DvceArray5D<Real> ipred;      // (m,3,k,j,i): dE_prev, dT_prev, T^n of this step
@@ -696,8 +674,6 @@ class RadiationVet {
   // ---- time_scheme = hesdirk2: two implicit stage solves inside the Heun stages
   int time_scheme{};            // VET_TIME_BE | VET_TIME_HESDIRK2
   bool t2_ok{};                 // a valid FSAL slope K1 is stored
-  bool t2_enth_be{};            // time2_enth_be: the backward-Euler solves of a hesdirk2
-                                // run take the stage a_f rule
   int t2_solve{};               // what the next ImplicitSolve does (VET_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // debug time2_dbg_fail: fail stage 1 at this cycle
@@ -740,9 +716,8 @@ class RadiationVet {
   // time_scheme = be runs as hesdirk2 with every step a time2_auto_be skip step
   // (Time2AutoBeBegin); also time2_be_only = true under hesdirk2
   bool t2_beonly = false;
-  // time2_cfl_post: the next step's hydro CFL dt is taken again after the radiation
+  // the next step's hydro CFL dt is taken again after the radiation
   // update, on the gas it wrote (a backward-Euler kick can exceed the pre-coupling CFL)
-  bool t2_cfl_post = true;
   Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
   Real t2_abe_ntry = 0.0;       // stage retries after a skip run
   Real t2_abe_nok = 0.0;        // of which succeeded
@@ -776,27 +751,19 @@ class RadiationVet {
   void Time2GasTime(Driver *pdrive, int which);
   DvceArray5D<Real> t2hs;
   int t2_gt = 0;   // last Time2GasTime step of this stage loop
-  bool t2_gtm = true;   // time2_gtime_mom: the flux state's momentum factor 1/g
   bool t2_gts = false;  // time2_gtime_slope: its eint by the limited exchange slope
   bool t2_gtp = true;   // time2_gtime_pos: the positive flux state, u0 restored
   void Time2Restore(Driver *pdrive);
 
   bool t2_inprobe = false;      // inside a helper solve (Time2RotCorrect)
   bool t2_x2old = false;        // a restart's time2_vet (time2_vet_col) = extrap2
-  Real impl_pred_tcap = 2.0;   // implicit_predictor_tcap
-  // implicit_pos_floor_cons (needs implicit_pos_floor): the E floor creates no energy.
+  static constexpr Real kPredTcap = 1.1;   // first iterate: T within this factor of T^n
+  // implicit_pos_floor: the E floor creates no energy.
   // The raise is paid by the cell's gas above its floor, then by the radiation above
   // e_floor of the same radial column, nearest cells first (donor slopes and
   // |F| <= c E kept). The column is in one MeshBlock: local, exact, layout invariant.
   // VET_POS_FLR_MV counts moves, VET_POS_FLR_UN columns with nothing left.
-  bool impl_pos_flr_cons = true;
-  // implicit_pos_floor_gas_keep th (-1 off): the clean E floor raise takes at most
-  // (1 - th) of the gas eint, the rest from the column's radiation
-  Real impl_pos_flr_gk = -1.0;
-  // implicit_pos_gas_cons (needs implicit_pos_floor_cons): the part of the
-  // implicit_pos_gas raise the cell's E cannot cover comes from the radial column's
-  // radiation instead of the hydro EOS floor
-  bool impl_pos_gas_cons = false;
+  // the gas raise the cell's E cannot cover also comes from the radial column's radiation
   DvceArray4D<Real> pgc_def;      // (m,k,j,i) uncovered gas raise x volume
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) uncovered floor energy of the cell
   // old files (version < 4) carry time2_vet_col = extrap2 channels: read past
@@ -815,9 +782,6 @@ class RadiationVet {
                                 // channels and the ring in CLN_N ghosted slabs per
                                 // record, 4 the cubed sphere's sc rays' cln_fvi ghosted
   void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0, int w0 = 0);
-  // restart_pack_per_mb: the restart writer stages the hesdirk2 channels one MeshBlock
-  // at a time
-  bool rst_pack_mb = true;
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- off-diagonal Eddington terms and the closure lag (multi-D implicit)
@@ -851,7 +815,6 @@ class RadiationVet {
   // P/I its out/inflow); a face takes its donor's R and scales the E flux and face F
   // slope on both sides (energy and momentum exact). Rounds until no cell is newly
   // limited, R halo-exchanged; the rest (Q <= 0, gas eint) goes to posfix.
-  bool t2_ffct = false;
   DvceArray5D<Real> t2pf1, t2pf2;   // (m,3,k,j,i) (chat/c) F_applied of K1 / K2's solve
   bool t2pf1_ok = false, t2pf2_ok = false;
   // t2pf is stored with the limiter or with clean staggered (CleanBndAcc): cln_lacc
@@ -953,8 +916,6 @@ class RadiationVet {
   // half-range ratios
   DvceArray3D<Real> cs_cn2, cs_cn3;
   void CubedS1Init();
-  bool cs_seam_avg_on = true;
-  ParameterInput *pin_cs_ = nullptr;
   //! print the timers and positivity totals of the implicit transport
   void ImplicitReport();
   // dbg_energy_audit (output only): per solve, the change of gas energy + (c/chat) E
@@ -1162,7 +1123,6 @@ class RadiationVet {
   bool cln_rcut_on = false;
   int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
   ParameterInput *pin_rcut_ = nullptr;
-  bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
                                 // predictor and the budget's time error also in BE steps
   static constexpr int cln_maxpic = 12;   // passes that update the lagged slopes

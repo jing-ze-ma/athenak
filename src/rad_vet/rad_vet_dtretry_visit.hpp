@@ -121,9 +121,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("nstage", nstage);
   v.value("impl_cfl", impl_cfl);
   v.view("opn_nskip_d", opn_nskip_d);
-  v.value("impl_pos_gas", impl_pos_gas);
   v.value("impl_pos_floor", impl_pos_floor);
-  v.value("impl_pos_gas_frac", impl_pos_gas_frac);
   v.view("pos_cnt_d", pos_cnt_d);
   v.value("pos_cnt", pos_cnt);
   v.value("dtr_ncut", dtr_ncut);
@@ -169,15 +167,11 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("fref_wsplit_ok", fref_wsplit_ok);
   v.value("fref_wsplit_auto", fref_wsplit_auto);
   v.view("fref_wacc", fref_wacc);
-  v.value("fref_wacc_t2", fref_wacc_t2);
   v.value("fref_hnst", fref_hnst);
   v.value("fref_hgam0", fref_hgam0);
   v.value("fref_hbeta", fref_hbeta);
-  v.value("impl_enth", impl_enth);
   v.view("gwd", gwd);
   v.view("fmm_t", fmm_t);
-  v.value("zl_hskip", zl_hskip);
-  v.value("zl_active", zl_active);
   v.value("zl_rounds", zl_rounds);
   v.value("zl_halos", zl_halos);
   v.value("impl_thsw", impl_thsw);
@@ -191,10 +185,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("hsf_nsf", hsf_nsf);
   v.view("vgd_hr", vgd_hr);
   v.view("vgd_pin_cnt", vgd_pin_cnt);
-  v.value("impl_gas_src_cons", impl_gas_src_cons);
-  v.view("csk1", csk1);
-  v.value("csk1_ok", csk1_ok);
-  v.value("gcs_first", gcs_first);
   v.value("trans_on", trans_on);
   v.value("trans_x3", trans_x3);
   v.view("f0x2", f0x2);
@@ -219,13 +209,11 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("lay_part_h", lay_part_h);
   v.value("ew_fprev", ew_fprev);
   v.value("ew_etaprev", ew_etaprev);
-  v.value("impl_pred", impl_pred);
   v.value("pred_ok", pred_ok);
   v.value("pred_dt", pred_dt);
   v.view("ipred", ipred);
   v.value("time_scheme", time_scheme);
   v.value("t2_ok", t2_ok);
-  v.value("t2_enth_be", t2_enth_be);
   v.value("t2_solve", t2_solve);
   v.value("t2_fail", t2_fail);
   v.value("t2_dbg_fail", t2_dbg_fail);
@@ -249,7 +237,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("t2_abe_left", t2_abe_left);
   v.value("t2_abe_now", t2_abe_now);
   v.value("t2_beonly", t2_beonly);
-  v.value("t2_cfl_post", t2_cfl_post);
   v.value("t2_abe_n", t2_abe_n);
   v.value("t2_abe_ntry", t2_abe_ntry);
   v.value("t2_abe_nok", t2_abe_nok);
@@ -280,15 +267,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vet_prev", vet_prev);
   v.view("t2hs", t2hs);
   v.value("t2_gt", t2_gt);
-  v.value("t2_gtm", t2_gtm);
   v.value("t2_gts", t2_gts);
   v.value("t2_gtp", t2_gtp);
   v.value("t2_inprobe", t2_inprobe);
   v.value("t2_x2old", t2_x2old);
-  v.value("impl_pred_tcap", impl_pred_tcap);
-  v.value("impl_pos_flr_cons", impl_pos_flr_cons);
-  v.value("impl_pos_flr_gk", impl_pos_flr_gk);
-  v.value("impl_pos_gas_cons", impl_pos_gas_cons);
   v.view("pgc_def", pgc_def);
   v.view("pfc_def", pfc_def);
   v.value("t2_nfv", t2_nfv);
@@ -296,12 +278,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("t2_rskip", t2_rskip);
   v.value("t2_rstd3", t2_rstd3);
   v.value("t2_rstv", t2_rstv);
-  v.value("rst_pack_mb", rst_pack_mb);
   v.view("rss_stage", rss_stage);
   v.value("rss_stage_mode", rss_stage_mode);
   v.value("vimp_now", vimp_now);
   v.view("d3w", d3w);
-  v.value("t2_ffct", t2_ffct);
   v.view("t2pf1", t2pf1);
   v.view("t2pf2", t2pf2);
   v.value("t2pf1_ok", t2pf1_ok);
@@ -361,7 +341,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("cs_fn3", cs_fn3);
   v.view("cs_cn2", cs_cn2);
   v.view("cs_cn3", cs_cn3);
-  v.value("cs_seam_avg_on", cs_seam_avg_on);
   v.view("acl_cnt_d", acl_cnt_d);
   v.value("cln_rk", cln_rk);
   v.value("cln_c0", cln_c0);
@@ -391,7 +370,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_rcut_wait", cln_rcut_wait);
   v.value("cln_rcut", cln_rcut);
   v.value("cln_rcut_n", cln_rcut_n);
-  v.value("cln_kpred", cln_kpred);
   v.value("cln_k1ok", cln_k1ok);
   v.value("cln_gflux", cln_gflux);
   v.value("cln_rfdone", cln_rfdone);
@@ -920,7 +898,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   pbval_sg : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
 //   id : RadiationVetTaskIDs
-//   pin_cs_ : ParameterInput *
 //   cln_gdx : const CleanArgs *
 //   cln_pcrl : std::map<std::array<int, 7>, DvceArray1D<int>> (protocol counter, kept monotonic)
 //   cln_dbginf : int (one-shot test injection, kept)

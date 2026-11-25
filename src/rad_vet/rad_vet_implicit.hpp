@@ -85,14 +85,6 @@ constexpr int VET_THSW_FSI  = 7;  // fs; h+- isotropic where the rays miss E^n (
 constexpr int VET_THSW_FSE  = 8;  // max(|H|/J, eps C1/1.5), eps the thermal fraction
 constexpr int VET_THSW_FSQ  = 6;  // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
 
-// implicit_enthalpy: face value of the enthalpy flux a_d E, a_d = v_d + (v.D)_d.  The
-// matrix carries the donor form; the others add their lagged difference to the rhs.
-constexpr int VET_IENTH_UPWIND  = 0;  // donor cell (first order)
-constexpr int VET_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
-constexpr int VET_IENTH_PLM     = 2;  // a_f E_f, E_f the upwind van Leer plm value
-constexpr int VET_IENTH_PLMC    = 3;  // mean of the two plm face values
-constexpr int VET_IENTH_LIN     = 4;  // unlimited upwind linear (Fromm) value
-
 // vet-positivity counters (pos_cnt_d / pos_cnt); energies volume-weighted
 constexpr int VET_POS_GAS    = 1;  // cell-solves where the gas eint limiter fired
 constexpr int VET_POS_GAS_DE = 2;  // energy moved gas <- radiation

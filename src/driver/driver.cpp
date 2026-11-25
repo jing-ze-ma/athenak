@@ -880,9 +880,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
-      // <rad_vet>/time2_cfl_post: the fluid's CFL dt again, of the state the radiation
+      // the fluid's CFL dt again, of the state the radiation
       // update left (hydro stage 2 took it before the coupling wrote the gas)
-      if (pvet != nullptr && pvet->t2_cfl_post && !dtr_now) {
+      if (pvet != nullptr && !dtr_now) {
         if (pmesh->pmb_pack->phydro != nullptr) {
           (void) pmesh->pmb_pack->phydro->NewTimeStep(this, nexp_stages);
         }

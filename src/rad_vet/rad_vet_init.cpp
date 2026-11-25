@@ -109,7 +109,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     onep_prb[t] = 0.0;
   }
   impl_onep_auto = false;
-  impl_pord = 1;
   tmr_c0 = pin->DoesParameterExist("rad_vet","implicit_timers") ?
            pin->GetInteger("rad_vet","implicit_timers") : 0;   // read only when named
   // implicit_resid_fatal: stage residual that stops the run (0 = off)
@@ -125,48 +124,12 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     recipe::Log("<rad_vet>/implicit_resid_fatal = 0 (off: restart input has no key, the "
                 "old default kept; set it to switch)");
   }
-  // implicit_predictor: step | none (the predictor state is in the restart)
-  {std::string pr = pin->GetOrAddString("rad_vet","implicit_predictor",
-                                        "step");
-  if (pr.compare("none") == 0) {
-    impl_pred = false;
-  } else if (pr.compare("step") == 0) {
-    impl_pred = true;
-  } else {
-    ImplFatal("<rad_vet>/implicit_predictor = '" + pr
-              + "' is not a choice (none | step)");
-  }
-  }
-  // implicit_pos_gas, implicit_pos_floor (default true)
-  impl_pos_gas = pin->GetOrAddBoolean("rad_vet","implicit_pos_gas",
-      recipe::Fix(pin, "rad_vet", "implicit_pos_gas", "true", "false"));
+  // implicit_pos_floor (default true)
   impl_pos_floor = pin->GetOrAddBoolean("rad_vet","implicit_pos_floor",
       recipe::Fix(pin, "rad_vet", "implicit_pos_floor", "true", "false"));
-  if (pin->DoesParameterExist("rad_vet","implicit_pos_gas_frac")) {
-    impl_pos_gas_frac = pin->GetReal("rad_vet","implicit_pos_gas_frac");
-  }
   Kokkos::realloc(pos_cnt_d, VET_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
   marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
-  // implicit_enthalpy: reconstruction of the face enthalpy flux a_f E_f
-  recipe::Old(pin, "rad_vet", "implicit_enthalpy", "upwind");
-  const bool enth_up = global_variable::restart_run;
-  const std::string sen = pin->GetOrAddString("rad_vet","implicit_enthalpy",
-                                              enth_up ? "upwind" : "plm");
-  if (sen.compare("upwind") == 0) {
-    impl_enth = VET_IENTH_UPWIND;
-  } else if (sen.compare("central") == 0) {
-    impl_enth = VET_IENTH_CENTRAL;
-  } else if (sen.compare("plm") == 0) {
-    impl_enth = VET_IENTH_PLM;
-  } else if (sen.compare("plmc") == 0) {
-    impl_enth = VET_IENTH_PLMC;
-  } else if (sen.compare("lin") == 0) {
-    impl_enth = VET_IENTH_LIN;
-  } else {
-    ImplFatal("<rad_vet>/implicit_enthalpy = '" + sen
-              + "' is not a choice (upwind | central | plm)");
-  }
   {  // implicit_hold: inert unless a pgen marks hold_m
     impl_hold = pin->GetOrAddBoolean("rad_vet","implicit_hold",true);
     if (impl_hold) {
@@ -179,59 +142,12 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(hold_m, 0.0);
     }
   }
-  // implicit_predictor_order: 1 | 2 (2 = from the last two increments)
-  {
-  bool ts_ok = true;
-  if (pin->DoesParameterExist("rad_vet","time_scheme")) {
-    const std::string tsn = pin->GetString("rad_vet","time_scheme");
-    ts_ok = (tsn.compare("be") == 0) || (tsn.compare("hesdirk2") == 0);
-  }
-  const bool ldef = ts_ok && !global_variable::restart_run;
-  recipe::Old(pin, "rad_vet", "implicit_predictor_order", "1");
-  impl_pord = pin->GetOrAddInteger("rad_vet","implicit_predictor_order",
-                                   (ldef && impl_pred) ? 2 : 1);
-  if (impl_pord != 1 && impl_pord != 2) {
-    ImplFatal("<rad_vet>/implicit_predictor_order must be 1 or 2");
-  }
-  }
-  impl_pred_tcap = 1.1;
-  impl_pred_tcap = pin->GetOrAddReal("rad_vet","implicit_predictor_tcap",impl_pred_tcap);
-  // E floor raise: implicit_pos_floor_cons takes the uncovered part from the column's
-  // radiation; implicit_pos_gas_cons / implicit_pos_floor_gas_keep bound the gas share
-  impl_pos_flr_cons =
-      pin->GetOrAddBoolean("rad_vet","implicit_pos_floor_cons",impl_pos_flr_cons);
-  if (impl_pos_flr_cons && global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> implicit_pos_floor_cons: the E floor's uncovered raise is "
-                 "taken "
-              << "from the radiation of the same column (no energy created)" << std::endl;
-  }
-  impl_pos_gas_cons = pin->GetOrAddBoolean("rad_vet","implicit_pos_gas_cons",
-      recipe::Fix(pin, "rad_vet", "implicit_pos_gas_cons", "true", "false"));
-  impl_pos_flr_gk = pin->GetOrAddReal("rad_vet","implicit_pos_floor_gas_keep",
-      recipe::Fix(pin, "rad_vet", "implicit_pos_floor_gas_keep", "1", "-1") ? 1.0 : -1.0);
-  if (global_variable::my_rank == 0 && impl_pos_flr_gk > 0.0) {
-    std::cout << "<rad_vet> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk
-              << ": the E floor's raise leaves the gas at least that share of its eint"
-              << std::endl;
-  }
-  // implicit_gas_src: gas source of the coupled solve (conservative2: csk1 in restart)
-  {
-    const bool gsdef = !global_variable::restart_run && fl_on && coupling &&
-                       gas_feedback;
-    recipe::Old(pin, "rad_vet", "implicit_gas_src", "matched");
-    const std::string gs = pin->GetOrAddString("rad_vet","implicit_gas_src",
-                                               gsdef ? "conservative2" : "matched");
-    if (gs.compare("matched") == 0) {
-      impl_gas_src_cons = false;
-    } else if (gs.compare("conservative") == 0 ||
-               gs.compare("conservative_full") == 0) {
-      impl_gas_src_cons = true;
-    } else if (gs.compare("conservative2") == 0) {
-      impl_gas_src_cons = true;
-    } else {
-      ImplFatal("<rad_vet>/implicit_gas_src = '" + gs + "' is not a choice (matched | "
-                "conservative | conservative2 | conservative_full)");
-    }
+  // the old scheme's predictor order: the channels of its restart files
+  if (global_variable::restart_run) {
+    impl_pord = pin->DoesParameterExist("rad_vet","implicit_predictor_order") ?
+                pin->GetInteger("rad_vet","implicit_predictor_order") : 1;
+  } else {
+    recipe::Rule(pin, "rad_vet", "implicit_predictor_order", "2");
   }
 
   auto &mbcs = pmy_pack->pmesh->mesh_bcs;
@@ -313,12 +229,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     am_vec = am_vec || (cs_geom && pin->DoesParameterExist(b, "am_vector") &&
                         pin->GetBoolean(b, "am_vector"));
   }
-  // Zalesak limiter of the hesdirk2 face fluxes: zalesak_halo_skip, zalesak_active
-  if (pin->DoesParameterExist("rad_vet","zalesak_halo_skip")) {
-    zl_hskip = pin->GetBoolean("rad_vet","zalesak_halo_skip");
-  }
-  zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",
-      recipe::Fix(pin, "rad_vet", "zalesak_active", "true", "false"));
   MemArenaInit(pin, nmb, VET_NIW, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
   if (trans_on) {
@@ -334,11 +244,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     std::cout << "<rad_vet>: transport=implicit"
               << (trans_x3 ? " (3-D)" : (trans_on ? " (2-D)" : " (1-D)"))
               << " implicit_cfl=" << impl_cfl << " marshak_q=" << marshak_q
-              << " implicit_enthalpy="
-              << ((impl_enth == VET_IENTH_PLM) ? "plm"
-                  : (impl_enth == VET_IENTH_PLMC) ? "plmc"
-                  : (impl_enth == VET_IENTH_LIN) ? "lin"
-                  : (impl_enth == VET_IENTH_UPWIND) ? "upwind" : "central")
               << std::endl;
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
@@ -401,9 +306,8 @@ void RadiationVet::EventTotals(Real *v) {
 
 void RadiationVet::ImplicitReport() {
   // positivity counters and hydro floor energy (collective: same pos keys on all ranks)
-  const bool pos = impl_pos_gas || impl_pos_floor;
   Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
-  if (pos) {
+  {
     auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
     for (int q = 0; q < VET_POS_N; ++q) {pos_cnt[q] = hpc(q);}
 #if MPI_PARALLEL_ENABLED
@@ -428,19 +332,15 @@ void RadiationVet::ImplicitReport() {
     for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
   }
-  if (pos) {
-    std::cout << "<rad_vet> vet-positivity: implicit_pos_gas=" << impl_pos_gas
-              << " (frac " << impl_pos_gas_frac << ") cell-solves=" <<
-                  pos_cnt[VET_POS_GAS]
-              << " energy moved rad->gas=" << pos_cnt[VET_POS_GAS_DE]
-              << " | E floor raises cell-solves=" << pos_cnt[VET_POS_FLR]
-              << " energy from gas=" << pos_cnt[VET_POS_FLR_DE]
-              << " energy created=" << pos_cnt[VET_POS_FLR_UN] << " (code units x volume)"
-              << " [in discarded attempts, rolled back: " << pos_un_drop << "]"
-              << " taken from the column's radiation (implicit_pos_floor_cons)="
-              << pos_cnt[VET_POS_FLR_MV]
-              << " | hydro EOS floors energy created=" << hfl << std::endl;
-  }
+  std::cout << "<rad_vet> vet-positivity: gas cell-solves=" << pos_cnt[VET_POS_GAS]
+            << " energy moved rad->gas=" << pos_cnt[VET_POS_GAS_DE]
+            << " | E floor raises cell-solves=" << pos_cnt[VET_POS_FLR]
+            << " energy from gas=" << pos_cnt[VET_POS_FLR_DE]
+            << " energy created=" << pos_cnt[VET_POS_FLR_UN] << " (code units x volume)"
+            << " [in discarded attempts, rolled back: " << pos_un_drop << "]"
+            << " taken from the column's radiation (implicit_pos_floor_cons)="
+            << pos_cnt[VET_POS_FLR_MV]
+            << " | hydro EOS floors energy created=" << hfl << std::endl;
 }
 
 //----------------------------------------------------------------------------------------

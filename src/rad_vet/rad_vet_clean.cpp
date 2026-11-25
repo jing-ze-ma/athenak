@@ -362,24 +362,23 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/advect_split", ""}, {"rad_vet/time2_one_pass_safety", ""},
     {"rad_vet/time2_lin_tol*", "clean_tol"},
     {"rad_vet/implicit_ghost_x1min", "!"}, {"rad_vet/ic_rad*", "clean_init"},
-    {"rad_vet/implicit_predictor", nullptr}, {"rad_vet/implicit_predictor_tcap", nullptr},
+    {"rad_vet/implicit_predictor", "=step"}, {"rad_vet/implicit_predictor_tcap", "=1.1"},
     {"rad_vet/implicit_resid_fatal", nullptr},
-    // ImplicitInit members the clean steps use: enthalpy flux, conservative gas source,
-    // predictor order, hold
-    {"rad_vet/implicit_enthalpy", nullptr}, {"rad_vet/implicit_gas_src", nullptr},
+    // the old scheme's predictor order: the layout of its restart files (Time2RstNchWant)
     {"rad_vet/implicit_predictor_order", nullptr},
-    {"rad_vet/implicit_hold", nullptr},
-    {"rad_vet/implicit_pos_gas*", nullptr}, {"rad_vet/implicit_pos_floor", nullptr},
-    {"rad_vet/implicit_pos_floor_cons", nullptr},
-    {"rad_vet/implicit_pos_floor_gas_keep", nullptr},
-    {"rad_vet/implicit_pos_gas_cons", nullptr},
+    {"rad_vet/implicit_hold", nullptr}, {"rad_vet/implicit_pos_floor", nullptr},
+    {"rad_vet/implicit_enthalpy", "=plm"}, {"rad_vet/implicit_pos_gas", "+true"},
+    {"rad_vet/implicit_pos_gas_frac", "=1e-3"},
+    {"rad_vet/implicit_pos_gas_cons", "+true"},
+    {"rad_vet/implicit_pos_floor_cons", "=true"},
+    {"rad_vet/implicit_pos_floor_gas_keep", "+1"},
     {"rad_vet/implicit_am_cs", "=true"}, {"rad_vet/be_legacy", "=false"},
     {"rad_vet/implicit_*", ""},
     // hesdirk2 stage formation (Time2FormStage / Time2Stash) and dt_retry: read;
     // ImplicitSolve's acceptance, posfix and KE cap: none
     {"rad_vet/time2_k1_reset", "!"},   // K1 reset of held cells: removed
     {"rad_vet/time2_k1_redist", "=0"}, {"rad_vet/time2_k1_stiff", "=0"},
-    {"rad_vet/time2_face_fct*", nullptr},
+    {"rad_vet/time2_face_fct", "+true"},
     {"time/dt_retry_max", ""},
     // a rejected stage: always the backward-Euler redo of the cycle at its dt
     {"rad_vet/time2_reject", ""}, {"time/dt_retry_t2_be", "=0"},
@@ -463,6 +462,11 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/clean_stag_mg_color", "+mirror"}, {"rad_vet/clean_stag_tie_gid", "+true"},
     {"rad_vet/clean_stag_xdonor", "+lag"}, {"rad_vet/clean_stag_xsrc", "+true"},
     {"rad_vet/clean_stag_vimp", "=true"}, {"rad_vet/clean_stag_vimp_cs", "+true"},
+    // write-back, time scheme and restart writer: constants
+    {"rad_vet/time2_cfl_post", "=true"}, {"rad_vet/time2_enth_be", ""},
+    {"rad_vet/time2_fref_wacc", "=true"}, {"rad_vet/time2_gtime_mom", "=true"},
+    {"rad_vet/zalesak_active", "+true"}, {"rad_vet/zalesak_halo_skip", "=true"},
+    {"rad_vet/restart_pack_per_mb", "=true"}, {"rad_vet/cs_seam_avg", ""},
     // early files' names of clean_stag_fs_line
     {"rad_vet/clean_stag_fs_pcr", "=true"}, {"rad_vet/clean_stag_fs_pcr_cs", "=true"},
     // old solver's diagnostics, multi-rate, coupling split, K1 FCT: removed
@@ -1497,7 +1501,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   if (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2) {
     // implicit_pos_floor(_cons): an E < 0 raised by the conservative write-back floor
     // does not fail the stage (counted)
-    const bool flr = impl_pos_floor && impl_pos_flr_cons;
+    const bool flr = impl_pos_floor;
     t2_fail = (nit < 0) || (nneg > 0 && !flr) || (cln_feedback && cln_neint > 0) ||
               (t2_solve == VET_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail);
     if (cln_lzbook && cln_feedback && t2_solve == VET_T2S_STAGE2 && !t2_fail) {
@@ -1566,7 +1570,6 @@ void RadiationVet::CleanRstFaces() {
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   auto cw = pmy_pack->pcoord->cos_cell, sw = pmy_pack->pcoord->sin_cell;
   const Real efl = e_floor;
-  const int enm = impl_enth;
   const bool fre = cln_freal;
   DvceArray1D<Real> rc("cln_rstr", 2);
   // a of every cell (CLW_DM, 3) and its E (CLW_B), as the old scheme's write-back
@@ -1602,12 +1605,8 @@ void RadiationVet::CleanRstFaces() {
       };
       auto e = [&](const int o) {return w(m,CLW_B,k+o*dk,j+o*dj,i+o*di);};
       Real af = 0.5*(a(-1) + a(0)), ef = 0.5*(e(-1) + e(0)), dum;
-      if (enm == VET_IENTH_UPWIND) {
-        ef = (af > 0.0) ? e(-1) : e(0);
-        af = (af > 0.0) ? a(-1) : a(0);
-      } else if (enm >= VET_IENTH_PLM &&
-                 !CleanBoundaryFace(x, dir, m, k-dk, j-dj, i-di) &&
-                 !CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
+      if (!CleanBoundaryFace(x, dir, m, k-dk, j-dj, i-di) &&
+          !CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
         Real afl, afr;
         PLM(a(-2), a(-1), a(0), afl, dum);
         PLM(a(-1), a(0), a(1), dum, afr);
@@ -1935,9 +1934,9 @@ void RadiationVet::CleanFirstIterate() {
   const bool pxc = t2_tab == 2 && t2_solve == VET_T2S_STAGE2;
   auto ks1 = t2k2, ks2 = t2k1;   // sdirk2 stage 2: K1 of this step, K2 of the last
   const Real ch = chat;
-  const bool pred = cln_kpred && (t2_ok || cln_k1ok) &&
+  const bool pred = (t2_ok || cln_k1ok) &&
                     t2_solve != VET_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
-  const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
+  const Real h = dt_sub, ecap = SQR(SQR(kPredTcap)), rtol = cln_trtol;
   const Real cl = c_light;
 
   CleanFor("cln_iter0", nmb1, ks, ke, js, je, is, ie,
@@ -5088,7 +5087,7 @@ void RadiationVet::CleanWriteBack() {
   const bool wpa = wsp && FrefWaccOn();   // fref_wacc: CleanRightHandSide
   auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
   const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
-  const bool wex = wsp && fref_wacc_t2 &&
+  const bool wex = wsp &&
                    time_scheme == VET_TIME_HESDIRK2;   // no slope carries a payment
   const bool fm = icr_fmeas && cln_vzero;   // CleanSteadyStart: icr_dm
   auto fmd = icr_dm;
@@ -5107,16 +5106,16 @@ void RadiationVet::CleanWriteBack() {
   auto cx3 = pmy_pack->pcoord->x3v, cf1 = pmy_pack->pcoord->xx1f;
   auto cf2 = pmy_pack->pcoord->xx2f, cf3 = pmy_pack->pcoord->xx3f;
   const Real tgf = eos.tfloor;
-  const bool pgas = impl_pos_gas, lex = cln_wbxl && feedback;
+  const bool lex = cln_wbxl && feedback;
   if (lex && !(tgf > 0.0)) CleanFatal("<rad_vet>/clean_wb_exch_local needs a tfloor > 0");
-  const Real pgf = impl_pos_gas_frac, efl = e_floor, pgk = impl_pos_flr_gk;
+  const Real pgf = 1.0e-3, efl = e_floor;
   // clean_wb_floor_diag N: the first N floored cells of each write-back, their terms
   const int fdn = cln_wbfdg;
   DvceArray1D<Real> fdc;
   if (fdn > 0) fdc = DvceArray1D<Real>("cln_wbfdc", 1);
   const int fcy = pmy_pack->pmesh->ncycle, fts = t2_solve;
   auto pc_ = pos_cnt_d;
-  const bool pflr = impl_pos_floor, pfc = pflr && impl_pos_flr_cons;
+  const bool pflr = impl_pos_floor, pfc = pflr;
   // the E floor's raise neither gas nor column covered (created, VET_POS_FLR_UN): its
   // change in this write-back, CLEAN WARNING below
   Real un0 = 0.0;
@@ -5128,7 +5127,7 @@ void RadiationVet::CleanWriteBack() {
   }
   if (pfc) Kokkos::deep_copy(pfc_def, 0.0);
   auto pfd = pfc_def;
-  const bool pgc = pfc && pgas && impl_pos_gas_cons;   // implicit_pos_gas_cons
+  const bool pgc = pfc;
   if (pgc && pgc_def.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(pgc_def, nmb1 + 1, pfc_def.extent_int(1), pfc_def.extent_int(2),
                     pfc_def.extent_int(3));
@@ -5332,30 +5331,27 @@ void RadiationVet::CleanWriteBack() {
         }
         den -= rd + wp;
         wsl = wex ? wp : wp - wr;
-        // implicit_pos_gas: a gas eint below e_min = max(e(rho, tfloor),
-        // implicit_pos_gas_frac x its old eint) is raised to it with energy from the
-        // cell's E above e_floor (gas + E kept; counted)
-        if (pgas) {
-          Real ef = 0.0, pr, chi_rho, chi_t, cv;
-          if (eos.tfloor > 0.0) {
-            eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
-          }
-          // from the gas's true eint, the stage start's deficit below 0 included
-          const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
-          const Real need = emin - ei - (den - wk);
-          const Real take = fmin(need, e - efl);
-          const Real vol = CleanVol(x, m, k, j, i);
-          const bool tk = take > 1.0e-12*emin;   // beyond eint's round-off at e_min
-          if (tk) {
-            den += take;
-            e -= take;
-            Kokkos::atomic_add(&pc_(VET_POS_GAS), 1.0);
-            Kokkos::atomic_add(&pc_(VET_POS_GAS_DE), take*vol);
-          }
-          // implicit_pos_gas_cons: what E could not cover, from the column, below
-          const Real un = need - (tk ? take : 0.0);
-          if (pgc && un > 1.0e-12*emin) pgd(m,k,j,i) = un*vol;
+        // a gas eint below e_min = max(e(rho, tfloor), 1e-3 x its old eint) is raised to
+        // it with energy from the cell's E above e_floor (gas + E kept; counted)
+        Real ef = 0.0, pr, chi_rho, chi_t, cv;
+        if (eos.tfloor > 0.0) {
+          eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
         }
+        // from the gas's true eint, the stage start's deficit below 0 included
+        const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
+        const Real need = emin - ei - (den - wk);
+        const Real take = fmin(need, e - efl);
+        const Real vol = CleanVol(x, m, k, j, i);
+        const bool tk = take > 1.0e-12*emin;   // beyond eint's round-off at e_min
+        if (tk) {
+          den += take;
+          e -= take;
+          Kokkos::atomic_add(&pc_(VET_POS_GAS), 1.0);
+          Kokkos::atomic_add(&pc_(VET_POS_GAS_DE), take*vol);
+        }
+        // implicit_pos_gas_cons: what E could not cover, from the column, below
+        const Real un = need - (tk ? take : 0.0);
+        if (pgc && un > 1.0e-12*emin) pgd(m,k,j,i) = un*vol;
       }
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // its change of the gas eint (cln_neint)
@@ -5376,8 +5372,8 @@ void RadiationVet::CleanWriteBack() {
           eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
         }
         const Real ei = x.w(m,CLW_EI,k,j,i), en = ei + x.w(m,CLW_JV,k,j,i);
-        // implicit_pos_floor_gas_keep: the gas keeps pgk of its eint
-        const Real emin = fmax(fmax(ef, pgf*fmax(ei, 0.0)), pgk*fmax(en, 0.0));
+        // (the gas keeps its eint: the raise is the column's)
+        const Real emin = fmax(fmax(ef, pgf*fmax(ei, 0.0)), fmax(en, 0.0));
         take = fmin(efl - e, fmax(en - emin, 0.0));
         den -= take;
         uh(m,IEN,k,j,i) -= take;
@@ -5578,8 +5574,6 @@ void RadiationVet::CleanWriteBack() {
     if ((low && !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) ||
         (low && x.w(m,CLW_EI,k,j,i) < 0.0) ||
         u0_(m,VET_E,k,j,i) < 0.0 || !fin) n += 1.0;
-      // without implicit_pos_gas: an eint the hydro's floor will raise, counted
-    if (low && !pgas) nf += 1.0;
   }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nh));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
   nh = CleanReduce(nh, false);

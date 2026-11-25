@@ -252,11 +252,6 @@ void RadiationVet::CubedS1Init() {
     Kokkos::deep_copy(cs_cn2, c2h);
     Kokkos::deep_copy(cs_cn3, c3h);
   }
-  // cs_seam_avg (read only when named): seam average of the stored face state
-  cs_seam_avg_on = true;
-  if (pin_cs_ != nullptr && pin_cs_->DoesParameterExist("rad_vet","cs_seam_avg")) {
-    cs_seam_avg_on = pin_cs_->GetBoolean("rad_vet","cs_seam_avg");
-  }
 }
 
 } // namespace radvet
