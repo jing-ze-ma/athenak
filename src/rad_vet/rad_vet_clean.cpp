@@ -2618,8 +2618,8 @@ int RadiationVet::CleanStagRealizable() {
 //!   H+-' = H+-_f (1 +- dd/s),  s = H+_f - H-_f,
 //! the shrinking one at most to 0.  Linear in E with upwind signs, so the M-matrix holds
 //! for any E.  g+- are not capped at 1 (a beam edge's face flux can exceed c J_donor).
-//! Cubed sphere: a MeshBlock's high x2, x3 faces take the rays' flux from its last cell
-//! (CLN_FH).  clean_stag_thinf takes the flux of the cells' half ranges there (the face
+//! Cubed sphere: a panel seam's high x2, x3 faces take the rays' flux from their last cell
+//! (CLN_FH, CleanRayFace).  clean_stag_thinf takes the flux of the cells' half ranges there (the face
 //! sum with fixed sets): the two MeshBlocks of a face mix or extrapolate its sum with
 //! their own cells' weights, and the write-back's face tie would move the difference
 //! into one side's E.  clean_stag_rayratio: J -> E in Phi and the half ranges, F_ray ->
@@ -2646,12 +2646,10 @@ void RadiationVet::CleanStagBracket() {
     if (!thf) return;
     Real r = fmax(x.cs(m,CLN_JR,k,j,i), 0.0);
     for (int n = 0; n < x.nf; ++n) {
-      const int c = (n == 0) ? CLN_FX : ((n == 1) ? CLN_F2 : CLN_F3);
       for (int sd = 0; sd < 2; ++sd) {
         const int kf = k + sd*(n == 2), jf = j + sd*(n == 1), iff = i + sd*(n == 0);
         if (sd > 0 && CleanBoundaryFace(x, n, m, kf, jf, iff)) continue;
-        const bool up = x.cub && n > 0 && ((n == 1) ? jf > x.je : kf > x.ke);
-        r = fmax(r, fabs(up ? x.cs(m,CLN_FH+4*(n-1),k,j,i) : x.cs(m,c,kf,jf,iff)));
+        r = fmax(r, fabs(CleanRayFace(x, n, m, kf, jf, iff)));
       }
     }
     x.w(m,CLW_Y,k,j,i) = r;
@@ -2662,7 +2660,6 @@ void RadiationVet::CleanStagBracket() {
   const bool hrm = cln_hface;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    const int n = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
     CleanFor("cln_sbracket", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px;)   // in device memory: no per-thread copy
@@ -2685,9 +2682,7 @@ void RadiationVet::CleanStagBracket() {
           w*x.c*(x.fc[dir](m,CLF_HP,k,j,i)*x.w(m,CLW_Z,k-dk,j-dj,i-di) +
                  x.fc[dir](m,CLF_HM,k,j,i)*x.w(m,CLW_Z,k,j,i)) +
           gl*x.w(m,CLW_Z,k-dk,j-dj,i-di) + gr*x.w(m,CLW_Z,k,j,i);
-      // cubed sphere: a MeshBlock's high x2, x3 face from its last cell (CLN_FH)
-      const bool up = x.cub && dir > 0 && (j > x.je || k > x.ke);
-      const Real fr0 = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
+      const Real fr0 = CleanRayFace(x, dir, m, k, j, i);
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
       if (bf) return;
       // the rays' J also below clean_ray_min E (a diagonal beam's side cells);
@@ -2965,25 +2960,27 @@ bool CleanStagFRow(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const
   return eq;
 }
 //----------------------------------------------------------------------------------------
-//! \fn bool CleanStagFRay
-//! \brief clean_stag_fwb: the rays' own lab-frame momentum of face (kf,jf,iff) in f:
-//! their flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), plus
-//! the upwind advective a E; false (f unchanged) where the donor holds no rays
+//! \fn Real CleanStagFRay
+//! \brief clean_stag_fwb: the rays' own lab-frame momentum of face (kf,jf,iff): their
+//! flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), plus the
+//! upwind advective a E.  Where the donor holds no rays (CLN_J = 0) the thin share's own
+//! energy flux c (h+ E_L + h- E_R): a function of E on every face, never the last F, so
+//! that the well-balanced rows of a line hold no lagged neighbour
 
 KOKKOS_INLINE_FUNCTION
-bool CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
-                   const int kf, const int jf, const int iff, Real &f) {
+Real CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
+                   const int kf, const int jf, const int iff) {
   const int ek = (dir == 2), ej = (dir == 1), ei = (dir == 0);
-  const bool up = x.cub && dir > 0 && ((dir == 1) ? jf == x.je + 1 : kf == x.ke + 1);
-  const int nr = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
-  const Real g = up ? x.cs(m,CLN_FH+4*(dir-1),kf-ek,jf-ej,iff-ei) : x.cs(m,nr,kf,jf,iff);
+  const Real g = CleanRayFace(x, dir, m, kf, jf, iff);
   auto ec = [&](const int l) {return fmax(x.w(m,e,kf-l*ek,jf-l*ej,iff-l*ei), 0.0);};
   const int u = (g > 0.0) ? 1 : 0;
   const Real jd = x.cs(m,CLN_J,kf-u*ek,jf-u*ej,iff-u*ei);
   const Real a = 0.5*(CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf-ek, jf-ej, iff-ei) +
                       CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf, jf, iff));
-  if (jd > 0.0) f = x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) + a*ec(a > 0.0);
-  return jd > 0.0;
+  const Real f = (jd > 0.0) ? x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) :
+                 x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) +
+                      x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0));
+  return f + a*ec(a > 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -3313,7 +3310,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
               Real f = cub ? fd(m,CLF_N+2,kf,jf,iff)
                            : fd(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,j,i);
               if (pass == 0 && !CleanBoundaryFace(x, d, m, kf, jf, iff)) {
-                CleanStagFRay(x, ef, d, m, kf, jf, iff, f);
+                f = CleanStagFRay(x, ef, d, m, kf, jf, iff);
               }
               if (cub) {
                 ln.v(m,9+2*d+s,k,j,i) = f;
@@ -3336,10 +3333,10 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
           CleanFor("cln_fwb", nmb1, ks, ke+ek, js, je+ej, is, ie+ei,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
             const CleanArgs &x = *pw;
-            Real lo, hi, dg, r, f0;
-            if (CleanBoundaryFace(x, d, m, k, j, i) ||
-                !CleanStagFRay(x, ef, d, m, k, j, i, f0)) return;
+            Real lo, hi, dg, r;
+            if (CleanBoundaryFace(x, d, m, k, j, i)) return;
             if (!CleanStagFRow(x, ln, fd, d, m, k, j, i, lo, hi, dg, r)) return;
+            const Real f0 = CleanStagFRay(x, ef, d, m, k, j, i);
             const Real fm = ln.Far(x, d, m, k, j, i, k-ek, j-ej, i-ei);
             const Real fp = ln.Far(x, d, m, k, j, i, k, j, i);
             const Real qd = x.drag ? fd(m,CLF_DB,k,j,i) : 0.0;

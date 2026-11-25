@@ -974,6 +974,22 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanRayFace
+//! \brief the rays' flux through face (k,j,i) normal to dir: the upper cell's (across a
+//! MeshBlock edge the neighbour's, one value per face); a panel seam's high face: its last
+//! cell's (CLN_FH, as the ghost's x2 or x3 may be another axis)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanRayFace(const CleanArgs &x, const int dir, const int m, const int k,
+                  const int j, const int i) {
+  if (x.cub && dir > 0 && ((dir == 1) ? j > x.je : k > x.ke) &&
+      x.mbc(m,2*dir+1) == BoundaryFlag::panel) {
+    return x.cs(m,CLN_FH+4*(dir-1),k-(dir == 2),j-(dir == 1),i);
+  }
+  return x.cs(m,(dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3),k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int CleanTransSide
 //! \brief 1 if cell (k,j,i)'s transverse stress terms reach across its side s along b
 //! (interior, MeshBlock, periodic, reflecting); 0 at open, imposed-flux, pole and seam

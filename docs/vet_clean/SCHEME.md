@@ -404,7 +404,8 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
   (compared at that threshold, not byte by byte).
 
 Test: `layout_tile` (1 x 2 MeshBlocks along phi vs one MeshBlock: identical; 2 x 2, which
-also splits theta across the ray walls: bounded at 1e-8).
+also splits theta across the ray walls: bounded at 1e-8); on the cubed
+sphere `layout_cs` (one MeshBlock per panel vs 2 x 2: identical).
 
 ### CPU / GPU consistency: round-off, not bitwise
 
