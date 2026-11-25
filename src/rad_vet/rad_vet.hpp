@@ -1745,7 +1745,7 @@ class RadiationVet {
     bool copyin = false, restore = false;
   };
   bool vgd_ring = false;              // ring layout allocated (both arrays)
-  bool vgd_ring_named = false, vgd_ring_par = true;   // vet_gd_band_ring (named)
+  bool vgd_ring_par = true;   // vet_gd_band_ring
   bool vgd_ring_act = false;          // the ring runs in this sweep
   bool vgd_rg_two = false;            // this sweep carries a second array (vgd_i_xb)
   bool vgd_rg_xb = false;             // the other xfade set's array

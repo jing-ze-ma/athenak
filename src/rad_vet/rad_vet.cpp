@@ -1673,9 +1673,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_gband = pin->GetBoolean("rad_vet","vet_gd_band_global");
     }
     // vet_gd_band_ring (read only when named, VetGdInit): band intensities lent per shell
-    // from a few slabs; unnamed: on where it applies except the sp raw band
+    // from a few slabs; unnamed: on where it applies
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_band_ring")) {
-      vgd_ring_named = true;
       vgd_ring_par = pin->GetBoolean("rad_vet","vet_gd_band_ring");
     }
     // vet_gd_halo_compact: default 2 on a fresh vet_gd start (recipe::NewDefaults),
@@ -1740,9 +1739,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // exact halo lists where they apply (VetGdInit switches them off elsewhere)
     vgd_hx_on = true;
-    // vet_gd_halo_ipc: default on CUDA without a theta wall (VetGdSetup keeps it on the
-    // raw 3-D sweep only; off-node partners take MPI)
-#if defined(KOKKOS_ENABLE_CUDA)
+    // vet_gd_halo_ipc: default on CUDA, HIP without a theta wall (VetGdSetup keeps it on
+    // the raw 3-D sweep only; off-node partners take MPI)
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
     vgd_ipc_on = vgd_on && !vgd_thmir && vgd_thvac == 0;
 #endif
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_ipc")) {
