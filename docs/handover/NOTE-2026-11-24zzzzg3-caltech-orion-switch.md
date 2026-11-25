@@ -27,3 +27,17 @@ CONTINUITY OK
 - CW / FATAL / inf / DT_RETRY / fallback over the first 100 cycles: CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; 
 - log lines "not in the restart file" / "absent from the restart's input": 0 
 - s/cyc: c4speed 0.9399 (c16350-16450), before the stop 0.8826 (c16000-16300) (production stars run with their dumps and differ from a quiet test node)
+
+## m35zams switched to c4speed (11-24 20:50)
+- before: t 1.7686555190404394e+05 dt 3.4805112236162938e+00, STOP at 20:48:09; stop requested (STOP file) at cycle 50816: restart written rst/m35zams.00003.rst; step ended 52 s after the STOP; final rst m35zams.00003.rst (9052438809 bytes; previous 9052438593), hard-linked in rst_keep with the previous one; wall lost from the stop to the first new step: 118 s (including its start-up, until the launch check)
+- restart (chunks.txt): `2026-11-24 20:49:23 chunk 1 STAR=m35zams BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_c4speed_d979d5268 md5=3627c9a8876737a8e3ee61e1fa5e89c0 DECK=/resnick/groups/carnegie_poc/jingze/prod_c1_1124/decks/IA123_m35zams.athinput md5=ad05d1ea8a25a367d63fc364f6ab62ee start=-r /resnick/groups/carnegie_poc/jingze/prod_c1_1124/m35zams/rst/m35zams.00003.rst WT=44:34:37 HOLDER=7333073 NODE=hpc-sm-02-17 EX=rad_`; holder 7333073, node 02-17, same dir /resnick/groups/carnegie_poc/jingze/prod_c1_1124/m35zams, deck md5 and binary md5 checked by the launcher; SANITY OK m35zams (new): binary athena_c4speed_d979d5268 3627c9a8876737a8e3ee61e1fa5e89c0 deck ad05d1ea8a25a367d63fc364f6ab62ee restart holder 7333073 node hpc-sm-02-17 newest rst /resnick/groups/carnegie_poc/jingze/prod_c1_1124/m35zams/rst/m35zams.00003.rst
+- last row before the stop: t 1.7686555190e+05 dt 3.480511, L_top 2.16014723e+35, KE_int 2.99052286e+35, M_tot 2.21680248e+27, Etot 1.29527204e+42
+- new row 1: t 1.7686903242e+05 dt 3.480511, L_top 2.16014601e+35 (change -1.21e+29, rel -5.6e-07), KE_int 2.99046722e+35 (change -5.56e+30, rel -1.9e-05), M_tot 2.21680248e+27 (change 8.25e+11, rel 3.7e-16), Etot 1.29527204e+42 (change -1.07e+32, rel -8.3e-11)
+- new row 2: t 1.7687251293e+05 dt 3.480511, L_top 2.16014482e+35 (change -1.20e+29, rel -5.5e-07), KE_int 2.99041189e+35 (change -5.53e+30, rel -1.9e-05), M_tot 2.21680248e+27 (change -2.47e+12, rel -1.1e-15), Etot 1.29527204e+42 (change -1.07e+32, rel -8.3e-11)
+- new row 3: t 1.7687599344e+05 dt 3.480511, L_top 2.16014365e+35 (change -1.17e+29, rel -5.4e-07), KE_int 2.99035688e+35 (change -5.50e+30, rel -1.8e-05), M_tot 2.21680248e+27 (change 6.60e+12, rel 3.0e-15), Etot 1.29527204e+42 (change -1.07e+32, rel -8.2e-11)
+- new row 4: t 1.7687947395e+05 dt 3.480511, L_top 2.16014243e+35 (change -1.22e+29, rel -5.6e-07), KE_int 2.99030216e+35 (change -5.47e+30, rel -1.8e-05), M_tot 2.21680248e+27 (change -6.60e+12, rel -3.0e-15), Etot 1.29527204e+42 (change -1.06e+32, rel -8.2e-11)
+- new row 5: t 1.7688295446e+05 dt 3.480511, L_top 2.16014130e+35 (change -1.13e+29, rel -5.3e-07), KE_int 2.99024776e+35 (change -5.44e+30, rel -1.8e-05), M_tot 2.21680248e+27 (change -8.25e+11, rel -3.7e-16), Etot 1.29527204e+42 (change -1.06e+32, rel -8.2e-11)
+CONTINUITY OK
+- CW / FATAL / inf / DT_RETRY / fallback over the first 100 cycles: CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; 
+- log lines "not in the restart file" / "absent from the restart's input": 0 
+- s/cyc: c4speed 0.2879 (c50820-50960), before the stop 0.3025 (c50750-50810) (production stars run with their dumps and differ from a quiet test node)
