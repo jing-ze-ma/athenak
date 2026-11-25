@@ -350,45 +350,45 @@
   }
  },
  "idort_radshock_m2": {
-  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m2.txt (no shift), with the production tableau time2_tableau = sdirk2; the default hesdirk2 (the v20.3 bench) gives 3.56 / 2.13 / 3.85 / 2.59e-4",
+  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m2.txt (no shift), with the production tableau time2_tableau = sdirk2 and its default time2_gtime_slope; hesdirk2 (the v20.3 bench) gives 3.56 / 2.13 / 3.85 / 2.59e-4",
   "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
   "near": {
    "L1_rho": [
-    0.000383,
+    0.000356,
     0.05
    ],
    "L1_v": [
-    0.000245,
+    0.000213,
     0.05
    ],
    "L1_Tg": [
-    0.000396,
+    0.000385,
     0.05
    ],
    "L1_Tr": [
-    0.000271,
+    0.00026,
     0.05
    ]
   }
  },
  "idort_radshock_m5": {
-  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m5.txt (no shift), with the production tableau time2_tableau = sdirk2; the default hesdirk2 (the v20.3 bench) gives 1.69 / 0.817 / 1.62 / 0.941e-3",
+  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m5.txt (no shift), with the production tableau time2_tableau = sdirk2 and its default time2_gtime_slope; hesdirk2 (the v20.3 bench) gives 1.69 / 0.817 / 1.62 / 0.941e-3",
   "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
   "near": {
    "L1_rho": [
-    0.00216,
+    0.0017,
     0.05
    ],
    "L1_v": [
-    0.000919,
+    0.000818,
     0.05
    ],
    "L1_Tg": [
-    0.00181,
+    0.00162,
     0.05
    ],
    "L1_Tr": [
-    0.00103,
+    0.00094,
     0.05
    ]
   }
@@ -470,11 +470,11 @@
   },
   "near": {
    "L1_rho": [
-    0.004539,
+    0.00391,
     0.05
    ],
    "L1_Tr": [
-    0.00746,
+    0.00744,
     0.05
    ]
   },
@@ -520,7 +520,7 @@
   },
   "near": {
    "L1": [
-    0.0007234,
+    0.000775,
     0.05
    ]
   },
