@@ -50,7 +50,9 @@ one normal component per face. The face flux of a stage is a blend of
 **Time integration.** IMEX. The hydrodynamics is AthenaK's explicit Heun (`rk2`) integrator,
 unchanged. Radiation transport and the gas-radiation exchange are implicit, with Alexander's
 two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); each stage sees the gas at the
-same time as the explicit part, so the IMEX scheme is second order. Backward Euler is the
+same time as the explicit part, and the hydro's stage-2 flux state takes the exchange with
+the slope of the last step and of this stage (`time2_gtime_slope`), so the IMEX scheme is
+second order also where the exchange is stiff. Backward Euler is the
 fallback (first step, or a step whose stage failed). The radiation does not limit the
 stability of the step; with `<hydro>/rad_signal_speed_diff = true` (production) it enters the
 hydro time step only where it is trapped: the radiation part of the signal speed is weighted by
@@ -246,13 +248,15 @@ the rotating sets `_rot` 4.7e-9 and 9e-10).
 
 ### Second order in space and time
 
-The face terms are second order in space; the IMEX SDIRK2 pairing is second order in time.
+The face terms are second order in space; the IMEX SDIRK2 pairing is second order in time,
+also in the stiff (trapped) exchange with `time2_gtime_slope` (without it, first order there).
 At the time steps of the test, deck D is still pre-asymptotic: the successive orders are 1.57,
 1.61 and 1.84 (E) as dt is halved, and finer ladders reach 2. A first-order defect would show
 as an order near 1.
 
 Test: `order_time` (order of the finest pair >= 1.7), `order_space` (linear
-radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7).
+radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7), `order_stiff` (trapped
+radiation-acoustic wave, time step halved, finest pair >= 1.7).
 
 ### Radiation-acoustic waves in every trapping regime
 
