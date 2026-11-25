@@ -1843,7 +1843,7 @@ void RadiationVet::CleanStageOpacity() {
   auto op = opac;
   auto w = cln_w;
   const int otype = opacity_type;
-  const M1OpacTab ot = otab;
+  const VetOpacTab ot = otab;
   const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, ks_ = kappa_s;
   const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
   const bool osc = vscat;
@@ -1851,7 +1851,8 @@ void RadiationVet::CleanStageOpacity() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = uh(m,IDN,k,j,i);
     Real o[4];
-    M1CellOpacities(otype, ot, eos, d, w(m,CLW_T,k,j,i), kp, kev, kf, ks_, rref, tref, aa,
+    VetCellOpacities(otype, ot, eos, d, w(m,CLW_T,k,j,i), kp, kev, kf, ks_, rref, tref,
+                     aa,
                     bb, o[0], o[1], o[2], o[3]);
     op(m,VET_OP_P,k,j,i) = d*o[0];
     op(m,VET_OP_E,k,j,i) = d*o[1];
@@ -4764,8 +4765,8 @@ void RadiationVet::CleanLzBook(const Real s, const bool start) {
   cln_lzl += (t2_solve == VET_T2S_STAGE2) ? cln_lzp : cln_lzp + s;
   cln_lzp = 0.0;
   const bool cs = (cln_lza == 2);
-  cln_lzpin->SetReal("rad_vet", M1LzKey(cln_lzpin, cs, false), cln_lzl);
-  cln_lzpin->SetReal("rad_vet", M1LzKey(cln_lzpin, cs, true), cln_lzs1);
+  cln_lzpin->SetReal("rad_vet", VetLzKey(cln_lzpin, cs, false), cln_lzl);
+  cln_lzpin->SetReal("rad_vet", VetLzKey(cln_lzpin, cs, true), cln_lzs1);
   if (global_variable::my_rank == 0 && cln_verbose > 0 && !cln_insteady) {
     std::printf("CLEAN LZ%s cycle %d t2s %d ledger %.16e\n", cs ? "" : "B",
                 pmy_pack->pmesh->ncycle, t2_solve, cln_lzl);

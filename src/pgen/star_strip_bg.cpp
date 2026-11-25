@@ -156,7 +156,7 @@ void StarStripBackground(ParameterInput *pin, Mesh *pm) {
       const Real d = u0(m,IDN,k,j,i);
       const Real t = tgas(i);
       Real op, oe, of, os;
-      radvet::M1TableOpacities(ot, d, t, op, oe, of, os);
+      radvet::VetTableOpacities(ot, d, t, op, oe, of, os);
       const Real dt = (of + os)*d*(x1f(m,i+1) - x1f(m,i));
       if (tau + 0.5*dt >= taucut) {
         ic = i;

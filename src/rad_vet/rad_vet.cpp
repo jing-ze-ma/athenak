@@ -543,7 +543,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       const bool cs = (cln_lza == 2);
       cln_lzpin = pin;
       for (int k1 = 0; k1 < 2; ++k1) {   // a restart file's non-finite value: NOTE, 0
-        const std::string key = M1LzKey(pin, cs, k1 == 1);
+        const std::string key = VetLzKey(pin, cs, k1 == 1);
         Real &v = (k1 == 1) ? cln_lzs1 : cln_lzl;
         v = pin->GetOrAddReal("rad_vet", key, 0.0);
         if (std::isfinite(v)) continue;
@@ -983,7 +983,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   // opac_abs_rho_max (read only when named): absorption mask of the table opacity; cells
   // with code density below it get kappa_P = kappa_E = 0 and the transport opacity
-  // opac_abs_kappa_s [cm^2/g]; applied at every table lookup (M1TableOpacities)
+  // opac_abs_kappa_s [cm^2/g]; applied at every table lookup (VetTableOpacities)
   if (pin->DoesParameterExist("rad_vet","opac_abs_rho_max")) {
     otab.amask_rho = pin->GetReal("rad_vet","opac_abs_rho_max");
     const Real kes = pin->DoesParameterExist("rad_vet","opac_abs_kappa_s") ?
@@ -1418,7 +1418,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_nmu = pin->GetOrAddInteger("rad_vet","vet_col_nmu",4);
     // vet_every (alias vet_col_every)
     vcol_every = pin->GetOrAddInteger("rad_vet",
-                                      M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
+                                      VetKeyName(pin, "vet_every", {"vet_col_every"}), 1);
     // vet_col_fk_min: lower clamp of f_K (restart files without it: 1/3)
     vcol_fkmin = pin->GetOrAddReal("rad_vet","vet_col_fk_min",
                                    global_variable::restart_run ? (1.0/3.0) : 0.0);
@@ -1448,7 +1448,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     {
       // vet_source (alias vet_col_source), read by vet_sc too: relaxed_esc under the new
       // default set (recipe::NewDefaults), else relaxed
-      const std::string vk = M1KeyName(pin, "vet_source", {"vet_col_source"});
+      const std::string vk = VetKeyName(pin, "vet_source", {"vet_col_source"});
       if (!pin->DoesParameterExist("rad_vet", vk)) {
         const bool nd = recipe::NewDefaults(pin);
         pin->GetOrAddString("rad_vet", vk, nd ? "relaxed_esc" : "relaxed");
@@ -2255,7 +2255,7 @@ void RadiationVet::RssPrime(bool restart) {
 
 void RadiationVet::VetBcInit(ParameterInput *pin, const bool gd) {
   const bool rst = global_variable::restart_run;
-  const std::string kin = gd ? M1KeyName(pin, "vet_bc_inner", {"vet_gd_inner"})
+  const std::string kin = gd ? VetKeyName(pin, "vet_bc_inner", {"vet_gd_inner"})
                              : std::string("vet_bc_inner");
   const bool bnamed = pin->DoesParameterExist("rad_vet", "vet_bc_bath");
   const bool bath = bnamed ? pin->GetBoolean("rad_vet", "vet_bc_bath") : !rst;

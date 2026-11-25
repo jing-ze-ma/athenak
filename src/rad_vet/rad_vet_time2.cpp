@@ -73,7 +73,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     }
   }
   // vet_every > 1 is not accepted under vet_sc
-  const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
+  const std::string kev = VetKeyName(pin, "vet_every", {"vet_sc_every"});
   if (vet_sc && pin->DoesParameterExist("rad_vet", kev) &&
       pin->GetInteger("rad_vet", kev) > 1) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -214,7 +214,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   //   predict : one build per step at P = (stage-1 start) + dt K1, t^{n+1} + O(dt^2)
   //   rebuild : predict for stage 1, a second build at Y1 for stage 2
   t2_vsmode = 0;
-  const std::string kvs = M1KeyName(pin, "time2_vet", {"time2_vet_sc"});
+  const std::string kvs = VetKeyName(pin, "time2_vet", {"time2_vet_sc"});
   const bool vs_named = pin->DoesParameterExist("rad_vet", kvs);
   if (vet_sc && vs_named && pin->GetString("rad_vet", kvs).compare("extrap") == 0) {
     t2_vext = true;
@@ -247,7 +247,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   t2_vcmode = 0;
   if (vet_col) {
     const bool vdef = sph_geom && !global_variable::restart_run;
-    const std::string kvc = M1KeyName(pin, "time2_vet", {"time2_vet_col"});
+    const std::string kvc = VetKeyName(pin, "time2_vet", {"time2_vet_col"});
     std::string vm = (sph_geom || pin->DoesParameterExist("rad_vet", kvc)) ?
         pin->GetOrAddString("rad_vet", kvc, vdef ? "extrap2" : "lag") :
         std::string("lag");
@@ -1347,7 +1347,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
 
 void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
                                       const bool col) {
-  const std::string key = col ? M1KeyName(pin, "time2_vet_source",
+  const std::string key = col ? VetKeyName(pin, "time2_vet_source",
                                           {"time2_vet_col_source"})
                               : std::string("time2_vet_source");
   if (!act && !pin->DoesParameterExist("rad_vet", key)) {return;}
@@ -1362,7 +1362,7 @@ void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
     t2_vcsrc = true;
   } else if (vs.compare("blend") == 0) {
     t2_vcsbl = true;
-    const std::string kx = col ? M1KeyName(pin, "time2_vet_source_x0",
+    const std::string kx = col ? VetKeyName(pin, "time2_vet_source_x0",
                                            {"time2_vet_col_source_x0"})
                                : std::string("time2_vet_source_x0");
     vcol_sx0 = pin->GetOrAddReal("rad_vet", kx, 1.0);

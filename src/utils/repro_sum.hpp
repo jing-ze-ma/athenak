@@ -46,7 +46,7 @@ namespace repro {
 //! deposited exactly.  Set once by the Mesh constructor.
 inline bool block_mode = true;
 //! layout_invariant_mode = tile (<mesh>/layout_tile N): block mode with the partials
-//! of fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (M1LayReduce,
+//! of fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (VetLayReduce,
 //! HistSums, ShellSums): the same for every layout of whole-tile MeshBlocks, and a tile
 //! of the MeshBlock's size is the MeshBlock (block mode, bitwise); tile_nx2: the
 //! MeshBlock's nx2 (the Mesh constructor)

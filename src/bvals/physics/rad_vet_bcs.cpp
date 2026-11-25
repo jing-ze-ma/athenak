@@ -26,8 +26,8 @@
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_closure.hpp"
 
-//! The per-cell ghost fill lives in rad_vet_closure.hpp as radvet::M1FillGhost, so that a
-//! problem generator with `user` x1 walls can run exactly the same fill.
+//! The per-cell ghost fill lives in rad_vet_closure.hpp as radvet::VetFillGhost, so that
+//! a problem generator with `user` x1 walls can run exactly the same fill.
 
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValues::RadVetBCs()
@@ -54,18 +54,18 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::inner_x1)) {
         case BoundaryFlag::outflow:
           for (int i=0; i<ng; ++i) {
-            radvet::M1FillGhost(u0,m,k,j,is-i-1,k,j,is,1,0,-1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,j,is-i-1,k,j,is,1,0,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int i=0; i<ng; ++i) {
-            radvet::M1FillGhost(u0,m,k,j,is-i-1,k,j,is+i,1,1,-1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,j,is-i-1,k,j,is+i,1,1,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int i=0; i<ng; ++i) {
-            radvet::M1FillGhost(u0,m,k,j,is-i-1,k,j,is,1,2,-1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,j,is-i-1,k,j,is,1,2,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -82,18 +82,18 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::outer_x1)) {
         case BoundaryFlag::outflow:
           for (int i=0; i<ng; ++i) {
-            radvet::M1FillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,0,1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,0,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int i=0; i<ng; ++i) {
-            radvet::M1FillGhost(u0,m,k,j,ie+i+1,k,j,ie-i,1,1,1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,j,ie+i+1,k,j,ie-i,1,1,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int i=0; i<ng; ++i) {
-            radvet::M1FillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,2,1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,2,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -119,18 +119,18 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::inner_x2)) {
         case BoundaryFlag::outflow:
           for (int j=0; j<ng; ++j) {
-            radvet::M1FillGhost(u0,m,k,js-j-1,i,k,js,i,2,0,-1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,js-j-1,i,k,js,i,2,0,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int j=0; j<ng; ++j) {
-            radvet::M1FillGhost(u0,m,k,js-j-1,i,k,js+j,i,2,1,-1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,js-j-1,i,k,js+j,i,2,1,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int j=0; j<ng; ++j) {
-            radvet::M1FillGhost(u0,m,k,js-j-1,i,k,js,i,2,2,-1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,js-j-1,i,k,js,i,2,2,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -147,18 +147,18 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::outer_x2)) {
         case BoundaryFlag::outflow:
           for (int j=0; j<ng; ++j) {
-            radvet::M1FillGhost(u0,m,k,je+j+1,i,k,je,i,2,0,1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,je+j+1,i,k,je,i,2,0,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int j=0; j<ng; ++j) {
-            radvet::M1FillGhost(u0,m,k,je+j+1,i,k,je-j,i,2,1,1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,je+j+1,i,k,je-j,i,2,1,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int j=0; j<ng; ++j) {
-            radvet::M1FillGhost(u0,m,k,je+j+1,i,k,je,i,2,2,1.0,cl,e_floor);
+            radvet::VetFillGhost(u0,m,k,je+j+1,i,k,je,i,2,2,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -184,18 +184,18 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
     switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
       case BoundaryFlag::outflow:
         for (int k=0; k<ng; ++k) {
-          radvet::M1FillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,0,-1.0,cl,e_floor);
+          radvet::VetFillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,0,-1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::reflect:
         for (int k=0; k<ng; ++k) {
-          radvet::M1FillGhost(u0,m,ks-k-1,j,i,ks+k,j,i,3,1,-1.0,cl,e_floor);
+          radvet::VetFillGhost(u0,m,ks-k-1,j,i,ks+k,j,i,3,1,-1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::vacuum:
       case BoundaryFlag::diode:
         for (int k=0; k<ng; ++k) {
-          radvet::M1FillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,2,-1.0,cl,e_floor);
+          radvet::VetFillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,2,-1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::inflow:
@@ -212,18 +212,18 @@ void MeshBoundaryValues::RadVetBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
     switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
       case BoundaryFlag::outflow:
         for (int k=0; k<ng; ++k) {
-          radvet::M1FillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,0,1.0,cl,e_floor);
+          radvet::VetFillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,0,1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::reflect:
         for (int k=0; k<ng; ++k) {
-          radvet::M1FillGhost(u0,m,ke+k+1,j,i,ke-k,j,i,3,1,1.0,cl,e_floor);
+          radvet::VetFillGhost(u0,m,ke+k+1,j,i,ke-k,j,i,3,1,1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::vacuum:
       case BoundaryFlag::diode:
         for (int k=0; k<ng; ++k) {
-          radvet::M1FillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,2,1.0,cl,e_floor);
+          radvet::VetFillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,2,1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::inflow:

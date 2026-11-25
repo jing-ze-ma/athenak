@@ -133,7 +133,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // ideal gas (by <= 3 % in speed at gamma = 5/3).  P_r along direction d is the
   // diagonal of the closure in use, P_dd = E [(1 - chi)/2 + (3 chi - 1)/2 n_d^2]:
   // (chi, n) of tau_ten (closure = tau | vet_col), of vet_cell (vet_sc; D_dd itself
-  // with vet_tensor = full), M1Chi(|F|/cE) about F (m1 | minerbo | kershaw), 1/3
+  // with vet_tensor = full), VetChi(|F|/cE) about F (m1 | minerbo | kershaw), 1/3
   // (eddington); E/3 wherever the closure gives no tensor yet (tau_ten before its first
   // build).  It is E/3 in the optically thick limit.  The radiation term is tapered by
   // the cell optical depth along each direction, tau_d = rho kappa_T dx_d (kappa_T the
@@ -173,7 +173,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   const bool rsp_ = rss_phase;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
   radvet::CleanGeo gn_;
-  int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 2 tau_ten, 3 vet_sc, 4 vet full
   int rss_kind = 0;
   Real rss_cl = 1.0, rss_ch = 1.0;
   if (rss_) {
@@ -232,7 +232,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         const Real f3 = erad_(m,radvet::VET_F3,k,j,i);
         const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
         const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-        chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+        chi = (er > 0.0) ? radvet::VetChi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
         n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
       }
       if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3

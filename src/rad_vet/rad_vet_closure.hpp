@@ -16,7 +16,7 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn M1Chi
+//! \fn VetChi
 //! \brief closure factor chi(|f|); chi(0) = 1/3, chi(1) = 1 for every kind.
 //!   LEVERMORE (1984): (3 + 4 f^2)/(5 + 2 sqrt(4 - 3 f^2))
 //!   MINERBO   (1978): 1/3 + (2 f^2/15)(3 - f + 3 f^2)
@@ -28,7 +28,7 @@ constexpr int VET_CHI_MINERBO   = 1;
 constexpr int VET_CHI_KERSHAW   = 2;
 
 KOKKOS_INLINE_FUNCTION
-Real M1Chi(const Real fnorm, const int kind = VET_CHI_LEVERMORE) {
+Real VetChi(const Real fnorm, const int kind = VET_CHI_LEVERMORE) {
   Real f2 = fnorm*fnorm;
   if (f2 > 1.0) {f2 = 1.0;}
   if (kind == VET_CHI_MINERBO) {
@@ -42,14 +42,14 @@ Real M1Chi(const Real fnorm, const int kind = VET_CHI_LEVERMORE) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1FillGhost
+//! \fn VetFillGhost
 //! \brief fill one physical-boundary ghost cell from the conserved moments of active
 //! cell (ka,ja,ia); shared by RadVetBCs and user BCs.
 //! mode 0 = copy (outflow), 1 = reflect (flip normal flux), 2 = vacuum (dark ghost).
 //! inorm = 1,2,3 is the face-normal flux component; sgn = +1 if outgoing is +x.
 
 KOKKOS_INLINE_FUNCTION
-void M1FillGhost(const DvceArray5D<Real> &u, const int m,
+void VetFillGhost(const DvceArray5D<Real> &u, const int m,
                  const int kg, const int jg, const int ig,
                  const int ka, const int ja, const int ia,
                  const int inorm, const int mode, const Real sgn,

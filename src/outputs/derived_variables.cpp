@@ -1393,16 +1393,16 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         Real f2 = u0_(m,radvet::VET_F2,k,j,i);
         Real f3 = u0_(m,radvet::VET_F3,k,j,i);
         Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
-        chi = edd ? (1.0/3.0) : radvet::M1Chi(fmin(fm/(cl*e), 1.0), chk);
+        chi = edd ? (1.0/3.0) : radvet::VetChi(fmin(fm/(cl*e), 1.0), chk);
         if (fm > 0.0) {
           n1 = f1/fm;
           n2 = f2/fm;
           n3 = f3/fm;
         }
       }
-      Real d11 = radvet::M1EddDiag(chi, n1);
-      Real d22 = radvet::M1EddDiag(chi, n2);
-      Real d33 = radvet::M1EddDiag(chi, n3);
+      Real d11 = radvet::VetEddDiag(chi, n1);
+      Real d22 = radvet::VetEddDiag(chi, n2);
+      Real d33 = radvet::VetEddDiag(chi, n3);
       if (dfull) {
         d11 = vc_(m,radvet::VETRAY_D11,k,j,i);
         d22 = vc_(m,radvet::VETRAY_D11+1,k,j,i);

@@ -13,7 +13,7 @@
 //! chi(f) closures (sph_q, P = p I + q n n): the radial face takes the integrating factor
 //! D_rr -> (1-chi)/2 + (3 chi-1)/2 n_r^2 (r_c/r_f)^2 (keeps the M-matrix, r^2 E = const
 //! is the exact discrete free-streaming state) and each face equation the lagged
-//! curvature of (div P)_d (M1SphCurv); off-diagonal terms only under
+//! curvature of (div P)_d (VetSphCurv); off-diagonal terms only under
 //! implicit_offdiag = lagged.
 
 #include <cmath>
@@ -65,7 +65,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     }
     if (pin->DoesParameterExist("rad_vet","implicit_offdiag")) {
       std::string s = pin->GetString("rad_vet","implicit_offdiag");
-      // `operator` (19-point stencil, od cache, uniform-dx M1OffDiv) is not converted
+      // `operator` (19-point stencil, od cache, uniform-dx VetOffDiv) is not converted
       bool ok = (s.compare("auto") == 0 || s.compare("none") == 0 ||
                  (!eddington && s.compare("lagged") == 0));
       if (!ok) {
@@ -172,7 +172,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CubedS1Init
 //! \brief cubed sphere, after ImplicitInit: open the panel seams of the implicit
-//! operator, tabulate the seam geometry (M1CsSeamGeom, incl. ghost rows), effective
+//! operator, tabulate the seam geometry (VetCsSeamGeom, incl. ghost rows), effective
 //! transverse distances/areas and the face and cell-centre normals
 
 void RadiationVet::CubedS1Init() {
@@ -208,14 +208,14 @@ void RadiationVet::CubedS1Init() {
         const int q = k - indcs.ks + k0;
         if (q < 0 || q >= npan) continue;
         Real a, b, c, d;
-        M1CsSeamGeom(q, npan, a, b, c, d);
+        VetCsSeamGeom(q, npan, a, b, c, d);
         g2h(m,0,k,sd) = a; g2h(m,1,k,sd) = b; g2h(m,2,k,sd) = c; g2h(m,3,k,sd) = d;
       }
       for (int j = 0; j < n2; ++j) {
         const int q = j - indcs.js + j0;
         if (q < 0 || q >= npan) continue;
         Real a, b, c, d;
-        M1CsSeamGeom(q, npan, a, b, c, d);
+        VetCsSeamGeom(q, npan, a, b, c, d);
         g3h(m,0,j,sd) = a; g3h(m,1,j,sd) = b; g3h(m,2,j,sd) = c; g3h(m,3,j,sd) = d;
       }
     }

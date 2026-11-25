@@ -112,10 +112,10 @@ constexpr int VET_NVAR = 4;
 // explicit stages of the PD-ARS (Chu et al. 2019) integrator per substep
 constexpr int VET_NSTAGE = 2;
 
-//! \fn M1KeyName
+//! \fn VetKeyName
 //! \brief the <rad_vet> name to read for a key with aliases: canon if present, else the
 //! first alias present, else canon. The canonical key wins over a differing alias.
-inline std::string M1KeyName(ParameterInput *pin, const std::string &canon,
+inline std::string VetKeyName(ParameterInput *pin, const std::string &canon,
                              const std::vector<std::string> &alias) {
   const bool hc = pin->DoesParameterExist("rad_vet", canon);
   for (const auto &a : alias) {
@@ -132,11 +132,11 @@ inline std::string M1KeyName(ParameterInput *pin, const std::string &canon,
   return canon;
 }
 
-//! \fn M1LzKey
+//! \fn VetLzKey
 //! \brief key of the clean L_z ledger (and K1's sum) on every mesh; old files' cs / sp
 //! spellings are read as aliases
-inline std::string M1LzKey(ParameterInput *pin, const bool cs, const bool k1) {
-  return M1KeyName(pin, k1 ? "clean_lz_ledger_k1" : "clean_lz_ledger",
+inline std::string VetLzKey(ParameterInput *pin, const bool cs, const bool k1) {
+  return VetKeyName(pin, k1 ? "clean_lz_ledger_k1" : "clean_lz_ledger",
                    {cs ? (k1 ? "clean_cs_lz_k1" : "clean_cs_lz_ledger")
                        : (k1 ? "clean_sp_lz_bnd_k1" : "clean_sp_lz_bnd")});
 }
@@ -207,13 +207,13 @@ constexpr int VET_FREF_WB_MD   = 3;
 
 
 //----------------------------------------------------------------------------------------
-//! \struct M1OpacTab
+//! \struct VetOpacTab
 //! \brief the stellar opacity tables as device Views held by value (capturable in a
 //! device lambda); one (log10 T, log10 rho) grid, read with RosselandTable.
 //! Lookup in K and g/cm^3: T[K] = T_code*tunit, rho = rho_code*dunit; kunit converts
 //! cm^2/g to code units.
 
-struct M1OpacTab {
+struct VetOpacTab {
   DvceArray2D<Real> kr;        // log10 kappa_Rosseland [cm^2/g], (iT, iD)
   DvceArray2D<Real> kp;        // log10 kappa_Planck    [cm^2/g], same grid
   DvceArray1D<Real> lT, lD;    // log10 T[K], log10 rho[g/cm^3]
@@ -225,7 +225,7 @@ struct M1OpacTab {
   Real amask_rho = 0.0;
   Real amask_kes = 0.0;
   // vet_scatter: split of kappa_R into kappa_a = kappa_R - kappa_e and kappa_e.
-  // scat 0 none, 1 constant kes, 2 kxe x_e/mu (M1ScatterEos); code units (times kunit)
+  // scat 0 none, 1 constant kes, 2 kxe x_e/mu (VetScatterEos); code units (times kunit)
   int scat = 0;
   Real kes = 0.0;    // constant kappa_e (vet_kappa_es)
   Real kfl = 0.0;    // floor: kappa_e <= kappa_R - kfl (vet_kappa_floor)
@@ -249,10 +249,10 @@ Real VetScatterMix(const int form, const Real rkp, const Real chi, const Real rk
   return ((chi - rkes)*b + rkes*e)/chi;
 }
 
-//! \fn M1ScatterGuard
+//! \fn VetScatterGuard
 //! \brief guarded kappa_e (per mass) for total kt: kappa_a = kt - kappa_e >= kfl
 KOKKOS_INLINE_FUNCTION
-Real M1ScatterGuard(const Real kt, const Real ke, const Real kfl) {
+Real VetScatterGuard(const Real kt, const Real ke, const Real kfl) {
   return (kt < ke + kfl) ? fmax(kt - kfl, 0.0) : ke;
 }
 
@@ -336,7 +336,7 @@ class RadiationVet {
   Real kappa_p{}, kappa_e{}, kappa_f{}, kappa_s{};
   Real opac_rho_ref{}, opac_t_ref{}, opac_a{}, opac_b{};
   bool opac_zero{};             // all four opacities are identically zero
-  M1OpacTab otab;               // opacity = table: filled by SetOpacityTables
+  VetOpacTab otab;               // opacity = table: filled by SetOpacityTables
 
   // <rad_vet>/force_reference: with VET_FREF_WB_ARAD the gas gets the residual between
   // the radiative force and the reference acceleration arad_ref of an external
@@ -421,7 +421,7 @@ class RadiationVet {
   Real vet_x1ptol = 0.0;
   DvceArray4D<Real> vet_x1ent;   // (nmb, nray, k, j): the previous pass's exit plane
   // a build has run, so the next adaptive sweep starts warm from vet_x1ent; both are in
-  // the restart file (kM1X1eRstMagic; a file without them restarts the sweep cold)
+  // the restart file (kVetX1eRstMagic; a file without them restarts the sweep cold)
   bool vet_x1_warm = false;
   int X1eRstNslab(const int n1) const {
     return vet_x1_warm ? (vet_x1ent.extent_int(1) + n1 - 1)/n1 : 0;
@@ -511,7 +511,7 @@ class RadiationVet {
   DvceArray4D<Real> ibm_s;   // beams' stress column c sum w Omega_b mu1 I (clean)
   void ImplBeamInit(ParameterInput *pin);
   // implicit_marshak_face = linear (spherical-polar wedge): the Marshak face E from
-  // r^2 E of the two end cells (M1SphMarshakCoef); cell (default): the end cell's E.
+  // r^2 E of the two end cells (VetSphMarshakCoef); cell (default): the end cell's E.
   // The outer face keeps cell under vet_col_surface_q.
   bool impl_mface_lin = false;
   DvceArray4D<Real> f0x1;       // face-normal comoving x1 flux (m,k,j,i), restart state
@@ -579,7 +579,7 @@ class RadiationVet {
   //  implicit_thin_gw_dump: g_L, g_R and weight AL of the last build (output m1_gw)
   DvceArray5D<Real> gwd;
   // time2_face_fct: the restart file carries K1's face energy flux t2pf1 (one slab per
-  // direction, kM1FaxRstMagic). Old files' implicit_hr_cmem_rst slabs: read, ignored.
+  // direction, kVetFaxRstMagic). Old files' implicit_hr_cmem_rst slabs: read, ignored.
   int FaxRstNslab() const {
     const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
     return (t2_pfst && t2pf1_ok && t2pf1.extent_int(0) > 0) ? nd : 0;
@@ -606,7 +606,7 @@ class RadiationVet {
   bool thsw_c1 = false;           // the sweep accumulates VETRAY_NL
   Real thsw_h0 = 0.3, thsw_h1 = 0.6;
   // implicit_thin_h0_x1 / _h1_x1: thin-switch band of the x1 faces (_hx1_curv: only on
-  // curvilinear meshes); implicit_thin_recon = js (M1ThinJs: ratios from the face mean
+  // curvilinear meshes); implicit_thin_recon = js (VetThinJs: ratios from the face mean
   // of H+-); implicit_thin_bq = lin (outer Marshak q from the face-extrapolated H+);
   // implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh (vet_sc), j: the cell J
   // implicit_flux_faces = all: berthon | blend on every face of the multi-D solve
@@ -619,10 +619,10 @@ class RadiationVet {
   bool impl_beam_hr = false;
   // implicit_hr_face = sf (default with vet_sc): face ratios from the face mean of the
   // half-range fluxes over the donor scale Jh = max(J, outgoing SC face fluxes) where J
-  // does not carry the SC flux (M1HrSf); cell: the cell ratios
+  // does not carry the SC flux (VetHrSf); cell: the cell ratios
   bool impl_hr_sf = false;
   // implicit_hr_excess = iso (vet_gd): the part of E^n above the formal-solution J takes
-  // the isotropic half-range shape (+-1/4) (M1HrExcess)
+  // the isotropic half-range shape (+-1/4) (VetHrExcess)
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
@@ -636,7 +636,7 @@ class RadiationVet {
   DvceArray5D<Real> csk1;               // hesdirk2: slope of the cell F (3)
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
   bool gcs_first = true;                // the first conservative solve of this run
-  // restart (kM1CskRstMagic): the header once a conservative solve ran, 3 slabs when
+  // restart (kVetCskRstMagic): the header once a conservative solve ran, 3 slabs when
   // csk1 holds a slope
   bool CskRstHdr() const {return impl_gas_src_cons && !gcs_first;}
   int CskRstNch() const {
@@ -675,7 +675,7 @@ class RadiationVet {
                                 // semicoarsening), 4 mg_gc (mg + global coarse space)
   Real bcg_r0rel{};             // max|b - A x0|/max|b| of the last BiCGStab call
   DvceArray1D<Real> lay_part;   // layout_invariant_mode = block: per-MeshBlock
-                                // partials of M1LayReduce (sized on first use)
+                                // partials of VetLayReduce (sized on first use)
   Kokkos::View<Real*, Kokkos::HostSpace> lay_part_h;   // their host copy
   Real ew_fprev{}, ew_etaprev{}; // max|r0| and eta of the previous pass of this step
   bool impl_pred{};             // implicit_predictor = step: start the Picard loop from
@@ -867,9 +867,9 @@ class RadiationVet {
   bool ctr_init{};
   DvceArray5D<Real> ctr_mem;
   // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last M1
-  // step: they travel in the restart (kM1RssRstMagic), else are filled from the initial
+  // step: they travel in the restart (kVetRssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
-  //! closure tensor the signal speed reads: 0 E/3, 1 M1Chi(F/cE), 2 tau_ten,
+  //! closure tensor the signal speed reads: 0 E/3, 1 VetChi(F/cE), 2 tau_ten,
   //! 3 vet_cell (chi, n), 4 vet_cell (D_dd), 5 cln_s (D, clean)
   int RssMode() const;
   int RssRstMode() const;   // RssMode + 16 (extended restart state)
@@ -990,14 +990,14 @@ class RadiationVet {
   // areas, volumes and centre distances
   bool sph_geom = false;
   // sph_geom with a non-Eddington closure: radial faces take the integrating factor
-  // (M1SphDrr), every face the lagged curvature M1SphCurv
+  // (VetSphDrr), every face the lagged curvature VetSphCurv
   bool sph_q = false;
   // cubed sphere (sets sph_geom too)
   bool cs_geom = false;
   // cubed-sphere transverse operator (CubedS1Init):
   //   m1bcs     mb_bcs with BoundaryFlag::panel read as block (a seam is an open face)
   //   cs_seam   per MeshBlock: its inner_x2, outer_x2, inner_x3, outer_x3 face is a seam
-  //   csg2/3    seam geometry (M1CsSeamGeom) of the x2 / x3 seam faces,
+  //   csg2/3    seam geometry (VetCsSeamGeom) of the x2 / x3 seam faces,
   //             (m, {dth, angm, sfoot, smid}, along-seam cell incl. ghosts, side lo/hi)
   DualArray2D<BoundaryFlag> m1bcs;
   DualArray2D<int> cs_seam;
@@ -1007,7 +1007,7 @@ class RadiationVet {
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
   // planar unit normals of the x2 faces (m, j = 0..n2, c) and x3 faces (m, k = 0..n3, c),
-  // along +x2 / +x3 (M1CsLat0)
+  // along +x2 / +x3 (VetCsLat0)
   DvceArray3D<Real> cs_fn2, cs_fn3;
   // the same normals at cell centres (m, j or k incl. ghosts, c): lateral axes of the cs
   // half-range ratios
@@ -1297,7 +1297,7 @@ class RadiationVet {
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)
-  // clean L_z ledger (clean_cs_lz_abs = 2; M1LzKey): cln_lzl the L_z the gas does not
+  // clean L_z ledger (clean_cs_lz_abs = 2; VetLzKey): cln_lzl the L_z the gas does not
   // take, booked as the radiation's; its sums as the gas momentum's slopes K1 (cln_lzs1),
   // K2 (cln_lzs2), stage-start increment (cln_lzc) and stage-1 part pending (cln_lzp).
   // 3-D spherical polar: the L_z that crossed the radial boundaries.
@@ -1521,7 +1521,7 @@ class RadiationVet {
   bool vcol_rtop = false;
   // vet_col_surface_face (sp, with vet_col_surface_q and implicit_marshak_face = linear):
   // outer face flux c H(face) (E/J)_face with E, J extrapolated linearly in r^2 (second
-  // order). vcol_jca, vcol_jcb: top-face weights (M1SphMarshakCoef), vcol_jcap the
+  // order). vcol_jca, vcol_jcb: top-face weights (VetSphMarshakCoef), vcol_jcap the
   // limiter's 2 (r_c/r_f)^2
   bool vcol_sqf = false;
   Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
@@ -1539,7 +1539,7 @@ class RadiationVet {
   // SC sweep, each direction swept through the 3-D field and through the column's
   // laterally homogeneous twin; their moment difference (0 on a uniform state) is stored
   // in tau_ten VET_TT_LAT0.. (mesh basis). dD_rr enters the diagonal, D_r,lat the face
-  // equations (M1SphLat).
+  // equations (VetSphLat).
   bool vlat_on = false;        // vet_col_lat
   // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetLatInit
   // refuses them under vet_col_lat / vet_gd
@@ -1580,8 +1580,8 @@ class RadiationVet {
   bool vgd_on = false;         // vet_gd
   // HEALPix nside of a set that names none (12 nside^2 directions)
   static constexpr int vgd_nside = 3;
-  // vet_gd_tangential: sp the lagged M1SphTan term; cs Q in LAT4, LAT5 about the cell
-  // tangent frame (M1CsQab)
+  // vet_gd_tangential: sp the lagged VetSphTan term; cs Q in LAT4, LAT5 about the cell
+  // tangent frame (VetCsQab)
   bool vgd_tan = true;
   bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
                                // first gd shell, q from the gd top cell)
@@ -1720,7 +1720,7 @@ class RadiationVet {
   void RotAvgDelta(const int slot, const int ilo);
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
-  // history in the restart file (kM1RaRstMagic, rad_vet_rotavg.cpp)
+  // history in the restart file (kVetRaRstMagic, rad_vet_rotavg.cpp)
   static constexpr int VET_RA_RST_NH = 11;   // int64 header entries (10)
   int RotAvgNf() const;
   int RotAvgRstNslab(const int ncell) const;
