@@ -4,6 +4,8 @@
 # Before running: replace TABLES/ in the star_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
 # length and outputs.
+# star_ic_profile_file (the full MESA profile) is not in the repository: for a test run
+# star3d_data/bsg_profile.txt, a thinned copy of 1796 of its 327682 rows, can stand in.
 # Needs a binary built with -D PROBLEM=star_vet (docs/vet_clean/BUILD.md).
 # Key meanings: docs/vet_clean/KEYS.md.  Restart rule: docs/vet_clean/RUN.md.
 

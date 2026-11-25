@@ -27,7 +27,7 @@ count gives the same answer, bit for bit.
 | file | size | used by | what |
 |---|---|---|---|
 | `bsg_ic.txt` | 0.9 MB | sp | 1-D initial state (r, rho, e, F_r, E; star_ic_cols = 5): the Ma et al. (2026) BSG profile, radiative-only outward integration to the photosphere, isothermal atmosphere, F_r = 0 above the photosphere |
-| `bsg_profile.txt` | 0.3 MB | sp | the MESA profile (r, T, rho, M, kappa, F_r) that `star_ic_profile` interpolates (the BSG reference initial state) |
+| `bsg_profile.txt` | 0.3 MB | sp | the MESA profile (r, T, rho, M, kappa, F_r) that `star_ic_profile` interpolates (the BSG reference initial state); a thinned copy of the full profile, which is not in the repository: `star_bsg.athinput` needs the full one (`TABLES/bsg/bsg_profile.txt`), this copy can stand in for a test run |
 | `bsg_rosseland.txt` | 0.8 MB | sp | Rosseland-mean opacity incl. electron scattering, OPAL via MESA `kap` (GS98, X 0.70, Z 0.008), on log T x log rho |
 | `bsg_planck.txt` | 0.8 MB | sp | Planck-mean absorption opacity, TOPS above log T 4.2 and Ferguson et al. (2005) below (blend 4.0-4.2), same grid and composition |
 | `rsg_ic.txt` | 2.6 MB | cs | 1-D initial state of the 20.5 Msun RSG (MESA model, 22 Msun initial, alpha_MLT 3), built for the code's EOS and opacities |
