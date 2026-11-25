@@ -2920,22 +2920,19 @@ struct CleanFLine {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagFRay
-//! \brief clean_stag_fwb: the rays' own lab-frame momentum of face (kf,jf,iff): their
-//! flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), no advective
-//! a E, as the energy flux's thin share.  Where the donor holds no rays (CLN_J = 0) the
-//! thin share's own energy flux c (h+ E_L + h- E_R): a function of E on every face, never
-//! the last F, so that the well-balanced rows of a line hold no lagged neighbour
+//! \brief clean_stag_fwb: the thin light's own momentum of face (kf,jf,iff): the energy
+//! flux's thin share at full weight, c (h+ E_L + h- E_R) with the area terms of
+//! CleanStagArea (work vector e): what moves E there, so F = Phi where the gas is thin, and
+//! a function of E on every face, never the last F
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
                    const int kf, const int jf, const int iff) {
   const int ek = (dir == 2), ej = (dir == 1), ei = (dir == 0);
-  const Real g = CleanRayFace(x, dir, m, kf, jf, iff);
   auto ec = [&](const int l) {return fmax(x.w(m,e,kf-l*ek,jf-l*ej,iff-l*ei), 0.0);};
-  const int u = (g > 0.0) ? 1 : 0;
-  const Real jd = x.cs(m,CLN_J,kf-u*ek,jf-u*ej,iff-u*ei);
-  return (jd > 0.0) ? x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) :
-         x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) + x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0));
+  Real pl = x.c*x.fc[dir](m,CLF_HP,kf,jf,iff), pr = x.c*x.fc[dir](m,CLF_HM,kf,jf,iff);
+  CleanStagArea(x, dir, m, kf, jf, iff, 1.0, pl, pr);
+  return pl*ec(1) + pr*ec(0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -3253,9 +3250,8 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
     // chi_f dx_f, relaxes F to the rays' own F_ray over the light crossing of the cell,
     // dF/dt = -(c/dx)(F - F_ray), in place of the momentum equation along the line, whose
     // thin state keeps any excess over F_ray (it drifts along the kinetic lines without
-    // damping).  The steady state does not depend on h.  F_ray: the rays' flux factor times
-    // the donor's E; as the energy flux's thin share it has no advective a E (the thin gas
-    // does not drag the light along).  s, what the row without this share lacks at the
+    // damping).  The steady state does not depend on h.  F_ray: the energy flux's own thin
+    // share at full weight (no advective a E: the thin gas does not drag light along).  s, what the row without this share lacks at the
     // solution, enters CLF_N + 1 (phase 2): the gas takes the absorption of F, not s, whose
     // s V/c^2 is the radiation's (L_z: dlz).  E and the energy flux memory G + d are
     // unchanged
