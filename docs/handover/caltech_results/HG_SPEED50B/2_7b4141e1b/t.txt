@@ -1,0 +1,7 @@
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/b1_1124/sbab2.py", line 14, in <module>
+    f = glob.glob(S + a + '/*.user.hst'); g = glob.glob(S + a + '/*.hydro.hst'); H[a] = [[l for l in open(x) if l.strip() and l[0] != '#'] for x in (f + g)]
+NameError: name 'H' is not defined
+srun: error: hpc-sm-02-03: task 0: Exited with exit code 1

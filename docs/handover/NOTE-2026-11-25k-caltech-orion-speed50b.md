@@ -36,3 +36,12 @@
 - NEW2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
 - BASE2 user.hst against BASE1: 60 / 60 rows, printed-bitwise
 - BASE2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
+
+## HG 2_7b4141e1b, 7b4141e1b against 6d20f1337: stopped by 25l after NEW2 (BASE2 and the pairs 3-5 not run)
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/b1_1124/sbab2.py", line 14, in <module>
+    f = glob.glob(S + a + '/*.user.hst'); g = glob.glob(S + a + '/*.hydro.hst'); H[a] = [[l for l in open(x) if l.strip() and l[0] != '#'] for x in (f + g)]
+NameError: name 'H' is not defined
+srun: error: hpc-sm-02-03: task 0: Exited with exit code 1
