@@ -43,3 +43,5 @@ Readings:
   - t9mlt (running) end-of-chunk ray-sweep lines: none
 - Correction: the end-of-chunk prints say backward-Euler steps = 1 in each chunk (not 0 as I wrote): one backward-Euler step at the start of each chunk (the first step of a fresh start or of a restart; the four t2s 0 / 1 lines above are the steady initial solve of the fresh start). Stage fallbacks 0, failed stage attempts 0, their BE redo 0 in every chunk. So the backward-Euler redo fraction is 0, and the backward-Euler steps are 1 per chunk start (bsg 1 in 29657 cycles, m35mms 2 in 73280, m35zams 2 in 248240, t9l62 2 in 29228).
 - t9mlt has no end-of-chunk print yet (running); its CLEAN cycle lines give 3.5 Newton passes per stage, 4.9 BiCGStab iterations per pass, 17 per stage, 0 dt retries, 0 unconverged stages so far.
+
+- Correction of the correction: per chunk the prints are bsg log.0 1; m35mms log.0 1, log.1 0; m35zams log.0 1, log.1 0; t9l62 log.0 1, log.1 0. So exactly ONE backward-Euler step per run, in the first chunk (the fresh start's first step), and none after the restarts; the per-run numbers I gave just above (2 for m35mms, m35zams, t9l62) are wrong: 1 each.
