@@ -94,3 +94,134 @@ FileNotFoundError: [Errno 2] No such file or directory: '/resnick/groups/carnegi
 ```
 ```
 - Files: caltech_results/HGN/PRF2/ (kname_r0-3, gaps_r0-3, stats_r0). sqlite / nsys-rep stay in /resnick/groups/carnegie_poc/jingze/b1_1124/hgn/PRF2.
+
+## Stack capture of the nsys hang (25j; HST: nsys -t cuda, 3 cycles, 8 ranks)
+- 2026-11-25 01:22:05 start HST 3 cycles nsys -t cuda
+- 2026-11-25 01:25:06 no log progress (1; step 7333072.584): capture
+- 2026-11-25 01:25:25 cancelled step 7333072.584
+- 2026-11-25 01:25:25 rc=0 ended:  wall=200 s hung=1 last: srun: error: hpc-sm-02-03: tasks 0-3: Killed
+- hpc-sm-02-03: == pid 431048 rank SLURM_PROCID=1  state R threads 13;== pid 431051 rank SLURM_PROCID=3  state R threads 13;; nvidia-smi: index, utilization.gpu [%], memory.used [MiB];0, 0 %, 73625 MiB;1, 0 %, 73943 MiB;2, 0 %, 73953 MiB;3, 0 %, 73629 MiB;
+- hpc-sm-02-09: == pid 3829971 rank SLURM_PROCID=5  state S threads 13;== pid 3829974 rank SLURM_PROCID=4  state R threads 13;; nvidia-smi: index, utilization.gpu [%], memory.used [MiB];0, 0 %, 73641 MiB;1, 0 %, 74057 MiB;2, 0 %, 74049 MiB;3, 0 %, 73635 MiB;
+- Files: caltech_results/HG_HANG/ (bt_<node>.txt, smi_<node>.txt, log_tail.txt). kp_kernel_timer (item 3): none found (our work dir to depth 2, kokkos modules of the cluster); not built.
+```
+== pid 431048 rank SLURM_PROCID=1  state R threads 13
+#0  0x00007f24c2501aff in poll () from /lib64/libc.so.6
+#1  0x00007f24c3119c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007f24c32068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007f24c3106963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007f24c2489d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f24c250ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f24c250e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f24c04e1882 in ucs_event_set_wait (event_set=<optimized out>, num_events=num_events@entry=0x7f225cf768bc, timeout_ms=<optimized out>, event
+#2  0x00007f24c04c20c2 in ucs_async_thread_func (arg=0xe540aa0) at async/thread.c:131
+#3  0x00007f24c2489d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007f24c250ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f24c24868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f24c2491d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f24ae3924d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007f24ae2ca96e in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007f24ae38d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007f24c2489d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f24c250ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f24c24868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f24c2491b43 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f24ae3924b1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007f24ae1cc0c5 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007f24ae38d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007f24c2489d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f24c250ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f24c24868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f24c2491d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f24ae3924d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007f24ae1e8f56 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007f24ae38d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007f24c2489d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f24c250ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f24c24868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f24c24890c0 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libc.so.6
+#2  0x00007f24b8d4886b in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007f24b8e940d1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007f24b8ea50a9 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007f24b8d44db0 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#6  0x00007f24c2489d22 in start_thread () from /lib64/libc.so.6
+== pid 431051 rank SLURM_PROCID=3  state R threads 13
+#0  0x00007f22ed901aff in poll () from /lib64/libc.so.6
+#1  0x00007f22ee519c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007f22ee6068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007f22ee506963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007f22ed889d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f22ed90ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f22ed90e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f22ec126882 in ucs_event_set_wait (event_set=<optimized out>, num_events=num_events@entry=0x7f2083ffb8bc, timeout_ms=<optimized out>, event
+#2  0x00007f22ec1070c2 in ucs_async_thread_func (arg=0xed5ca50) at async/thread.c:131
+#3  0x00007f22ed889d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007f22ed90ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f22ed8868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f22ed891d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f22d5cb84d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007f22d5bf096e in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007f22d5cb369d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007f22ed889d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f22ed90ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f22ed8868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+== pid 3829971 rank SLURM_PROCID=5  state S threads 13
+#0  0x00007fe40a301aff in poll () from /lib64/libc.so.6
+#1  0x00007fe40af19c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007fe40b0068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007fe40af06963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007fe40a30e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007fe4082e1882 in ucs_event_set_wait (event_set=<optimized out>, num_events=num_events@entry=0x7fe1a4f768bc, timeout_ms=<optimized out>, event
+#2  0x00007fe4082c20c2 in ucs_async_thread_func (arg=0xe9febc0) at async/thread.c:131
+#3  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a291d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007fe3f63924d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007fe3f62ca96e in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007fe3f638d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a291b43 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007fe3f63924b1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007fe3f61cc0c5 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007fe3f638d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a291d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007fe3f63924d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007fe3f61e8f56 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007fe3f638d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a2890c0 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libc.so.6
+#2  0x00007fe400d4886b in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007fe400e940d1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007fe400ea50a9 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007fe400d44db0 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#6  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+== pid 3829974 rank SLURM_PROCID=4  state R threads 13
+#0  0x00007f698cf01aff in poll () from /lib64/libc.so.6
+#1  0x00007f698db19c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007f698dc068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007f698db06963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f698cf0e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f698aee1882 in ucs_event_set_wait (event_set=<optimized out>, num_events=num_events@entry=0x7f67237fa8bc, timeout_ms=<optimized out>, event
+#2  0x00007f698aec20c2 in ucs_async_thread_func (arg=0xedcad30) at async/thread.c:131
+#3  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f698ce91d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f69794b74d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#3  0x00007f69793ef96e in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#4  0x00007f69794b269d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsig
+#5  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+#0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+```

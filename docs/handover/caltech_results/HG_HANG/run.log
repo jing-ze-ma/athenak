@@ -1,0 +1,4 @@
+2026-11-25 01:22:05 start HST 3 cycles nsys -t cuda
+2026-11-25 01:25:06 no log progress (1; step 7333072.584): capture
+2026-11-25 01:25:25 cancelled step 7333072.584
+2026-11-25 01:25:25 rc=0 ended:  wall=200 s hung=1 last: srun: error: hpc-sm-02-03: tasks 0-3: Killed

@@ -1,0 +1,265 @@
+node hpc-sm-02-09.cm.cluster all: 3829971 3829974 3829978 3829981  chosen: 3829971
+3829974
+== pid 3829971 rank SLURM_PROCID=5  state S threads 13
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+0x00007fe40a286839 in __futex_abstimed_wait_common () from /lib64/libc.so.6
+To enable execution of this file add
+	add-auto-load-safe-path /resnick/software9/spack/opt/spack/linux-rhel9-zen3/gcc-11.3.1/gcc-13.2.0-limvwj2ury6erqdpk6wvc5qzcnr2golq/lib64/libstdc++.so.6.0.32-gdb.py
+line to your configuration file "/home/jingze/.config/gdb/gdbinit".
+To completely disable this security protection add
+	set auto-load safe-path /
+line to your configuration file "/home/jingze/.config/gdb/gdbinit".
+For more information about this security protection see the
+"Auto-loading safe path" section in the GDB manual.  E.g., run from the shell:
+	info "(gdb)Auto-loading safe path"
+
+Thread 13 (Thread 0x7fe15d7e7000 (LWP 3830054) "cuda-EvtHandlr"):
+#0  0x00007fe40a301aff in poll () from /lib64/libc.so.6
+#1  0x00007fe40af19c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007fe40b0068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007fe40af06963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 12 (Thread 0x7fe1a4f7a000 (LWP 3830041) "async"):
+#0  0x00007fe40a30e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007fe4082e1882 in ucs_event_set_wait (event_set=<optimized out>, num_events=num_events@entry=0x7fe1a4f768bc, timeout_ms=<optimized out>, event_set_handler=event_set_handler@entry=0x7fe4082c1a20 <ucs_async_thread_ev_handler>, arg=arg@entry=0x7fe1a4f768c0) at sys/event_set.c:198
+#2  0x00007fe4082c20c2 in ucs_async_thread_func (arg=0xe9febc0) at async/thread.c:131
+#3  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 11 (Thread 0x7fe1a577b000 (LWP 3830040) "athena_relf_b09"):
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a291d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007fe3f63924d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#3  0x00007fe3f62ca96e in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#4  0x00007fe3f638d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#5  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 10 (Thread 0x7fe3e0fff000 (LWP 3830039) "athena_relf_b09"):
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a291b43 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007fe3f63924b1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#3  0x00007fe3f61cc0c5 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#4  0x00007fe3f638d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#5  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 9 (Thread 0x7fe3f608e000 (LWP 3830017) "CUPTI worker th"):
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a291d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007fe3f63924d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#3  0x00007fe3f61e8f56 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#4  0x00007fe3f638d69d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#5  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 8 (Thread 0x7fe3f6ffd000 (LWP 3830015) "*2CommsProcesso"):
+#0  0x00007fe40a2868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a2890c0 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libc.so.6
+#2  0x00007fe400d4886b in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#3  0x00007fe400e940d1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#4  0x00007fe400ea50a9 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#5  0x00007fe400d44db0 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#6  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#7  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 7 (Thread 0x7fe3f77fe000 (LWP 3830014) "[NSys Comms]"):
+#0  0x00007fe40a30e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007fe400d449b6 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#2  0x00007fe400d48789 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#3  0x00007fe400dd3711 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#4  0x00007fe400dd22ca in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#5  0x00007fe4011d9cef in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#6  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#7  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 6 (Thread 0x7fe3f7fff000 (LWP 3830013) "[NSys]"):
+#0  0x00007fe40a30e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007fe400d449b6 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#2  0x00007fe400d48789 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#3  0x00007fe400dd3711 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#4  0x00007fe400dd22ca in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#5  0x00007fe4011d9cef in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#6  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#7  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 5 (Thread 0x7fe401dff000 (LWP 3830011) "cuda00005c00018"):
+#0  0x00007fe40a301aff in poll () from /lib64/libc.so.6
+#1  0x00007fe40af19c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007fe40b0068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007fe40af06963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 4 (Thread 0x7fe403fff000 (LWP 3830009) "fuse"):
+#0  0x00007fe40a2fdaec in read () from /lib64/libc.so.6
+#1  0x00007fe4088878be in ucs_vfs_fuse_wait_for_path (path=path@entry=0x7fe403ffb862 "/tmp/ucx-vfs-jingze.sock") at vfs_fuse.c:303
+#2  0x00007fe408887bd4 in ucs_vfs_fuse_thread_func (arg=<optimized out>) at vfs_fuse.c:409
+#3  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 3 (Thread 0x7fe4096f0000 (LWP 3830008) "athena_relf_b09"):
+#0  0x00007fe40a30e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007fe40a170d48 in epoll_dispatch (base=0xe841930, tv=<optimized out>) at epoll.c:407
+#2  0x00007fe40a173be5 in opal_libevent2022_event_base_loop (base=0xe841930, flags=flags@entry=1) at event.c:1630
+#3  0x00007fe4097e79fe in progress_engine (obj=<optimized out>) at runtime/pmix_progress_threads.c:232
+#4  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 2 (Thread 0x7fe40a05e000 (LWP 3830007) "athena_relf_b09"):
+#0  0x00007fe40a30e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007fe40a170d48 in epoll_dispatch (base=0xe81bd80, tv=<optimized out>) at epoll.c:407
+#2  0x00007fe40a173be5 in opal_libevent2022_event_base_loop (base=0xe81bd80, flags=flags@entry=1) at event.c:1630
+#3  0x00007fe40a131d7e in progress_engine (obj=<optimized out>) at runtime/opal_progress_threads.c:105
+#4  0x00007fe40a289d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007fe40a30ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 1 (Thread 0x7fe40ab22000 (LWP 3829971) "athena_relf_b09"):
+#0  0x00007fe40a286839 in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007fe40a290345 in pthread_rwlock_wrlock@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe40bb9e934 in ?? () from /lib64/libcuda.so.1
+#3  0x00007fe40b0c14ab in ?? () from /lib64/libcuda.so.1
+#4  0x00007fe40b0c17b2 in ?? () from /lib64/libcuda.so.1
+#5  0x00007fe3f61ef1b9 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#6  0x00007fe3f61e2de0 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#7  0x00007fe3f61e2eef in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#8  0x00007fe3f61c7c9d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#9  0x00007fe3f61c7faf in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#10 0x00007fe3f61f4d06 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#11 0x00007fe3f619eb9f in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+[Inferior 1 (process 3829971) detached]
+== pid 3829974 rank SLURM_PROCID=4  state R threads 13
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+0x00007f698a629537 in uct_ib_mlx5_poll_cq (check_cqe_cb=<optimized out>, poll_flags=2, cq=0xf582878, iface=0xf57a080) at /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/mlx5/ib_mlx5.inl:139
+
+To enable execution of this file add
+	add-auto-load-safe-path /resnick/software9/spack/opt/spack/linux-rhel9-zen3/gcc-11.3.1/gcc-13.2.0-limvwj2ury6erqdpk6wvc5qzcnr2golq/lib64/libstdc++.so.6.0.32-gdb.py
+line to your configuration file "/home/jingze/.config/gdb/gdbinit".
+To completely disable this security protection add
+	set auto-load safe-path /
+line to your configuration file "/home/jingze/.config/gdb/gdbinit".
+For more information about this security protection see the
+"Auto-loading safe path" section in the GDB manual.  E.g., run from the shell:
+	info "(gdb)Auto-loading safe path"
+
+Thread 13 (Thread 0x7f66df7eb000 (LWP 3830053) "cuda-EvtHandlr"):
+#0  0x00007f698cf01aff in poll () from /lib64/libc.so.6
+#1  0x00007f698db19c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007f698dc068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007f698db06963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 12 (Thread 0x7f67237fe000 (LWP 3830050) "async"):
+#0  0x00007f698cf0e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f698aee1882 in ucs_event_set_wait (event_set=<optimized out>, num_events=num_events@entry=0x7f67237fa8bc, timeout_ms=<optimized out>, event_set_handler=event_set_handler@entry=0x7f698aec1a20 <ucs_async_thread_ev_handler>, arg=arg@entry=0x7f67237fa8c0) at sys/event_set.c:198
+#2  0x00007f698aec20c2 in ucs_async_thread_func (arg=0xedcad30) at async/thread.c:131
+#3  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 11 (Thread 0x7f6723fff000 (LWP 3830045) "athena_relf_b09"):
+#0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f698ce91d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f69794b74d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#3  0x00007f69793ef96e in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#4  0x00007f69794b269d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#5  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 10 (Thread 0x7f6964fff000 (LWP 3830042) "athena_relf_b09"):
+#0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f698ce91b43 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f69794b74b1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#3  0x00007f69792f10c5 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#4  0x00007f69794b269d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#5  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 9 (Thread 0x7f69791b3000 (LWP 3830038) "CUPTI worker th"):
+#0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f698ce91d68 in __new_sem_wait_slow64.constprop.0 () from /lib64/libc.so.6
+#2  0x00007f69794b74d7 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#3  0x00007f697930df56 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#4  0x00007f69794b269d in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libcupti.so.12.9
+#5  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#6  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 8 (Thread 0x7f697a122000 (LWP 3830037) "*2CommsProcesso"):
+#0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
+#1  0x00007f698ce890c0 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libc.so.6
+#2  0x00007f697b74986b in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#3  0x00007f697b8950d1 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#4  0x00007f697b8a60a9 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#5  0x00007f697b745db0 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#6  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#7  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 7 (Thread 0x7f697a923000 (LWP 3830036) "[NSys Comms]"):
+#0  0x00007f698cf0e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f697b7459b6 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#2  0x00007f697b749789 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#3  0x00007f697b7d4711 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#4  0x00007f697b7d32ca in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#5  0x00007f697bbdacef in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#6  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#7  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 6 (Thread 0x7f697b124000 (LWP 3830035) "[NSys]"):
+#0  0x00007f698cf0e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f697b7459b6 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#2  0x00007f697b749789 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#3  0x00007f697b7d4711 in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#4  0x00007f697b7d32ca in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#5  0x00007f697bbdacef in ?? () from /resnick/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/nsight-systems-2025.1.3/target-linux-x64/libToolsInjection64.so
+#6  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#7  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 5 (Thread 0x7f6988bff000 (LWP 3830034) "cuda00005c00018"):
+#0  0x00007f698cf01aff in poll () from /lib64/libc.so.6
+#1  0x00007f698db19c77 in ?? () from /lib64/libcuda.so.1
+#2  0x00007f698dc068c7 in ?? () from /lib64/libcuda.so.1
+#3  0x00007f698db06963 in ?? () from /lib64/libcuda.so.1
+#4  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 4 (Thread 0x7f698ae77000 (LWP 3830033) "fuse"):
+#0  0x00007f698cefdaec in read () from /lib64/libc.so.6
+#1  0x00007f698b4568be in ucs_vfs_fuse_wait_for_path (path=path@entry=0x7f698ae73862 "/tmp/ucx-vfs-jingze.sock") at vfs_fuse.c:303
+#2  0x00007f698b456bd4 in ucs_vfs_fuse_thread_func (arg=<optimized out>) at vfs_fuse.c:409
+#3  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#4  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 3 (Thread 0x7f698c2c0000 (LWP 3830025) "athena_relf_b09"):
+#0  0x00007f698cf0e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f698cd70d48 in epoll_dispatch (base=0xec0d9b0, tv=<optimized out>) at epoll.c:407
+#2  0x00007f698cd73be5 in opal_libevent2022_event_base_loop (base=0xec0d9b0, flags=flags@entry=1) at event.c:1630
+#3  0x00007f698c3e79fe in progress_engine (obj=<optimized out>) at runtime/pmix_progress_threads.c:232
+#4  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 2 (Thread 0x7f698cc5e000 (LWP 3830021) "athena_relf_b09"):
+#0  0x00007f698cf0e37e in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f698cd70d48 in epoll_dispatch (base=0xebe7df0, tv=<optimized out>) at epoll.c:407
+#2  0x00007f698cd73be5 in opal_libevent2022_event_base_loop (base=0xebe7df0, flags=flags@entry=1) at event.c:1630
+#3  0x00007f698cd31d7e in progress_engine (obj=<optimized out>) at runtime/opal_progress_threads.c:105
+#4  0x00007f698ce89d22 in start_thread () from /lib64/libc.so.6
+#5  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
+
+Thread 1 (Thread 0x7f6993451000 (LWP 3829974) "athena_relf_b09"):
+#0  0x00007f698a629537 in uct_ib_mlx5_poll_cq (check_cqe_cb=<optimized out>, poll_flags=2, cq=0xf582878, iface=0xf57a080) at /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/mlx5/ib_mlx5.inl:139
+#1  uct_rc_mlx5_iface_poll_tx (poll_flags=2, iface=0xf57a080) at rc/accel/rc_mlx5_iface.c:149
+#2  uct_rc_mlx5_iface_progress (flags=2, arg=0xf57a080) at rc/accel/rc_mlx5_iface.c:189
+#3  uct_rc_mlx5_iface_progress_cyclic (arg=0xf57a080) at rc/accel/rc_mlx5_iface.c:194
+#4  0x00007f698b559f3a in ucs_callbackq_dispatch (cbq=<optimized out>) at /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/ucs/datastruct/callbackq.h:215
+#5  uct_worker_progress (worker=<optimized out>) at /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/api/uct.h:2787
+#6  ucp_worker_progress (worker=0xef1ae10) at core/ucp_worker.c:2991
+#7  0x00007f698cd2c40c in opal_progress () at runtime/opal_progress.c:231
+#8  0x00007f69935015bd in sync_wait_st (sync=<optimized out>) at ../opal/threads/wait_sync.h:83
+#9  ompi_request_default_wait_all (count=<optimized out>, requests=0x1c88fc50, statuses=0x0) at request/req_wait.c:234
+#10 0x00007f699352b9bd in PMPI_Waitall (count=6, requests=0x1c88fc50, statuses=<optimized out>) at pwaitall.c:80
+#11 0x00000000016c627a in void radvet::RadiationVet::CleanHaloFinish<double>(std::vector<radvet::RadiationVet::CleanGSeg<double>, std::allocator<radvet::RadiationVet::CleanGSeg<double> > > const&) ()
+[Inferior 1 (process 3829974) detached]
