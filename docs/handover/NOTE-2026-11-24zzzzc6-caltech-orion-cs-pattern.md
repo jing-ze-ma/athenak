@@ -170,3 +170,8 @@ Columns of the imprint table (m4, m8, sym_rms, rms_all; printed digits), over al
 | G | 601 | 6.000000e+05 | 1000 | 0.996750 | 0.998785 | 6.010413e+40 | Bp: 8.90e-10, -1.44e-07, 0 of 601 |
 | H | 601 | 5.739130e+05 | 956.52 | 0.997294 | 0.999500 | 5.722459e+40 | Bp: 5.46e-04, -4.79e-02, 0 of 601 |
 - Bp vs B m4(200-400) at c600: +0.0 % (within 10 %)
+
+## latwb build (own worktree wt_orion1121/latwb at 83663792f = 53290b5af + the key, CUDA 12.9 + g++ 13, CPU step on 01-17)
+- BUILD latwb rc=0 wall=273 s TUs=250
+- BUILD_OK latwb md5=a4c12aa1edc0718af2cb9f6bd10de9b2 prov=83663792f0079aa904d51053b0da1b01bc04741a
+- GATE PASS latwb: athena_latwb_83663792f md5 a4c12aa1 node hpc-sm-01-17 pass1=3.686e-11 log date 11-24 18:29:33 end: Terminating on cycle limit
