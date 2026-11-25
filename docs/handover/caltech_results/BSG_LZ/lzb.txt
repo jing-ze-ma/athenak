@@ -1,0 +1,279 @@
+# zzzze9: columns that do not occur in the window (CLEAN t2s 0/1 lines) were dropped from the listing; P(r) etc.: best of lags -1, 0, +1, so slightly inflated; the counters drift slowly, so neighbouring cycles are not independent
+
+# c1: hst rows 14590 (cycle = row), columns parsed per cycle: 64 keys: auto_be c2p_dfloor c2p_dfloor_mass fb_e_floor fb_ffct_left fb_pos_gas fcap_T fcap_v floor_pay floor_unpaid floored_refresh floored_update fofc_retested fofc_unflagged given_to_rad pay_cells pay_paid pay_unpaid skip_de_refresh skip_de_update skip_dm_refresh skip_dm_update skip_refresh skip_update t2s0_all t2s0_guard t2s0_it t2s0_mark t2s0_neg t2s0_pos t2s0_r1 t2s0_r2 t2s0_solves t2s0_sum t2s1_all t2s1_guard t2s1_it t2s1_mark t2s1_neg t2s1_pos t2s1_r1 t2s1_r2 t2s1_solves t2s1_sum t2s2_all t2s2_guard t2s2_it t2s2_mark t2s2_neg t2s2_pos t2s2_r1 t2s2_r2 t2s2_solves t2s2_sum t2s3_all t2s3_guard t2s3_it t2s3_mark t2s3_neg t2s3_pos t2s3_r1 t2s3_r2 t2s3_solves t2s3_sum
+
+## c1 c6050-7000: 950 cycles with log lines; residual sum -1.2489e+39, rms 5.9609e+36, max |r| 3.3889e+37
+counter                 P(r)    P(|r|)      S(r)    S(|r|)  (Pearson with r, with |r|; Spearman with r, with |r|; best of lags -1,0,+1 by |Pearson with |r||, lag; nonzero cycles)
+pay_cells             -0.405    +0.503    -0.428    +0.592  lag +0, nonzero 950 of 950
+given_to_rad          -0.392    +0.366    -0.568    +0.419  lag +1, nonzero 950 of 950
+t2s3_sum              -0.330    +0.241    -0.337    +0.177  lag +1, nonzero 950 of 950
+t2s2_solves           +0.101    -0.204    -0.059    -0.312  lag -1, nonzero 950 of 950
+t2s2_it               -0.076    +0.197    -0.093    +0.274  lag -1, nonzero 950 of 950
+skip_de_update        +0.156    +0.147    +0.386    +0.101  lag -1, nonzero 950 of 950
+skip_dm_update        +0.157    +0.146    +0.386    +0.101  lag -1, nonzero 950 of 950
+c2p_dfloor_mass       +0.161    +0.142    +0.386    +0.101  lag -1, nonzero 950 of 950
+skip_de_refresh       +0.161    +0.140    +0.387    +0.101  lag -1, nonzero 950 of 950
+skip_update           +0.163    +0.140    +0.386    +0.101  lag -1, nonzero 950 of 950
+skip_dm_refresh       +0.162    +0.139    +0.387    +0.101  lag -1, nonzero 950 of 950
+c2p_dfloor            +0.166    +0.136    +0.386    +0.101  lag -1, nonzero 950 of 950
+skip_refresh          +0.169    +0.133    +0.386    +0.101  lag -1, nonzero 950 of 950
+t2s3_solves           -0.431    +0.110    -0.370    -0.189  lag -1, nonzero 950 of 950
+t2s3_it               +0.410    -0.077    +0.502    +0.018  lag -1, nonzero 950 of 950
+t2s2_sum              +0.252    -0.060    +0.272    +0.049  lag +1, nonzero 950 of 950
+t2s2_r2               +0.115    +0.039    +0.416    +0.011  lag -1, nonzero 35 of 950
+t2s3_r2               +0.107    +0.033    +0.424    -0.000  lag -1, nonzero 25 of 950
+fofc_retested         +0.235    -0.032    +0.386    +0.101  lag -1, nonzero 950 of 950
+t2s3_r1            constant or < 50 values (nonzero 0 of 950)
+t2s3_pos           constant or < 50 values (nonzero 0 of 950)
+t2s3_neg           constant or < 50 values (nonzero 0 of 950)
+t2s3_mark          constant or < 50 values (nonzero 0 of 950)
+t2s3_guard         constant or < 50 values (nonzero 0 of 950)
+t2s3_all           constant or < 50 values (nonzero 0 of 950)
+t2s2_r1            constant or < 50 values (nonzero 0 of 950)
+t2s2_pos           constant or < 50 values (nonzero 0 of 950)
+t2s2_neg           constant or < 50 values (nonzero 0 of 950)
+t2s2_mark          constant or < 50 values (nonzero 0 of 950)
+t2s2_guard         constant or < 50 values (nonzero 0 of 950)
+t2s2_all           constant or < 50 values (nonzero 0 of 950)
+pay_unpaid         constant or < 50 values (nonzero 0 of 950)
+pay_paid           constant or < 50 values (nonzero 0 of 950)
+fofc_unflagged     constant or < 50 values (nonzero 0 of 950)
+floored_update     constant or < 50 values (nonzero 0 of 950)
+floored_refresh    constant or < 50 values (nonzero 0 of 950)
+floor_unpaid       constant or < 50 values (nonzero 0 of 950)
+floor_pay          constant or < 50 values (nonzero 0 of 950)
+fcap_v             constant or < 50 values (nonzero 0 of 950)
+fcap_T             constant or < 50 values (nonzero 0 of 950)
+fb_pos_gas         constant or < 50 values (nonzero 0 of 950)
+fb_ffct_left       constant or < 50 values (nonzero 0 of 950)
+fb_e_floor         constant or < 50 values (nonzero 0 of 950)
+auto_be            constant or < 50 values (nonzero 0 of 950)
+
+10 largest |residual| cycles: cycle t residual dt dLz_tot | hst: Picard | auto_be fb_pos_gas fb_e_floor fb_ffct_left fcap_v fcap_T c2p_dfloor floor_pay floored_update skip_update skip_refresh given_to_rad pay_cells fofc_retested fofc_unflagged t2s2_it t2s3_it t2s2_neg t2s3_neg t2s3_guard t2s3_mark
+c6468   t 1.08274e+06 r -3.3889e+37 dt 147.738 dLz -3.3916e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=791604 floor_pay=0 floored_update=0 skip_update=392348 skip_refresh=399348 given_to_rad=2.37437e+17 pay_cells=418 fofc_retested=6.53967e+06 fofc_unflagged=0 t2s2_it=1 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6562   t 1.09634e+06 r -3.2656e+37 dt 143.244 dLz -3.2675e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=779884 floor_pay=0 floored_update=0 skip_update=386996 skip_refresh=393012 given_to_rad=2.32481e+17 pay_cells=408 fofc_retested=6.40276e+06 fofc_unflagged=0 t2s2_it=4 t2s3_it=2 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6540   t 1.09319e+06 r -3.2256e+37 dt 143.309 dLz -3.2278e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=782432 floor_pay=0 floored_update=0 skip_update=388188 skip_refresh=394368 given_to_rad=2.36607e+17 pay_cells=418 fofc_retested=6.43486e+06 fofc_unflagged=0 t2s2_it=6 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6514   t 1.08945e+06 r -2.8781e+37 dt 144.440 dLz -2.8806e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=785824 floor_pay=0 floored_update=0 skip_update=389652 skip_refresh=396240 given_to_rad=2.33449e+17 pay_cells=410 fofc_retested=6.47253e+06 fofc_unflagged=0 t2s2_it=4 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6479   t 1.08436e+06 r -2.7023e+37 dt 146.887 dLz -2.7050e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=790368 floor_pay=0 floored_update=0 skip_update=391928 skip_refresh=398580 given_to_rad=2.4076e+17 pay_cells=428 fofc_retested=6.52034e+06 fofc_unflagged=0 t2s2_it=2 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6508   t 1.08859e+06 r -2.2037e+37 dt 144.830 dLz -2.2062e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=786460 floor_pay=0 floored_update=0 skip_update=389976 skip_refresh=396580 given_to_rad=2.32778e+17 pay_cells=406 fofc_retested=6.48192e+06 fofc_unflagged=0 t2s2_it=2 t2s3_it=2 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6496   t 1.08684e+06 r -2.1993e+37 dt 145.611 dLz -2.2018e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=788160 floor_pay=0 floored_update=0 skip_update=390748 skip_refresh=397576 given_to_rad=2.35425e+17 pay_cells=416 fofc_retested=6.49706e+06 fofc_unflagged=0 t2s2_it=4 t2s3_it=3 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6531   t 1.09190e+06 r -2.1809e+37 dt 143.541 dLz -2.1830e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=783472 floor_pay=0 floored_update=0 skip_update=388636 skip_refresh=394992 given_to_rad=2.34137e+17 pay_cells=412 fofc_retested=6.44627e+06 fofc_unflagged=0 t2s2_it=4 t2s3_it=5 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6523   t 1.09075e+06 r -2.1257e+37 dt 143.862 dLz -2.1280e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=784616 floor_pay=0 floored_update=0 skip_update=389140 skip_refresh=395608 given_to_rad=2.31807e+17 pay_cells=404 fofc_retested=6.45813e+06 fofc_unflagged=0 t2s2_it=5 t2s3_it=3 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6482   t 1.08480e+06 r -2.0770e+37 dt 146.599 dLz -2.0797e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=790004 floor_pay=0 floored_update=0 skip_update=391740 skip_refresh=398376 given_to_rad=2.4153e+17 pay_cells=428 fofc_retested=6.51617e+06 fofc_unflagged=0 t2s2_it=3 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+floorcap cumulative dL_z in the window (25-cycle lines): first c6025 0.0000e+00, last c7025 0.0000e+00
+
+## c1 c8500-9000: 500 cycles with log lines; residual sum 6.2674e+39, rms 4.7060e+37, max |r| 2.0187e+38
+counter                 P(r)    P(|r|)      S(r)    S(|r|)  (Pearson with r, with |r|; Spearman with r, with |r|; best of lags -1,0,+1 by |Pearson with |r||, lag; nonzero cycles)
+t2s2_sum              +0.059    +0.386    +0.142    +0.364  lag +1, nonzero 500 of 500
+pay_cells             -0.119    +0.278    -0.198    +0.240  lag -1, nonzero 500 of 500
+t2s3_sum              +0.157    +0.243    +0.220    +0.235  lag +1, nonzero 500 of 500
+skip_de_refresh       -0.123    +0.243    -0.240    +0.144  lag +0, nonzero 500 of 500
+skip_dm_refresh       -0.126    +0.239    -0.240    +0.143  lag +0, nonzero 500 of 500
+c2p_dfloor_mass       -0.125    +0.237    -0.241    +0.142  lag +0, nonzero 500 of 500
+skip_de_update        -0.124    +0.236    -0.240    +0.141  lag +1, nonzero 500 of 500
+t2s3_it               -0.024    +0.235    +0.026    +0.243  lag -1, nonzero 500 of 500
+skip_dm_update        -0.126    +0.233    -0.241    +0.142  lag +1, nonzero 500 of 500
+skip_update           -0.135    +0.220    -0.242    +0.142  lag +1, nonzero 500 of 500
+c2p_dfloor            -0.136    +0.220    -0.240    +0.140  lag +0, nonzero 500 of 500
+skip_refresh          -0.138    +0.219    -0.240    +0.140  lag +0, nonzero 500 of 500
+t2s2_it               -0.005    +0.171    -0.010    +0.195  lag +1, nonzero 500 of 500
+given_to_rad          -0.179    +0.143    -0.241    +0.154  lag +1, nonzero 500 of 500
+t2s2_r2               -0.261    -0.097    -0.333    -0.011  lag +1, nonzero 499 of 500
+t2s3_r2               -0.264    -0.093    -0.332    -0.005  lag +1, nonzero 498 of 500
+t2s3_solves           +0.199    +0.093    +0.167    +0.113  lag -1, nonzero 500 of 500
+fofc_retested         -0.201    +0.075    -0.243    +0.142  lag +0, nonzero 500 of 500
+t2s2_solves           +0.135    +0.054    +0.206    +0.152  lag +0, nonzero 500 of 500
+t2s3_r1            constant or < 50 values (nonzero 0 of 500)
+t2s3_pos           constant or < 50 values (nonzero 0 of 500)
+t2s3_neg           constant or < 50 values (nonzero 0 of 500)
+t2s3_mark          constant or < 50 values (nonzero 0 of 500)
+t2s3_guard         constant or < 50 values (nonzero 0 of 500)
+t2s3_all           constant or < 50 values (nonzero 0 of 500)
+t2s2_r1            constant or < 50 values (nonzero 0 of 500)
+t2s2_pos           constant or < 50 values (nonzero 0 of 500)
+t2s2_neg           constant or < 50 values (nonzero 0 of 500)
+t2s2_mark          constant or < 50 values (nonzero 0 of 500)
+t2s2_guard         constant or < 50 values (nonzero 0 of 500)
+t2s2_all           constant or < 50 values (nonzero 0 of 500)
+pay_unpaid         constant or < 50 values (nonzero 0 of 500)
+pay_paid           constant or < 50 values (nonzero 0 of 500)
+fofc_unflagged     constant or < 50 values (nonzero 0 of 500)
+floored_update     constant or < 50 values (nonzero 0 of 500)
+floored_refresh    constant or < 50 values (nonzero 0 of 500)
+floor_unpaid       constant or < 50 values (nonzero 0 of 500)
+floor_pay          constant or < 50 values (nonzero 0 of 500)
+fcap_v             constant or < 50 values (nonzero 0 of 500)
+fcap_T             constant or < 50 values (nonzero 0 of 500)
+fb_pos_gas         constant or < 50 values (nonzero 0 of 500)
+fb_ffct_left       constant or < 50 values (nonzero 0 of 500)
+fb_e_floor         constant or < 50 values (nonzero 0 of 500)
+auto_be            constant or < 50 values (nonzero 0 of 500)
+
+10 largest |residual| cycles: cycle t residual dt dLz_tot | hst: Picard | auto_be fb_pos_gas fb_e_floor fb_ffct_left fcap_v fcap_T c2p_dfloor floor_pay floored_update skip_update skip_refresh given_to_rad pay_cells fofc_retested fofc_unflagged t2s2_it t2s3_it t2s2_neg t2s3_neg t2s3_guard t2s3_mark
+c8734   t 1.45182e+06 r -2.0187e+38 dt 169.538 dLz -2.0200e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=607740 floor_pay=0 floored_update=0 skip_update=301160 skip_refresh=306612 given_to_rad=6.98313e+17 pay_cells=1426 fofc_retested=6.2687e+06 fofc_unflagged=0 t2s2_it=14 t2s3_it=8 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8672   t 1.44130e+06 r +1.9209e+38 dt 169.554 dLz +1.9193e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=610260 floor_pay=0 floored_update=0 skip_update=302060 skip_refresh=308096 given_to_rad=7.63916e+17 pay_cells=1576 fofc_retested=6.52764e+06 fofc_unflagged=0 t2s2_it=16 t2s3_it=9 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8702   t 1.44639e+06 r -1.8525e+38 dt 169.545 dLz -1.8539e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=609588 floor_pay=0 floored_update=0 skip_update=301884 skip_refresh=307668 given_to_rad=7.64882e+17 pay_cells=1536 fofc_retested=6.39627e+06 fofc_unflagged=0 t2s2_it=14 t2s3_it=9 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8763   t 1.45673e+06 r +1.7257e+38 dt 169.534 dLz +1.7246e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=605732 floor_pay=0 floored_update=0 skip_update=300296 skip_refresh=305488 given_to_rad=6.82219e+17 pay_cells=1374 fofc_retested=6.1588e+06 fofc_unflagged=0 t2s2_it=2 t2s3_it=7 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8695   t 1.44520e+06 r +1.6886e+38 dt 169.547 dLz +1.6871e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=609692 floor_pay=0 floored_update=0 skip_update=301896 skip_refresh=307876 given_to_rad=7.69959e+17 pay_cells=1556 fofc_retested=6.42592e+06 fofc_unflagged=0 t2s2_it=3 t2s3_it=10 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8689   t 1.44419e+06 r +1.5422e+38 dt 169.549 dLz +1.5407e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=610156 floor_pay=0 floored_update=0 skip_update=302052 skip_refresh=308104 given_to_rad=7.64217e+17 pay_cells=1538 fofc_retested=6.45131e+06 fofc_unflagged=0 t2s2_it=15 t2s3_it=15 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8783   t 1.46012e+06 r +1.4747e+38 dt 169.531 dLz +1.4738e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=603876 floor_pay=0 floored_update=0 skip_update=299344 skip_refresh=304552 given_to_rad=6.5546e+17 pay_cells=1320 fofc_retested=6.08186e+06 fofc_unflagged=0 t2s2_it=12 t2s3_it=13 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8690   t 1.44436e+06 r -1.3621e+38 dt 169.548 dLz -1.3636e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=610044 floor_pay=0 floored_update=0 skip_update=302068 skip_refresh=308088 given_to_rad=7.63645e+17 pay_cells=1535 fofc_retested=6.44734e+06 fofc_unflagged=0 t2s2_it=16 t2s3_it=12 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8733   t 1.45165e+06 r +1.2986e+38 dt 169.538 dLz +1.2974e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=607772 floor_pay=0 floored_update=0 skip_update=301196 skip_refresh=306648 given_to_rad=6.98611e+17 pay_cells=1427 fofc_retested=6.27273e+06 fofc_unflagged=0 t2s2_it=10 t2s3_it=6 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c8730   t 1.45114e+06 r +1.2848e+38 dt 169.538 dLz +1.2835e+38 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=607924 floor_pay=0 floored_update=0 skip_update=301236 skip_refresh=306704 given_to_rad=7.09952e+17 pay_cells=1454 fofc_retested=6.28484e+06 fofc_unflagged=0 t2s2_it=2 t2s3_it=9 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+floorcap cumulative dL_z in the window (25-cycle lines): first c8475 0.0000e+00, last c9025 0.0000e+00
+
+## c1 ledger from 56 bin headers (cycles 0-14350); window = between consecutive dump cycles
+cycles           d(ledger)     sum residual   dLz_tot       int hflx dt    -d(ledger)/residual
+     0-257     -9.89918e+33  +8.34546e+33  -3.69160e+36  +3.6999e+36   +1.186e+00
+   257-513     +9.90369e+34  +1.50015e+34  -3.94935e+36  +3.9643e+36   -6.602e+00
+   513-769     -2.27545e+35  +1.23018e+34  -4.28850e+36  +4.3008e+36   +1.850e+01
+   769-1024    -1.60332e+36  +7.69274e+33  -4.42017e+36  +4.4279e+36   +2.084e+02
+  1024-1279    +2.57182e+36  +4.89197e+33  -4.48036e+36  +4.4852e+36   -5.257e+02
+  1279-1534    +1.24039e+37  +3.87421e+33  -4.60324e+36  +4.6071e+36   -3.202e+03
+  1534-1790    +1.76995e+38  +3.78182e+33  -4.78564e+36  +4.7894e+36   -4.680e+04
+  1790-2045    -3.89049e+38  +5.11791e+33  -4.74478e+36  +4.7499e+36   +7.602e+04
+  2045-2300    +6.89310e+38  +5.80702e+33  -4.88716e+36  +4.8930e+36   -1.187e+05
+  2300-2555    +8.78356e+37  +6.06324e+33  -5.29183e+36  +5.2979e+36   -1.449e+04
+  2555-2810    -2.46022e+38  +7.72229e+33  -5.51533e+36  +5.5231e+36   +3.186e+04
+  2810-3065    -7.78199e+37  +8.72072e+33  -5.44133e+36  +5.4501e+36   +8.924e+03
+  3065-3320    +5.40220e+38  +8.89759e+33  -5.57320e+36  +5.5821e+36   -6.072e+04
+  3320-3575    +2.78620e+37  +1.16250e+34  -6.05065e+36  +6.0623e+36   -2.397e+03
+  3575-3830    -2.49064e+38  +1.27322e+34  -6.06491e+36  +6.0776e+36   +1.956e+04
+  3830-4084    -2.95772e+38  +1.33928e+34  -6.15374e+36  +6.1671e+36   +2.208e+04
+  4084-4339    -4.09715e+38  +1.20879e+34  -6.28638e+36  +6.2985e+36   +3.389e+04
+  4339-4594    +2.97843e+37  +1.29726e+34  -6.45239e+36  +6.4654e+36   -2.296e+03
+  4594-4849    -1.13291e+38  +1.31442e+34  -6.57040e+36  +6.5835e+36   +8.619e+03
+  4849-5104    -4.94548e+39  +1.05527e+34  -7.21851e+36  +7.2291e+36   +4.686e+05
+  5104-5359    +2.40344e+39  +1.12058e+34  -8.08423e+36  +8.0954e+36   -2.145e+05
+  5359-5614    -3.20159e+39  +6.42386e+33  -8.27860e+36  +8.2850e+36   +4.984e+05
+  5614-5877    +1.25452e+40  +8.23135e+32  -1.05146e+37  +1.0515e+37   -1.524e+07
+  5877-6161    +5.76065e+40  +6.29563e+37  +5.34541e+37  +9.5022e+36   -9.150e+02
+  6161-6450    +9.23176e+40  +6.42365e+38  +6.33867e+38  +8.4981e+36   -1.437e+02
+  6450-6745    -4.30701e+40  -1.84894e+39  -1.85676e+39  +7.8132e+36   -2.329e+01
+  6745-7029    -2.98913e+41  -1.15329e+38  -1.41229e+38  +2.5900e+37   -2.592e+03
+  7029-7300    -3.22531e+41  -4.64963e+37  -9.32351e+37  +4.6739e+37   -6.937e+03
+  7300-7558    -2.19828e+41  -5.67660e+37  -1.08760e+38  +5.1994e+37   -3.873e+03
+  7558-7813    -2.09433e+41  +1.60575e+35  -5.81502e+37  +5.8311e+37   +1.304e+06
+  7813-8068    -2.15614e+41  +9.50588e+36  -5.58240e+37  +6.5330e+37   +2.268e+04
+  8068-8323    +5.78055e+40  +2.06483e+38  +1.44635e+38  +6.1848e+37   -2.800e+02
+  8323-8580    +1.73986e+41  -1.33928e+39  -1.39794e+39  +5.8666e+37   +1.299e+02
+  8580-8835    +9.79916e+41  +4.24044e+39  +4.20469e+39  +3.5754e+37   -2.311e+02
+  8835-9089    +3.11916e+41  +3.44975e+39  +3.43846e+39  +1.1292e+37   -9.042e+01
+  9089-9345    +1.86233e+41  +2.23758e+38  +2.23596e+38  +1.6210e+35   -8.323e+02
+  9345-9601    +8.07063e+41  -1.46018e+38  -1.41073e+38  -4.9454e+36   +5.527e+03
+  9601-9857    +4.49154e+41  -5.46981e+38  -5.18278e+38  -2.8703e+37   +8.212e+02
+  9857-10112   -5.05546e+41  -2.92628e+37  -9.34673e+36  -1.9916e+37   -1.728e+04
+ 10112-10371   +5.92514e+40  +2.20254e+37  +3.61336e+37  -1.4108e+37   -2.690e+03
+ 10371-10626   -6.28922e+41  -1.90062e+38  -1.81063e+38  -8.9994e+36   -3.309e+03
+ 10626-10883   -7.83759e+41  -4.52579e+38  -4.74991e+38  +2.2412e+37   -1.732e+03
+ 10883-11158   -4.95427e+41  +7.67341e+36  -3.26360e+37  +4.0309e+37   +6.456e+04
+ 11158-11429   -1.94605e+40  -2.51877e+37  -7.82325e+37  +5.3045e+37   -7.726e+02
+ 11429-11691   -7.34950e+41  +1.66520e+37  -4.72963e+37  +6.3948e+37   +4.414e+04
+ 11691-11958   -7.61759e+41  +2.28547e+36  -8.26937e+37  +8.4979e+37   +3.333e+05
+ 11958-12222   -1.24370e+41  -1.02411e+37  -1.02351e+38  +9.2110e+37   -1.214e+04
+ 12222-12486   +1.99698e+41  -3.68172e+35  -7.70506e+37  +7.6682e+37   +5.424e+05
+ 12486-12756   +1.14908e+41  -4.15729e+37  -9.74689e+37  +5.5896e+37   +2.764e+03
+ 12756-13020   -1.48124e+40  +2.47681e+37  -2.70866e+37  +5.1855e+37   +5.980e+02
+ 13020-13304   -1.25640e+41  +8.38164e+36  -4.79191e+37  +5.6301e+37   +1.499e+04
+ 13304-13560   -6.19752e+41  -2.07320e+36  -6.83698e+37  +6.6297e+37   -2.989e+05
+ 13560-13816   -6.60632e+41  -3.38177e+36  -8.26751e+37  +7.9293e+37   -1.954e+05
+ 13816-14086   -3.30394e+41  -1.28715e+36  -9.00387e+37  +8.8752e+37   -2.567e+05
+ 14086-14350   -1.13154e+41  +5.05572e+34  -8.46837e+37  +8.4734e+37   +2.238e+06
+all windows: N 55  Pearson(d ledger, residual) +0.3931, Spearman +0.1939; |d ledger| median 5.78e+40, |residual| median 2.07e+36
+windows ending after c6050: N 32  Pearson(d ledger, residual) +0.4148, Spearman +0.2346; |d ledger| median 2.18e+41, |residual| median 3.54e+37
+before c6050: N 23  Pearson(d ledger, residual) -0.4035, Spearman -0.3182; |d ledger| median 1.77e+38, |residual| median 8.72e+33
+
+# T2: hst rows 6903 (cycle = row), columns parsed per cycle: 64 keys: auto_be c2p_dfloor c2p_dfloor_mass fb_e_floor fb_ffct_left fb_pos_gas fcap_T fcap_v floor_pay floor_unpaid floored_refresh floored_update fofc_retested fofc_unflagged given_to_rad pay_cells pay_paid pay_unpaid skip_de_refresh skip_de_update skip_dm_refresh skip_dm_update skip_refresh skip_update t2s0_all t2s0_guard t2s0_it t2s0_mark t2s0_neg t2s0_pos t2s0_r1 t2s0_r2 t2s0_solves t2s0_sum t2s1_all t2s1_guard t2s1_it t2s1_mark t2s1_neg t2s1_pos t2s1_r1 t2s1_r2 t2s1_solves t2s1_sum t2s2_all t2s2_guard t2s2_it t2s2_mark t2s2_neg t2s2_pos t2s2_r1 t2s2_r2 t2s2_solves t2s2_sum t2s3_all t2s3_guard t2s3_it t2s3_mark t2s3_neg t2s3_pos t2s3_r1 t2s3_r2 t2s3_solves t2s3_sum
+
+## T2 c6061-6900: 839 cycles with log lines; residual sum -1.1553e+39, rms 5.8921e+36, max |r| 2.6096e+37
+counter                 P(r)    P(|r|)      S(r)    S(|r|)  (Pearson with r, with |r|; Spearman with r, with |r|; best of lags -1,0,+1 by |Pearson with |r||, lag; nonzero cycles)
+pay_cells             -0.351    +0.492    -0.399    +0.581  lag +1, nonzero 839 of 839
+given_to_rad          -0.370    +0.429    -0.563    +0.468  lag +1, nonzero 839 of 839
+t2s3_sum              -0.314    +0.185    -0.384    +0.157  lag +1, nonzero 839 of 839
+fofc_retested         +0.343    -0.181    +0.462    -0.117  lag -1, nonzero 839 of 839
+t2s2_it               +0.004    +0.169    +0.038    +0.260  lag +1, nonzero 839 of 839
+t2s2_solves           +0.018    -0.150    -0.100    -0.214  lag +0, nonzero 839 of 839
+t2s3_solves           -0.496    +0.128    -0.492    -0.065  lag +1, nonzero 839 of 839
+t2s3_it               +0.488    -0.109    +0.528    +0.043  lag +0, nonzero 839 of 839
+t2s2_sum              +0.278    -0.046    +0.293    +0.059  lag +0, nonzero 839 of 839
+skip_refresh          +0.293    -0.015    +0.462    -0.116  lag +1, nonzero 839 of 839
+c2p_dfloor            +0.291    -0.012    +0.462    -0.117  lag +1, nonzero 839 of 839
+t2s2_r2               +0.088    +0.009    +0.587    -0.181  lag +1, nonzero 6 of 839
+skip_dm_refresh       +0.288    -0.009    +0.462    -0.116  lag +1, nonzero 839 of 839
+skip_de_refresh       +0.287    -0.008    +0.462    -0.116  lag +1, nonzero 839 of 839
+skip_update           +0.287    -0.007    +0.462    -0.116  lag +1, nonzero 839 of 839
+c2p_dfloor_mass       +0.286    -0.006    +0.462    -0.116  lag +1, nonzero 839 of 839
+skip_de_update        +0.281    +0.001    +0.462    -0.116  lag -1, nonzero 839 of 839
+skip_dm_update        +0.283    -0.001    +0.462    -0.116  lag +1, nonzero 839 of 839
+t2s3_r2            constant or < 50 values (nonzero 0 of 839)
+t2s3_r1            constant or < 50 values (nonzero 0 of 839)
+t2s3_pos           constant or < 50 values (nonzero 0 of 839)
+t2s3_neg           constant or < 50 values (nonzero 0 of 839)
+t2s3_mark          constant or < 50 values (nonzero 0 of 839)
+t2s3_guard         constant or < 50 values (nonzero 0 of 839)
+t2s3_all           constant or < 50 values (nonzero 0 of 839)
+t2s2_r1            constant or < 50 values (nonzero 0 of 839)
+t2s2_pos           constant or < 50 values (nonzero 0 of 839)
+t2s2_neg           constant or < 50 values (nonzero 0 of 839)
+t2s2_mark          constant or < 50 values (nonzero 0 of 839)
+t2s2_guard         constant or < 50 values (nonzero 0 of 839)
+t2s2_all           constant or < 50 values (nonzero 0 of 839)
+pay_unpaid         constant or < 50 values (nonzero 0 of 839)
+pay_paid           constant or < 50 values (nonzero 0 of 839)
+fofc_unflagged     constant or < 50 values (nonzero 0 of 839)
+floored_update     constant or < 50 values (nonzero 0 of 839)
+floored_refresh    constant or < 50 values (nonzero 0 of 839)
+floor_unpaid       constant or < 50 values (nonzero 0 of 839)
+floor_pay          constant or < 50 values (nonzero 0 of 839)
+fcap_v             constant or < 50 values (nonzero 0 of 839)
+fcap_T             constant or < 50 values (nonzero 0 of 839)
+fb_pos_gas         constant or < 50 values (nonzero 0 of 839)
+fb_ffct_left       constant or < 50 values (nonzero 0 of 839)
+fb_e_floor         constant or < 50 values (nonzero 0 of 839)
+auto_be            constant or < 50 values (nonzero 0 of 839)
+
+10 largest |residual| cycles: cycle t residual dt dLz_tot | hst: Picard | auto_be fb_pos_gas fb_e_floor fb_ffct_left fcap_v fcap_T c2p_dfloor floor_pay floored_update skip_update skip_refresh given_to_rad pay_cells fofc_retested fofc_unflagged t2s2_it t2s3_it t2s2_neg t2s3_neg t2s3_guard t2s3_mark
+c6519   t 1.09061e+06 r -2.6096e+37 dt 145.951 dLz -2.6105e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=760940 floor_pay=0 floored_update=0 skip_update=377088 skip_refresh=383980 given_to_rad=2.31569e+17 pay_cells=398 fofc_retested=6.49383e+06 fofc_unflagged=0 t2s2_it=2 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6483   t 1.08532e+06 r -2.5422e+37 dt 148.032 dLz -2.5434e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=765852 floor_pay=0 floored_update=0 skip_update=379452 skip_refresh=386548 given_to_rad=2.41677e+17 pay_cells=416 fofc_retested=6.54478e+06 fofc_unflagged=0 t2s2_it=5 t2s3_it=2 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6597   t 1.10193e+06 r -2.4325e+37 dt 145.063 dLz -2.4332e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=752192 floor_pay=0 floored_update=0 skip_update=372872 skip_refresh=379388 given_to_rad=2.34518e+17 pay_cells=404 fofc_retested=6.38142e+06 fofc_unflagged=0 t2s2_it=5 t2s3_it=2 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6502   t 1.08812e+06 r -2.3606e+37 dt 146.743 dLz -2.3616e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=763596 floor_pay=0 floored_update=0 skip_update=378312 skip_refresh=385404 given_to_rad=2.43373e+17 pay_cells=422 fofc_retested=6.51582e+06 fofc_unflagged=0 t2s2_it=1 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6512   t 1.08959e+06 r -2.2706e+37 dt 146.215 dLz -2.2715e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=762044 floor_pay=0 floored_update=0 skip_update=377644 skip_refresh=384576 given_to_rad=2.35843e+17 pay_cells=406 fofc_retested=6.50221e+06 fofc_unflagged=0 t2s2_it=5 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6608   t 1.10353e+06 r -2.1839e+37 dt 145.259 dLz -2.1846e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=750964 floor_pay=0 floored_update=0 skip_update=372356 skip_refresh=378764 given_to_rad=2.41495e+17 pay_cells=418 fofc_retested=6.36605e+06 fofc_unflagged=0 t2s2_it=1 t2s3_it=2 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6637   t 1.10775e+06 r -2.0676e+37 dt 146.277 dLz -2.0684e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=746420 floor_pay=0 floored_update=0 skip_update=370004 skip_refresh=376592 given_to_rad=2.34778e+17 pay_cells=400 fofc_retested=6.32926e+06 fofc_unflagged=0 t2s2_it=1 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6561   t 1.09672e+06 r -2.0362e+37 dt 144.947 dLz -2.0369e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=756332 floor_pay=0 floored_update=0 skip_update=374904 skip_refresh=381524 given_to_rad=2.36087e+17 pay_cells=410 fofc_retested=6.43236e+06 fofc_unflagged=0 t2s2_it=1 t2s3_it=5 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6507   t 1.08886e+06 r -1.9930e+37 dt 146.459 dLz -1.9940e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=762832 floor_pay=0 floored_update=0 skip_update=377996 skip_refresh=385052 given_to_rad=2.40029e+17 pay_cells=416 fofc_retested=6.50903e+06 fofc_unflagged=0 t2s2_it=2 t2s3_it=2 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+c6469   t 1.08324e+06 r -1.9132e+37 dt 149.013 dLz -1.9146e+37 | Picard 0 | auto_be=0 fb_pos_gas=0 fb_e_floor=0 fb_ffct_left=0 fcap_v=0 fcap_T=0 c2p_dfloor=767384 floor_pay=0 floored_update=0 skip_update=380168 skip_refresh=387312 given_to_rad=2.38873e+17 pay_cells=410 fofc_retested=6.56721e+06 fofc_unflagged=0 t2s2_it=5 t2s3_it=1 t2s2_neg=0 t2s3_neg=0 t2s3_guard=0 t2s3_mark=0
+floorcap cumulative dL_z in the window (25-cycle lines): first c6050 0.0000e+00, last c6900 0.0000e+00
+
+## T2 ledger from 28 bin headers (cycles 0-6902); window = between consecutive dump cycles
+cycles           d(ledger)     sum residual   dLz_tot       int hflx dt    -d(ledger)/residual
+     0-257     -9.90340e+33  +8.19907e+33  -3.68761e+36  +3.6958e+36   +1.208e+00
+   257-513     +9.97221e+34  +1.55237e+34  -3.92211e+36  +3.9376e+36   -6.424e+00
+   513-769     -1.92335e+35  +1.16889e+34  -4.14886e+36  +4.1606e+36   +1.645e+01
+   769-1024    -1.58876e+36  +7.35216e+33  -4.25466e+36  +4.2620e+36   +2.161e+02
+  1024-1279    +1.61276e+36  +4.25266e+33  -4.32905e+36  +4.3333e+36   -3.792e+02
+  1279-1534    +1.17750e+37  +3.71060e+33  -4.51508e+36  +4.5188e+36   -3.173e+03
+  1534-1790    +1.58366e+38  +3.70335e+33  -4.67642e+36  +4.6801e+36   -4.276e+04
+  1790-2045    -3.72666e+38  +5.07558e+33  -4.66283e+36  +4.6679e+36   +7.342e+04
+  2045-2300    +6.92992e+38  +6.41612e+33  -4.78930e+36  +4.7957e+36   -1.080e+05
+  2300-2555    +5.22802e+37  +5.50581e+33  -5.03471e+36  +5.0402e+36   -9.495e+03
+  2555-2810    -2.42162e+38  +7.22663e+33  -5.31305e+36  +5.3203e+36   +3.351e+04
+  2810-3065    -5.69241e+37  +8.53831e+33  -5.25274e+36  +5.2613e+36   +6.667e+03
+  3065-3320    +6.87764e+38  +8.83687e+33  -5.37843e+36  +5.3873e+36   -7.783e+04
+  3320-3575    +2.02806e+37  +1.10686e+34  -5.89178e+36  +5.9028e+36   -1.832e+03
+  3575-3830    -2.39340e+38  +1.14438e+34  -5.93376e+36  +5.9452e+36   +2.091e+04
+  3830-4084    -3.06255e+38  +1.19736e+34  -6.00638e+36  +6.0184e+36   +2.558e+04
+  4084-4339    -4.05915e+38  +1.18462e+34  -6.12822e+36  +6.1401e+36   +3.427e+04
+  4339-4594    +3.27927e+37  +1.23866e+34  -6.23266e+36  +6.2450e+36   -2.647e+03
+  4594-4849    -1.14741e+38  +1.18251e+34  -6.30175e+36  +6.3136e+36   +9.703e+03
+  4849-5104    -3.82695e+39  +1.27114e+34  -6.70578e+36  +6.7185e+36   +3.011e+05
+  5104-5359    +2.14980e+39  +8.87810e+33  -6.94983e+36  +6.9587e+36   -2.421e+05
+  5359-5614    -3.01315e+39  +1.12763e+34  -7.19425e+36  +7.2055e+36   +2.672e+05
+  5614-5875    +1.33978e+40  -7.39061e+32  -9.26537e+36  +9.2646e+36   +1.813e+07
+  5875-6159    +6.23206e+40  +4.79643e+37  +3.98362e+37  +8.1281e+36   -1.299e+03
+  6159-6448    +1.04905e+41  +7.41893e+38  +7.37058e+38  +4.8345e+36   -1.414e+02
+  6448-6741    -1.40740e+40  -1.79599e+39  -1.79936e+39  +3.3632e+36   -7.836e+00
+  6741-6902    -1.62731e+41  -1.50555e+38  -1.58558e+38  +8.0036e+36   -1.081e+03
+all windows: N 27  Pearson(d ledger, residual) +0.3298, Spearman +0.1007; |d ledger| median 2.42e+38, |residual| median 1.11e+34
+windows ending after c6050: N 4  Pearson(d ledger, residual) +0.3368, Spearman +0.8000; |d ledger| median 8.36e+40, |residual| median 4.46e+38
+before c6050: N 23  Pearson(d ledger, residual) -0.5879, Spearman -0.4545; |d ledger| median 1.58e+38, |residual| median 8.84e+33
