@@ -32,6 +32,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # pos_un_drop: the positivity report's sum over discarded attempts (CounterKeep::Restore adds after the checkpoint)
 # vgd_csmb: the cubed sphere's two read-mask buffers (a cache: dropped after a restore, the mask kernel re-runs on reuse)
 # cln_pcrl: the GPU PCR's lines of each colour (a cache keyed by the level's shape, rebuilt on a miss)
+# cln_fwr: the lines' MeshBlocks of fwb's ring sums (a cache of the mesh, rebuilt when it changes)
 # cln_dbginf: clean_dbg_inf's cycle, cleared once injected (rolled back, a dt_retry redo
 # would inject again, without end)
 # cln_sgv / cln_sga0 / cln_sga1 / cln_sgd1 / cln_sgd2 / cln_sgx / cln_sgtg: the theta-seam image geometry
@@ -41,7 +42,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # cln_fpv: clean_conv_est_f's last pass F (scratch: a stage's first F solve writes it before it reads it)
 # vgd_csmw_h / vgd_csmw_r: the read-mark exchange's persistent host buffers (scratch: every build writes them before it
 # reads them; their copy was ~55 ms of host time per checkpoint on the A100 RSG / HG decks)
-SKIP_NAMES = {'hi_seq', 'cln_pcrl', 'cln_sgv', 'cln_sga0', 'cln_sga1', 'cln_sgd1', 'cln_sgd2', 'cln_sgx',
+SKIP_NAMES = {'hi_seq', 'cln_pcrl', 'cln_fwr', 'cln_sgv', 'cln_sga0', 'cln_sga1', 'cln_sgd1', 'cln_sgd2', 'cln_sgx',
               'cln_sgtg', 'cln_wci', 'cln_pdh', 'cln_fpv', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb',
               'vgd_csmw_h', 'vgd_csmw_r', 'cln_dbginf'}
