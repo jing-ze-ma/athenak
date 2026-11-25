@@ -396,6 +396,12 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
   value after 8 cycles, CPU).
 - **Block mode** (default): the result depends on the MeshBlock size at the solver
   tolerance, because the preconditioner is MeshBlock-local.
+- **Floor-held gas** (density or temperature floor with FOFC): with vacuum theta walls the
+  trajectory is not reproducible across layouts, since the rays there differ by round-off and
+  the floor flag amplifies it (with and without the uniform `fofc_flag_exchange`; a 1e-12
+  input perturbation of one block does the same). In the production set-up (tile mode,
+  periodic theta) no relative difference above 1e-10 was found in the dumps of 16 cycles
+  (compared at that threshold, not byte by byte).
 
 Test: `layout_tile` (1 x 2 MeshBlocks along phi vs one MeshBlock: identical; 2 x 2, which
 also splits theta across the ray walls: bounded at 1e-8).
