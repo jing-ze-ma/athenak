@@ -147,3 +147,45 @@ map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC
     first 5e3 s: 7.443e-02 -> 9.222e-02; e-fold first 5e3 s 2.430e+04, 0-3e4 s 5.198e+04, 5e4-1e5 s 5.776e+04, whole 1e5 s 6.438e+04 s; last peak k 14, last axis share 0.92
   r 0.76: band A rms 0e+00: 8.397e-02 (k 14, axis 0.92); 1e+04: 8.138e-02 (k 14, axis 0.82); 2e+04: 1.273e-01 (k 14, axis 0.93); 3e+04: 1.016e-01 (k 14, axis 0.84); 4e+04: 1.775e-01 (k 14, axis 0.92); 5e+04: 1.678e-01 (k 14, axis 0.93); 6e+04: 2.137e-01 (k 14, axis 0.89); 7e+04: 2.538e-01 (k 14, axis 0.94); 8e+04: 2.543e-01 (k 14, axis 0.88); 9e+04: 3.697e-01 (k 14, axis 0.94); 1e+05: 2.887e-01 (k 14, axis 0.90)
     first 5e3 s: 8.397e-02 -> 9.977e-02; e-fold first 5e3 s 3.020e+04, 0-3e4 s 7.522e+04, 5e4-1e5 s 7.634e+04, whole 1e5 s 6.581e+04 s; last peak k 14, last axis share 0.90
+
+## R5 (hydro/fofc=false, fofc_retest=false) and the summary
+- R5 was accepted at restart (no FATAL), so R5b (donor cell) was not run. The log shows fofc_retest 0 and "retested 0" each cycle: FOFC is off. rc=0, wall 2196 s, CW / FATAL / DT_RETRY 0.
+- It acts: against R0 (hst at equal t; v_r maps as for R3 / R4):
+hst rows R0 8253 R5 8253; |ARM/R0 - 1| at equal t (R0 interpolated linearly in t):
+  t 3.50009e+05: L_top 8.01e-12, KE_int 4.22e-15, KEr_int 1.17e-13, L_mid 1.55e-13, Etot 1.33e-15
+  t 3.50102e+05: L_top 2.65e-10, KE_int 1.64e-14, KEr_int 1.53e-12, L_mid 2.50e-12, Etot 4.44e-16
+  t 3.51000e+05: L_top 3.94e-08, KE_int 1.29e-11, KEr_int 6.31e-12, L_mid 2.83e-12, Etot 2.74e-14
+  t 3.59997e+05: L_top 5.47e-06, KE_int 4.35e-08, KEr_int 4.24e-08, L_mid 9.26e-09, Etot 7.35e-13
+  t 3.80005e+05: L_top 4.74e-07, KE_int 5.22e-07, KEr_int 5.57e-08, L_mid 7.29e-08, Etot 5.16e-12
+  t 4.00000e+05: L_top 3.01e-06, KE_int 1.56e-05, KEr_int 3.64e-05, L_mid 8.02e-07, Etot 6.64e-10
+  t 4.19994e+05: L_top 1.58e-04, KE_int 2.70e-04, KEr_int 8.72e-04, L_mid 3.64e-05, Etot 2.76e-09
+  t 4.46995e+05: L_top 1.95e-04, KE_int 2.17e-03, KEr_int 1.39e-02, L_mid 2.94e-03, Etot 1.12e-07
+  t 4.49990e+05: L_top 3.52e-03, KE_int 1.67e-02, KEr_int 3.94e-02, L_mid 3.09e-03, Etot 3.49e-07
+map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC: 0.74 0.80 0.87 0.90 0.93 0.95 0.98 1.00 1.03
+  t 3.5521e+05 / 3.5521e+05: 2.70e-07 (rms 9.87e-02); 9.59e-08 (rms 8.35e-02); 5.50e-08 (rms 8.90e-01); 1.39e-07 (rms 1.21e+01); 6.66e-08 (rms 3.22e+01); 1.81e-07 (rms 3.68e+01); 2.04e-06 (rms 2.49e+01); 6.98e-05 (rms 3.88e+01); 4.66e-02 (rms 3.87e+01)
+  t 3.5761e+05 / 3.5761e+05: 2.40e-07 (rms 1.14e-01); 1.43e-07 (rms 7.75e-02); 3.62e-07 (rms 8.31e-01); 2.65e-07 (rms 1.26e+01); 2.45e-07 (rms 3.23e+01); 3.89e-07 (rms 3.74e+01); 3.76e-05 (rms 2.55e+01); 1.17e-04 (rms 3.58e+01); 6.99e-02 (rms 4.56e+01)
+  t 3.6241e+05 / 3.6241e+05: 2.24e-07 (rms 1.23e-01); 2.06e-07 (rms 8.73e-02); 3.74e-07 (rms 1.23e+00); 1.05e-06 (rms 1.03e+01); 1.09e-06 (rms 3.18e+01); 1.20e-06 (rms 3.59e+01); 1.86e-05 (rms 2.36e+01); 1.30e-02 (rms 4.92e+01); 7.83e-02 (rms 4.94e+01)
+  t 3.6960e+05 / 3.6960e+05: 2.78e-07 (rms 1.06e-01); 4.40e-07 (rms 8.06e-02); 9.01e-07 (rms 9.44e-01); 8.66e-06 (rms 1.07e+01); 7.11e-06 (rms 3.24e+01); 1.69e-05 (rms 3.50e+01); 7.36e-05 (rms 2.36e+01); 1.32e-03 (rms 4.25e+01); 1.13e-01 (rms 3.15e+01)
+  t 3.8160e+05 / 3.8160e+05: 3.64e-07 (rms 1.55e-01); 5.17e-06 (rms 8.73e-02); 3.59e-05 (rms 1.19e+00); 2.19e-04 (rms 8.04e+00); 1.42e-04 (rms 2.96e+01); 1.23e-04 (rms 3.76e+01); 3.44e-04 (rms 2.43e+01); 3.26e-04 (rms 4.70e+01); 2.07e-02 (rms 1.51e+01)
+  t 4.0560e+05 / 4.0560e+05: 1.20e-05 (rms 1.82e-01); 1.81e-04 (rms 1.14e-01); 1.74e-03 (rms 7.82e-01); 5.52e-03 (rms 1.01e+01); 3.63e-03 (rms 3.05e+01); 3.01e-03 (rms 3.84e+01); 6.51e-03 (rms 2.57e+01); 8.14e-03 (rms 4.90e+01); 1.51e-01 (rms 3.81e+01)
+  t 4.2961e+05 / 4.2961e+05: 1.50e-04 (rms 3.57e-01); 3.44e-03 (rms 7.36e-02); 1.29e-02 (rms 8.56e-01); 8.20e-02 (rms 9.18e+00); 5.92e-02 (rms 3.28e+01); 6.93e-02 (rms 3.77e+01); 1.18e-01 (rms 2.64e+01); 2.20e-01 (rms 3.36e+01); 2.61e-01 (rms 2.84e+01)
+  t 4.5000e+05 / 4.5000e+05: 1.47e-03 (rms 4.91e-01); 4.03e-02 (rms 8.68e-02); 2.23e-01 (rms 1.00e+00); 5.54e-01 (rms 1.56e+01); 6.50e-01 (rms 3.15e+01); 6.26e-01 (rms 3.82e+01); 9.02e-01 (rms 2.22e+01); 8.29e-01 (rms 7.34e+01); 5.34e-01 (rms 4.08e+01)
+- Band readings (a0dc's definitions): equal to R0 to the 4th digit at all three radii (e-fold at 0.74 R_ph,IC 5.198e4 / 5.776e4 / 6.438e4 s; rms at 1e5 s as R0; peak k 14, axis 0.92); full table below.
+== R5: 42 dumps, t 3.5000e+05 to 4.5000e+05
+  r 0.72: band A rms 0e+00: 3.521e-02 (k 14, axis 0.86); 1e+04: 4.383e-02 (k 13, axis 0.89); 2e+04: 4.372e-02 (k 13, axis 0.85); 3e+04: 5.966e-02 (k 13, axis 0.90); 4e+04: 5.512e-02 (k 13, axis 0.85); 5e+04: 8.439e-02 (k 13, axis 0.90); 6e+04: 7.303e-02 (k 13, axis 0.85); 7e+04: 1.118e-01 (k 13, axis 0.90); 8e+04: 9.702e-02 (k 13, axis 0.86); 9e+04: 1.466e-01 (k 13, axis 0.90); 1e+05: 1.425e-01 (k 14, axis 0.88)
+    first 5e3 s: 3.521e-02 -> 3.516e-02; e-fold first 5e3 s -3.709e+06, 0-3e4 s 6.872e+04, 5e4-1e5 s 7.604e+04, whole 1e5 s 7.104e+04 s; last peak k 14, last axis share 0.88
+  r 0.74: band A rms 0e+00: 7.443e-02 (k 14, axis 0.82); 1e+04: 1.149e-01 (k 14, axis 0.91); 2e+04: 9.938e-02 (k 14, axis 0.86); 3e+04: 1.548e-01 (k 14, axis 0.91); 4e+04: 1.385e-01 (k 14, axis 0.89); 5e+04: 1.829e-01 (k 14, axis 0.88); 6e+04: 2.403e-01 (k 14, axis 0.93); 7e+04: 2.234e-01 (k 14, axis 0.88); 8e+04: 3.399e-01 (k 14, axis 0.92); 9e+04: 2.757e-01 (k 13, axis 0.89); 1e+05: 4.787e-01 (k 14, axis 0.92)
+    first 5e3 s: 7.443e-02 -> 9.222e-02; e-fold first 5e3 s 2.430e+04, 0-3e4 s 5.198e+04, 5e4-1e5 s 5.776e+04, whole 1e5 s 6.438e+04 s; last peak k 14, last axis share 0.92
+  r 0.76: band A rms 0e+00: 8.397e-02 (k 14, axis 0.92); 1e+04: 8.138e-02 (k 14, axis 0.82); 2e+04: 1.273e-01 (k 14, axis 0.93); 3e+04: 1.016e-01 (k 14, axis 0.84); 4e+04: 1.775e-01 (k 14, axis 0.92); 5e+04: 1.678e-01 (k 14, axis 0.93); 6e+04: 2.137e-01 (k 14, axis 0.89); 7e+04: 2.538e-01 (k 14, axis 0.94); 8e+04: 2.543e-01 (k 14, axis 0.88); 9e+04: 3.697e-01 (k 14, axis 0.94); 1e+05: 2.887e-01 (k 14, axis 0.90)
+    first 5e3 s: 8.397e-02 -> 9.977e-02; e-fold first 5e3 s 3.020e+04, 0-3e4 s 7.522e+04, 5e4-1e5 s 7.634e+04, whole 1e5 s 6.581e+04 s; last peak k 14, last axis share 0.90
+
+### Summary of 26u2
+| arm | change | e-fold at 0.74 (first 3e4 / last 5e4 / whole) | band A rms at +1e5 s, 0.74 | peak k | v_r map difference at the end: 0.74 / 0.95 R_ph,IC |
+|---|---|---|---|---|---|
+| R0 | none | 5.20e4 / 5.78e4 / 6.44e4 s | 0.4787 km/s | 14 | - |
+| R1 | LQ10, 120 rays | 5.20e4 / 5.78e4 / 6.44e4 | 0.4788 | 14 | 2.6e-2 / 1.33 |
+| R2 | wb off | 5.21e4 / 5.78e4 / 6.44e4 | 0.4785 | 14 | (band 1 %) |
+| R3 | cfl 0.15 | in the band table, within 0.5 % (orion) | | 14 | 1.9e-2 / 1.32 |
+| R4 | central fluxes off | within 0.5 % | | 14 | 6.0e-3 / 1.09 |
+| R5 | FOFC off | 5.20e4 / 5.78e4 / 6.44e4 | as R0 | 14 | 1.5e-3 / 0.63 |
+- None of the five changes the ring by more than the 25 % (e-fold) or 20 % (peak k) of the fixed reading; every key acts (R1, R3, R4, R5 shown; R2's band moves by 1 %), and in each arm the convection zone decorrelates from R0 while the ring at 0.74 R_ph,IC stays within 0.2-2.6 % of R0. So none of these terms makes the ring, and it is not driven from the zone above.
