@@ -2402,6 +2402,16 @@ void RadiationVet::CleanClosureFill() {
   auto iw_ = iw;
   const bool thf = cln_thinf;
   const Real efl = fmax(e_floor, 1.0e-300);
+  // (no cell without rays: the passes would change nothing)
+  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+  Real nbad = 0.0;
+  Kokkos::parallel_reduce("cln_fill_n", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
+    if (!(valid(m,0,ks+k,js+j,is+idx-m*nkji-k*nji-j*ni) > 0.0)) a += 1.0;
+  }, Kokkos::Sum<Real>(nbad));
+  if (CleanReduce(nbad, false) == 0.0) return;
   if (thf) {   // the weight, E
     par_for("cln_fill_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
