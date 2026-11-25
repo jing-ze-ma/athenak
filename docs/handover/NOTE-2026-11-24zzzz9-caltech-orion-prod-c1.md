@@ -23,3 +23,5 @@
 - Monitor: prod_c1_1124/watch.sh per star (status marks at c100, 500..3000, then every 10 min to status_<star>.txt; posts and alerts at CW, DT_RETRY, fallback, clamped, FATAL, inf or a short end; FATAL / inf: clean STOP, no relaunch; wall-limit end: chain restart from the newest rst, at most 2; first rst hard-linked in rst_keep). S5G and the starname suite are off these nodes (S5G done; suite done).
 
 - (11-24 16:23) check c100: bsg: cycle 150, s/cyc 0.7328 (c0-150), t 2.7015e+04 dt 168.7 L_top/L_in 1.04902 L_bot/L_in 0.97548, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+- (11-24 16:23) check c100: m35mms: cycle 150, s/cyc 0.6660 (c0-150), t 2.1374e+03 dt 12.01 L_top/L_in 1.00118 L_bot/L_in 1.00011, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
