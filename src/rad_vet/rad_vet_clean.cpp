@@ -2032,12 +2032,12 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat, const boo
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub, xsp = (x.xq >= 0) && !cln_xdh;
-  // one launch per direction, its face code for a compile-time direction (CleanDirCase)
-  for (int dir = 0; dir < nf; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    CleanFor<4>("cln_rhsaf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
+  // one launch for the faces of all directions, each with its compile-time direction code
+  CleanFor<4>("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
+    for (int dir = 0; dir < nf; ++dir) {
+      if (i > ie + (dir == 0) || j > je + (dir == 1) || k > ke + (dir == 2)) continue;
       CleanDirCase(dir, [&](auto d) {
         constexpr int n = decltype(d)::value;
         if (xsp && xdn) {   // clean_stag_xdonor: C of the iterate
@@ -2055,8 +2055,8 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat, const boo
                                                           true);
         if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
       });
-    });
-  }
+    }
+  });
   const bool pdo = x.pd;   // clean_stag_central: the rows' diagonal CLW_PD
   const bool xte = (cln_xte > 0) && x.feedback;   // clean_xt_exact: CLW_XA, CLW_XW
   const bool gpic = cln_gpic;   // clean_gas_newton_switch
