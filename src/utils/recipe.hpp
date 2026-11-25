@@ -32,6 +32,9 @@ void Old(ParameterInput *pin, const std::string &block, const std::string &key,
 void OldStored(ParameterInput *pin, const std::string &block, const std::string &key,
                const std::string &old, const std::string &value);
 // NOTE: a restart runs the stored (or named) old value of such a key; how to switch
+void Rule(ParameterInput *pin, const std::string &block, const std::string &key,
+          const std::string &value);
+// FATAL if the removed key is stored or named with a value other than its rule's
 void PrintLog();                          // the start-up block (rank 0), then clears
 // a problem generator's fresh-start defaults of keys read before the pgen
 // exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op

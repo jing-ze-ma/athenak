@@ -266,19 +266,13 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.fa = false;
   x.fwc = false;
   x.fs = false;
-  x.tf = false;
   x.fd = cln_fsolve && cln_fkin;
   x.gf = cln_gflux;
   x.fre = cln_freal;
   x.fdg = cln_fdg;
   x.xq = cln_xd_on ? cln_xqs : -1;
-  x.pd = cln_ucp;
-  x.xlag = cln_xlag;
-  x.xsrc = cln_xsrc;
-  x.drag = cln_vimp && cln_feedback;
+  x.drag = cln_feedback;
   x.upw = cln_upw;
-  x.ucen = cln_ucen;
-  x.ucp = cln_ucp;
   x.sar = !cln_gflux;
   x.op = opac;
   x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
@@ -1698,7 +1692,7 @@ void RadiationVet::CleanPreconditionerSetup() {
     CleanFaceWeights(x, 0, m, k, j, i+1, al_p, ar_p);
     CleanFaceWeights(x, 0, m, k, j, i, al_m, ar_m);
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-    const Real pd = x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0;   // (clean_stag_central)
+    const Real pd = x.w(m,CLW_PD,k,j,i);   // (the work, CleanRightHandSide)
     Real a0 = 1.0 + x.h*x.c*op(m,VET_OP_E,k,j,i)*qr + pd + x.h*x.idx[0]*(al_p - ar_m);
     x.w(m,CLW_AM,k,j,i) = -x.h*x.idx[0]*al_m;
     x.w(m,CLW_AP,k,j,i) = x.h*x.idx[0]*ar_p;
@@ -1830,9 +1824,9 @@ void RadiationVet::CleanStagCoarseSetup() {
 //! \fn void RadiationVet::CleanStagLineSolve
 //! \brief u(dst) = L^{-1} u(src), L the x1-line tridiagonal part, on the lines of colour
 //! col = (j + k) mod 2 (-1: all), with the neighbours of colour != col and <= lim on the
-//! RHS.  clean_stag_mg_color = mirror: j, k counted from the nearer edge, so the sweep is
+//! RHS.  j, k counted from the nearer edge, so the sweep is
 //! mirror-symmetric about the x2, x3 midplanes.  GPU: parallel cyclic reduction, one team
-//! per line (cln_pcr); host: Thomas
+//! per line; host: Thomas
 
 void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
                                       const int col, const int lim) {
@@ -1841,20 +1835,18 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
   const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
   auto w = l.u;
   const int n1 = l.t[1], n2 = l.t[2];   // (positions in the line's tile)
-  const bool mir = (cln_stagmg == 2);
   const int c0 = col;
   auto cl = KOKKOS_LAMBDA(int pj, int pk) {   // (the line's colour)
     pj %= n1;
     pk %= n2;
-    return (((mir && 2*pj >= n1) ? n1 - 1 - pj : pj) +
-            ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % 2;
+    return ((2*pj >= n1 ? n1 - 1 - pj : pj) + (2*pk >= n2 ? n2 - 1 - pk : pk)) % 2;
   };
   auto on = KOKKOS_LAMBDA(const int pj, const int pk) {   // (a neighbour on the rhs)
     const int c = cl(pj, pk);
     return c != c0 && c <= lim;
   };
 
-  if (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> && cln_pcr) {
+  if (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
     // (n2 the lines along x2; t2 the tile's along x3, as the host's Thomas)
     const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1], t2 = l.t[2];
     int nround = 0;
@@ -1866,7 +1858,7 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
     int nt = (nmb1 + 1)*n32;
     DvceArray1D<int> ll;
     if (col >= 0) {
-      const std::array<int, 8> key = {nt, n2, n1, l.t[2], mir, 2, c0, l.o[1]};
+      const std::array<int, 7> key = {nt, n2, n1, l.t[2], 2, c0, l.o[1]};
       auto it = cln_pcrl.find(key);
       if (it == cln_pcrl.end()) {
         std::vector<int> h;

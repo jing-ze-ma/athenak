@@ -168,47 +168,15 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_kpred = !(pin->DoesParameterExist("rad_vet","implicit_predictor") &&
                   !pin->IsParameterDefaulted("rad_vet","implicit_predictor") &&
                   pin->GetString("rad_vet","implicit_predictor") == "none");
-    cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
-    // clean_stag_opac_update: opacities at the iterate's temperature
-    cln_opt = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_update",
-                                   fix("clean_stag_opac_update", "true", "false"));
     // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
     cln_optn = pin->GetOrAddInteger("rad_vet","clean_stag_opac_passes",3);
-    // clean_stag_opac_drag: a refresh rebuilds the clean_stag_vimp drag share b and Q
-    // (CleanStagDrag)
-    cln_optdr = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_drag",
-                                     fix("clean_stag_opac_drag", "true", "false"));
-    // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU
-    {const std::string fl = pin->GetOrAddString("rad_vet","clean_stag_fs_line",
-        fix("clean_stag_fs_line", "pcr", "thomas") ? "pcr" : "thomas");
-    if (fl != "pcr" && fl != "thomas") {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fs_line = pcr | thomas"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_fspcr = (fl == "pcr");}
-    // face tie: a face two MeshBlocks share (or one across a periodic wrap) takes its
-    // owner's F, momentum exchange, energy-flux memory and Phi (CleanStagFaceTie).
-    // clean_stag_tie_gid: on every mesh the cs rule (CleanStagCsTie), owner the lower gid
-    cln_tgid = pin->GetOrAddBoolean("rad_vet","clean_stag_tie_gid",
-                                    !pmy_pack->pmesh->multilevel &&
-                                    fix("clean_stag_tie_gid", "true", "false"));
-    if (cln_tgid && pmy_pack->pmesh->multilevel) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_tie_gid needs a uniform mesh"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // clean_stag_fsweeps N: line solves of the F solve up to N times
-    if (pin->DoesParameterExist("rad_vet","clean_stag_fsweeps")) {
-      cln_fsweeps = std::max(pin->GetInteger("rad_vet","clean_stag_fsweeps"), 1);
-    }
-    // clean_stag_fschur (default on where it applies): F lines exact across MeshBlocks
+    // fschur where it applies: F lines exact across MeshBlocks
     // and periodic wraps (CleanStagFSchur); needs a uniform mesh and MeshBlocks of >= 3
     // cells along a line (>= 6 on longer or open lines)
     {Mesh *pm = pmy_pack->pmesh;
     // (cubed sphere: a lateral line is a ring of four panels' MeshBlocks)
     const bool cs = pm->use_cubed_sphere;
-    bool ok = cln_fsweeps == 1 && !pm->multilevel, lag = false;
+    bool ok = !pm->multilevel, lag = false;
     for (int d = 0; d < 3; ++d) {
       // (layout_invariant_mode = tile: tiles as MeshBlocks, CleanStagFSchurTile)
       const int n = (d > 0 && repro::tile_n > 0) ? repro::tile_n :
@@ -223,24 +191,14 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       lag = lag || nmin > 0;
     }
     cln_fschur = ok;
-    if (pin->DoesParameterExist("rad_vet","clean_stag_fschur")) {
-      cln_fschur = pin->GetBoolean("rad_vet","clean_stag_fschur");
-      if (cln_fschur && !ok) {
-        std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fschur needs "
-                  << "clean_stag_fsweeps = 1, a uniform mesh, "
-                  << "nghost >= 3 and MeshBlocks of >= 3 cells along a line of two "
-                     "round a "
-                  << "periodic one, >= 6 along longer or open ones" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    } else if (!ok && lag && !cs && cln_fsweeps == 1) {   // no silent lagged ends
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fschur cannot take this mesh "
-                << "(nghost >= 3, MeshBlock size, uniform mesh): name clean_stag_fsweeps "
-                << "(line ends iterated) or clean_stag_fschur = false" << std::endl;
+    if (!ok && lag && !cs) {   // no silent lagged ends
+      std::cout << "### FATAL ERROR: <rad_vet>: the F solve's lines need nghost >= 3 and "
+                << "MeshBlocks of >= 3 cells along a line of two round a periodic one, "
+                << ">= 6 along longer or open ones" << std::endl;
       std::exit(EXIT_FAILURE);
     } else if (!ok && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> clean_stag_fschur off: the F solve's line ends lagged "
-                << "(clean_stag_fsweeps, mesh or MeshBlock size)" << std::endl;
+      std::cout << "<rad_vet> the F solve's line ends are lagged (mesh or MeshBlock size)"
+                << std::endl;
     }
     // layout_tile: a periodic line joins whole MeshBlocks (CleanStagFSchurTile)
     for (int d = 1; d < 3 && cln_fschur && repro::tile_n > 0 && !cs; ++d) {
@@ -248,20 +206,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       const int nbm = ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3)/nx;
       if (nx > repro::tile_n && nbm%2 == 1 && nbm > 1 &&
           pm->mesh_bcs[2*d] == BoundaryFlag::periodic) {
-        std::cout << "### FATAL ERROR: <mesh>/layout_tile with clean_stag_fschur: a "
+        std::cout << "### FATAL ERROR: <mesh>/layout_tile: a "
                   << "periodic line of MeshBlocks of more than one tile needs an even "
                   << "number of them (or one)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
-    // cubed sphere without fschur iterates its seams (fsweeps 64, Thomas lines)
-    if (cs && !cln_fschur && !pin->DoesParameterExist("rad_vet","clean_stag_fsweeps")) {
-      cln_fsweeps = 64;
-    }
-    if (cs && !cln_fschur && cln_fspcr && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> clean_stag_fs_line = pcr: thomas on the cubed sphere "
-                << "without clean_stag_fschur" << std::endl;
-    }}
+    // cubed sphere without fschur iterates its seams (Thomas lines)
+    if (cs && !cln_fschur) cln_fsweeps = 64;
+    recipe::Rule(pin, "rad_vet", "clean_stag_fschur", cln_fschur ? "true" : "false");
+    recipe::Rule(pin, "rad_vet", "clean_stag_fsweeps", std::to_string(cln_fsweeps));}
     // clean_consistency: default on Cartesian, and on sp / cs with the vet_gd rays (sc)
     const bool curv = pmy_pack->pmesh->use_spherical_polar ||
                       pmy_pack->pmesh->use_cubed_sphere;
@@ -269,7 +223,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_split = true;
     cln_consist = pin->GetOrAddBoolean("rad_vet","clean_consistency", !curv || vg);
     // staggered: energy flux apart from the face momentum (split), face momentum of its
-    // own F solve (fsolve) in the Newton loop (fwork); with clean_consistency the rays'
+    // own F solve (fsolve) in the Newton loop (fwork); with consistency the rays'
     // kinetic momentum flux (fkin) and face flux as flux factors (gflux); donor-cell
     // advective share (upwind). Read only when named.
     auto stag = [&](const char *key, const bool def) {
@@ -278,51 +232,24 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     };
     cln_fsolve = cln_upw = cln_split;
     cln_fkin = cln_fwork = cln_gflux = cln_split && cln_consist;
-    // clean_stag_freal: realisable sb (comoving part <= 2 |beta| hc kE E_k) and restart
+    for (const char *k : {"clean_stag_fwb", "clean_stag_freal"}) {
+      recipe::Rule(pin, "rad_vet", k, cln_consist ? "true" : "false");
+    }
+    // freal: realisable sb (comoving part <= 2 |beta| hc kE E_k) and restart
     // faces <= c E of their donor
-    cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
-    // clean_stag_upwind_central: an upwind face carries the central mean of a E within
-    // the TVD bound (CleanStagAdvectCorr)
-    cln_ucen = pin->GetOrAddBoolean("rad_vet","clean_stag_upwind_central",nw);
-    // clean_stag_central: the rest as the plain central mean, the work drain and the gas
-    // kick in the same Patankar weight (CleanStagMprkWeight)
-    cln_ucp = pin->GetOrAddBoolean("rad_vet","clean_stag_central",
-                                   fix("clean_stag_central", "true", "false"));
-    cln_ucen = cln_ucen || cln_ucp;
+    cln_freal = cln_gflux;
     // clean_stag_thinf: the bracket's ray correction in the face half ranges, realisable
     // (CleanStagBracket)
     cln_thinf = pin->GetOrAddBoolean("rad_vet","clean_stag_thinf",
                                      fix("clean_stag_thinf", "true", "false"));
-    // clean_stag_fwb: F rows in deviation form about the rays' own state, their exact
-    // steady state (CleanStagFSolve)
-    cln_fwb = pin->GetOrAddBoolean("rad_vet","clean_stag_fwb", cln_fsolve &&
-                                   cln_consist && fix("clean_stag_fwb", "true", "false"));
-    if (cln_fwb && !(cln_fsolve && cln_consist)) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb needs the staggered F "
-                   "solve "
-                << "with clean_consistency" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // clean_stag_fwb_ring: fwb's s of the phi faces (3-D sp, periodic x3) less its ring
-    // mean: no torque on a ring (CleanStagFwbProject)
-    const bool ring_ok = pmy_pack->pmesh->use_spherical_polar &&
+    // fwb: F rows in deviation form about the rays' own state, their exact steady state
+    // (CleanStagFSolve); fwb_ring: its s of the phi faces (3-D sp, periodic x3) less its
+    // ring mean: no torque on a ring (CleanStagFwbProject)
+    cln_fwb = cln_consist;
+    cln_fwbring = cln_fwb && pmy_pack->pmesh->use_spherical_polar &&
         pmy_pack->pmesh->three_d &&
-        !pmy_pack->pmesh->multilevel &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
-    cln_fwbring = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_ring",
-        ring_ok && fix("clean_stag_fwb_ring", "true", "false"));
-    if (cln_fwbring && pmy_pack->pmesh->multilevel) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_ring needs a uniform mesh"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (cln_fwbring && !(pmy_pack->pmesh->use_spherical_polar &&
-        pmy_pack->pmesh->three_d &&
-        pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic)) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_ring needs 3-D spherical "
-                << "polar with a periodic x3" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
+    recipe::Rule(pin, "rad_vet", "clean_stag_fwb_ring", cln_fwbring ? "true" : "false");
     // clean_stag_fcone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
     // (CleanStagFCone)
@@ -355,20 +282,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
     // (no donor/cap flip between passes)
     cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);
-    // clean_stag_xdonor = lag | p1 | off: the off-diagonal stress flux as an M-matrix
-    // term (CleanStagXDonor); clean_stag_xsrc: also the face sources past their explicit
-    // share
-    const std::string xd = pin->GetOrAddString("rad_vet","clean_stag_xdonor",
-        fix("clean_stag_xdonor", "lag", "off") ? "lag" : "off");
-    if (xd != "off" && xd != "p1" && xd != "lag") {
-      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_xdonor = off | p1 | lag"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_xd = (xd != "off");
-    cln_xlag = (xd == "lag");
-    cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",
-                                              fix("clean_stag_xsrc", "true", "false"));
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
     // radiation's (CleanLzBook)
@@ -426,44 +339,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->SetReal("rad_vet", key, 0.0);
       }
     }
-    // clean_xt_exact = cons | off | x2: the first iterate's gas T with G = 1 - beta^2/2,
-    // then T from the pass's gas row; one A' per cell and pass (CleanRightHandSide);
-    // cons: the work by which the row and the gas kinetic energy differ goes to E whole;
-    // x2: also every T root from the local 2x2 of the E and gas rows, the first iterate's
-    // too, e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
-    {
-      const std::string xe = pin->GetOrAddString("rad_vet","clean_xt_exact",
-          fix("clean_xt_exact", "cons", "off") ? "cons" : "off");
-      if (xe != "off" && xe != "cons" && xe != "x2") {
-        std::cout << "### FATAL ERROR <rad_vet>/clean_xt_exact = off | cons | x2"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
-    }
-    if (cln_ucp && cln_xte != 1) {   // CLW_PD: the work's q
-      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central = true needs "
-                << "clean_xt_exact = cons, not '" << pin->GetString("rad_vet",
-                "clean_xt_exact") << "' (a restart file may store it): name "
-                << "clean_xt_exact=cons, or clean_stag_central=false" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (cln_freal && !(cln_gflux && cln_fsolve)) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_freal needs clean_consistency "
-                << "(the F solve and gflux)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_vimp = stag("clean_stag_vimp", cln_split);
-    // cubed sphere: only with clean_stag_vimp_cs
-    if (cln_vimp && pmy_pack->pmesh->use_cubed_sphere &&
-        !pin->GetOrAddBoolean("rad_vet","clean_stag_vimp_cs",
-                              fix("clean_stag_vimp_cs", "true", "false"))) {
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> staggered on the cubed sphere: clean_stag_vimp = false"
-                  << std::endl;
-      }
-      cln_vimp = false;
-    }
     // clean_clos1_budget (default; false: the strict norm): a pass whose iterate the next
     // pass takes the closure of in the budget's norm, to 0.1 clean_conv_max, the floor of
     // the passes after it at the budget's ceiling (a step dt_retry redoes strictly, as
@@ -475,22 +350,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // test (CleanNewtonUpdate)
     cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",
                                    fix("clean_bud_maxnorm", "true", "false"));
-    // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
-    // tfloor, and the gas eint written back from that root (E takes the rest)
-    cln_gtf = stag("clean_gas_tfloor", true);
-    // clean_wb_fct: the write-back's Zalesak limit on the written faces' energy flux,
-    // E > 0 by construction (CleanWbFct)
-    cln_wbfct = pin->GetOrAddBoolean("rad_vet","clean_wb_fct", cln_gtf && cln_xte > 0 &&
-                                     fix("clean_wb_fct", "true", "false"));
-    if (cln_wbfct && !(cln_gtf && cln_xte > 0)) {
-      std::cout << "### FATAL ERROR <rad_vet>/clean_wb_fct needs clean_gas_tfloor and "
-                << "clean_xt_exact = cons | x2" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // clean_wb_exch_local (default with clean_gas_tfloor): the write-back's cell exchange
+    // clean_wb_exch_local (default): the write-back's cell exchange
     // solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))
     cln_wbxl = pin->GetOrAddBoolean("rad_vet","clean_wb_exch_local",
-        cln_gtf && fix("clean_wb_exch_local", "true", "false"));
+                                   fix("clean_wb_exch_local", "true", "false"));
     // clean_wb_mcap (read only when named; default false): the write-back gives the gas
     // the face momentum terms at the Newton passes' cap h chi_f E, the momentum whose
     // work the E row paid (CleanMomentumChange); the terms withheld are printed
@@ -509,16 +372,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
     }
     // preconditioner: mg (CleanStagVCycle)
-    {// clean_stag_mg_color = mirror | parity: the mg's line colours (CleanStagLineSolve)
-    const std::string mc = pin->GetOrAddString("rad_vet","clean_stag_mg_color",
-        fix("clean_stag_mg_color", "mirror", "parity") ? "mirror" : "parity");
-    if (mc != "parity" && mc != "mirror") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_stag_mg_color = parity | mirror"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_stagmg = (mc == "mirror") ? 2 : 1;
+    {
     // layout_tile N: the mg acts on fixed N x N (x2, x3) tiles as on MeshBlocks, so the
     // solve is the same for every layout of whole tiles (one MeshBlock along x1)
     if (repro::tile_n > 0) {
@@ -554,18 +408,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "| rbrsym (wave was removed)" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
-    // clean_stag_lat_sums (sp / Cartesian, with clean_stag_xdonor): the faces' lateral
-    // stress from the cells' sums Y (CleanStagCsLateral), the cs form; off: 4-cell
-    // central differences
-    cln_ysum = pin->GetOrAddBoolean("rad_vet","clean_stag_lat_sums", cln_xd &&
-                                    fix("clean_stag_lat_sums", "true", "false")) &&
-               pmy_pack->pmesh->multi_d && !pmy_pack->pmesh->use_cubed_sphere;
-    if (cln_ysum && !cln_xd) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_stag_lat_sums: with clean_stag_xdonor = "
-                << "lag | p1" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
+    // sp / Cartesian: the faces' lateral stress from the cells' sums Y
+    // (CleanStagCsLateral), the cs form
+    cln_ysum = pmy_pack->pmesh->multi_d && !pmy_pack->pmesh->use_cubed_sphere;
     // clean_closure: predict | iterate | extrap | extrap1 | extrap2 | eddington | sphere
     {std::string cl = pin->GetOrAddString("rad_vet","clean_closure","extrap1");
     cln_closit = (cl.compare("iterate") == 0);

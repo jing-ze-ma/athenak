@@ -1133,11 +1133,8 @@ class RadiationVet {
   // clean_init_cnorm: the steady start's per-cell test (0 off)
   bool cln_insteady = false;    // in CleanSteadyStart's passes
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
-  bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
-  std::map<std::array<int, 8>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
+  std::map<std::array<int, 7>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
-  bool cln_optdr = false;       // clean_stag_opac_drag: the refresh rebuilds the drag
-  bool cln_fspcr = false;      // clean_stag_fs_line = pcr: F solve x1 lines on a GPU
   // the operator's rows (CLN_ST per active cell, CleanPreconditionerSetup)
   DvceArray5D<Real> cln_st;
   //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
@@ -1147,13 +1144,10 @@ class RadiationVet {
   DvceArray5D<Real> cln_yl;     //   (in their own array: CLW_L is the F solve's scratch)
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks
-  bool cln_tgid = false;        // clean_stag_tie_gid: sp/C owner the lower gid (cs tie)
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   bool cln_c1b = false;         // clean_clos1_budget
   bool cln_bmn = false;         // clean_bud_maxnorm
-  bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
-  bool cln_wbfct = false;       // clean_wb_fct
   bool cln_wbxl = false;        // clean_wb_exch_local
   Real cln_flrun = 0.0;         // the last write-back's implicit_pos_floor creation
   int cln_flrid = -1;           // its cycle and t2s, 4 ncycle + t2_solve
@@ -1179,7 +1173,7 @@ class RadiationVet {
   void CleanWorstCell(const Real dnl, const Real dnl0);
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   // clean_stag_xdonor: cross flux of the iterate as a donor-cell coefficient of its face
-  bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
+  bool cln_xd_on = false;
   int cln_xqs = -1;   // (3 slots: qL >= 0, qR <= 0, the lagged explicit flux; CLF_XC: C(E_k),
                     //  C's last change)
   int cln_lza = 0;          // clean_cs_lz_abs
@@ -1210,7 +1204,6 @@ class RadiationVet {
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
   Real CleanLzTotal();   // gas + radiation + ledger L_z
-  int cln_xte = 0;   // clean_xt_exact: 0 off, 1 cons, 2 x2
   bool cln_gpic = false;   // a stalled solve's passes without the gas Newton slope
   Real cln_ngnsw = 0.0;   // solves switched so far
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
@@ -1233,8 +1226,6 @@ class RadiationVet {
   DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   int cln_verbose = 0;          // clean_verbose: 1 = also the per-solve diagnostics
-  int cln_stagmg = 0;           // clean_stag_mg_color: 1 line colours (j + k) parity,
-                                //   2 mirror
   int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
@@ -1249,10 +1240,7 @@ class RadiationVet {
   bool cln_dok = true;          // staggered fkin: the last solve converged (memory d)
   bool cln_fwork = false;       // staggered fsolve: also in the Newton loop (the work W)
   bool cln_fsk = false;         //   CLF_N holds the F solve's F of the iterate
-  bool cln_vimp = false;        // staggered: implicit gas velocity (drag), per face
   bool cln_upw = false;         // staggered: donor-cell advective flux, lagged rest
-  bool cln_ucp = false;         //   clean_stag_central
-  bool cln_ucen = false;        //   clean_stag_upwind_central: the rest central
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
   int cln_ncwin = 0;   // solves accepted by the per-cell measure's stall window (cnorm)
