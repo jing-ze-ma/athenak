@@ -1,0 +1,2 @@
+2026-11-25 04:21:06 start MT BASE1 ranks 8 BIN athena_next_79c1cabef md5=9bebf6a3972983aedf3ba060d8a5c9cb nlim 794810 env T0+{UCX_RNDV_SCHEME=get_zcopy UCX_MAX_RNDV_RAILS=12} tool {LD_PRELOAD=/resnick/groups/carnegie_poc/jingze/b1_1124/mt/libmpit.so KOKKOS_TOOLS_LIBS=/resnick/groups/carnegie_poc/jingze/b1_1124/mt/libmpit.so MT_OUT=/resnick/groups/carnegie_poc/jingze/b1_1124/sp7/MT/BASE1/mt}
+2026-11-25 04:22:57 rc=0 ended: Terminating on cycle limit wall=111 s CW 0 FATAL 0

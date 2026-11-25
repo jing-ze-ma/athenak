@@ -1,0 +1,2 @@
+2026-11-25 04:24:48 start KT_6 BASE1 ranks 8 BIN athena_next_79c1cabef md5=9bebf6a3972983aedf3ba060d8a5c9cb nlim 794790 env T0+{UCX_RNDV_SCHEME=get_zcopy UCX_MAX_RNDV_RAILS=12} tool {KOKKOS_TOOLS_LIBS=/resnick/groups/carnegie_poc/jingze/b1_1124/kt/libkt.so KT_OUT=/resnick/groups/carnegie_poc/jingze/b1_1124/sp7/KT_6/BASE1/kt}
+2026-11-25 04:25:54 rc=0 ended: Terminating on cycle limit wall=66 s CW 0 FATAL 0
