@@ -2921,10 +2921,10 @@ struct CleanFLine {
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagFRay
 //! \brief clean_stag_fwb: the rays' own lab-frame momentum of face (kf,jf,iff): their
-//! flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), plus the
-//! upwind advective a E.  Where the donor holds no rays (CLN_J = 0) the thin share's own
-//! energy flux c (h+ E_L + h- E_R): a function of E on every face, never the last F, so
-//! that the well-balanced rows of a line hold no lagged neighbour
+//! flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), no advective
+//! a E, as the energy flux's thin share.  Where the donor holds no rays (CLN_J = 0) the
+//! thin share's own energy flux c (h+ E_L + h- E_R): a function of E on every face, never
+//! the last F, so that the well-balanced rows of a line hold no lagged neighbour
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
@@ -2934,12 +2934,8 @@ Real CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
   auto ec = [&](const int l) {return fmax(x.w(m,e,kf-l*ek,jf-l*ej,iff-l*ei), 0.0);};
   const int u = (g > 0.0) ? 1 : 0;
   const Real jd = x.cs(m,CLN_J,kf-u*ek,jf-u*ej,iff-u*ei);
-  const Real a = 0.5*(CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf-ek, jf-ej, iff-ei) +
-                      CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf, jf, iff));
-  const Real f = (jd > 0.0) ? x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) :
-                 x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) +
-                      x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0));
-  return f + a*ec(a > 0.0);
+  return (jd > 0.0) ? x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) :
+         x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) + x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0));
 }
 
 //----------------------------------------------------------------------------------------
@@ -3257,11 +3253,12 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
     // chi_f dx_f, relaxes F to the rays' own F_ray over the light crossing of the cell,
     // dF/dt = -(c/dx)(F - F_ray), in place of the momentum equation along the line, whose
     // thin state keeps any excess over F_ray (it drifts along the kinetic lines without
-    // damping).  The steady state does not depend on h.  F_ray (lab frame): the rays' flux
-    // factor times the donor's E plus the upwind advective a E.  s, what the row without
-    // this share lacks at the solution, enters CLF_N + 1 (phase 2): the gas takes the
-    // absorption of F, not s, whose s V/c^2 is the radiation's (L_z: dlz).  E and the
-    // energy flux memory G + d are unchanged
+    // damping).  The steady state does not depend on h.  F_ray: the rays' flux factor times
+    // the donor's E; as the energy flux's thin share it has no advective a E (the thin gas
+    // does not drag the light along).  s, what the row without this share lacks at the
+    // solution, enters CLF_N + 1 (phase 2): the gas takes the absorption of F, not s, whose
+    // s V/c^2 is the radiation's (L_z: dlz).  E and the energy flux memory G + d are
+    // unchanged
     if (cln_fschur && q == x.nf) CleanStagFSchur();
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
