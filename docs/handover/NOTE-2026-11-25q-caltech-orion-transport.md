@@ -162,3 +162,10 @@ mlx5_5 4: ACTIVE 400 Gb/sec (4X NDR) InfiniBand
 | T7 | UCX_RCACHE_MAX_REGIONS=100000 | rc=0 ended: Terminating on cycle limit wall=125 s CW 0  | 3.2565 | 3.3361 | 1042.7 (1021.3/1061.8) | 644 | 1201.5 | bitwise(26) / bitwise(26) |
 | T8 | UCX_MEMTYPE_CACHE=n | rc=0 ended: Terminating on cycle limit wall=131 s CW 0  | 3.4498 | 3.5334 | 1211.6 (1177.3/1237.4) | 644 | 1376.0 | bitwise(26) / bitwise(26) |
 - mt files and run.log: caltech_results/HG_TR/<arm>/.
+
+### Correction and reading
+- T6's UCX_MAX_RNDV_RAILS was set to 12: my count added both nodes' lists (6 HCAs per node, mlx5_0 ... mlx5_5; the port states and rates of 02-09 are at the end of info.txt). The real number per node is 6, the UCX default is 2. 12 is above it; nothing else depends on it.
+- The best setting is UCX_RNDV_SCHEME=get_zcopy (T3, T3r: median 2.88-2.99 s/cycle against 3.26-3.45 for the six put_ppln arms; Waitall cln_hd_copy 689-788 against 1043-1212 ms per cycle), and get_zcopy + MAX_RNDV_RAILS=12 (T6, T6r: 2.776 / 2.773, Waitall 584 ms): -17 % against T0 / T0b (3.33 mean of medians) and it repeats within 0.1 %. Noise of the put_ppln arms: 3.26-3.45 (6 %).
+- T4 (put_zcopy) and T5 (PROTO_ENABLE=n) run at 30 s/cycle (10x) and hit the 10-minute limit; they are not hangs (the log advances), results bitwise for the 20 cycles done.
+- T2 (GPU Direct = yes) and T1 (= no): no difference beyond the noise (3.31, 3.36). nvidia_peermem is loaded on 02-03. This UCX has no RCACHE_ENABLE key to flip as it is "try"; T7 (RCACHE_MAX_REGIONS=100000, was inf) and T8 (MEMTYPE_CACHE=n): within the noise.
+- No production launcher was touched; the settings are in these steps only.
