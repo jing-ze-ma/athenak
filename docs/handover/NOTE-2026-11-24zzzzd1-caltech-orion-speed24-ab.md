@@ -152,3 +152,9 @@ nsys_r0.sqlite: cycles 11 wall 1060.4 ms/cyc  GPU idle 81.4 ms/cyc (7.7 %)  gaps
 idle by gap size   (ms/cyc, n/cyc): <10us 18.5 (7007)  10-100us 44.1 (2409)  0.1-1ms 4.8 (16)  >1ms 14.0 (3)
 0.3,55191123,2823,19550.5,3060.0,730,29372780,553901.1,collectives,MPI_Allreduce
 ```
+
+## G: clean_stag_pcr_factor on (tip); off = F tip run 1 of the same state
+- F_m35_t1 memory: hpc-sm-01-17 3, 2845
+- G_m35_on memory: hpc-sm-01-17 3, 1239
+- F_zam_t1 memory: hpc-sm-01-17 3, 0
+- G_zam_on memory: hpc-sm-01-17 3, 185
