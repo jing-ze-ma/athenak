@@ -1802,6 +1802,7 @@ class RadiationVet {
   bool marena_bound = false;  // MemArenaBind done
   int64_t marena_hyd = 0;     // Reals of the hydro's arrays at its start
   void MemArenaHydro();       // zeroes those (Hydro::Fluxes)
+  bool marena_k2 = false;     // t2k2, t2pf2 in it (zeroed in stage 1's CleanWriteBack)
   void MemArenaBind();        // the solver's and the hydro's scratch arrays over it
   void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
   bool MemArenaVgd(VgdRag &a, int64_t n);
