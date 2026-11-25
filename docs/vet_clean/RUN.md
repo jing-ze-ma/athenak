@@ -75,7 +75,7 @@ new default 0 silently ran with 1.0, which changed the photospheric luminosity b
 another run), name every key that matters. The keys of older code are in one file:
 
 ```bash
-./athena -r run/hegiant.00205.rst -i ../inputs/stars/restart_old_files.txt rad_vet/clean_conv_max=1e-5
+./athena -r run/hegiant.00205.rst -i ../inputs/stars/restart_old_files.txt mesh/layout_tile=64
 ```
 
 and check the start of the log: it lists the `<rad_vet>`, `<hydro>`, `<mhd>`,
