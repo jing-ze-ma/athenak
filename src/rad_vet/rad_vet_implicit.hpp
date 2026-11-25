@@ -130,25 +130,14 @@ constexpr int VET_POS_N      = 10;
 
 // implicit work array iw (m,n,k,j,i): per solve, except the start-of-step EN / EGN
 constexpr int VET_IW_EN   = 0;   // E^n
-constexpr int VET_IW_EP   = 1;   // Picard iterate of E'
-constexpr int VET_IW_TP   = 2;   // Picard iterate of T'
-constexpr int VET_IW_WCHI = 4;   // w = P_11/E of the lagged closure (chi in 1-D)
-constexpr int VET_IW_ADV  = 5;   // a = v1 (1 + w), A = a E
-constexpr int VET_IW_V1   = 8;   // x1 gas velocity
-constexpr int VET_IW_S1   = 15;  // Thomas scratch (c')
-constexpr int VET_IW_S2   = 16;  // Thomas solution
-constexpr int VET_IW_F1   = 19;  // cell-centred x1 flux of the iterate
-constexpr int VET_IW_KT   = 21;  // copy of opac(VET_OP_T), for the x1 halo exchange
-constexpr int VET_IW_V2   = 22;  // transverse: x2 gas velocity
-constexpr int VET_IW_V3   = 23;  // x3 gas velocity
-constexpr int VET_IW_N1   = 24;  // lagged flux direction n = F/|F|
-constexpr int VET_IW_N2   = 25;
-constexpr int VET_IW_N3   = 26;
-constexpr int VET_IW_A2   = 27;  // a_2 = v_2 + (v.D)_2
-constexpr int VET_IW_A3   = 28;  // a_3 = v_3 + (v.D)_3
-constexpr int VET_IW_F2   = 32;  // cell-centred x2 flux of the iterate
-constexpr int VET_IW_F3   = 33;  // cell-centred x3 flux
-constexpr int VET_NIW = 34;
+constexpr int VET_IW_TP   = 1;   // T of the state the rays read
+constexpr int VET_IW_F1   = 2;   // cell-centred flux of that state (3)
+constexpr int VET_IW_F2   = 3;
+constexpr int VET_IW_F3   = 4;
+constexpr int VET_IW_KT   = 5;   // copy of opac(VET_OP_T), for the x1 halo exchange
+constexpr int VET_IW_S1   = 6;   // FCT scratch (Time2FctSlot)
+constexpr int VET_IW_S2   = 7;
+constexpr int VET_NIW = 8;
 
 KOKKOS_INLINE_FUNCTION
 Real VetEddDiag(const Real chi, const Real nd) {

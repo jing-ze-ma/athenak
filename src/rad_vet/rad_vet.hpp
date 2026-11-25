@@ -779,9 +779,6 @@ class RadiationVet {
   bool pred2_ok{};
   Real pred2_dt{};
   DvceArray5D<Real> vet_prev;   // vet_sc: start-of-step tensor of the previous step
-  DvceArray5D<Real> vet_now;    // vet_sc: start-of-step tensor of this step
-  DvceArray5D<Real> vet_opac;   // vet_sc: stage-start opacities, saved over the formal
-                                // solution at U^n
   void Time2Init(ParameterInput *pin);
   bool Time2Active();           // the next step runs the stages (else BE)
   void Time2FormStage(int stage, Real dt);
@@ -942,7 +939,6 @@ class RadiationVet {
   DvceArray5D<Real> coarse_u0;  // on 2x coarser grid (for SMR/AMR)
   DvceFaceFld5D<Real> uflx;     // fluxes on cell faces
   DvceArray5D<Real> opac;       // rho*kappa per cell, VET_NOPAC components
-  DvceArray5D<Real> ugas1;      // hydro (IEN, IM1, IM2, IM3) at the start of the substep
 
   // implicit-solve counters (VET_CNT_*), Reals so that long-run sums cannot wrap
   DualArray1D<Real> cnt;
@@ -1897,7 +1893,6 @@ class RadiationVet {
   Real vgd_thalo = 0.0, vgd_tmpi = 0.0, vgd_ttab = 0.0;
   // halo diagnostics (rank 0; clamps all ranks)
   Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;
-  bool vlat_src_ep = false;
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   MeshBoundaryValuesCC *pbval_hr = nullptr;
   void VetGdHaloInit();

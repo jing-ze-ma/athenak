@@ -396,9 +396,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   if (vet_sc) {
     Kokkos::realloc(vet_prev, nmb, VET_T2_NVET, n3, n2, n1);
-    Kokkos::realloc(vet_now, nmb, VET_T2_NVET, n3, n2, n1);
-    Kokkos::realloc(vet_opac, nmb, vscat ? (VET_NOPAC + 1) : VET_NOPAC, n3, n2,
-                    n1);
     Kokkos::deep_copy(vet_prev, 0.0);
   }
   if (vet_col) {

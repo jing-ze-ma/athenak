@@ -422,13 +422,11 @@ void RadiationVet::VetLatSweep() {
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real ar = arad, efl = e_floor;
-  const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
   const bool cvx = cln_srccvx;   // clean_source_convex: kappa_P capped at chi
   par_for_lb("vet_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,VET_IW_KT,k,j,i), 1.0e-300);
-    Real e = fmax((noes && !srcep) ? ur_(m,VET_E,k,j,i)
-                                   : iw_(m,srcep ? VET_IW_EP : VET_IW_EN,k,j,i), efl);
+    Real e = fmax(noes ? ur_(m,VET_E,k,j,i) : iw_(m,VET_IW_EN,k,j,i), efl);
     Real s = e;
     if (thermal) {
       Real tg = iw_(m,VET_IW_TP,k,j,i);
