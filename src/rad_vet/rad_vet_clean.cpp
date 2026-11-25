@@ -1181,10 +1181,13 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   CleanWoBind();
   cln_xdh = false;   // clean_stag_xdonor_freeze: no hold before this solve's passes
   CleanOldVector();
-  CleanFaceCoefficients();
+  // (clean_stag_opac_update with gas coupling: CleanStageOpacity takes both, with the
+  // first iterate's opacities)
+  const bool opu = cln_opt && cln_feedback;
+  if (!opu) CleanFaceCoefficients();
   // donors' E_old; the bracket's gate q
   if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
-  if (cln_consist) CleanStagBracket();
+  if (cln_consist && !opu) CleanStagBracket();
   // 3. Newton iteration on the gas coupling, Picard passes on the lagged slopes and (with
   //    clean_closure = iterate, at most clean_maxpic) the closure; one linear solve
   //    without these.  clean_closure = extrap(2): the stage-1 solve takes the closure of
@@ -1218,7 +1221,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
     cln_fsk = false;
     cln_fwbok = false;
     cln_csyok = false;   // lateral sums' coefficients once per closure
-    if (cln_opt && cln_feedback) CleanStageOpacity();
+    if (opu) CleanStageOpacity();
     if (cln_feedback) CleanAdvectiveCoefficients();
     // the drag's face flux from the first iterate's beta and emission (a restart, failed
     // stage or discarded attempt does not carry the last solve's)
@@ -1233,18 +1236,18 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
     for (int inl = 0; inl < maxnl; ++inl) {
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
+      // opacities of the iterate's T, in passes < clean_stag_opac_passes
+      const bool opr = opu && inl > 0 && inl < cln_optn;
       if (clos) {
         cln_csyok = false;
         // sdirk2 / trbdf2: fwb's s of the stage's own closure (pass 0's is the last
         // step's, CleanClosureExtrap)
         if (clos1 && t2_tab != 0) cln_fwbok = false;
         CleanClosureIterate();
-        CleanFaceCoefficients();
-        if (cln_consist) CleanStagBracket();
+        if (!opr) CleanFaceCoefficients();   // (else in CleanStageOpacity)
+        if (cln_consist && !opr) CleanStagBracket();
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
-      // opacities of the iterate's T, in passes < clean_stag_opac_passes
-      const bool opr = cln_opt && cln_feedback && inl > 0 && inl < cln_optn;
       if (opr) {
         CleanStageOpacity();
         if (cln_optdr && cln_vimp) CleanStagDrag(false);
@@ -1859,7 +1862,10 @@ void RadiationVet::CleanStageOpacity() {
     op(m,VET_OP_T,k,j,i) = d*(o[2] + o[3]);
     if (osc) op(m,VET_OP_S,k,j,i) = d*o[3];
   });
-  CleanGhostFill(opac, 0, opac.extent_int(1), false);
+  // (cubed sphere: CleanFaceCoefficients' own exchange)
+  if (!pmy_pack->pmesh->use_cubed_sphere) {
+    CleanGhostFill(opac, 0, opac.extent_int(1), false);
+  }
   CleanFaceCoefficients();
   if (cln_consist) CleanStagBracket();
 }
