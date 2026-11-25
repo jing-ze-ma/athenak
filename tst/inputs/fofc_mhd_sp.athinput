@@ -59,6 +59,7 @@ ndiag      = 100000
 eos         = ideal
 reconstruct = plm
 rsolver     = hlld
+emf_scheme  = gs07        # fofc needs it; named so that fofc = false takes the same EMF (its default is uct_hlld)
 gamma       = 1.4
 dfloor      = 1.0e-4
 pfloor      = 1.0e-4
