@@ -30,8 +30,10 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   const bool tfloor_set = pin->DoesParameterExist(bk, "tfloor") &&
                           !pin->IsParameterDefaulted(bk, "tfloor");
   eos_data.dfloor = pin->GetOrAddReal(bk,"dfloor",(FLT_MIN));
-  eos_data.dfloor_keep_velocity =
-      pin->GetOrAddBoolean(bk,"dfloor_keep_velocity",false);
+  // (default with <rad_vet>: true)
+  eos_data.dfloor_keep_velocity = pin->GetOrAddBoolean(bk,"dfloor_keep_velocity",
+      bk.compare("hydro") == 0 && pin->DoesBlockExist("rad_vet") &&
+      recipe::Fix(pin, bk, "dfloor_keep_velocity", "true", "false"));
   // dfloor_keep_velocity is implemented in the hydro inversions only
   if (eos_data.dfloor_keep_velocity && bk.compare("hydro") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
