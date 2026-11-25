@@ -93,9 +93,9 @@ Definitions used in the table:
 | 14 | V_int | sum V, r <= r_int | cm^3 |
 | 15 | M_tot | sum rho V, whole mesh | g |
 | 16 | Mdot_top | outflow part of the hydro mass flux at the outer face, sum max(f_rho, 0) A (flux of the last hydro stage, not the step average) | g/s |
-| 17 | Mdot_bot | hydro mass flux at the inner face, sum f_rho A (positive = upward, into the mesh); about 0 with the closed wall | g/s |
+| 17 | Mdot_bot | hydro mass flux at the inner face, sum f_rho A (positive = upward, into the mesh); 0 with the closed wall (its flux is set to 0 before the update) | g/s |
 | 18 | Etot | sum (U_E + E) V: gas total energy (internal + kinetic + rho Phi_grav) plus radiation energy. With closed walls its rate is L_in - L_top. | erg |
-| 19 | Min_top | inflow part at the outer face, sum min(f_rho, 0) A (<= 0); the outer boundary removes this inflow | g/s |
+| 19 | Min_top | inflow part at the outer face, sum min(f_rho, 0) A (<= 0); the flux removed before the update (`StarWallFlux`) | g/s |
 | 20 | v1sq_wall | mean v_r^2 over the first active radial cells of the whole mesh | cm^2/s^2 |
 | 21 | Picard | **Always 0** under `scheme = clean`; the clean solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
 | 22 | P_esrc | power that the explicit radiation source term puts into E, sum (chat/c) esrc V, at the state of this row. 0 in the decks (no frozen MLT deposit, no test source). | erg/s |
