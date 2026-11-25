@@ -120,3 +120,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 21:29 02-09: IDLE -> b_ffsuite b_fofcflag
 - 11-24 21:41 02-03: jw_MG3 -> IDLE
 - 11-24 21:41 02-09: b_ffsuite b_fofcflag -> IDLE
+- 11-24 21:42 02-03: IDLE -> b_rele2 b_reltsuite
+- 11-24 21:42 02-09: IDLE -> lz_LZB0f
+- 11-24 21:43 02-09: lz_LZB0f -> IDLE
+- 11-24 21:44 02-09: IDLE -> lb_L1
