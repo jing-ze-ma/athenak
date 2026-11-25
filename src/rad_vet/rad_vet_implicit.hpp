@@ -46,7 +46,7 @@ constexpr char kVetOnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'}
 constexpr char kVetMRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
 // time2_auto_be back-off while active: int32 len, int32 left
 constexpr char kVetAutoBeRstMagic[8] = {'M', '1', 'A', 'U', 'T', 'O', 'B', 'E'};
-// implicit_closure_thin_relax: ctr_mem (chi, n1, n2, n3): int32 have, nch = 4; slabs last
+// removed closure memory of old files (read past): int32 have, nch = 4; slabs last
 constexpr char kVetCtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
 // rad_signal_speed inputs: int32 have = 1, nch, mode, 0; nch slabs (opac T, tensor)
 constexpr char kVetRssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
@@ -138,11 +138,6 @@ constexpr int VET_IW_KT   = 5;   // copy of opac(VET_OP_T), for the x1 halo exch
 constexpr int VET_IW_S1   = 6;   // FCT scratch (Time2FctSlot)
 constexpr int VET_IW_S2   = 7;
 constexpr int VET_NIW = 8;
-
-KOKKOS_INLINE_FUNCTION
-Real VetEddDiag(const Real chi, const Real nd) {
-  return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*nd*nd;
-}
 
 KOKKOS_INLINE_FUNCTION
 void VetCsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,

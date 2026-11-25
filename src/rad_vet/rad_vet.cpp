@@ -876,9 +876,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (!why.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_vet> (explicit and implicit transport) supports a "
-        << "uniform Cartesian mesh and, for the implicit solve only (closure "
-        << "eddington | m1 | minerbo | kershaw), a spherical-polar wedge or the full "
-        << "sphere and (closure eddington only) the cubed sphere; this input sets:"
+        << "uniform Cartesian mesh, a spherical-polar wedge or the full sphere and the "
+        << "cubed sphere; this input sets:"
         << why << "." << std::endl
         << "The VET kernels would run with Cartesian uniform-dx arithmetic on it."
         << std::endl;
@@ -1363,22 +1362,18 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vcol_sph = false;
   vcol_sq = false;
   vcol_qmin = vcol_qmax = 0.0;
-  {std::string cl = pin->GetOrAddString("rad_vet","closure","m1");
-  chi_kind = VET_CHI_LEVERMORE;
-  if (cl.compare("m1") == 0) {
-    eddington = false;
-  } else if (cl.compare("minerbo") == 0) {
-    eddington = false;
-    chi_kind = VET_CHI_MINERBO;
-  } else if (cl.compare("kershaw") == 0) {
-    eddington = false;
-    chi_kind = VET_CHI_KERSHAW;
-  } else if (cl.compare("eddington") == 0) {
-    eddington = true;
+  // none: no rays (the analytic clean_closure = eddington | sphere); so are the old
+  // solver's m1, minerbo, kershaw and eddington of a restart file
+  {std::string cl = pin->GetOrAddString("rad_vet","closure","none");
+  const bool oldcl = (cl.compare("m1") == 0) || (cl.compare("minerbo") == 0) ||
+                     (cl.compare("kershaw") == 0) || (cl.compare("eddington") == 0);
+  if (cl.compare("none") == 0 || (oldcl && global_variable::restart_run)) {
+    if (oldcl && global_variable::my_rank == 0) {
+      std::cout << "### NOTE: <rad_vet>/closure = " << cl << " of the restart file is "
+                << "read as none" << std::endl;
+    }
   } else if (cl.compare("vet_sc") == 0) {
-    // the implicit multi-D solve reads (chi, n) from the SC formal solution
-    // (rad_vet_vet.cpp); other uses of chi keep Levermore's
-    eddington = false;
+    // short characteristics on a Cartesian mesh (rad_vet_vet.cpp)
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
     // vet_gd_rotate_every has no vet_sc clock: inert
@@ -1396,15 +1391,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // vet_source_noesrc (rad_vet_vet.cpp)
     vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",fresh);
-  } else if (cl.compare("tau") == 0) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/closure = tau was removed; use closure = vet_col with "
-      << "vet_gd = true (spherical polar, cubed sphere) or vet_sc (Cartesian)"
-      << std::endl;
-    std::exit(EXIT_FAILURE);
   } else if (cl.compare("vet_col") == 0) {
     // (rad_vet_vetcol.cpp)
-    eddington = false;
     vet_col = true;
     // vet_col_surface_face (sp): acts with vet_col_surface_q and implicit_marshak_face =
     // linear (rad_vet.hpp)
@@ -1763,8 +1751,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/closure = '" << cl << "' not implemented "
-      << "(m1 | minerbo | kershaw | eddington | vet_sc | tau | vet_col)" << std::endl;
+      << std::endl << "<rad_vet>/closure = '" << cl << "' is not a choice (vet_sc on a "
+      << "Cartesian mesh, vet_col with vet_gd = true on spherical polar and the cubed "
+      << "sphere, none; m1, minerbo, kershaw, eddington and tau were removed)"
+      << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }
@@ -1874,10 +1864,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::cout << "<rad_vet>: c=" << c_light << " chat/c=" << chat_over_c
               << " advect_split=" << (advect_split ? "true" : "false")
               // the closure as named in the input
-              << " closure=" << (vet_col ? "vet_col" : vet_sc ? "vet_sc" :
-                                 eddington ? "eddington" :
-                                 (chi_kind == VET_CHI_MINERBO) ? "minerbo" :
-                                 (chi_kind == VET_CHI_KERSHAW) ? "kershaw" : "m1")
+              << " closure=" << (vet_col ? "vet_col" : vet_sc ? "vet_sc" : "none")
               << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
               << " kappa_f=" << kappa_f << " kappa_s=" << kappa_s
@@ -2005,14 +1992,12 @@ int RadiationVet::RssRstMode() const {return RssMode() + 16;}
 int RadiationVet::RssMode() const {
   // clean: its own Eddington tensor cln_s, once CleanInit ran
   if (cln_s.extent(0) > 0 && cln_init) return 5;
-  if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
-  if (!eddington && !vet_col && !vet_sc) return 1;
-  return 0;
+  return (vet_sc && vet_full && vet_cell.extent(0) > 0) ? 4 : 0;
 }
 
 int RadiationVet::RssRstNch(int mode) const {
-  // extended restart state (mode + 16): also the other opacity components.  Modes 2, 18
-  // (files of the removed column tensor): its channels are counted and read past
+  // extended restart state (mode + 16): also the other opacity components.  Modes 2, 3
+  // (files of removed closure tensors): their channels are counted and read past
   if (mode >= 16) return RssRstNch(mode - 16) + (opac.extent_int(1) - 1);
   if (mode == 2 || mode == 3) return 5;
   if (mode == 4) return 4;
@@ -2032,7 +2017,7 @@ void RadiationVet::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
   if (n == 0) {a = &opac; c = VET_OP_T; return;}
   if (mode == 5) {a = &cln_s; c = CLN_D11 + n - 1; return;}
   a = &vet_cell;
-  c = (mode == 3) ? (VETRAY_CHI + n - 1) : (VETRAY_D11 + n - 1);
+  c = VETRAY_D11 + n - 1;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2064,8 +2049,7 @@ void RadiationVet::RssPrime(bool restart) {
     // extended record; the tensor slots only into the same closure
     const int mode = rss_stage_mode, b = mode - 16, nb = RssRstNch(b);
     const bool tens = (b == 5 && RssMode() == 5) ||
-                      ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
-                       (vet_full == (b == 4)));
+                      (b == 4 && vet_sc && vet_cell.extent(0) > 0 && vet_full);
     const int nmb = static_cast<int>(rss_stage.extent(0));
     const int nall = static_cast<int>(rss_stage.extent(1));
     const int nop = opac.extent_int(1) - 1;
@@ -2089,8 +2073,8 @@ void RadiationVet::RssPrime(bool restart) {
     const int mode = rss_stage_mode;
     // the tensor is put back only into the same kind of closure; opac always
     int want = 1;
-    if (((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
-         (vet_full == (mode == 4))) || (mode == 5 && RssMode() == 5)) {
+    if ((mode == 4 && vet_sc && vet_cell.extent(0) > 0 && vet_full) ||
+        (mode == 5 && RssMode() == 5)) {
       want = RssRstNch(mode);
     } else if (mode >= 2 && global_variable::my_rank == 0) {
       std::cout << "### WARNING: <rad_vet> the restart file's signal-speed closure "

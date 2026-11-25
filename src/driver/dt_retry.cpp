@@ -68,7 +68,7 @@ const char *kDtrMinimal[] = {
   "am.am_spin", "vet.amk1",
   // RadiationVet
   "vet.u0", "vet.f0x1", "vet.f0x2", "vet.f0x3", "vet.ipred", "vet.t2k1",
-  "vet.vet_prev", "vet.ctr_mem", "vet.csk1",
+  "vet.vet_prev", "vet.csk1",
   "vet.vra_d", "vet.opac", "vet.vet_cell",
   "vet.vlat_cs",
   // step 1 time2_face_fct: the face E flux of K1 (rotated with it)

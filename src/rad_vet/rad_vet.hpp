@@ -340,8 +340,6 @@ class RadiationVet {
   Real chat_over_c{};  // reduced speed of light factor (default 1)
   Real chat{};         // = chat_over_c * c_light
   Real e_floor{};      // floor on E
-  int chi_kind{};      // VET_CHI_*: levermore | minerbo | kershaw
-  bool eddington{};    // closure = eddington (chi = 1/3); default is the M1 closure
   bool advect_split{};          // the advective enthalpy-flux split of the E equation
 
   // opacities per unit mass (code units): kappa0, or kappa0 (rho/rho_ref)^a (T/t_ref)^b
@@ -853,17 +851,11 @@ class RadiationVet {
   // ---- off-diagonal Eddington terms and the closure lag (multi-D implicit)
   int impl_offdiag{};           // VET_OD_*: lagged | operator | none
   int od_now{};                 // mode this step runs (impl_offdiag, or none/lagged)
-  // implicit_closure_thin_relax = C (0 off; closure_lag = step): relax the step's
-  // (chi, n) from the previous step's with w = min(1, 2/(1 + G^2)),
-  // G = C max(chi', b/f)/tau_c + f chi'/min(chi, 1-chi); ctr_mem: (chi, n1, n2, n3)
-  Real impl_ctrelax{};
-  bool ctr_init{};
-  DvceArray5D<Real> ctr_mem;
   // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last VET
   // step: they travel in the restart (kVetRssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
-  //! closure tensor the signal speed reads: 0 E/3, 1 VetChi(F/cE), 3 vet_cell (chi, n),
-  //! 4 vet_cell (D_dd), 5 cln_s (D, clean); 2 was the removed column tensor
+  //! closure tensor the signal speed reads: 0 E/3, 4 vet_cell (D_dd), 5 cln_s (D, clean);
+  //! 1 - 3 were removed closures
   int RssMode() const;
   int RssRstMode() const;   // RssMode + 16 (extended restart state)
   int RssRstNch(int mode) const;  // channels written: opac(VET_OP_T) + the tensor's
@@ -981,9 +973,6 @@ class RadiationVet {
   // spherical-polar or cubed-sphere mesh: the implicit kernels take the Coordinates face
   // areas, volumes and centre distances
   bool sph_geom = false;
-  // sph_geom with a non-Eddington closure: radial faces take the integrating factor
-  // (VetSphDrr), every face the lagged curvature VetSphCurv
-  bool sph_q = false;
   // cubed sphere (sets sph_geom too)
   bool cs_geom = false;
   // cubed-sphere transverse operator (CubedS1Init):

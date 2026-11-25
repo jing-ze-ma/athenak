@@ -333,9 +333,7 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray_wpv;   // hydro w0 (its IDN, IVX..IVZ go to the eint record)
   std::vector<DvceArray5D<Real>> rst_keep_;   // device packs a zero-copy staging reads
   DvceArray5D<Real> outarray_vett_d;   // (its memory where the host reads device memory)
-  // <rad_vet> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
   // radvet::kVetCtrRstMagic.
-  HostArray5D<Real> outarray_vetc;
   // <hydro>/rad_signal_speed: the VET inputs of the signal speed (RadiationVet::RssSlot);
   // empty unless the signal speed is on.  radvet::kVetRssRstMagic.
   HostArray5D<Real> outarray_vets;

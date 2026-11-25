@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_closure.hpp
-//! \brief M1 closure factor chi and the physical-boundary ghost fill (device inline).
+//! \brief Levermore's closure factor chi, the physical-boundary ghost fill (device inline).
 //! E, F_i lab-frame moments, f_i = F_i/(c E), |f| <= 1, n_i = f_i/|f|:
 //!   P_ij = E [ (1-chi)/2 delta_ij + (3 chi - 1)/2 n_i n_j ]
 
@@ -17,26 +17,13 @@ namespace radvet {
 
 //----------------------------------------------------------------------------------------
 //! \fn VetChi
-//! \brief closure factor chi(|f|); chi(0) = 1/3, chi(1) = 1 for every kind.
-//!   LEVERMORE (1984): (3 + 4 f^2)/(5 + 2 sqrt(4 - 3 f^2))
-//!   MINERBO   (1978): 1/3 + (2 f^2/15)(3 - f + 3 f^2)
-//!   KERSHAW   (1976): (1 + 2 f^2)/3
-//! The explicit HLL wave speeds assume Levermore (others: implicit transports only).
-
-constexpr int VET_CHI_LEVERMORE = 0;
-constexpr int VET_CHI_MINERBO   = 1;
-constexpr int VET_CHI_KERSHAW   = 2;
+//! \brief Levermore's (1984) chi(|f|) = (3 + 4 f^2)/(5 + 2 sqrt(4 - 3 f^2)) (problem
+//! generators: initial states and exact solutions)
 
 KOKKOS_INLINE_FUNCTION
-Real VetChi(const Real fnorm, const int kind = VET_CHI_LEVERMORE) {
+Real VetChi(const Real fnorm) {
   Real f2 = fnorm*fnorm;
   if (f2 > 1.0) {f2 = 1.0;}
-  if (kind == VET_CHI_MINERBO) {
-    Real f = sqrt(f2);
-    return 1.0/3.0 + (2.0*f2/15.0)*(3.0 - f + 3.0*f2);
-  } else if (kind == VET_CHI_KERSHAW) {
-    return (1.0 + 2.0*f2)/3.0;
-  }
   Real s = sqrt(fmax(4.0 - 3.0*f2, 0.0));
   return (3.0 + 4.0*f2)/(5.0 + 2.0*s);
 }

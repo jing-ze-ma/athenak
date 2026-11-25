@@ -21,8 +21,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("chat_over_c", chat_over_c);
   v.value("chat", chat);
   v.value("e_floor", e_floor);
-  v.value("chi_kind", chi_kind);
-  v.value("eddington", eddington);
   v.value("advect_split", advect_split);
   v.value("opacity_type", opacity_type);
   v.value("kappa_p", kappa_p);
@@ -326,9 +324,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("rst_pack_mb", rst_pack_mb);
   v.value("impl_offdiag", impl_offdiag);
   v.value("od_now", od_now);
-  v.value("impl_ctrelax", impl_ctrelax);
-  v.value("ctr_init", ctr_init);
-  v.view("ctr_mem", ctr_mem);
   v.view("rss_stage", rss_stage);
   v.value("rss_stage_mode", rss_stage_mode);
   v.value("impl_tlim", impl_tlim);
@@ -384,7 +379,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("icr_dm", icr_dm);
   v.value("icr_dm_dt", icr_dm_dt);
   v.value("sph_geom", sph_geom);
-  v.value("sph_q", sph_q);
   v.value("cs_geom", cs_geom);
   v.dual("vetbcs", vetbcs);
   v.dual("cs_seam", cs_seam);

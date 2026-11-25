@@ -831,7 +831,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   // --- THE <rad_vet> implicit_closure_thin_relax HEADER (radvet::kVetCtrRstMagic),
-  // behind the implicit-ck one: nctr_file (4) slabs of ctr_mem, the LAST of each record.
+  // behind the implicit-ck one: nctr_file (4) slabs, the LAST of each record (read past).
   int nctr_file = 0;
   if (std::memcmp(variabledata, &(radvet::kVetCtrRstMagic[0]),
                   sizeof(radvet::kVetCtrRstMagic)) == 0) {
@@ -1956,17 +1956,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
     }
   }
-  // implicit_closure_thin_relax: the relaxed closure of the last step, when this run
-  // relaxes too.  A file without it leaves ctr_init = false: the first step after the
-  // restart is unrelaxed and the restart not bitwise.
-  const bool ctr_want = (pradvet != nullptr) && (pradvet->impl_ctrelax > 0.0);
-  const bool ctr_read = ctr_want && (nctr_file == 4) &&
-                        (static_cast<int>(pradvet->ctr_mem.extent(0)) >= nmb);
-  if (ctr_want && !ctr_read && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_vet> implicit_closure_thin_relax "
-              << "closure memory; the first step is unrelaxed and this restart is not "
-              << "bitwise." << std::endl;
-  }
   // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last VET step, staged
   // for RadiationVet::RssPrime (Driver::Initialize) when this run uses the signal speed
   const bool rss_read = (nrss_file > 0) && (pradvet != nullptr) &&
@@ -1989,7 +1978,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (wt_hyd || wt_mhd || nwarm_read > 0 || t2_read || t2_k1 ||
       nck_file > 0 ||
       neint_file > 0 ||   // an ideal-gas eint slab alone
-      ctr_read || rss_read || ra_read || ams_read ||
+      rss_read || ra_read || ams_read ||
       npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0 ||
       nx1e_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
@@ -2196,22 +2185,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         two_stream_rt::ck_rst_stage[id].assign(wtin.data(), wtin.data() + wtin.size());
       }
       two_stream_rt::ck_rst_have = true;
-    }
-    // the thin_relax closure memory (kVetCtrRstMagic), the last slabs of the record
-    if (ctr_read) {
-      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
-                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
-                  + nwpv_file
-                  + nck_file;
-      offset_myrank = tail0
-          + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
-      myoffset = offset_myrank;
-      for (int n=0; n<nctr_file; ++n) {
-        read_slab("rad_vet thin_relax closure");
-        DeepCopyAcross(Kokkos::subview(pradvet->ctr_mem, std::make_pair(0,nmb), n,
-                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
-      }
-      pradvet->ctr_init = true;
     }
     // the rad_signal_speed inputs (kVetRssRstMagic), the last slabs of the record
     if (rss_read) {
