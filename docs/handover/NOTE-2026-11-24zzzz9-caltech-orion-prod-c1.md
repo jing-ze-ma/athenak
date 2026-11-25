@@ -83,3 +83,5 @@ c1: first dt < 11.9 at t 5.3398e+04; T2: 5.3410e+04
 - s/cyc is the same within a few % at equal model time (0.77 now); Krylov its t2s2 17 vs 22 (c1 has mg 4, T2 mg 2), passes 3.07 vs 3.31.
 - **The limiting cell is not known here:** dt_report is off in both runs at this time (no DTREP lines; c1's deck has none, T2 dropped it after its first rst), so the cause of the limit is not measured and I do not infer it. A short side arm with hydro/dt_report=10 from a c1 rst would name it, only if you want it; nothing is run on the production.
 - T2 after this point, for the projection: dt 8.6-12.0 with mean ~10.6, s/cyc 1.0-1.25 (t 6e4-8e4), see zzzz4.
+
+- (11-24 22:23) **bsg finished** (t 4.9248000000000000e+06 of 4.9248e6): bsg: cycle 29650, s/cyc 0.7227 (c29350-29650), t 4.9248e+06 dt 163.6 L_top/L_in 1.00774 L_bot/L_in 1.00597, floor_pay(sum) 5.94e+17, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
