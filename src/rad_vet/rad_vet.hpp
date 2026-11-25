@@ -1734,7 +1734,7 @@ class RadiationVet {
   bool vra_last = false;       // this build is on the last step of its block
   DvceArray5D<Real> vra_bk_vc;              // vet_sc: vet_cell kept over the next-set
                                             // sweep of a last build
-  void VetGdSweepPost();       // twin, sweep(s), fused moments, VetGdPost
+  void VetGdSweepPost();       // sweep, moments, VetGdPost
   bool vgd_tbath = false;   // the top (x1max Marshak) bath enters the sweep
   std::vector<double> vgd_base;   // unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
