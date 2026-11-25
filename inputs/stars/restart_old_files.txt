@@ -20,8 +20,7 @@ clean_stag_fwb_t2 = false
 clean_w_fse_tau = true
 time2_gtime_mom = true
 clean_stag_mg_levels = 2
-# not stored in old files, and their default is not the stars' value
-clean_wb_exch_local = true
+# not stored in old files, and the value a restart takes is not the stars'
 clean_maxit = 200
 clean_pc_sweep = rb
 # a star with rotating rays: the average of the rotated sets.  All continuation runs
@@ -37,24 +36,12 @@ clean_pc_sweep = rb
 #vet_gd_wall_interp = true
 #vet_gd_wall_sym = true
 #vet_gd_theta_seam_sym = true
-# named by the continuation runs of the RSG and HG (proven), not by the star templates:
-#clean_clos1_budget = true
-#clean_bud_maxnorm = true
 # the RSG (default 4):
 #clean_stag_xdonor_freeze = 8
 
 <hydro>
 # the HG, RSG, R136 files store true; named because other old star files may store false
 fofc = true
-# not stored in old files; a restart without them runs the old form
-fofc_retest = true
-floor_pay = rad_column
-floor_pay_skip = true
-dfloor_flux_limit = true
-rad_signal_speed_diff = true
-rad_signal_speed_phase = true
-# FATAL unless <rad_vet>/floorcap_rho > 0 (stored by R136, not by HG and RSG):
-#dt_floor_courant = 0.6
 # named by the continuation runs of the RSG and HG (stored vceil: 1.0e8; R136 1.0e9),
 # floor_from_ekin not by the star templates:
 #vceil = 3.0e8
