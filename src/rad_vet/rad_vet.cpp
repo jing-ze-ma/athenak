@@ -128,6 +128,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     bool nck[3];
     for (int n = 0; n < 3; ++n) nck[n] = pin->DoesParameterExist("rad_vet", ck[n]);
     cln_maxnl = pin->GetOrAddInteger("rad_vet","clean_maxnl",200);
+    recipe::Old(pin, "rad_vet", "clean_maxit", "800");
     cln_maxit = pin->GetOrAddInteger("rad_vet","clean_maxit",nw ? 200 : 800);
     cln_bmax = pin->GetOrAddReal("rad_vet","clean_conv_max",1.0e-5);
     const Real cv[3] = {static_cast<Real>(cln_maxnl), static_cast<Real>(cln_maxit),
@@ -1039,6 +1040,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
   const bool vet_rays = !sph_geom || VetCurvedRays(pin);
+  recipe::Old(pin, "rad_vet", "vet_scatter", "false");
   vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter", fresh && vet_rays &&
                                opacity_type == VET_OPAC_TABLE);
   if (vscat) {
@@ -1081,7 +1083,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (opacity_type == VET_OPAC_TABLE) {
       // eos where a tabulated general EOS supplies x_e
       km = pin->GetOrAddString("rad_vet","vet_scatter_kappa_e",
-                               (fresh && gen_eos_tab) ? "eos" : "const");
+          (gen_eos_tab && fix("vet_scatter_kappa_e", "eos", "const")) ? "eos" : "const");
       if (km.compare("const") == 0) {
         otab.scat = 1;
       } else if (km.compare("eos") == 0) {
@@ -1404,7 +1406,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_rot_slope = 0;
     }
     // vet_source_noesrc (rad_vet_vet.cpp)
-    vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",fresh);
+    vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",
+                                     fix("vet_source_noesrc", "true", "false"));
   } else {
     // spherical polar, cubed sphere (rad_vet_vetray.cpp, rad_vet_vetgd.cpp)
     vgd_on = VetCurvedRays(pin);
@@ -1415,7 +1418,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // face (S + mu(-dS/dtau) with S of the face, 1.5 S_a - 0.5 S_b) or from the first
     // cell
     {
-      const char *bdd = global_variable::restart_run ? "cell" : "face";
+      const char *bdd = fix("vet_bc_diff", "face", "cell") ? "face" : "cell";
       std::string bd = pin->GetOrAddString("rad_vet","vet_bc_diff",bdd);
       if (bd.compare("face") == 0) {
         vet_bc_face = true;
@@ -1434,7 +1437,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (rad_vet_vetseg.hpp); emit limits only where S_u > S_0; jump adds the
     // opaque -> thin jump term
     {
-      const char *sgd = global_variable::restart_run ? "mean" : "jump";
+      const char *sgd = fix("vet_seg", "jump", "mean") ? "jump" : "mean";
       std::string sg = pin->GetOrAddString("rad_vet","vet_seg",sgd);
       if (sg.compare("split") == 0) {
         vet_seg_split = true;
@@ -1626,14 +1629,14 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // implicit_ebath_x1max of a Marshak outer x1
     if (vgd_on) {
       vgd_tbath = pin->GetOrAddBoolean("rad_vet", "vet_bc_bath",
-                                       !global_variable::restart_run);
+                                       fix("vet_bc_bath", "true", "false"));
     }
     // vet_bc_inner / vet_bc_reflect shared with vet_sc (VetBcInit; alias vet_gd_inner).
     // vet_interp = auto | log | corner: log bilinear in ln chi, ln S; corner one segment
     // per stencil corner; auto corner where the chi contrast exceeds kVetCornerRatio
     if (vgd_on) {
       const std::string vi = pin->GetOrAddString("rad_vet","vet_interp",
-                                 global_variable::restart_run ? "log" : "auto");
+                                 fix("vet_interp", "auto", "log") ? "auto" : "log");
       if (vi.compare("log") == 0) {
         vet_interp = 1;
       } else if (vi.compare("corner") == 0) {
@@ -1660,14 +1663,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       pin->GetOrAddString("mesh", "ix3_bc", "") == "periodic" &&
       std::abs(pm->mesh_size.x3max - pm->mesh_size.x3min - 2.0*M_PI) < 1.0e-8;
       if (vgd_on && fullsph && !pin->DoesParameterExist("rad_vet","vet_gd_band_global")) {
-        if (recipe::NewDefaults(pin)) {
+        if (fix("vet_gd_band_global", "true", "false")) {
           pin->GetOrAddBoolean("rad_vet","vet_gd_band_global",true);
-          recipe::Log("<rad_vet>/vet_gd_band_global = true (default with vet_gd on a "
-                      "fresh sp "
-                      "full-sphere start)");
-        } else {
-          recipe::Log("<rad_vet>/vet_gd_band_global = false (" + std::string(
-              "restart input has no key") + ": the old default)");
+          recipe::Log("<rad_vet>/vet_gd_band_global = true (default with vet_gd on an sp "
+                      "full sphere)");
         }
       }
     }
@@ -1682,13 +1681,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // vet_gd_halo_compact: default 2 on a fresh vet_gd start (recipe::NewDefaults),
     // recorded; VetGdInit switches it off where it does not apply
     if (vgd_on && !pin->DoesParameterExist("rad_vet","vet_gd_halo_compact")) {
-      if (recipe::NewDefaults(pin)) {
+      if (fix("vet_gd_halo_compact", "2", "0")) {
         pin->GetOrAddInteger("rad_vet","vet_gd_halo_compact",2);
-        recipe::Log("<rad_vet>/vet_gd_halo_compact = 2 (default with vet_gd on a fresh "
-                    "start)");
-      } else {
-        recipe::Log("<rad_vet>/vet_gd_halo_compact = 0 (" + std::string(
-            "restart input has no key") + ": the old default)");
+        recipe::Log("<rad_vet>/vet_gd_halo_compact = 2 (default with vet_gd)");
       }
     }
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_compact")) {
@@ -1752,7 +1747,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // vet_col_lat_cut_thin (CleanRayCut)
     if (vgd_on) {
       vray_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
-                                        global_variable::restart_run ? 0.0 : 1.0);
+          fix("vet_col_lat_cut_thin", "1", "0") ? 1.0 : 0.0);
     }
   }
   }
@@ -2314,6 +2309,7 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
   // exponential moving average over the rotated sets
   const bool nw = !global_variable::restart_run;
   const bool erot = nw && (vgd_on || vet_sc) && (vgd_on ? VgdRotOn() : vsc_rot);
+  recipe::Old(pin, "rad_vet", "vet_rotate_avg_ema", "0");
   if (erot || pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema")) {
     vra_ema_n = pin->GetOrAddReal("rad_vet","vet_rotate_avg_ema",128.0);
   }
@@ -2347,6 +2343,7 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
       }
     }
     // (default of a fresh vet_gd run)
+    recipe::Old(pin, "rad_vet", "vet_rotate_avg_ema_wb", "false");
     vra_ema_wb = pin->GetOrAddBoolean("rad_vet","vet_rotate_avg_ema_wb",nw && vgd_on);
     if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_dema")) {
       vra_ema_dema = pin->GetBoolean("rad_vet","vet_rotate_avg_ema_dema");

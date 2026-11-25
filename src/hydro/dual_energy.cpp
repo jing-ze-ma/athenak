@@ -48,10 +48,9 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
                       int nfluid, int du_off) {
   blk = block;
   on = Named(pin, blk, "dual_energy") && pin->GetBoolean(blk, "dual_energy");
-  // floor_pay: default rad_column for a fresh run with eos = general and <rad_vet>
-  // (recorded; a restart file without the key keeps none), else none
+  // floor_pay: default rad_column with eos = general and <rad_vet> (recorded), else none
   const bool rad = eos.IsGeneral() && pin->DoesBlockExist("rad_vet") &&
-                   !global_variable::restart_run;
+                   recipe::Fix(pin, blk, "floor_pay", "rad_column", "none");
   if (rad || Named(pin, blk, "floor_pay")) {
     const std::string s = pin->GetOrAddString(blk, "floor_pay", "rad_column");
     if (s == "rad" || s == "rad_column") {
@@ -75,7 +74,8 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     if (pskip && !pay) Fatal("<" + blk + ">/floor_pay_skip needs floor_pay = rad*");
   }
   if (pay || Named(pin, blk, "fofc_retest")) {
-    retest = pin->GetOrAddBoolean(blk, "fofc_retest", rad && blk == "hydro");
+    retest = pin->GetOrAddBoolean(blk, "fofc_retest", rad && blk == "hydro" &&
+                                  recipe::Fix(pin, blk, "fofc_retest", "true", "false"));
   }
   if (Named(pin, blk, "floor_audit")) report = pin->GetInteger(blk, "floor_audit");
   worst = Named(pin, blk, "floor_audit_worst") &&

@@ -25,6 +25,10 @@ bool Fix(ParameterInput *pin, const std::string &block, const std::string &key,
          const std::string &value, const std::string &old);
 // true: the fresh default of a key that corrects the scheme applies; a restart whose file
 // lacks it takes it too, with a NOTE (naming the old value keeps the old behaviour)
+void Old(ParameterInput *pin, const std::string &block, const std::string &key,
+         const std::string &old);
+// a restart whose file lacks the key keeps its old default (a state the file holds or the
+// run's set-up): logged
 void OldStored(ParameterInput *pin, const std::string &block, const std::string &key,
                const std::string &old, const std::string &value);
 // NOTE: a restart runs the stored (or named) old value of such a key; how to switch

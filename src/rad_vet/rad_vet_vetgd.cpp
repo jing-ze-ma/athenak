@@ -1214,6 +1214,7 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       pin_rot_ = pin;
       vgd_rot_t0 = pin->GetOrAddReal("rad_vet","vet_gd_rotate_t0",0.0);
       vgd_rot_align = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_align",true);
+      recipe::Old(pin, "rad_vet", "vet_gd_rotate_stretch", "0");
       vgd_rot_stretch = pin->GetOrAddReal("rad_vet","vet_gd_rotate_stretch",
                                           fresh ? 0.02 : 0.0);
       // vet_gd_rotate_slope: fresh default correct (Time2RotCorrect, hesdirk2 only); a
