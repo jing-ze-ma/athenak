@@ -119,3 +119,11 @@ nsys: the run hung, no kname / gaps (kernel timer and MPI timer only)
 - Sum check (nsys stars, mean of 4 ranks, ms per cycle; wall = GPU kernels + GPU copies + idle): bsg 652.1 = 584.7 + 52.4 + 15.0 residual (2.3 %); m35zams 291.4 = 217.0 + 50.8 + 23.6 (8 %); m35mms 890.9 = 810.1 + 61.1 + 19.7 (2.2 %). The residual is GPU memcpy / memset time, which the kernel sum does not count. The nsys wall is 2-7 % above the plain median (bsg 0.637 s, m35zams 0.272 s, m35mms 0.869 s): nsys overhead. For t9l62 (no nsys): plain median 2.515 s; kernel sum 2500 ms (fenced), so GPU-idle and MPI are not separated there; the MPI timer gives 106 ms per cycle of host time in MPI (mean of the ranks).
 - m35zams's printed nsys cycle count is 1.5 (the cycle detection merged 8 real cycles); values divided by 8.00, the launches of CleanGdFaceSums#6 (1 per cycle).
 - Files: caltech_results/COST26R/cost.txt, kname_r*, gaps_r*, stats_r0 (nsys stars), kt*.gz and mt*.gz (per rank; kt6 / mt6 = the 6-cycle arms), cost26.py (the map; edit the regexes to regroup).
+
+### Correction (plain timing)
+- The long cycle is the LAST timed one (number 39 of 39; 1.1 to 9.2 s): it contains the driver's final outputs, not a set-up after the restart. Without it the mean per cycle is:
+- bsg: 38 cycles, mean 0.6337, median 0.6360, min 0.5750, max 0.6800 s
+- m35zams: 38 cycles, mean 0.2798, median 0.2710, min 0.2590, max 0.3100 s
+- m35mms: 38 cycles, mean 0.8644, median 0.8680, min 0.8050, max 0.9340 s
+- t9l62: 38 cycles, mean 2.5586, median 2.5100, min 2.4080, max 2.9260 s
+- These are the wall numbers per cycle to use for the docs figure; the kernel and MPI tables do not change. (Also, in the same note, the sentence on bsg, m35mms, t9l62 set-up is wrong for the same reason.)
