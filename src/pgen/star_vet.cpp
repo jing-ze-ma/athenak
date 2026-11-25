@@ -609,14 +609,14 @@ void StarEosReinitFromT(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   star_pin_ = pin;
   // STAGE CS3 (m1-cs-implicit): the cubed sphere as well (x1 = r on both meshes; the
   // column, the potentials, the WB pair and the x1 BCs are radial).  On cs the solid
   // angle is 4 pi and the multi-mode seed is laid down in the global (theta, phi) of the
   // cell centre (see the seed below).
   const bool hcs = pmy_mesh_->use_cubed_sphere;
-  if (pm1 == nullptr || pmbp->phydro == nullptr ||
+  if (pvet == nullptr || pmbp->phydro == nullptr ||
       !(pmy_mesh_->use_spherical_polar || hcs)) {
     StarFatal("needs <hydro>, <rad_vet> and mesh/use_spherical_polar or use_cubed_sphere",
               __LINE__);
@@ -626,7 +626,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto *ph = &fl;
-  const Real cl = pm1->c_light, efl = pm1->e_floor, ar = pm1->arad;
+  const Real cl = pvet->c_light, efl = pvet->e_floor, ar = pvet->arad;
   auto &indcs = pmy_mesh_->mb_indcs;
   const int ng = indcs.ng;
   const int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -654,7 +654,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       StarFatal("problem/star_gravity = pointmass needs <hydro>/etotgrav = true and "
                 "wellbalance_dynamic = false", __LINE__);
     }
-    if (pm1->force_ref != radvet::VET_FREF_NONE) {
+    if (pvet->force_ref != radvet::VET_FREF_NONE) {
       StarFatal("problem/star_gravity = pointmass needs <rad_vet>/force_reference = none "
                 "(no well-balanced pair to carry a reference force)", __LINE__);
     }
@@ -668,12 +668,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       StarFatal("needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = "
                 "true (the gravity source reads the x1 well-balanced cache)", __LINE__);
     }
-    if (pm1->force_ref != radvet::VET_FREF_WB_ARAD) {
+    if (pvet->force_ref != radvet::VET_FREF_WB_ARAD) {
       StarFatal("needs <rad_vet>/force_reference = wb_arad (the well-balanced pair "
                 "carries the reference force of the initial column)", __LINE__);
     }
   }
-  if (pm1->opacity_type != radvet::VET_OPAC_TABLE) {
+  if (pvet->opacity_type != radvet::VET_OPAC_TABLE) {
     StarFatal("needs <rad_vet>/opacity = table", __LINE__);
   }
 
@@ -923,15 +923,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         fabs(a4 - b4) > 1.0e-9) {
       StarFatal("the Rosseland and Planck tables are not on the same grid", __LINE__);
     }
-    pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
+    pvet->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
     // the lookup's units against the EOS's own code temperature and <units> density
     const Real tcgs = star_tk;
     const Real dcgs = (pmbp->punit != nullptr) ? pmbp->punit->density_cgs() : 1.0;
-    if (std::fabs(pm1->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
-        std::fabs(pm1->otab.dunit/dcgs - 1.0) > 1.0e-5) {
+    if (std::fabs(pvet->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
+        std::fabs(pvet->otab.dunit/dcgs - 1.0) > 1.0e-5) {
       std::ostringstream os;
-      os << "<rad_vet>/temp_unit_kelvin = " << pm1->otab.tunit << ", rho_unit_cgs = "
-         << pm1->otab.dunit << " but this run's units are (" << tcgs << ", " << dcgs
+      os << "<rad_vet>/temp_unit_kelvin = " << pvet->otab.tunit << ", rho_unit_cgs = "
+         << pvet->otab.dunit << " but this run's units are (" << tcgs << ", " << dcgs
          << ")";
       StarFatal(os.str(), __LINE__);
     }
@@ -975,7 +975,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool hatm_on = false;
   std::vector<Real> hatm_c, hatm_f;
   const bool icrdef = !global_variable::restart_run &&
-      (pm1->opacity_type == radvet::VET_OPAC_TABLE) && !wic &&
+      (pvet->opacity_type == radvet::VET_OPAC_TABLE) && !wic &&
       !(pin->DoesParameterExist("problem","star_ic_rad_thin") &&
         pin->GetBoolean("problem","star_ic_rad_thin"));
   const std::string icr0 = pin->GetOrAddString("problem","star_ic_rad",
@@ -1046,7 +1046,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       e0[n] = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(t0[n]));
     }
     std::vector<Real> tcur(t0), ef(e0), kt, tauf(nf, 0.0);
-    radvet::VetOpacTab otr = pm1->otab;
+    radvet::VetOpacTab otr = pvet->otab;
     auto ftau = [&]() {   // kappa_t and tau from the mesh top (as the pgen's tau below)
       StarKtEval(otr, hd, tcur, kt);
       tauf[nf-1] = 0.0;
@@ -1631,7 +1631,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   {
     auto crho = star_rho_, ceint = star_eint_;
-    radvet::VetOpacTab ot = pm1->otab;
+    radvet::VetOpacTab ot = pvet->otab;
     par_for("star_col", DevExeSpace(), 0, nf-1, KOKKOS_LAMBDA(const int n) {
       const Real d = crho(n);
       const Real t = eos.Temperature(d, ceint(n));
@@ -1669,7 +1669,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // table (tabulated EOS only; an ideal gas has no range) and the opacity table grid,
   // in (rho [g/cm^3], T [K])
   {
-    const Real tk = pm1->otab.tunit, dk = pm1->otab.dunit;
+    const Real tk = pvet->otab.tunit, dk = pvet->otab.dunit;
     const bool etab = eos.tbl.active;
     const Real elo_d = etab ? pin->GetReal("hydro","eos_logd_min") : -1.0e300;
     const Real ehi_d = etab ? pin->GetReal("hydro","eos_logd_max") : 1.0e300;
@@ -1927,8 +1927,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     // StarGravity gives the reference work (split); set before SetForceReference,
     // which resolves force_reference_work = auto
-    pm1->fref_wsplit_ok = true;
-    pm1->SetForceReference(aref_d);
+    pvet->fref_wsplit_ok = true;
+    pvet->SetForceReference(aref_d);
   }
 
   // ---- DISCRETE hydrostatic balance of the initial cells (problem/star_ic_balance,
@@ -2188,7 +2188,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       return eos.Temperature(logint(hd, r), logint(he, r));
     };
     if (adpr) {
-      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
+      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->arad_ref);
       std::vector<Real> af(n1);
       Real prl = ar*SQR(SQR(tfc(hx1f(0,0))))/3.0;
       for (int i=0; i<n1; ++i) {
@@ -2207,14 +2207,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         }
       }
-      Kokkos::deep_copy(pm1->arad_ref, har);
+      Kokkos::deep_copy(pvet->arad_ref, har);
     }
     const int NW = adpr ? 0 : std::min(4, ie - is);
     DvceArray1D<Real> kd_d("star_kd", NW + 1), kt_d("star_kt", NW + 1);
     DvceArray1D<Real> kk_d("star_kk", NW + 1);
     auto hkd = Kokkos::create_mirror_view(kd_d);
     auto hkt = Kokkos::create_mirror_view(kt_d);
-    radvet::VetOpacTab ot1 = pm1->otab;
+    radvet::VetOpacTab ot1 = pvet->otab;
     std::vector<Real> aw(NW, 0.0);
     const Real pf_top = hpf(0,k0,j0,is+NW);
     const Real pf_old = hpf(0,k0,j0,is);
@@ -2274,7 +2274,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (outer > 0 && wchg < 1.0e-13) break;
     }
     {
-      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
+      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->arad_ref);
       for (int m=0; m<=nmb1; ++m) {
         for (int k=0; k<=n3m1; ++k) {
           for (int j=0; j<=n2m1; ++j) {
@@ -2284,7 +2284,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       Kokkos::deep_copy(ph->phicc_wb, hpc);
       Kokkos::deep_copy(ph->phi_wb_x1f, hpf);
-      Kokkos::deep_copy(pm1->arad_ref, har);
+      Kokkos::deep_copy(pvet->arad_ref, har);
     }
     Real dmax = 0.0;
     int imax = is;
@@ -2436,9 +2436,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // vector with the stage weights): beta = Pg/P ~ 0.01, so the gas holds ~1 % of the
     // heat capacity, and an explicit gas-side deposit was -0.5 e_gas per step at cfl 0.3
     // (v2/runs/mF03: force 0.94 rho g).  The implicit exchange gives the gas its share.
-    Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
-    Kokkos::deep_copy(pm1->esrc, 0.0);
-    auto es = pm1->esrc;
+    Kokkos::realloc(pvet->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
+    Kokkos::deep_copy(pvet->esrc, 0.0);
+    auto es = pvet->esrc;
     auto fmd = star_fm_;
     auto &area1 = pmbp->pcoord->area.x1f;
     auto &volume = pmbp->pcoord->volume;
@@ -2448,7 +2448,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       es(m,k,j,i) = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
     });
-    pm1->esrc_on = true;
+    pvet->esrc_on = true;
     if (global_variable::my_rank == 0) {
       std::cout << "star_vet: mlt_flux_frozen: max F_MLT/F on the faces = " << fmax
                 << " at r = " << rmx << "; F_MLT at the bottom/top faces = "
@@ -2463,12 +2463,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (esc != 0.0) {
     const Real rmx = pin->GetOrAddReal("problem","star_esrc_rmax",star_rin_);
     star_esrmx_ = rmx;
-    if (!pm1->esrc_on) {
-      Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
-      Kokkos::deep_copy(pm1->esrc, 0.0);
-      pm1->esrc_on = true;
+    if (!pvet->esrc_on) {
+      Kokkos::realloc(pvet->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
+      Kokkos::deep_copy(pvet->esrc, 0.0);
+      pvet->esrc_on = true;
     }
-    auto es = pm1->esrc;
+    auto es = pvet->esrc;
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
     par_for("star_esrc_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -2724,7 +2724,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     star_ad_ = (mc == "adaptive" || mc == "pressure");
     star_adp_ = (mc == "pressure");
-    const bool tab2 = pm1->time_scheme == radvet::VET_TIME_HESDIRK2 && pm1->t2_tab != 0;
+    const bool tab2 = pvet->time_scheme == radvet::VET_TIME_HESDIRK2 && pvet->t2_tab != 0;
     StarOldDefault(pin, "mlt_src_time", "start");
     const std::string tc = pin->GetOrAddString("problem","mlt_src_time",
         (!global_variable::restart_run && !tab2) ? "stage" : "start");
@@ -2747,7 +2747,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       StarFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true "
                 "(the IC's F_MLT is its start profile and its FeCZ mask)", __LINE__);
     }
-    if (pm1->f0x1.extent_int(0) <= 0) {
+    if (pvet->f0x1.extent_int(0) <= 0) {
       StarFatal("problem/mlt_closure = adaptive needs the implicit M1 face flux f0x1",
                 __LINE__);
     }
@@ -3061,7 +3061,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // a_ref travels in the restart files (kStarDicTag).  Needs star_ic_balance, ic_rad, the
   // WB pair, a fresh start; replaces star_ic_rad_atm_post.
   if (star_eq_ && !restart && !star_rmp) {
-    if (!star_bal_ || star_pm_ || (pm1->icr_mode == 0 && !pm1->cln_steady) || star_atp_) {
+    if (!star_bal_ || star_pm_ || (pvet->icr_mode == 0 && !pvet->cln_steady) || star_atp_)
+        {
       StarFatal("problem/star_ic_equil = true needs star_ic_balance = true, star_gravity "
                 "= wb, <rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) "
                 "and star_ic_rad_atm_post = false", __LINE__);
@@ -3090,7 +3091,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       StarFatal("problem/star_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
                 __LINE__);
     }
-    pm1->icr_fmeas = true;
+    pvet->icr_fmeas = true;
     star_eq_it_ = 0;
     user_icpost_func = StarIcEquil;
     user_icpost_again = false;
@@ -3155,7 +3156,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (star_rmp) {
     // no <rad_vet>/ic_rad (the state is an evolved one), then the arrays
-    pm1->icr_mode = 0;
+    pvet->icr_mode = 0;
     StarRemapLoad(pmy_mesh_, star_rmp_fn, star_rmp_data, star_rmp_n);
     return;
   }
@@ -3351,7 +3352,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &msz = pmbp->pmb->mb_size;
   const int hjs = indcs.js, hks = indcs.ks, hnx2 = indcs.nx2, hnx3 = indcs.nx3;
   auto uh = ph->u0;
-  auto ur = pm1->u0;
+  auto ur = pvet->u0;
   auto x2v = pmbp->pcoord->x2v;
   auto x3v = pmbp->pcoord->x3v;
   auto crho = star_rho_, ceint = star_eint_;
@@ -3460,7 +3461,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ur(m,radvet::VET_F3,k,j,i) = 0.0;
   });
   // the comoving x1 face fluxes of the implicit transport (allocated only there)
-  auto ff0 = pm1->f0x1;
+  auto ff0 = pvet->f0x1;
   if (ff0.extent_int(0) >= nmb1 + 1) {
     const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
     const int e1 = ff0.extent_int(3) - 1;
@@ -3786,14 +3787,14 @@ void StarGravity(Mesh *pm, const Real bdt) {
   }
   // <rad_vet>/force_reference_work = split: the work of the rho a_ref part of the WB kick
   // at the stage-start velocity; the radiation pays it in its solve
-  auto *pm1 = pmbp->pradvet;
-  if (pm1 != nullptr && pm1->fref_wsplit) {
-    auto aref = pm1->arad_ref;
-    if (pm1->FrefWaccOn()) {
+  auto *pvet = pmbp->pradvet;
+  if (pvet != nullptr && pvet->fref_wsplit) {
+    auto aref = pvet->arad_ref;
+    if (pvet->FrefWaccOn()) {
       // (time_scheme = be): the same increment also goes to the
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
-      auto wacc = pm1->FrefWacc();
-      const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
+      auto wacc = pvet->FrefWacc();
+      const Real g0 = pvet->FrefWaccGam0(bdt, pm->dt);
       par_for("star_grav_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real w = bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
@@ -3840,16 +3841,16 @@ void StarGravity(Mesh *pm, const Real bdt) {
   if (law) {
     Real c = 0.0, cp = 0.0;
     int s = -1;
-    for (int q = 0; q < pm1->fref_hnst && s < 0; ++q) {
+    for (int q = 0; q < pvet->fref_hnst && s < 0; ++q) {
       cp = c;
-      c = pm1->fref_hgam0[q]*c + pm1->fref_hbeta[q];
-      if (std::abs(bdt - pm1->fref_hbeta[q]*pm->dt) <= 1.0e-12*bdt) s = q;
+      c = pvet->fref_hgam0[q]*c + pvet->fref_hbeta[q];
+      if (std::abs(bdt - pvet->fref_hbeta[q]*pm->dt) <= 1.0e-12*bdt) s = q;
     }
     if (s < 0) StarFatal("problem/star_sponge_form = lawson: no rk1/rk2/rk3 stage has "
                          "this beta dt", __LINE__);
     ca = (c - cp)*pm->dt;
     cb = c*pm->dt;
-    g1 = 1.0 - pm1->fref_hgam0[s];
+    g1 = 1.0 - pvet->fref_hgam0[s];
   }
   if (star_sp_rad_) {
     par_for("star_sponge_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -4354,9 +4355,9 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   const bool hmn = star_zflux_;
   auto mn = star_min_;
   auto eos = ph->peos->eos_data;
-  auto *pm1 = pmbp->pradvet;
-  auto ur = pm1->u0;
-  auto ff0 = pm1->f0x1;
+  auto *pvet = pmbp->pradvet;
+  auto ur = pvet->u0;
+  auto ff0 = pvet->f0x1;
   const bool haveff = (ff0.extent_int(0) > 0);
   auto &x1v = pmbp->pcoord->x1v;
   auto &x1f = pmbp->pcoord->xx1f;
@@ -4365,17 +4366,17 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   const Real rint = star_rint_, fin = star_fin_;   // hg262-drive
   // clean staggered: L_in / L_top = the energy the step's solves put through the x1
   // faces over dt (CleanBndAcc), the flux that moved E
-  const bool lac = pm1->cln_ldt > 0.0 && pm1->cln_lacc.extent_int(0) > 0;
-  const bool hpf = pm1->t2pf1_ok && pm1->t2pf1.extent_int(0) > 0;
-  auto pf1 = pm1->t2pf1;
-  const Real icc = pm1->c_light/pm1->chat;
-  auto lacc = pm1->cln_lacc;
-  const Real ildt = lac ? 1.0/pm1->cln_ldt : 0.0;
+  const bool lac = pvet->cln_ldt > 0.0 && pvet->cln_lacc.extent_int(0) > 0;
+  const bool hpf = pvet->t2pf1_ok && pvet->t2pf1.extent_int(0) > 0;
+  auto pf1 = pvet->t2pf1;
+  const Real icc = pvet->c_light/pvet->chat;
+  auto lacc = pvet->cln_lacc;
+  const Real ildt = lac ? 1.0/pvet->cln_ldt : 0.0;
   // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
   const Real inwall = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3);
-  const bool eso = pm1->esrc_on;
-  auto es_ = pm1->esrc;
-  const Real chc = pm1->chat/pm1->c_light;
+  const bool eso = pvet->esrc_on;
+  auto es_ = pvet->esrc;
+  const Real chc = pvet->chat/pvet->c_light;
   const Real sprate = star_sp_rate_, spr0 = star_sp_r0_;
   const Real sprt = star_rtop_, spd = star_sp_dmax_;
   const bool sprad = star_sp_rad_;
@@ -4480,7 +4481,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
     for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = fsum.the_array[n]/pam->am_bdt;
   }
   // (a global value: rank 0 contributes)
-  const Real lzt = pm1->CleanLzTotal();
+  const Real lzt = pvet->CleanLzTotal();
   pdata->hdata[nb+5] = (global_variable::my_rank == 0) ? lzt : 0.0;
   if (star_mlt_) {
     // host values, summed over ranks by the history output: rank 0 contributes
@@ -4492,10 +4493,10 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   // counters are MPI_MAX-reduced, identical on every rank: rank 0 contributes)
   pdata->hdata[19] = 0.0;
   if (global_variable::my_rank == 0) {
-    const Real dn = pm1->impl_nstep - star_pic_n0_, ds = pm1->impl_itsum - star_pic_s0_;
+    const Real dn = pvet->impl_nstep - star_pic_n0_, ds = pvet->impl_itsum - star_pic_s0_;
     pdata->hdata[19] = (dn > 0.0) ? ds/dn : 0.0;
-    star_pic_n0_ = pm1->impl_nstep;
-    star_pic_s0_ = pm1->impl_itsum;
+    star_pic_n0_ = pvet->impl_nstep;
+    star_pic_s0_ = pvet->impl_itsum;
   }
 }
 
@@ -4573,9 +4574,9 @@ void StarAdaptiveUpdate(Mesh *pm) {
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto w0 = fl.w0;
   auto eos = fl.peos->eos_data;
-  auto *pm1 = pmbp->pradvet;
-  auto ur = pm1->u0;
-  auto f0 = pm1->f0x1;
+  auto *pvet = pmbp->pradvet;
+  auto ur = pvet->u0;
+  auto f0 = pvet->f0x1;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto sh = star_shs_;
@@ -4794,11 +4795,11 @@ std::vector<char> StarAdaptiveRstWrite() {
   // output) as a tagged trailer behind the adaptive state (if any)
   auto pic = [&out]() {
     Real w[2] = {0.0, 0.0};
-    const radvet::RadiationVet *pm1 =
+    const radvet::RadiationVet *pvet =
         (star_mesh_ != nullptr) ? star_mesh_->pmb_pack->pradvet : nullptr;
-    if (pm1 != nullptr) {
-      w[0] = pm1->impl_nstep - star_pic_n0_;
-      w[1] = pm1->impl_itsum - star_pic_s0_;
+    if (pvet != nullptr) {
+      w[0] = pvet->impl_nstep - star_pic_n0_;
+      w[1] = pvet->impl_itsum - star_pic_s0_;
     }
     const std::size_t o = out.size();
     out.resize(o + sizeof(kStarPicTag) + sizeof(w));
@@ -4956,7 +4957,7 @@ void StarIcPost(Mesh *pm) {
   if (!star_atp_) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   auto eos = fl.eos;
   const WBOption wbo = fl.wb_option;
   auto &indcs = pm->mb_indcs;
@@ -4965,7 +4966,7 @@ void StarIcPost(Mesh *pm) {
   const int nmb = pmbp->nmb_thispack;
   const int n1 = indcs.nx1 + 2*indcs.ng;
   const int ia = star_atp_ia_;
-  const Real dfl = star_atp_dfl_, cl = pm1->c_light;
+  const Real dfl = star_atp_dfl_, cl = pvet->c_light;
   if (ia < is + 2 || ia > ie) {
     StarFatal("star_ic_rad_atm_post: the first atmosphere cell is not inside the mesh",
               __LINE__);
@@ -4974,7 +4975,7 @@ void StarIcPost(Mesh *pm) {
   StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
   auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
   auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
-  auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->f0x1);
+  auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->f0x1);
   // the cell T (host, the code's EOS) of every cell i >= ia - 2, its shell sums
   const int i0 = ia - 2;
   const int nr = ie - i0 + 1;
@@ -5113,7 +5114,7 @@ void StarIcPost(Mesh *pm) {
       kd.push_back(bd[i]);
       kt.push_back(tc[i]);
     }
-    StarKtEval(pm1->otab, kd, kt, kk);
+    StarKtEval(pvet->otab, kd, kt, kk);
     chg = 0.0;
     for (int i=ia; i<=ie; ++i) {
       if (i > ilast) {
@@ -5206,7 +5207,7 @@ void StarIcPost(Mesh *pm) {
 void StarIcEquil(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   auto eos = fl.eos;
   const WBOption wbo = fl.wb_option;
   auto &indcs = pm->mb_indcs;
@@ -5225,14 +5226,14 @@ void StarIcEquil(Mesh *pm) {
   StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
   auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
   auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
-  auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->f0x1);
+  auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->f0x1);
   auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
-  const bool hdm = (pm1->icr_dm.extent_int(0) == nmb);
-  if (!hdm || !(pm1->icr_dm_dt > 0.0)) {
+  const bool hdm = (pvet->icr_dm.extent_int(0) == nmb);
+  if (!hdm || !(pvet->icr_dm_dt > 0.0)) {
     StarFatal("star_ic_equil: no force pass from <rad_vet>/ic_rad", __LINE__);
   }
-  auto hdmv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->icr_dm);
-  const Real dtm = pm1->icr_dm_dt;
+  auto hdmv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->icr_dm);
+  const Real dtm = pvet->icr_dm_dt;
   // shell sums per x1 index: rho, T, the net deposit dm, count; per x1 face: F0 area
   std::vector<Real> sh(4*n1, 0.0), lf(n1 + 1, 0.0), af(n1 + 1, 0.0);
   // <mesh>/layout_invariant: the shell sums order-independent (ReproSum);
@@ -5412,7 +5413,7 @@ void StarIcEquil(Mesh *pm) {
     // factor
     if (star_eq_seed_) {
       auto hsf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_sfac_);
-      auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->u0);
+      auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->u0);
       for (int m=0; m<nmb; ++m) {
         for (int k=ks; k<=ke; ++k) {
           for (int j=js; j<=je; ++j) {
@@ -5430,10 +5431,10 @@ void StarIcEquil(Mesh *pm) {
         }
       }
       Kokkos::deep_copy(fl.u0, hu);
-      Kokkos::deep_copy(pm1->u0, hr);
+      Kokkos::deep_copy(pvet->u0, hr);
     }
     star_eq_a_.assign(af0.begin(), af0.end());
-    pm1->icr_fmeas = false;
+    pvet->icr_fmeas = false;
     pm->pgen->user_icpost_again = false;
     if (global_variable::my_rank == 0) {
       std::printf("star_vet: star_ic_equil: done after %d rounds%s\n", star_eq_it_,
@@ -5607,7 +5608,7 @@ void StarIcEquil(Mesh *pm) {
 void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
                    const int *n) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
   if (pm->multilevel) StarFatal("star_ic_remap_file needs a uniform mesh", __LINE__);
@@ -5617,9 +5618,9 @@ void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
   std::ifstream rf(fn, std::ios::binary);
   if (!rf) StarFatal("cannot open problem/star_ic_remap_file " + fn, __LINE__);
   auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
-  auto ur = Kokkos::create_mirror_view(pm1->u0);
-  const bool hf0 = (pm1->f0x1.extent_int(0) >= pmbp->nmb_thispack);
-  auto uf = Kokkos::create_mirror_view(pm1->f0x1);
+  auto ur = Kokkos::create_mirror_view(pvet->u0);
+  const bool hf0 = (pvet->f0x1.extent_int(0) >= pmbp->nmb_thispack);
+  auto uf = Kokkos::create_mirror_view(pvet->f0x1);
   std::vector<double> row(nout1 + 1);
   auto rd = [&](const std::int64_t pos, const int len) {
     rf.seekg(pos);
@@ -5655,8 +5656,8 @@ void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
     }
   }
   Kokkos::deep_copy(pmbp->phydro->u0, uh);
-  Kokkos::deep_copy(pm1->u0, ur);
-  if (hf0) Kokkos::deep_copy(pm1->f0x1, uf);
+  Kokkos::deep_copy(pvet->u0, ur);
+  if (hf0) Kokkos::deep_copy(pvet->f0x1, uf);
   if (global_variable::my_rank == 0) {
     std::cout << "star_vet: star_ic_remap_file: u0, M1 u0" << (hf0 ? ", f0x1" : "")
               << " loaded (" << pmbp->nmb_thispack << " MeshBlock(s) on rank 0); "

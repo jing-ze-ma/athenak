@@ -497,8 +497,8 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   // GPUs). No memory effect on a host-only build.  = m1: the radiation's clones only
   // (the hydro's stay on the device)
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
-    hm1_ = (pin->GetString("time", "dt_retry_host") == "m1");
-    host_ = !hm1_ && pin->GetBoolean("time", "dt_retry_host");
+    hvet_ = (pin->GetString("time", "dt_retry_host") == "m1");
+    host_ = !hvet_ && pin->GetBoolean("time", "dt_retry_host");
   }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
@@ -592,7 +592,7 @@ void DtRetry::Build(Mesh *pm) {
     }
     // (and the rays' source vlat_cs, each build's, written before it is read)
     sel.erase("m1.vlat_cs");
-    Binder b{&ent_, "m1.", &sel, all_views_, host_ || hm1_};
+    Binder b{&ent_, "m1.", &sel, all_views_, host_ || hvet_};
     m1->DtRetryVisit(b);
   }
   // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
@@ -606,7 +606,7 @@ void DtRetry::Build(Mesh *pm) {
   // (and of clean_rot_ring's offsets cln_rr, written only at block boundaries, a fill
   // or a restart: their writers bump vra_gen too)
   for (auto &e : ent_) {
-    if (((host_ || hm1_) && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
+    if (((host_ || hvet_) && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
       e->SetGen(&(pk->pradvet->vra_gen));
     }
     // (and both, with the pending Delta, while no build of the cycle shifts the ring:
@@ -654,7 +654,7 @@ void DtRetry::Save(Mesh *pm) {
       std::cout << "<time> dt_retry checkpoint: " << ent_.size() << " members, " << nv
                 << " Views (" << nd << " copied, " << static_cast<double>(b)/1.0e6
                 << " MB on rank 0";
-      if (host_ || hm1_) {
+      if (host_ || hvet_) {
         std::cout << ", dt_retry_host: " << static_cast<double>(bh)/1.0e6
                   << " MB of it in pinned host memory";
       }
@@ -938,15 +938,15 @@ void CounterKeep::Save(Mesh *pm, int slot) {
   for (int q = 0; q < 9; ++q) {s.ni[q] = *EcInt(pm->ecounter, q);}
   for (int q = 0; q < 6; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
   FloorPaid(pm, s.pay);
-  auto *pm1 = pm->pmb_pack->pradvet;
-  if (pm1 != nullptr) {
-    s.hpos = SnapView(pm1->pos_cnt_d, s.pos);
-    s.hacl = SnapView(pm1->acl_cnt_d, s.acl);
-    s.hopn = SnapView(pm1->opn_nskip_d, s.opn);
-    s.hfcp = SnapView(pm1->fcap_cnt.d_view, s.fcp);
-    s.lz[0] = pm1->cln_lzl;
-    s.lz[1] = pm1->cln_lzp;
-    s.ffl = pm1->t2_ffct_left;
+  auto *pvet = pm->pmb_pack->pradvet;
+  if (pvet != nullptr) {
+    s.hpos = SnapView(pvet->pos_cnt_d, s.pos);
+    s.hacl = SnapView(pvet->acl_cnt_d, s.acl);
+    s.hopn = SnapView(pvet->opn_nskip_d, s.opn);
+    s.hfcp = SnapView(pvet->fcap_cnt.d_view, s.fcp);
+    s.lz[0] = pvet->cln_lzl;
+    s.lz[1] = pvet->cln_lzp;
+    s.ffl = pvet->t2_ffct_left;
   }
   s.have = true;
 }
@@ -957,18 +957,18 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
   dvc_[why] += static_cast<double>(pm->ecounter.vceil_de - s.ec[1]);
   for (int q = 0; q < 9; ++q) {*EcInt(pm->ecounter, q) = s.ni[q];}
   for (int q = 0; q < 6; ++q) {*EcReal(pm->ecounter, q) = s.ec[q];}
-  auto *pm1 = pm->pmb_pack->pradvet;
-  if (pm1 != nullptr) {
-    const Real un1 = HostAt(pm1->pos_cnt_d, radvet::VET_POS_FLR_UN);
+  auto *pvet = pm->pmb_pack->pradvet;
+  if (pvet != nullptr) {
+    const Real un1 = HostAt(pvet->pos_cnt_d, radvet::VET_POS_FLR_UN);
     const Real un0 = s.hpos ? HostAt(s.pos, radvet::VET_POS_FLR_UN) : 0.0;
     dun_[why] += static_cast<double>(un1 - un0);
-    pm1->pos_un_drop += un1 - un0;   // (the positivity report's discarded field)
-    BackView(pm1->pos_cnt_d, s.pos, s.hpos);
-    BackView(pm1->acl_cnt_d, s.acl, s.hacl);
-    BackView(pm1->opn_nskip_d, s.opn, s.hopn);
-    BackView(pm1->fcap_cnt.d_view, s.fcp, s.hfcp);
-    pm1->cln_lzl = s.lz[0];   // (the discarded attempt's bookings, CleanLzBook)
-    pm1->cln_lzp = s.lz[1];
+    pvet->pos_un_drop += un1 - un0;   // (the positivity report's discarded field)
+    BackView(pvet->pos_cnt_d, s.pos, s.hpos);
+    BackView(pvet->acl_cnt_d, s.acl, s.hacl);
+    BackView(pvet->opn_nskip_d, s.opn, s.hopn);
+    BackView(pvet->fcap_cnt.d_view, s.fcp, s.hfcp);
+    pvet->cln_lzl = s.lz[0];   // (the discarded attempt's bookings, CleanLzBook)
+    pvet->cln_lzp = s.lz[1];
   }
   nrb_[why] += 1;
 }
@@ -1002,19 +1002,19 @@ void CounterKeep::Report(Mesh *pm) {
 void CounterKeep::Cycle(Mesh *pm) {
   const Snap &s = s_[0];
   if (!s.have) return;
-  auto *pm1 = pm->pmb_pack->pradvet;
+  auto *pvet = pm->pmb_pack->pradvet;
   auto *ph = pm->pmb_pack->phydro;
   Real d[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-  if (pm1 != nullptr && s.hpos) {
+  if (pvet != nullptr && s.hpos) {
     using namespace radvet;   // NOLINT(build/namespaces)
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->pos_cnt_d);
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->pos_cnt_d);
     auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.pos);
     const int q[5] = {VET_POS_GAS, VET_POS_GAS_DE, VET_POS_FLR, VET_POS_FLR_DE,
                       VET_POS_FLR_MV};
     for (int n = 0; n < 5; ++n) {d[n] = h(q[n]) - h0(q[n]);}
   }
-  if (pm1 != nullptr && s.hfcp) {
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->fcap_cnt.d_view);
+  if (pvet != nullptr && s.hfcp) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->fcap_cnt.d_view);
     auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.fcp);
     for (int n = 0; n < 2; ++n) {d[5+n] = h(n) - h0(n);}
   }
@@ -1030,8 +1030,8 @@ void CounterKeep::Cycle(Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, d, 11, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   // (the face FCT's count and the auto-BE decision are the same on every rank)
-  const Real fl = (pm1 != nullptr) ? pm1->t2_ffct_left - s.ffl : 0.0;
-  const int abe = (pm1 != nullptr && pm1->t2_abe_now && !pm1->t2_beonly) ? 1 : 0;
+  const Real fl = (pvet != nullptr) ? pvet->t2_ffct_left - s.ffl : 0.0;
+  const int abe = (pvet != nullptr && pvet->t2_abe_now && !pvet->t2_beonly) ? 1 : 0;
   if (global_variable::my_rank != 0) return;
   if (!(d[0] > 0.0 || d[2] > 0.0 || d[5] > 0.0 || d[6] > 0.0 || d[7] > 0.0 ||
         d[9] != 0.0 || d[10] != 0.0 || fl > 0.0 || abe)) return;

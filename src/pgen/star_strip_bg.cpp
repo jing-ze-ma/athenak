@@ -84,8 +84,8 @@ void StarStripBackground(ParameterInput *pin, Mesh *pm) {
 
   MeshBlockPack *pmbp = pm->pmb_pack;
   hydro::Hydro *ph = pmbp->phydro;
-  auto *pm1 = pmbp->pradvet;
-  if (ph == nullptr || pm1 == nullptr) {
+  auto *pvet = pmbp->pradvet;
+  if (ph == nullptr || pvet == nullptr) {
     std::cout << "### FATAL strip_bg: needs <hydro> and <rad_vet>" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -110,9 +110,9 @@ void StarStripBackground(ParameterInput *pin, Mesh *pm) {
   const bool hei = ph->c2p_eint_rst && (ph->eint_rst.extent_int(0) > 0);
   auto eir = ph->eint_rst;
   auto phi = ph->phicc0;
-  auto ur = pm1->u0;
-  auto ot = pm1->otab;
-  const Real ar = pm1->arad;
+  auto ur = pvet->u0;
+  auto ot = pvet->otab;
+  const Real ar = pvet->arad;
   auto eos = ph->peos->eos_data;
   const Real dfl = eos.dfloor, tfl = eos.tfloor;
   auto &x1v = pmbp->pcoord->x1v;
@@ -274,13 +274,13 @@ void StarRestartPerturb(ParameterInput *pin, Mesh *pm) {
     return;
   }
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *pm1 = pmbp->pradvet;
-  if (pm1 == nullptr) return;
+  auto *pvet = pmbp->pradvet;
+  if (pvet == nullptr) return;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmbp->nmb_thispack, gids = pmbp->gids;
-  auto ur = pm1->u0;
+  auto ur = pvet->u0;
   par_for("rst_pert_erad", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     uint64_t x = (static_cast<uint64_t>(m + gids) << 48) ^

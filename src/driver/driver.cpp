@@ -71,11 +71,11 @@ fluid::DualEnergy *DualPayer(Mesh *pm) {
 }
 // (returns the energy left unpaid, see DualPayFromRad)
 Real DualPay(Mesh *pm) {
-  auto *pm1 = pm->pmb_pack->pradvet;
+  auto *pvet = pm->pmb_pack->pradvet;
   fluid::DualEnergy *pde = DualPayer(pm);
-  if (pm1 == nullptr || pde == nullptr) return 0.0;
-  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radvet::VET_E,
-                               pm1->chat/pm1->c_light, pm1->e_floor);
+  if (pvet == nullptr || pde == nullptr) return 0.0;
+  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pvet->u0, radvet::VET_E,
+                               pvet->chat/pvet->c_light, pvet->e_floor);
 }
 }  // namespace
 
@@ -770,23 +770,23 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // <rad_vet>/time_scheme = hesdirk2 (rad_vet_time2.cpp): the implicit radiation
       // solve runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
-      radvet::RadiationVet *pm1 = pmesh->pmb_pack->pradvet;
+      radvet::RadiationVet *pvet = pmesh->pmb_pack->pradvet;
       // the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
-      if (pm1 != nullptr) {pm1->VetGdRotStep();}
+      if (pvet != nullptr) {pvet->VetGdRotStep();}
       // <rad_vet>/time2_auto_be (off unless named): a step of a skip run takes
       // the backward-Euler redo path at once (t2_ok = false: no stages)
-      if (pm1 != nullptr) {(void) pm1->Time2AutoBeBegin();}
+      if (pvet != nullptr) {(void) pvet->Time2AutoBeBegin();}
       // slot 1 = the counters at the stage start; the helper solve
       // below puts U^n back, so its counters are dropped (back to slot 1) too
-      if (pctr_ != nullptr && pm1 != nullptr) {pctr_->Save(pmesh, 1);}
+      if (pctr_ != nullptr && pvet != nullptr) {pctr_->Save(pmesh, 1);}
       // vet_gd_rotate_slope = correct, the slope's closure jump
-      const bool m1help = (pm1 != nullptr) && pm1->Time2RotCorrect(this, pmesh->dt);
-      if (m1help && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
-      const bool m1t2 = (pm1 != nullptr) && pm1->Time2Active();
-      bool m1t2fail = false;
+      const bool vethelp = (pvet != nullptr) && pvet->Time2RotCorrect(this, pmesh->dt);
+      if (vethelp && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
+      const bool vett2 = (pvet != nullptr) && pvet->Time2Active();
+      bool vett2fail = false;
       // Ebnd (energy-budget diagnostic; no-op unless a pgen turned it on)
-      if (pm1 != nullptr) {pm1->EbndStart();}
+      if (pvet != nullptr) {pvet->EbndStart();}
       auto hydro_stage = [&](int stage) {
         ExecuteTaskList(pmesh, "before_stagen", stage);
         // solve gravity at each RK stage so the potential is consistent
@@ -798,35 +798,35 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       };
       // the pgen registers at the stage-loop start (the backward-Euler redo
       // below puts them back with U^n); taken only when a redo can happen
-      if (m1t2) {
+      if (vett2) {
         dtretry::PgenStageSave();
-        pm1->Time2Stash();
+        pvet->Time2Stash();
       }
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);
-        if (m1t2) {
-          if (stage == 1) {pm1->Time2GasTime(this, 1);}   // (sdirk2 only)
-          pm1->Time2FormStage(stage, pmesh->dt);
+        if (vett2) {
+          if (stage == 1) {pvet->Time2GasTime(this, 1);}   // (sdirk2 only)
+          pvet->Time2FormStage(stage, pmesh->dt);
           ExecuteTaskList(pmesh, "vet_before_stagen", 1);
           ExecuteTaskList(pmesh, "vet_stagen", 1);
           ExecuteTaskList(pmesh, "vet_after_stagen", 1);
-          if (pm1->t2_fail) {
-            m1t2fail = true;
+          if (pvet->t2_fail) {
+            vett2fail = true;
             break;
           }
           if (stage == 1) {
-            pm1->Time2GasTime(this, 3);
-            pm1->EbndStage1();
+            pvet->Time2GasTime(this, 3);
+            pvet->EbndStage1();
           }
         }
       }
       // a stage that raised the retry flag is not redone here (the retry
       // puts the whole cycle back); the check below the radiation update takes it
-      const bool dtr_now = (pm1 != nullptr) && pm1->dtr_on && pm1->dtr_fail;
-      if (m1t2fail) {t2wf = t2clk();}
-      if (m1t2fail && !dtr_now) {
+      const bool dtr_now = (pvet != nullptr) && pvet->dtr_on && pvet->dtr_fail;
+      if (vett2fail) {t2wf = t2clk();}
+      if (vett2fail && !dtr_now) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
-        pm1->Time2Restore(this);
+        pvet->Time2Restore(this);
         DualDiscard(pmesh);   // (floor_pay: the failed stages' payment)
         dtretry::PgenStageRestore();
         eint_ledger::Discard(pmesh);   // the redo starts a new baseline
@@ -844,19 +844,19 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_vet> block.
-      if (pm1 != nullptr && m1t2 && !m1t2fail) {
+      if (pvet != nullptr && vett2 && !vett2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
-        pm1->t2_solve = radvet::VET_T2S_NONE;
-        pm1->t2_nstep += 1.0;
-        (void) pm1->ApplyClosureLimits(this, 1);
-        (void) pm1->NewTimeStep(this, 1);
-        pm1->t2_dtprev = pmesh->dt;
+        pvet->t2_solve = radvet::VET_T2S_NONE;
+        pvet->t2_nstep += 1.0;
+        (void) pvet->ApplyClosureLimits(this, 1);
+        (void) pvet->NewTimeStep(this, 1);
+        pvet->t2_dtprev = pmesh->dt;
       } else if (pmesh->pmb_pack->pradvet != nullptr && !dtr_now) {
         // hesdirk2 without a valid slope: backward Euler, which stores K1
-        const bool m1be2 = (pm1->time_scheme == radvet::VET_TIME_HESDIRK2);
-        pm1->t2_solve = m1be2 ? radvet::VET_T2S_BESTORE : radvet::VET_T2S_NONE;
+        const bool vetbe2 = (pvet->time_scheme == radvet::VET_TIME_HESDIRK2);
+        pvet->t2_solve = vetbe2 ? radvet::VET_T2S_BESTORE : radvet::VET_T2S_NONE;
         int nsub = pmesh->pmb_pack->pradvet->SetSubsteps(pmesh->dt);
-        pm1->CleanBndAcc(0, 0.0, 0.0, 0.0, pmesh->dt);   // (history: boundary energy)
+        pvet->CleanBndAcc(0, 0.0, 0.0, 0.0, pmesh->dt);   // (history: boundary energy)
         for (int nst=0; nst<nsub; ++nst) {
           // nstage is VET_NSTAGE for the explicit scheme and 1 for the implicit one
           // (milestone 3a: one backward-Euler solve per hydro step)
@@ -872,17 +872,17 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           (void) pmesh->pmb_pack->pradvet->ApplyClosureLimits(this, 1);
         }
         (void) pmesh->pmb_pack->pradvet->NewTimeStep(this, 1);
-        if (m1be2) {
-          pm1->t2_solve = radvet::VET_T2S_NONE;
-          pm1->t2_ok = true;
-          pm1->t2_nbe += 1.0;
-          pm1->t2_dtprev = pmesh->dt;
+        if (vetbe2) {
+          pvet->t2_solve = radvet::VET_T2S_NONE;
+          pvet->t2_ok = true;
+          pvet->t2_nbe += 1.0;
+          pvet->t2_dtprev = pmesh->dt;
         }
       }
 
       // <rad_vet>/time2_cfl_post: the fluid's CFL dt again, of the state the radiation
       // update left (hydro stage 2 took it before the coupling wrote the gas)
-      if (pm1 != nullptr && pm1->t2_cfl_post && !dtr_now) {
+      if (pvet != nullptr && pvet->t2_cfl_post && !dtr_now) {
         if (pmesh->pmb_pack->phydro != nullptr) {
           (void) pmesh->pmb_pack->phydro->NewTimeStep(this, nexp_stages);
         }
@@ -893,23 +893,23 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // the cycle's kind for the wall split / time2_auto_be run state
       const auto t2we = t2clk();
       const int t2kind = !t2wall ? -1 :
-                         (m1t2 ? (m1t2fail ? 1 : 0) : (pm1->t2_abe_now ? 2 : 3));
+                         (vett2 ? (vett2fail ? 1 : 0) : (pvet->t2_abe_now ? 2 : 3));
       // <hydro|mhd>/floor_pay_retry: the payment before the cycle is accepted; energy
       // the radiation cannot pay fails the cycle (dt_retry) instead of being created
       const bool dpre = (DualPayer(pmesh) != nullptr) && DualPayer(pmesh)->pretry &&
-                        (pm1 != nullptr);
+                        (pvet != nullptr);
       if (dpre && !(pdtr_ != nullptr && pdtr_->on)) {
         std::cout << "### FATAL ERROR floor_pay_retry needs <time>/dt_retry" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (dpre && DualPay(pmesh) > 0.0 && !pm1->dtr_fail) {
-        pm1->dtr_fail = true;
-        pm1->dtr_why = 7;
+      if (dpre && DualPay(pmesh) > 0.0 && !pvet->dtr_fail) {
+        pvet->dtr_fail = true;
+        pvet->dtr_why = 7;
       }
       // a module raised a failure in this cycle -> the checkpoint back, a
       // smaller dt, and the cycle again (nothing of the failed attempt is output)
       if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
-        if (t2kind >= 0) {pm1->Time2AutoBeEnd(4, t2sec(t2w0, t2we), 0.0);}
+        if (t2kind >= 0) {pvet->Time2AutoBeEnd(4, t2sec(t2w0, t2we), 0.0);}
         if (!pdtr_->Retry(pmesh, this)) {
 #if MPI_PARALLEL_ENABLED
           MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
@@ -922,7 +922,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         dtr_retrying = true;
         continue;
       }
-      if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
+      if (pvet != nullptr) {pvet->EbndAccept(pmesh->dt, vett2 && !vett2fail);}
       eint_ledger::Commit(pmesh);   // (no-op unless on)
       // <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
       // dual selection created is taken from E_rad of the same cell, once, after every
@@ -931,9 +931,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       DualLedger(pmesh, "cycle " + std::to_string(pmesh->ncycle));
       if (pctr_ != nullptr) {pctr_->Cycle(pmesh);}   // (CLEAN FALLBACK)
       if (t2kind == 1) {
-        pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we));
+        pvet->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we));
       } else if (t2kind >= 0) {
-        pm1->Time2AutoBeEnd(t2kind, t2sec(t2w0, t2we), 0.0);
+        pvet->Time2AutoBeEnd(t2kind, t2sec(t2w0, t2we), 0.0);
       }
 
       // Work after time integrator indicated by "1" in stage

@@ -490,7 +490,8 @@ bool spr_gok_ = false;                          // G (index 4) filled (RadSetup)
 std::vector<Real> spr_c0psi_, spr_c0lt_, spr_c0lr_, spr_c0rq_, spr_c0fl_;
 // col0 as read
 std::vector<Real> spr_cpsi_, spr_clt_, spr_clr_, spr_crq_;   // the env_ic_file column
-DvceArray4D<Real> spr_aref_;   // the module's a_ref (= pm1->arad_ref, refreshed in place)
+// the module's a_ref (= pvet->arad_ref, refreshed in place)
+DvceArray4D<Real> spr_aref_;
 // (history only): rbk_ = the radiation leaving through r_out (comoving face flux
 // f0x1 + the bath's advective part ibadv_x1max + the theta-wall leak) is booked in Ebnd
 // (register 10, a plain sum) by the M1 post hook from the face flux of the solve just
@@ -2012,13 +2013,13 @@ void RyPerVetPost(Mesh *pm) {
   // hesdirk2 stage weights of a kick and of its slope are not booked); helper solves
   // skipped
   if (skb_) {
-    auto *pm1 = pmbp->pradvet;
-    if (!pm1->t2_inprobe && pm1->pos_cnt_d.extent_int(0) >= radvet::VET_POS_N) {
-      auto pcs = Kokkos::subview(pm1->pos_cnt_d, radvet::VET_POS_FLR_UN);
+    auto *pvet = pmbp->pradvet;
+    if (!pvet->t2_inprobe && pvet->pos_cnt_d.extent_int(0) >= radvet::VET_POS_N) {
+      auto pcs = Kokkos::subview(pvet->pos_cnt_d, radvet::VET_POS_FLR_UN);
       Real un = 0.0;
       Kokkos::deep_copy(un, pcs);
-      const bool be = (pm1->t2_solve == radvet::VET_T2S_NONE) ||
-                      (pm1->t2_solve == radvet::VET_T2S_BESTORE);
+      const bool be = (pvet->t2_solve == radvet::VET_T2S_NONE) ||
+                      (pvet->t2_solve == radvet::VET_T2S_BESTORE);
       if (be) acc0_[3] += eke - (un - skb_un_);
       skb_un_ = un;
     }
@@ -2036,15 +2037,15 @@ void RyPerVetPost(Mesh *pm) {
 //! (see rbk_).  Read-only on the state.
 void RyPerRadBook(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *pm1 = pmbp->pradvet;
-  if (pm1->t2_inprobe) {
+  auto *pvet = pmbp->pradvet;
+  if (pvet->t2_inprobe) {
     // helper solves whose result is put back; a probe's slope may become K1 (rbk1_)
     auto &idp = pm->mb_indcs;
     const int iep = idp.ie;
-    auto ffp = pm1->f0x1;
-    const bool hbp = pm1->iebath_hi_col_on && (pm1->ibadv_x1max.extent_int(0) > 0);
+    auto ffp = pvet->f0x1;
+    const bool hbp = pvet->iebath_hi_col_on && (pvet->ibadv_x1max.extent_int(0) > 0);
     DvceArray3D<Real> bdp;
-    if (hbp) {bdp = pm1->ibadv_x1max;}
+    if (hbp) {bdp = pvet->ibadv_x1max;}
     const int n0 = ffp.extent_int(0), n1 = ffp.extent_int(1), n2 = ffp.extent_int(2);
     if (rbk1_.extent_int(0) != n0 || rbk1_.extent_int(1) != n1 ||
         rbk1_.extent_int(2) != n2) {
@@ -2056,16 +2057,16 @@ void RyPerRadBook(Mesh *pm) {
       r1(m,k,j) = ffp(m,k,j,iep+1) + (hbp ? bdp(m,k,j) : 0.0);
     });
     rbk1_on_ = true;
-    rbk1n_ = pm1->vgd_rot_ncorr;
+    rbk1n_ = pvet->vgd_rot_ncorr;
     return;
   }
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   const Real dt = pm->dt;
-  Real wy = pm1->dt_sub, wk = 0.0;
-  if (pm1->t2_solve == radvet::VET_T2S_STAGE1) {
-    wy = (pm1->t2_w0*g + pm1->t2_c32)*dt;
-    wk = (pm1->t2_w0*pm1->t2_a21 + pm1->t2_c31)*dt;
-  } else if (pm1->t2_solve == radvet::VET_T2S_STAGE2) {
+  Real wy = pvet->dt_sub, wk = 0.0;
+  if (pvet->t2_solve == radvet::VET_T2S_STAGE1) {
+    wy = (pvet->t2_w0*g + pvet->t2_c32)*dt;
+    wk = (pvet->t2_w0*pvet->t2_a21 + pvet->t2_c31)*dt;
+  } else if (pvet->t2_solve == radvet::VET_T2S_STAGE2) {
     wy = g*dt;
   }
   auto &indcs = pm->mb_indcs;
@@ -2076,15 +2077,15 @@ void RyPerRadBook(Mesh *pm) {
   auto &mbbcs = pmbp->pmb->mb_bcs;
   // book the face flux the E update APPLIES: f0x1 (the K1 part: t2f1, the face flux of
   // U^n kept by Time2FormStage)
-  auto ff = pm1->f0x1;
-  auto fk = pm1->t2f1;
+  auto ff = pvet->f0x1;
+  auto fk = pvet->t2f1;
   const bool hk = (wk != 0.0);
-  const bool hbdv = pm1->iebath_hi_col_on;
+  const bool hbdv = pvet->iebath_hi_col_on;
   DvceArray3D<Real> bdv, bds;
-  if (hbdv) {bdv = pm1->ibadv_x1max; bds = bdvs_;}
+  if (hbdv) {bdv = pvet->ibadv_x1max; bds = bdvs_;}
   const bool hbs = hbdv && hk && (bds.extent_int(0) > 0);
   // K1 from a probe solve (see rbk1_): its own r_out faces
-  const bool kp = hk && rbk1_on_ && (pm1->vgd_rot_ncorr == rbk1n_ + 1.0);
+  const bool kp = hk && rbk1_on_ && (pvet->vgd_rot_ncorr == rbk1n_ + 1.0);
   if (hk) {rbk1_on_ = false;}
   DvceArray3D<Real> kpf;
   if (kp) {kpf = rbk1_;}
@@ -2120,15 +2121,15 @@ void RyPerRadBook(Mesh *pm) {
 //! Added to erinj_ (a plain sum, like the held cells' stage resets, which now vanish).
 void RyPerHoldBook(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *pm1 = pmbp->pradvet;
-  if (!pm1->impl_hold || pm1->t2_inprobe) return;
+  auto *pvet = pmbp->pradvet;
+  if (!pvet->impl_hold || pvet->t2_inprobe) return;
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   const Real dt = pm->dt;
-  Real wy = pm1->dt_sub, wk = 0.0;
-  if (pm1->t2_solve == radvet::VET_T2S_STAGE1) {
-    wy = (pm1->t2_w0*g + pm1->t2_c32)*dt;
-    wk = (pm1->t2_w0*pm1->t2_a21 + pm1->t2_c31)*dt;
-  } else if (pm1->t2_solve == radvet::VET_T2S_STAGE2) {
+  Real wy = pvet->dt_sub, wk = 0.0;
+  if (pvet->t2_solve == radvet::VET_T2S_STAGE1) {
+    wy = (pvet->t2_w0*g + pvet->t2_c32)*dt;
+    wk = (pvet->t2_w0*pvet->t2_a21 + pvet->t2_c31)*dt;
+  } else if (pvet->t2_solve == radvet::VET_T2S_STAGE2) {
     wy = g*dt;
   }
   auto &indcs = pm->mb_indcs;
@@ -2137,18 +2138,18 @@ void RyPerHoldBook(Mesh *pm) {
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto &area = pmbp->pcoord->area;
   auto &mbbcs = pmbp->pmb->mb_bcs;
-  auto hm = pm1->hold_m;
-  auto iw = pm1->iw;
-  auto f1 = pm1->f0x1, f2 = pm1->f0x2, f3 = pm1->f0x3;
-  auto k1 = pm1->t2f1, k2 = pm1->t2f2, k3 = pm1->t2f3;
-  const bool tr2 = pm1->trans_on, tr3 = pm1->trans_on && pm1->trans_x3;
+  auto hm = pvet->hold_m;
+  auto iw = pvet->iw;
+  auto f1 = pvet->f0x1, f2 = pvet->f0x2, f3 = pvet->f0x3;
+  auto k1 = pvet->t2f1, k2 = pvet->t2f2, k3 = pvet->t2f3;
+  const bool tr2 = pvet->trans_on, tr3 = pvet->trans_on && pvet->trans_x3;
   const bool hk = (wk != 0.0) && (k1.extent_int(0) > 0);
   const bool hk2 = hk && tr2 && (k2.extent_int(0) > 0);
   const bool hk3 = hk && tr3 && (k3.extent_int(0) > 0);
-  const bool hbdv = pm1->iebath_hi_col_on;
+  const bool hbdv = pvet->iebath_hi_col_on;
   DvceArray3D<Real> bdv;
-  if (hbdv) {bdv = pm1->ibadv_x1max;}
-  const Real cr = pm1->chat/pm1->c_light;
+  if (hbdv) {bdv = pvet->ibadv_x1max;}
+  const Real cr = pvet->chat/pvet->c_light;
   Real s = 0.0;
   Kokkos::parallel_reduce("ryper_holdbook", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           (nmb1 + 1)*(ke - ks + 1)*(je - js + 1)*(ie - is + 1)),
@@ -2593,12 +2594,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     derel = RyPerEsum(pmbp) - erel0;     // per rank, as the flux registers
     // the WORK of the reference radiation force a_ref (force_reference_work = split; the
     // module pays it from the radiation energy), as star_vet's StarGravity
-    auto *pm1 = pmbp->pradvet;
-    if (pm1->fref_wsplit) {
-      auto aref = pm1->arad_ref;
-      if (pm1->FrefWaccOn()) {
-        auto wacc = pm1->FrefWacc();
-        const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
+    auto *pvet = pmbp->pradvet;
+    if (pvet->fref_wsplit) {
+      auto aref = pvet->arad_ref;
+      if (pvet->FrefWaccOn()) {
+        auto wacc = pvet->FrefWacc();
+        const Real g0 = pvet->FrefWaccGam0(bdt, pm->dt);
         par_for("ryper_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           const Real w = bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
@@ -3070,17 +3071,17 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   Real rw = 1.0;
   bool t2rd = false;
   if (rad && rbk_ && pmbp->pradvet->time_scheme == radvet::VET_TIME_HESDIRK2) {
-    auto *pm1 = pmbp->pradvet;
-    if (pm1->t2_ok) {
+    auto *pvet = pmbp->pradvet;
+    if (pvet->t2_ok) {
       if (s == 0) {
         t2s1_[0] = zs.the_array[3] + zs.the_array[6];
         t2s1_[1] = zs.the_array[6];
-        t2nf_ = pm1->t2_nfall;
+        t2nf_ = pvet->t2_nfall;
       } else {
-        rw = pm1->t2_w0;
+        rw = pvet->t2_w0;
       }
     } else if (s == 0) {
-      t2rd = (t2nf_ >= 0.0) && (pm1->t2_nfall == t2nf_ + 1.0);
+      t2rd = (t2nf_ >= 0.0) && (pvet->t2_nfall == t2nf_ + 1.0);
       if (!t2rd) {t2s1_[0] = t2s1_[1] = 0.0;}
       t2nf_ = -1.0;
     }
@@ -3444,13 +3445,13 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[19] = acc0_[12];
     pdata->hdata[20] = 0.0;
     pdata->hdata[21] = 0.0;
-    auto *pm1 = pmbp->pradvet;
+    auto *pvet = pmbp->pradvet;
     if (global_variable::my_rank == 0) {
-      const Real dn = pm1->impl_nstep - rad_pn0_, ds = pm1->impl_itsum - rad_ps0_;
+      const Real dn = pvet->impl_nstep - rad_pn0_, ds = pvet->impl_itsum - rad_ps0_;
       pdata->hdata[20] = (dn > 0.0) ? ds/dn : 0.0;
-      pdata->hdata[21] = fmax(picmax_rst_, pm1->impl_itmax);   // global (1019c)
-      rad_pn0_ = pm1->impl_nstep;
-      rad_ps0_ = pm1->impl_itsum;
+      pdata->hdata[21] = fmax(picmax_rst_, pvet->impl_itmax);   // global (1019c)
+      rad_pn0_ = pvet->impl_nstep;
+      rad_ps0_ = pvet->impl_itsum;
     }
     hist_tprev_ = pm->time;
     return;
@@ -3608,7 +3609,7 @@ void RyReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 //! <rad_vet>: kappa_t along a column (this run's table lookup, device), F [code] and
 //! G(psi) = int a_ref dr_eq (a_ref = kappa_t F/c); split out of RadSetup (ramp v2: also
 //! for the spin-1 column)
-void RadColG(radvet::RadiationVet *pm1, const Real du, const Real tk, const Real fu,
+void RadColG(radvet::RadiationVet *pvet, const Real du, const Real tk, const Real fu,
              const Real cl, const std::vector<Real> &cps, const std::vector<Real> &clt,
              const std::vector<Real> &clr, const std::vector<Real> &crq,
              const std::vector<Real> &cfl, std::vector<Real> &gq, std::vector<Real> &fq) {
@@ -3624,7 +3625,7 @@ void RadColG(radvet::RadiationVet *pm1, const Real du, const Real tk, const Real
     }
     Kokkos::deep_copy(dd, hd);
     Kokkos::deep_copy(dt, ht);
-    radvet::VetOpacTab ot = pm1->otab;
+    radvet::VetOpacTab ot = pvet->otab;
     par_for("ryper_ckt", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int n) {
       Real op, oe, of, os;
       radvet::VetTableOpacities(ot, dd(n), dt(n), op, oe, of, os);
@@ -3650,14 +3651,14 @@ void RadColG(radvet::RadiationVet *pm1, const Real du, const Real tk, const Real
 //! env_phtop_ (split out so that RySpinRefresh can redo them during the spin
 //! ramp): Phi_eff = Phi_wb + G(psi) into the hydro x1 WB pair (phicc_wb, phi_wb_x1f), the
 //! plain-gravity force above the WB region (gpl_, gpl4_), the module's a_ref (spr_aref_ =
-//! pm1->arad_ref, refreshed in place) and the theta-wall flux fx2lo_/fx2hi_ (+ fx2leak_).
-//! first = the RadSetup call (allocates, hands the arrays to the module, reports).
-//! Returns max a_ref.
+//! pvet->arad_ref, refreshed in place) and the theta-wall flux fx2lo_/fx2hi_ (+
+//! fx2leak_). first = the RadSetup call (allocates, hands the arrays to the module,
+//! reports). Returns max a_ref.
 Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool first) {
   // ---- Phi_eff into the x1 WB pair (centres, x1 faces), the plain-gravity force above
   // the WB region (gpl_), the module's x1 reference a_ref = -dG/dr
   const bool root = (global_variable::my_rank == 0);
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   auto *phd = pmbp->phydro;
   const RocheParams p = rp_;
   const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
@@ -3717,8 +3718,8 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
     // neither blocks the poleward flux of the tilted photosphere (reflect) nor drains the
     // star (outflow/Marshak).  Explicit (imposed); its outward total is booked in Ebnd.
     fx2leak_ = 0.0;
-    if (pm1->ibc_x2min == radvet::VET_IBC_X2FLUX
-        || pm1->ibc_x2max == radvet::VET_IBC_X2FLUX) {
+    if (pvet->ibc_x2min == radvet::VET_IBC_X2FLUX
+        || pvet->ibc_x2max == radvet::VET_IBC_X2FLUX) {
       if (first) {
         Kokkos::realloc(fx2lo_, nmb, n3, n1);
         Kokkos::realloc(fx2hi_, nmb, n3, n1);
@@ -3777,10 +3778,10 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
             hlo(m,k,i) = fth(hx1(m,i), tlo, hx3(m,k));
             hhi(m,k,i) = fth(hx1(m,i), thi, hx3(m,k));
             if (k >= ks && k <= ke && i >= is && i <= ie) {
-              if (plo && pm1->ibc_x2min == radvet::VET_IBC_X2FLUX) {
+              if (plo && pvet->ibc_x2min == radvet::VET_IBC_X2FLUX) {
                 lk -= hlo(m,k,i)*ha2(m,k,js,i);
               }
-              if (phi2 && pm1->ibc_x2max == radvet::VET_IBC_X2FLUX) {
+              if (phi2 && pvet->ibc_x2max == radvet::VET_IBC_X2FLUX) {
                 lk += hhi(m,k,i)*ha2(m,k,je+1,i);
               }
             }
@@ -3790,7 +3791,7 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
       fx2leak_ = lk;
       Kokkos::deep_copy(fx2lo_, hlo);
       Kokkos::deep_copy(fx2hi_, hhi);
-      if (first) pm1->SetX2FaceFlux(fx2lo_, fx2hi_);
+      if (first) pvet->SetX2FaceFlux(fx2lo_, fx2hi_);
       if (root && first) {
         std::printf("ry_per_accretor: <rad_vet> x2 walls: IMPOSED equilibrium lateral "
                     "flux F_col(psi) (g/g_col) dPhi/(r dth)/|grad Phi| (von Zeipel); "
@@ -3829,8 +3830,8 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
   Kokkos::deep_copy(gpl_, hgl);
   Kokkos::deep_copy(aref_d, ha);
   if (first) {
-    pm1->fref_wsplit_ok = true;       // RyPerSrcEnv gives the reference work (split)
-    pm1->SetForceReference(aref_d);
+    pvet->fref_wsplit_ok = true;       // RyPerSrcEnv gives the reference work (split)
+    pvet->SetForceReference(aref_d);
   }
   return amax;
 }
@@ -3843,14 +3844,14 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     std::cout << "### FATAL ERROR in ry_per_accretor (<rad_vet>): " << msg << std::endl;
     std::exit(EXIT_FAILURE);
   };
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   auto *phd = pmbp->phydro;
   auto &eos = phd->peos->eos_data;
   // ---- units: Rsun, km/s, the fixed density unit; the module's constants must match
   const Real du = pmbp->punit->density_cgs(), lu = pmbp->punit->length_cgs();
   const Real vu = pmbp->punit->velocity_cgs(), tk = eos.temp_cgs;
   const Real eu = du*vu*vu, fu = eu*vu;          // erg/cc, erg/cm^2/s per code unit
-  const Real cl = pm1->c_light, ar = pm1->arad;
+  const Real cl = pvet->c_light, ar = pvet->arad;
   {
     std::ostringstream os;
     bool bad = false;
@@ -3860,17 +3861,17 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
         bad = true;
       }
     };
-    chk("<rad_vet>/temp_unit_kelvin", pm1->otab.tunit, tk, 1.0e-5);
-    chk("<rad_vet>/rho_unit_cgs", pm1->otab.dunit, du, 1.0e-5);
-    chk("<rad_vet>/kappa_unit", pm1->otab.kunit, du*lu, 1.0e-5);
+    chk("<rad_vet>/temp_unit_kelvin", pvet->otab.tunit, tk, 1.0e-5);
+    chk("<rad_vet>/rho_unit_cgs", pvet->otab.dunit, du, 1.0e-5);
+    chk("<rad_vet>/kappa_unit", pvet->otab.kunit, du*lu, 1.0e-5);
     chk("<rad_vet>/c_light", cl, 2.99792458e10/vu, 1.0e-6);
     chk("<rad_vet>/arad", ar, 7.5657e-15*SQR(SQR(tk))/eu, 1.0e-4);
     if (bad) fatal(os.str());
   }
-  if (pm1->opacity_type != radvet::VET_OPAC_TABLE) {
+  if (pvet->opacity_type != radvet::VET_OPAC_TABLE) {
     fatal("needs <rad_vet>/opacity = table");
   }
-  if (pm1->force_ref != radvet::VET_FREF_WB_ARAD) {
+  if (pvet->force_ref != radvet::VET_FREF_WB_ARAD) {
     fatal("needs <rad_vet>/force_reference = wb_arad (Phi_eff carries the column's "
           "radiation force)");
   }
@@ -3894,14 +3895,15 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
         std::fabs(a3 - ld_lo) + std::fabs(a4 - ld_hi) > 1.0e-9) {
       fatal("the Rosseland and Planck tables are not on the same grid");
     }
-    pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
+    pvet->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
     if (root) {
       std::printf("ry_per_accretor: <rad_vet> tables %s + %s: log T %.3f .. %.3f, log "
                   "rho "
                   "%.3f .. %.3f (edge-held outside); absorption mask below %.4g code "
                   "(%.4g g/cc), kappa_s there %.4g cm^2/g\n", rt.c_str(), pt.c_str(),
-                  lt_lo, lt_hi, ld_lo, ld_hi, pm1->otab.amask_rho, pm1->otab.amask_rho*du,
-                  pm1->otab.amask_kes/pm1->otab.kunit);
+                  lt_lo, lt_hi, ld_lo, ld_hi, pvet->otab.amask_rho,
+                      pvet->otab.amask_rho*du,
+                  pvet->otab.amask_kes/pvet->otab.kunit);
     }
   }
   // ---- the stream window under radiation (S4): the injected gas carries its T through
@@ -3920,7 +3922,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     const Real pg = eos.Pressure(d, e, t);
     const Real prad = ar*SQR(SQR(t))/3.0;
     DvceArray1D<Real> sk("ryper_sk", 2);
-    radvet::VetOpacTab ot = pm1->otab;
+    radvet::VetOpacTab ot = pvet->otab;
     par_for("ryper_skt", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
       Real op, oe, of, os;
       radvet::VetTableOpacities(ot, d, t, op, oe, of, os);
@@ -3941,7 +3943,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
   }
   // ---- kappa_t along the column with this run's lookup (device), a_ref, G(psi)
   rcol_psi_ = cpsi;
-  RadColG(pm1, du, tk, fu, cl, cpsi, clt, clr, crq, cfl, rcol_g_, rcol_f_);
+  RadColG(pvet, du, tk, fu, cl, cpsi, clt, clr, crq, cfl, rcol_g_, rcol_f_);
   const RocheParams p = rp_;
   const Real rtop = env_rtop_, rspin = env_rspin_;
   // ---- the imposed bottom flux must be the column's F at psi(r_in, phi 90)
@@ -3980,7 +3982,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     // its own spin (dlt 0, R_acc anchor: psi_in0 = Phi(R_acc) - Phi(r_in), phi 90)
     // against problem/spin_ramp_flux0, then the blend at the current w
     std::vector<Real> g0, f0;
-    RadColG(pm1, du, tk, fu, cl, spr_c0psi_, spr_c0lt_, spr_c0lr_, spr_c0rq_,
+    RadColG(pvet, du, tk, fu, cl, spr_c0psi_, spr_c0lt_, spr_c0lr_, spr_c0rq_,
             spr_c0fl_, g0,
             f0);
     const Real psi_in0 = spr_phis0_ - RochePot(p, std::fmin(r_in, rtop), 0.5*M_PI);
@@ -3999,7 +4001,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     spr_gok_ = true;
     SpinColBlend(spr_w_);
     rad_fin_ = (1.0 - spr_w_)*spr_flux0_ + spr_w_*spr_flux1_;
-    pm1->iflux_x1min = rad_fin_;
+    pvet->iflux_x1min = rad_fin_;
     if (root) {
       std::printf("ry_per_accretor: spin ramp v2: bottom flux (1 - w) %.9g + w %.9g = "
                   "%.9g (w %.6f); psi_in0 %.6g (spin-1 column F x band %.9g), psi_in1 "
@@ -4028,7 +4030,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
 //! against the opacity grid and the EOS table (fatal).
 void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
   const bool root = (global_variable::my_rank == 0);
-  auto *pm1 = pmbp->pradvet;
+  auto *pvet = pmbp->pradvet;
   auto *phd = pmbp->phydro;
   auto &indcs = pmbp->pmesh->mb_indcs;
   const int ng = indcs.ng;
@@ -4086,10 +4088,10 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
   }
   Kokkos::deep_copy(fc, hfc);
   Kokkos::deep_copy(ffc, hff);
-  auto ur = pm1->u0;
+  auto ur = pvet->u0;
   auto tc = tcol_;
   auto tc4 = tcol4_;
-  const Real ar = pm1->arad, efl = pm1->e_floor, cl = pm1->c_light;
+  const Real ar = pvet->arad, efl = pvet->e_floor, cl = pvet->c_light;
   par_for("ryper_ric", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = p3 ? tc4(m,k,j,i) : tc(m,k,i);
@@ -4099,7 +4101,7 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
     ur(m,radvet::VET_F2,k,j,i) = 0.0;
     ur(m,radvet::VET_F3,k,j,i) = 0.0;
   });
-  auto ff0 = pm1->f0x1;
+  auto ff0 = pvet->f0x1;
   if (ff0.extent_int(0) >= nmb) {
     const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
     const int e1 = std::min(ff0.extent_int(3) - 1, n1);
@@ -4114,7 +4116,7 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
     const EOS_Data eos = eosd;
     auto u0 = phd->u0;
     auto phicc = phd->phicc0;
-    const Real thr = pm1->otab.amask_rho, du = pm1->otab.dunit, tk = pm1->otab.tunit;
+    const Real thr = pvet->otab.amask_rho, du = pvet->otab.dunit, tk = pvet->otab.tunit;
     const int is = indcs.is, js = indcs.js, ks = indcs.ks;
     const int ni = indcs.nx1, nji = indcs.nx2*ni, nkji = indcs.nx3*nji;
     Real mn[2], mx[2];
@@ -4157,7 +4159,7 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
       mn[q] = lo;
       mx[q] = hi;
     }
-    auto &ot = pm1->otab;
+    auto &ot = pvet->otab;
     auto hlT = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ot.lT);
     auto hlD = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ot.lD);
     const Real tlo = hlT(0), thi = hlT(ot.nT - 1), dlo = hlD(0), dhi = hlD(ot.nD - 1);
@@ -4772,11 +4774,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     if (rad_ && (amb_radeq_ || strad_)) {
       // the per-column outer bath: a T_s^4 in the stream window (stream_rad, stream on),
       // 0 elsewhere (vacuum, = the scalar implicit_ebath_x1max default)
-      auto *pm1 = pmbp->pradvet;
-      if (pm1->iebath_x1max != 0.0) {
+      auto *pvet = pmbp->pradvet;
+      if (pvet->iebath_x1max != 0.0) {
         fatal5("stream_rad / radeq need implicit_ebath_x1max = 0");
       }
-      strad_e_ = pm1->arad*SQR(SQR(gen_tstr_));
+      strad_e_ = pvet->arad*SQR(SQR(gen_tstr_));
       auto &ind = pmbp->pmesh->mb_indcs;
       const int nb = pmbp->nmb_thispack;
       const int m3 = (ind.nx3 > 1) ? (ind.nx3 + 2*ind.ng) : 1;
@@ -4785,10 +4787,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       auto rb = rbath_;
       auto &x3c = pmbp->pcoord->x3v;
       const bool on = strad_ && stream_on_ && !stvol_;   // volume: dark top everywhere
-      strad_ar_ = pm1->arad;
+      strad_ar_ = pvet->arad;
       const Real es = strad_e_, phs = phi_s_, ww = nsig_*sig_, sg = sig_;
       const bool stp = stprof_;
-      const Real tc = gen_tstr_, tsf = gen_tsurf_, ar = pm1->arad;
+      const Real tc = gen_tstr_, tsf = gen_tsurf_, ar = pvet->arad;
       par_for("ryper_bath", DevExeSpace(), 0, nb - 1, 0, m3 - 1, 0, m2 - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j) {
         const Real dph = WrapPhi(x3c(m,k) - phs);
@@ -4805,7 +4807,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
                     StreamT(true, tc, tsf, 2.5)*eos.temp_cgs,
                     StreamT(true, tc, tsf, 3.0)*eos.temp_cgs, tsf*eos.temp_cgs);
       }
-      pm1->SetX1maxBathColumns(rbath_);
+      pvet->SetX1maxBathColumns(rbath_);
       if (root) {
         std::printf("ry_per_accretor: S5: ambient %s; stream radiation %s (E = a T_s^4 = "
                     "%.6g code at T_s %.1f K, F = (4/3) E v; outer Marshak bath per "
@@ -5431,7 +5433,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
 //!   EnvTcolColumn: tcol_/tcol4_ (column T(psi), von Zeipel factor with env_ic_vz);
 //!   RadSpinArrays: phicc_wb + phi_wb_x1f (Phi_eff of the hydro x1 WB pair; these replace
 //!     the plain Phi_wb pair EnvSetup writes, so that pair is not redone), gpl_/gpl4_
-//!     (Phi_eff plain gravity above the WB region), a_ref (pm1->arad_ref) and the
+//!     (Phi_eff plain gravity above the WB region), a_ref (pvet->arad_ref) and the
 //! theta-wall flux fx2lo_/fx2hi_ (+ fx2leak_);
 //!   hydro wb_phimax (env_wb_depth).
 //! Scalars read at call time (RyPerBCEnv ghosts, the floor sponge's spin, the Coriolis /
@@ -5532,12 +5534,12 @@ std::vector<char> RyPerRstWrite() {
     for (int n=0; n<3; ++n) loc[o++] = lzb_[n];
   }
   const int nr = global_variable::nranks;
-  radvet::RadiationVet *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradvet : nullptr;
+  radvet::RadiationVet *pvet = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradvet : nullptr;
   // the outer bath's advective flux (see above), gathered in gid order
   int nbv = 0;
   std::vector<Real> bv;
-  if (pm1 != nullptr && pm1->iebath_hi_col_on && pm1->ibadv_x1max.extent_int(0) > 0) {
-    auto &bd = pm1->ibadv_x1max;
+  if (pvet != nullptr && pvet->iebath_hi_col_on && pvet->ibadv_x1max.extent_int(0) > 0) {
+    auto &bd = pvet->ibadv_x1max;
     nbv = bd.extent_int(1)*bd.extent_int(2);
     Mesh *pmsh = rst_pmbp_->pmesh;
     const int nmbt = pmsh->nmb_total, nml = bd.extent_int(0);
@@ -5567,10 +5569,10 @@ std::vector<char> RyPerRstWrite() {
   for (int n=0; n<kRstPerX; ++n) all[n] = loc[n];
 #endif
   Real glb[kRstGlob] = {hist_tprev_, 0.0, 0.0, picmax_rst_};
-  if (pm1 != nullptr) {
-    glb[1] = pm1->impl_nstep - rad_pn0_;
-    glb[2] = pm1->impl_itsum - rad_ps0_;
-    glb[3] = fmax(picmax_rst_, pm1->impl_itmax);
+  if (pvet != nullptr) {
+    glb[1] = pvet->impl_nstep - rad_pn0_;
+    glb[2] = pvet->impl_itsum - rad_ps0_;
+    glb[3] = fmax(picmax_rst_, pvet->impl_itmax);
   }
 #if MPI_PARALLEL_ENABLED
   MPI_Bcast(glb, kRstGlob, MPI_ATHENA_REAL, 0, MPI_COMM_WORLD);
@@ -5658,9 +5660,9 @@ void RyPerRstRestore(const std::vector<char> &blk) {
   hist_tprev_ = glb[0];
   picmax_rst_ = glb[3];
   if (root) {
-    radvet::RadiationVet *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradvet : nullptr;
-    const Real pn = (pm1 != nullptr) ? pm1->impl_nstep : 0.0;
-    const Real ps = (pm1 != nullptr) ? pm1->impl_itsum : 0.0;
+    radvet::RadiationVet *pvet = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradvet : nullptr;
+    const Real pn = (pvet != nullptr) ? pvet->impl_nstep : 0.0;
+    const Real ps = (pvet != nullptr) ? pvet->impl_itsum : 0.0;
     rad_pn0_ = pn - glb[1];
     rad_ps0_ = ps - glb[2];
     std::printf("ry_per_accretor: history registers restored from the restart file (%d "
@@ -5671,15 +5673,15 @@ void RyPerRstRestore(const std::vector<char> &blk) {
 
 //! the stored ibadv_x1max into <rad_vet> (after EnvSetup: SetX1maxBathColumns zeroes it)
 void RyPerRstBadv() {
-  radvet::RadiationVet *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradvet : nullptr;
-  const bool on = (pm1 != nullptr) && pm1->iebath_hi_col_on &&
-                  (pm1->ibadv_x1max.extent_int(0) > 0);
+  radvet::RadiationVet *pvet = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradvet : nullptr;
+  const bool on = (pvet != nullptr) && pvet->iebath_hi_col_on &&
+                  (pvet->ibadv_x1max.extent_int(0) > 0);
   if (rst_badv_n_ < 0) return;                  // no block (older file): logged already
   if (!on && rst_badv_.empty()) return;
   const bool root = (global_variable::my_rank == 0);
   Mesh *pmsh = rst_pmbp_->pmesh;
   if (!on || rst_badv_.empty() ||
-      rst_badv_n_ != pm1->ibadv_x1max.extent_int(1)*pm1->ibadv_x1max.extent_int(2) ||
+      rst_badv_n_ != pvet->ibadv_x1max.extent_int(1)*pvet->ibadv_x1max.extent_int(2) ||
       rst_badv_.size() != static_cast<size_t>(pmsh->nmb_total)*rst_badv_n_) {
     if (root) {
       std::printf("ry_per_accretor: WARNING the restart file's outer-bath advective flux "
@@ -5689,7 +5691,7 @@ void RyPerRstBadv() {
     rst_badv_.clear();
     return;
   }
-  auto &bd = pm1->ibadv_x1max;
+  auto &bd = pvet->ibadv_x1max;
   auto hb = Kokkos::create_mirror_view(bd);
   const int g0 = pmsh->gids_eachrank[global_variable::my_rank];
   const int n1 = bd.extent_int(1), n2 = bd.extent_int(2);
@@ -6743,8 +6745,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (lz_) user_m1post_func = RyPerVetPostLz;   // (RyPerVetPost + the L_z mark)
     // rbk_ (see there): wherever the M1 post hook runs after every solve
     {
-      auto *pm1 = pmbp->pradvet;
-      rbk_ = rad_ && pm1 != nullptr && pm1->coupling && pm1->gas_feedback && pm1->fl_on &&
+      auto *pvet = pmbp->pradvet;
+      rbk_ = rad_ && pvet != nullptr && pvet->coupling && pvet->gas_feedback &&
+          pvet->fl_on &&
              (!pin->DoesParameterExist("problem", "rad_book_lag") ||
               !pin->GetBoolean("problem", "rad_book_lag"));
       if (rbk_) user_m1post_func = RyPerVetPostRb;
