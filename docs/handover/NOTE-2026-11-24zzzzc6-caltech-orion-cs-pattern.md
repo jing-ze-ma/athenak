@@ -4,3 +4,31 @@
 - Arms: Bp = B's deck (nlim 600) on 53290b5af; E = thinf true on 87af1d65c; G = thinf true on 53290b5af (same deck text as E); H = Bp without the merge. 4 ranks, 4 H200, node 02-03. B itself ran with T2 (7d7c4a71). B's c150 / 300 / 450 rows come from its old table (no phase); its c600 is also in the old table.
 - Source check on arm D, carried over from my zzzzb6 correction: cs_vertex_3cell IS read (mesh.cpp) and two sites of the hydro FOFC trial state (hydro_fofc.cpp, fofc_etotgrav.cpp) do run in this deck; FOFC never fired in B or D, every other use is behind conduction / MHD, none is in rad_vet. B and D data payloads at c0 and c600 are byte-identical (double). So inert in effect; it is not literally unread by the hydro update.
 - Stop rule: after E, m4(200-400) at c600 below Bp / 3 -> G and H are not run; the c600 dumps of all arms are kept until you score.
+
+## Bp (11-24 18:13)
+- 2026-11-24 18:09:23 start Bp node hpc-sm-02-03 BIN athena_sdosdo_53290b5af md5=573465bddd359381dd270fd0428e8683 deck star3d_cs_Bp.athinput md5 d3de281af1cda9971e248d1fb1efd17f, no command-line keys
+- 2026-11-24 18:13:40 rc=0 (srun) ended: Terminating on cycle limit wall=257 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- deck vs B's (c091e7c5): `< nlim = 1200;> nlim = 600;`
+
+| cycle | arm | m4 200-400 | phase [deg] (r) | sym_rms 200-400 | rms_all 200-400 | m4 0-100 | sym_rms 0-100 | m4 100-200 | sym_rms 100-200 | m4 800-850 | sym_rms 800-850 | m4(200-400) / Bp |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 150 | B | 9.209e-06 | - | 9.172e-06 | 9.181e-06 | 2.430e-04 | 1.273e-04 | 6.784e-05 | 4.755e-05 | 8.034e-05 | 1.645e-04 | 1.000 |
+| 150 | Bp | 9.209e-06 | 90.0 (200) | 9.172e-06 | 9.181e-06 | 2.430e-04 | 1.273e-04 | 6.784e-05 | 4.755e-05 | 8.034e-05 | 1.645e-04 | 1.000 |
+| 300 | B | 3.636e-05 | - | 2.907e-05 | 2.909e-05 | 2.811e-04 | 1.459e-04 | 2.349e-04 | 1.212e-04 | 2.941e-04 | 3.966e-04 | 1.000 |
+| 300 | Bp | 3.636e-05 | 0.0 (200) | 2.907e-05 | 2.909e-05 | 2.811e-04 | 1.459e-04 | 2.349e-04 | 1.212e-04 | 2.941e-04 | 3.966e-04 | 1.000 |
+| 450 | B | 8.041e-05 | - | 5.399e-05 | 5.403e-05 | 1.174e-04 | 6.832e-05 | 2.911e-04 | 1.509e-04 | 3.964e-04 | 4.927e-04 | 1.000 |
+| 450 | Bp | 8.041e-05 | 0.0 (200) | 5.399e-05 | 5.403e-05 | 1.174e-04 | 6.832e-05 | 2.911e-04 | 1.509e-04 | 3.964e-04 | 4.927e-04 | 1.000 |
+| 600 | B | 1.391e-04 | - | 8.178e-05 | 8.182e-05 | 1.230e-04 | 6.786e-05 | 2.958e-04 | 1.552e-04 | 5.657e-04 | 6.919e-04 | 1.000 |
+| 600 | Bp | 1.391e-04 | 0.0 (200) | 8.178e-05 | 8.182e-05 | 1.230e-04 | 6.786e-05 | 2.958e-04 | 1.552e-04 | 5.657e-04 | 6.919e-04 | 1.000 |
+
+Columns of the imprint table (m4, m8, sym_rms, rms_all; printed digits), over all radius bins:
+- Bp vs B c150: m4 identical; m8 identical; sym_rms identical; rms_all identical
+- Bp vs B c300: m4 identical; m8 identical; sym_rms identical; rms_all identical
+- Bp vs B c450: m4 identical; m8 identical; sym_rms identical; rms_all identical
+- Bp vs B c600: m4 identical; m8 identical; sym_rms identical; rms_all identical
+
+| arm | hst rows | t at c600 | dt | L_top/L_in | L_bot/L_in | KE_int | vs ref: rel L_top, rel KE, rows identical to ref |
+|---|---|---|---|---|---|---|---|
+| B | 1201 | 6.000000e+05 | 1000 | 0.996750 | 0.998785 | 6.010414e+40 | - |
+| Bp | 601 | 6.000000e+05 | 1000 | 0.996750 | 0.998785 | 6.010414e+40 | B: 0.00e+00, 0.00e+00, 601 of 601 |
+- Bp vs B m4(200-400) at c600: +0.0 % (within 10 %)
