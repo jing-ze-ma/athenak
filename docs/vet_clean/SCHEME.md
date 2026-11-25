@@ -49,21 +49,27 @@ one normal component per face. The face flux of a stage is a blend of
 
 **Time integration.** IMEX. The hydrodynamics is AthenaK's explicit Heun (`rk2`) integrator,
 unchanged. Radiation transport and the gas-radiation exchange are implicit, with Alexander's
-two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); each stage sees the gas at the
-same time as the explicit part, and the hydro's stage-2 flux state takes the exchange with
-the slope of the last step and of this stage (`time2_gtime_slope`), so the IMEX scheme is
-second order also where the exchange is stiff. Backward Euler is the
-fallback (first step, or a step whose stage failed). The radiation does not limit the
-stability of the step; with `<hydro>/rad_signal_speed_diff = true` (production) it enters the
-hydro time step only where it is trapped: the radiation part of the signal speed is weighted by
+two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); its first stage sees the gas at
+$t^n + g\,\Delta t$ ($g = 1 - 1/\sqrt{2}$), not at the time of the explicit part, and the
+hydro's stage-2 flux state takes the exchange with the slope of the last step and of this
+stage (`time2_gtime_slope`); the coupling conditions make the IMEX scheme second order, also
+where the exchange is stiff. Backward Euler is the
+fallback (first step, or a step whose stage failed). At `cfl_number = 0.3` per direction the
+radiation does not limit the stability of the step; this is not general: in a linear analysis
+of a uniform medium the 1-D limit is 1.0 in the Courant number of the weighted signal
+speed below and 0.66 in that of the gas speed alone (where $P_{\rm rad}/P_{\rm gas} \approx
+7-10$ and $x \gg 1$); in 3-D with equal directions it is 0.34 per direction (the hydro's own).
+With `<hydro>/rad_signal_speed_diff = true` (production) the radiation enters the hydro time
+step only where it is trapped: the radiation part of the signal speed is weighted by
 $1 - e^{-x}$, $x = \tau_d\,c_{\rm eq}/c$ the grid-scale trapping parameter ($\tau_d$ the
 optical depth of a cell). Where $x \ll 1$ the radiation diffuses out of a cell faster than a
-sound wave crosses it and does not stiffen the gas, so dt is not limited by it. This is a
-matter of accuracy only (the scheme is IMEX, so stability does not depend on it).
+sound wave crosses it and does not stiffen the gas, so dt is not limited by it. The weight
+is for accuracy; at cfl 0.3 stability does not need it.
 `<hydro>/rad_signal_speed_phase = true` weights it by $1 - e^{-x^2}$ instead: for $x \ll 1$ the
 radiation-pressure perturbation lags the compression by about $\pi/2$, so its restoring part is
-$O(x^2)$ and its $O(x)$ part only damps the wave; the linear root stays at the gas speed until
-the mode is overdamped ($x \sim 0.3$). In thin gas ($c_{\rm eq}^2 \propto 1/\rho$) the
+$O(x^2)$ and its $O(x)$ part only damps the wave; the linear root of the grid-scale mode
+stays at the gas speed until the mode is overdamped ($x \sim 0.3$); a resolved wave is
+trapped more at the same $x$. In thin gas ($c_{\rm eq}^2 \propto 1/\rho$) the
 linear weight's term grows as $\rho^{-1/2}$; this one stays far below $c_g$.
 Floor gas ($\rho$ below `rad_vet/floorcap_rho`) can be pinned at the floor-gas velocity cap;
 with `<hydro>/dt_floor_courant = C` (production 0.6) it takes one Courant bound on the sum of its
