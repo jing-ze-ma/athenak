@@ -103,7 +103,7 @@ Definitions used in the table:
 | 24 | M_hflx | hydro mass leaving through the physical x1 faces (inner + outer, outward positive) over the step, divided by dt. These are the RK-weighted fluxes the update used (`AmBndFlux`, `src/hydro/hydro_am.cpp:637`), so they close the mass budget exactly. Needs the angular-momentum module (`<hydro>/am_transport`, on in the decks); 0 without it. | g/s |
 | 25 | E_hflx | the same for the hydro conserved energy U_E | erg/s |
 | 26 | Lz_hflx | the same for the gas L_z | g cm^2/s^2 |
-| 27 | Lz_tot | L_z of gas + radiation, including the radiation's L_z ledger (`CleanLzTotal`) | g cm^2/s |
+| 27 | Lz_tot | L_z of gas + radiation, including the radiation's L_z ledger (`CleanLzTotal`); summed exactly, so dLz_tot + Lz_hflx dt of a row (the rate of the step it ends) holds to the state's round-off, a small part of eps = 1e-16 times the gross sum V R \|p_phi\| per step: where the net is far below the gross sum, compare with eps x gross, not with eps x Lz_tot | g cm^2/s |
 | 28 | L_midE | sum Phi A at the L_mid face: the energy flux that moved E there | erg/s |
 | 29 | L_intE | sum Phi A at the L_int face | erg/s |
 | 30 | L_midC | L_midE minus the advective part: sum (Phi - (4/3) v E) A at the L_mid face, with v and E the means of the two cells beside the face. This is the comoving radiative flux. | erg/s |
