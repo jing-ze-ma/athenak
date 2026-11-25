@@ -1326,7 +1326,9 @@ void RadiationVet::CleanFaceCoefficients() {
   const bool fjc = cln_jsec;   // (clean_face_jse_cell)
   const bool fho = cln_rfh;    // (vet_rotate_avg_ema_wb: the cells' own, CleanCellHalf)
   const CleanArgs *px = (fho || fjs || wft) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
-  const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
+  // (clean_closure = eddington | sphere sweeps no rays: the cells' half ranges)
+  const int nd = (pmy_pack->pmesh->use_cubed_sphere && !cln_edd && !cln_sphere)
+                 ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;

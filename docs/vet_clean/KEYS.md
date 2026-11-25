@@ -97,7 +97,7 @@ with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
 | `rad_vet/closure` | Closure. `vet_col` with `vet_gd = true`: variable Eddington tensor from the global ray sweep (required on spherical polar and the cubed sphere). | `vet_col` with `vet_gd` on a fresh sp/cs run; `m1` otherwise | all: `vet_col` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/vet_gd` | Use the global ray sweep for the Eddington tensor. | true with `closure = vet_col` on a fresh sp/cs run | all: `true` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/vet_gd_replace` | The global sweep replaces the per-column sweep. | true with `vet_gd`, also on a restart whose file lacks it (NOTE) | all: `true` | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/clean_closure` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays; for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet.cpp` (constructor) |
+| `rad_vet/clean_closure` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays, with or without `vet_gd` (without: `clean_consistency = false`); for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet.cpp` (constructor) |
 
 ## Rays
 

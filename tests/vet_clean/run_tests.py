@@ -692,6 +692,24 @@ def t_shell_force_cs(c):
                 rad=float(np.sqrt((dv**2).mean())/rms))
 
 
+def t_eddington_cs(c):
+    """clean_closure = eddington on the cubed sphere with vet_gd set (the deck's default
+    closure): no rays are swept, so the solve must not read their sums.  Drifts of the
+    closed shell, 4 cycles; restart bitwise; warnings; nogd: the largest difference from
+    the run with vet_gd = false (clean_consistency off in both): the same scheme, D = I/3
+    written with another round-off."""
+    o = {'rad_vet/clean_closure': 'eddington', 'time/nlim': 4}
+    d = c.run('shell_cs.athinput', 'run', o)
+    out = am_budget(d, 'cs')
+    out['warnings'] = vett.warnings(open(os.path.join(d, 'run.log')).read())
+    out['restart_maxdiff'] = restart_pair(c, 'shell_cs.athinput', 4, 2, o)['maxdiff']
+    o['rad_vet/clean_consistency'] = 'false'
+    a = c.run('shell_cs.athinput', 'nc', o)
+    b = c.run('shell_cs.athinput', 'nogd', dict(o, **{'rad_vet/vet_gd': 'false'}))
+    out['nogd'] = vett.compare_dirs(a, b)[1]
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # radiation-acoustic waves in every trapping regime
 
@@ -1496,6 +1514,7 @@ TESTS = [  # name, function, in --quick
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
     ('shell_force_cs', t_shell_force_cs, False),
+    ('eddington_cs', t_eddington_cs, True),
     ('momentum_box', t_momentum_box, True),
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
