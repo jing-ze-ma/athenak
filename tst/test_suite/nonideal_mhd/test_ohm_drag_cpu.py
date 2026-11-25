@@ -18,6 +18,11 @@ Gated at t = 0.5, nx1 = nx2 = nx3 = N:
   * RKG super-time-stepping (mhd/use_rkg_sts) against the explicit path at N = 16;
   * rkgdt-1101: the same with the forward-Euler dt_diff (mhd/rkg_dt_safety = 0.5, fewer
     super-stages), held to the same RKG thresholds.
+The two RKG arms run at cfl_number = 0.15.  Their thresholds were measured with the
+Lie-split RKG at cfl 0.3; the default since 20c7dd7f6 is the Strang split (rkg_strang),
+whose torque at N = 16 differs from the explicit one by 0.0070 at cfl 0.3 and 0.0012 at
+0.15.  The explicit arms keep the deck's 0.3: their step is the resistive limit, a
+fifth of the RKG step there, and their torque is the same at both (0.97312, 0.97311).
 The thresholds below carry the values measured on stswall-1029 c306af525 +
 ohmdrag-1029 (viper login node, MPI build) in the comments, with a modest margin.
 
@@ -123,8 +128,9 @@ def test_ohm_drag_cpu():
         os.makedirs(rundir, exist_ok=True)
         table = reference(rundir)
         res = {n: run(exe, rundir, table, n, False) for n in (16, 32)}
-        rkg = run(exe, rundir, table, 16, True)
-        rkgfe = run(exe, rundir, table, 16, True, ["mhd/rkg_dt_safety=0.5"], "n16_rkgfe")
+        rkg = run(exe, rundir, table, 16, True, ["time/cfl_number=0.15"])
+        rkgfe = run(exe, rundir, table, 16, True,
+                    ["time/cfl_number=0.15", "mhd/rkg_dt_safety=0.5"], "n16_rkgfe")
         for n, (bphi, torque) in res.items():
             assert bphi < BPHI_L1_MAX[n], \
                 f"N={n}: B_phi L1 {bphi:.4e} > {BPHI_L1_MAX[n]}"
