@@ -3675,10 +3675,6 @@ void StarGravity(Mesh *pm, const Real bdt) {
   if (star_mlt_ && (wc != star_mw_ || (star_ad_ && wc > 0.0 && (ad || star_mtc_)))) {
     StarApplyMltW(pm, wc, tc);
   }
-  // F6 localisation (<rad_vet>/dbg_energy_tally, output only): sum IEN V
-  // after each part of this source and the hydro energy flux through the x1 boundary
-  // faces
-  const bool htal = (pmbp->pradvet != nullptr) && pmbp->pradvet->dbg_etally;
   auto htsum = [&]() {
     Real s = 0.0;
     const int nx1 = ie - is + 1, nx2 = je - js + 1, nx3 = ke - ks + 1;
@@ -3696,32 +3692,6 @@ void StarGravity(Mesh *pm, const Real bdt) {
 #endif
     return s;
   };
-  Real ht[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  if (htal) {
-    ht[0] = htsum();
-    auto flx1 = ph->uflx->x1f;
-    const int nx2 = je - js + 1, nx3 = ke - ks + 1;
-    Real fb[2];
-    for (int q = 0; q < 2; ++q) {
-      Real s = 0.0;
-      const int ib = (q == 0) ? is : (ie + 1);
-      Kokkos::parallel_reduce("star_htally_f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                              (nmb1 + 1)*nx3*nx2),
-      KOKKOS_LAMBDA(const int n, Real &acc) {
-        const int m = n/(nx3*nx2);
-        const int k = (n/nx2)%nx3 + ks, j = n%nx2 + js;
-        acc += bdt*flx1(m,IEN,k,j,ib)*area1(m,k,j,ib);
-      }, Kokkos::Sum<Real>(s));
-      fb[q] = s;
-    }
-#if MPI_PARALLEL_ENABLED
-    Real g[2];
-    MPI_Allreduce(fb, g, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    fb[0] = g[0]; fb[1] = g[1];
-#endif
-    ht[4] = fb[0];
-    ht[5] = fb[1];
-  }
   if (star_pm_) {
     // star_gravity = pointmass: the Athena++ point-mass source
     // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
@@ -3803,17 +3773,6 @@ void StarGravity(Mesh *pm, const Real bdt) {
       });
     }
   }
-  if (htal) {ht[1] = htsum();}
-  if (htal) {
-    ht[2] = htsum();
-    if (star_sp_rate_ <= 0.0) {ht[3] = ht[2];}
-    if (global_variable::my_rank == 0 && star_sp_rate_ <= 0.0) {
-      std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
-                  "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
-                  ht[1] - ht[0],
-                  ht[2] - ht[1], 0.0, ht[4], ht[5], ht[0], ht[3]);
-    }
-  }
   // the RK-exact boundary/sponge ledgers of this stage (star_drive.cpp)
   const bool hdrv = stardrive::On();
   if (star_sp_rate_ <= 0.0) {
@@ -3864,15 +3823,6 @@ void StarGravity(Mesh *pm, const Real bdt) {
       u0(m,IM1,k,j,i) *= f;
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke1;
     });
-    if (htal) {
-      ht[3] = htsum();
-      if (global_variable::my_rank == 0) {
-        std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
-                    "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
-                    ht[1] - ht[0],
-                    ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
-      }
-    }
     if (hdrv) {stardrive::StageLedger(pm, bdt, star_binf_, star_zflux_, htsum() - hdsp0);}
     return;
   }
@@ -3907,15 +3857,6 @@ void StarGravity(Mesh *pm, const Real bdt) {
     u0(m,IM3,k,j,i) *= f;
     u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke0;
   });
-  if (htal) {
-    ht[3] = htsum();
-    if (global_variable::my_rank == 0) {
-      std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
-                  "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
-                  ht[1] - ht[0],
-                  ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
-    }
-  }
   if (hdrv) {stardrive::StageLedger(pm, bdt, star_binf_, star_zflux_, htsum() - hdsp0);}
 }
 

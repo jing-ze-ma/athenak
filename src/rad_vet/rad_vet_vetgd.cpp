@@ -1217,9 +1217,6 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       pin_rot_ = pin;
       vgd_rot_t0 = pin->GetOrAddReal("rad_vet","vet_gd_rotate_t0",0.0);
       vgd_rot_align = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_align",true);
-      recipe::Old(pin, "rad_vet", "vet_gd_rotate_stretch", "0");
-      vgd_rot_stretch = pin->GetOrAddReal("rad_vet","vet_gd_rotate_stretch",
-                                          fresh ? 0.02 : 0.0);
       // vet_gd_rotate_slope: fresh default correct (Time2RotCorrect, hesdirk2 only); a
       // restart file without the key keeps keep
       std::string rs = pin->GetOrAddString("rad_vet","vet_gd_rotate_slope",
@@ -1474,8 +1471,7 @@ Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
                 << (vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt) << " = "
                 << ParameterInput::RealToString(vgd_rot_dt)
                 << " (recorded; t0 " << vgd_rot_t0 << ", align "
-                << (vgd_rot_align ? "on" : "off") << ", stretch " << vgd_rot_stretch
-                << ")" << std::endl;
+                << (vgd_rot_align ? "on" : "off") << ")" << std::endl;
     }
   }
   if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
@@ -1486,12 +1482,10 @@ Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
   const double rem = vgd_rot_t0 + k*vgd_rot_dt - time;
   double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
   if (n > 1.0e6) {return dt;}
-  if (vgd_rot_stretch > 0.0 && n > 1.0 && rem/(n - 1.0) <= (1.0 + vgd_rot_stretch)*dt) {
-    n -= 1.0;
-  }
+  if (n > 1.0 && rem/(n - 1.0) <= 1.02*dt) n -= 1.0;   // (dt may grow by 2%)
   const Real dtn = static_cast<Real>(rem/std::max(n, 1.0));
   if (dtn < dt) {vgd_rot_nalign += 1.0;}
-  return (vgd_rot_stretch > 0.0) ? dtn : std::min(dt, dtn);
+  return dtn;
 }
 
 //----------------------------------------------------------------------------------------
