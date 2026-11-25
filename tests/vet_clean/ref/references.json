@@ -451,7 +451,16 @@
   }
  },
  "wb_star": {
-  "_about": "a report, not a criterion (as momentum_box): the velocities of the unseeded BSG column after 20 cycles in the stars' well-balance mode; not bounded. Measured: v_in 3.1e-3, v_all 0.68 (photosphere and floor gas), lat_mid 1.4e-11; the static envelope of wb_sp / wb_cs (1e-8) has no counterpart here, see README",
+  "_about": "largest |v| / c_s of the unseeded BSG column after 20 cycles; in_vr r < 2.4e12, in_lat r < 3.2e12 (true radii of the stretched grid). Measured (823de9b26, 8 x 8): prof_in_vr 2.3e-3 (the supplied profile is 0.6 - 0.9 % of g out of balance: an initial state, not a scheme error; the same at 512 radial cells), prof_in_lat 4.6e-9, rigid_in_lat 2.1e-4, eq_in_vr 9.4e-5 (2e-6 after 10 rounds on the profile column), eq_in_lat 2e-9. rigid_in_lat and prof_in_vr are bounded from below: the test must see the spurious lateral flow of the rigid merge and an unbalanced column",
+  "max": {
+   "prof_in_lat": 1e-7,
+   "eq_in_lat": 1e-7,
+   "eq_in_vr": 3e-4
+  },
+  "min": {
+   "rigid_in_lat": 1e-6,
+   "prof_in_vr": 1e-3
+  },
   "equal": {
    "warnings": 0
   }
