@@ -17,4 +17,13 @@ One node, 4 GPUs, 4 ranks. Wall per segment = the Slurm step time (sacct; includ
 - Binary change: m35mms at c16340, m35zams at c50816, t9l62 at c3713 (a restart, same deck); bsg and t9mlt have one binary. The hst row count is one or two larger than the cycle number of the log (first and last rows), so I quote the log's cycle number for complete segments.
 - The m35mms and m35zams rows are updated once when they finish.
 
+## 3. The USER's reply on the palette sheet (2026-11-25 ~12:15) and round 2
+Verbatim: "i dont see much contrast in the density and temperature for the conv pattern. cmasher fusion for vr. flux lets try to use Blues since these are blue stars". So: v_r = cmasher fusion (settled); flux = Blues to try; density and temperature = the fluctuation from the shell mean is wanted.
+Round 2 (bsg final dump 00114, t = 57.0 d; caltech_results/DOCFIG/r2_*.png, README.txt, r2_limits.json):
+- Density and temperature: (a) delta rho / <rho> and delta T / <T> (shell mean) on the theta-r slice at phi = 30 deg (34-54 Rsun) in cmasher fusion, cmocean balance, crameri vik; (b) log10 rho and log10 T zoomed on 37-46 Rsun in cmocean thermal and cmasher ember; side by side. Limits symmetric for (a), from the 99th percentile of |fluctuation| of the convection-zone cells 38.5-44.0 Rsun only (slice: +-0.385 rho, +-0.0885 T); (b) 1-99 percentile of the same cells (log rho -7.71 to -7.09, log T 5.057 to 5.310). Floor gas (density <= 1.5 x floor) grey.
+- Lateral maps on 40.70 Rsun (the v_r shell; it also has the largest rms v_r, 18.45 km/s, of the shells between 36 and 46 Rsun) and 43.52 Rsun (near the top of the convection zone), same three maps; limits +-0.282 / +-0.240 (rho), +-0.0682 / +-0.0487 (T).
+- Flux (F_r / mean at tau_R = 1): Blues (low light, high dark), Blues_r (low dark, high light), cmocean dense (low light, high dark), cmocean ice (low dark, high light), all with the same limits 0.473-1.500 (2-98 percentile). Found in the earlier work: the 3-D photosphere coloured by T_eff used Blues (high = dark; vis3d/cs3d.py), the 2-D flux map of the bsg page used Blues_r (high = light).
+- v_r in cmasher fusion (limits +-64.8 km/s) as the reference.
+- Staged for the USER's second pick in the same page folder (Palette Sheet). No final figure, movie or page re-render.
+
 -- Caltech
