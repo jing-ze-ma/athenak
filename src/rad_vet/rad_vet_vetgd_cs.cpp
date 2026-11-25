@@ -1438,9 +1438,9 @@ void RadiationVet::VetGdCsSweep() {
   const int nc = vgd_csn;
   const Real h = 0.5*M_PI/nc;
   const bool bfc = vet_bc_face;
-  const bool spl = vet_seg_split;
-  const int spe = VetSegMode();
-  const int vim = vet_interp;
+  constexpr bool spl = true;   // (the segment rule: split, emission and jump terms)
+  constexpr int spe = 3;
+  constexpr int vim = 3;   // (corner at a material edge, log elsewhere)
   const bool emi = VetBcEmit() && (lcut == 0) &&
                    (ibc_x1min != VET_IBC_REFLECT);
   const Real iemit = VetBathLo();

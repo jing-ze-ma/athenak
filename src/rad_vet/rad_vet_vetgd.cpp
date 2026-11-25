@@ -1158,25 +1158,9 @@ void RadiationVet::VetGdInit() {
 
 void RadiationVet::VetRotInit(ParameterInput *pin) {
   const bool fresh = !global_variable::restart_run;
-  // vet_rotate_advance: fresh vet_gd runs default to true (recorded); a restart file
-  // without the key keeps false. Acts only with vet_rotate_avg >= 2.
-  if (vgd_on && !pin->DoesParameterExist("rad_vet","vet_rotate_advance")) {
-    if (recipe::NewDefaults(pin)) {
-      pin->GetOrAddBoolean("rad_vet","vet_rotate_advance",true);
-      recipe::Log("<rad_vet>/vet_rotate_advance = true (default on a fresh vet_gd run)");
-    } else {
-      recipe::Log("<rad_vet>/vet_rotate_advance = false (restart input has no key: the "
-                  "old default kept; set it true to switch)");
-    }
-  }
-  if (pin->DoesParameterExist("rad_vet","vet_rotate_advance")) {
-    g_vra_adv = pin->GetBoolean("rad_vet","vet_rotate_advance");
-    if (g_vra_adv && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> vet_rotate_advance = true: with vet_rotate_avg"
-                << " the rotated sets do not repeat; the averaged last-K window advances"
-                << " (no effect without vet_rotate_avg)" << std::endl;
-    }
-  }
+  // the rotated sets do not repeat (the averaged last-K window advances) on the curved
+  // meshes and on the ring
+  g_vra_adv = vgd_on || cln_ring > 0;
   {
     const bool rdt_named = pin->DoesParameterExist("rad_vet","vet_gd_rotate_dt");
     const bool rev_named = pin->DoesParameterExist("rad_vet","vet_gd_rotate_every");
@@ -1215,33 +1199,10 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       vsc_rot = vet_sc;
       vgd_rot = 0;
       pin_rot_ = pin;
-      vgd_rot_t0 = pin->GetOrAddReal("rad_vet","vet_gd_rotate_t0",0.0);
-      vgd_rot_align = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_align",true);
-      // vet_gd_rotate_slope: fresh default correct (Time2RotCorrect, hesdirk2 only); a
-      // restart file without the key keeps keep
-      std::string rs = pin->GetOrAddString("rad_vet","vet_gd_rotate_slope",
-                                           fresh ? "correct" : "keep");
-      if (rs.compare("keep") == 0) {
-        vgd_rot_slope = 0;
-      } else if (rs.compare("be") == 0) {
-        vgd_rot_slope = 2;
-      } else if (rs.compare("correct") == 0) {
-        // Time2RotCorrect; frac in units of the step (default gamma = 1 - 1/sqrt 2)
-        vgd_rot_slope = 3;
-        vgd_rot_cfrac = pin->GetOrAddReal("rad_vet","vet_gd_rotate_slope_frac",
-                                          1.0 - 1.0/std::sqrt(2.0));
-        if (!(vgd_rot_cfrac > 0.0 && vgd_rot_cfrac <= 1.0)) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_vet>/vet_gd_rotate_slope_frac must be in "
-                    << "(0, 1]" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/vet_gd_rotate_slope = '" << rs
-                  << "' is not a choice (be | correct | keep; probe is removed)"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
+      if (vet_sc && !cln_ring) {
+        recipe::Rule(pin, "rad_vet", "vet_gd_rotate_slope", "correct");
+        recipe::Rule(pin, "rad_vet", "vet_gd_rotate_slope_frac",
+                     ParameterInput::RealToString(1.0 - 1.0/std::sqrt(2.0)));
       }
       if (vgd_rot_auto) {
         vgd_rot_auto_fac = 20.0;
@@ -1250,24 +1211,15 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       }
     }
   }
-  // vet_gd_rotate_axis: z (sp default) turns the set about the polar axis (exact wall
-  // maps for HEALPix); 3d (cs default) about a quasi-random axis per rotation block, so
-  // no direction stays aligned with panel seams (on sp the wall maps take the nearest
-  // set direction)
+  if (VgdRotOn()) {
+    recipe::Rule(pin, "rad_vet", "vet_rotate_advance", g_vra_adv ? "true" : "false");
+  }
+  // the axis: sp turns the set about the polar axis (exact wall maps for HEALPix), the
+  // cubed sphere about a quasi-random axis per rotation block, so no direction stays
+  // aligned with panel seams
   if (vgd_on) {
-    const bool csm = pmy_pack->pmesh->use_cubed_sphere;
-    const std::string ax = pin->GetOrAddString("rad_vet","vet_gd_rotate_axis",
-                                               csm ? "3d" : "z");
-    if (ax.compare("z") == 0) {
-      vgd_rot3 = false;
-    } else if (ax.compare("3d") == 0) {
-      vgd_rot3 = true;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/vet_gd_rotate_axis = '" << ax
-                << "' is not a choice (z | 3d)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
+    vgd_rot3 = pmy_pack->pmesh->use_cubed_sphere;
+    recipe::Rule(pin, "rad_vet", "vet_gd_rotate_axis", vgd_rot3 ? "3d" : "z");
   }
 }
 
@@ -1400,7 +1352,7 @@ int64_t RadiationVet::VetGdBlock(const int cyc) const {
   if (vgd_rot_dt > 0.0) {
     const Mesh *pm = pmy_pack->pmesh;
     const Real dt = (pm->dt > 0.0 && pm->dt < vgd_rot_dt) ? pm->dt : 0.0;
-    return static_cast<int64_t>(std::floor((pm->time + 0.5*dt - vgd_rot_t0)/vgd_rot_dt));
+    return static_cast<int64_t>(std::floor((pm->time + 0.5*dt)/vgd_rot_dt));
   }
   return (vgd_rot > 0) ? static_cast<int64_t>(cyc/vgd_rot) : 0;
 }
@@ -1414,7 +1366,7 @@ bool RadiationVet::RotLastStep() const {
   const Mesh *pm = pmy_pack->pmesh;
   if (vgd_rot_dt > 0.0) {
     const int64_t b = VetGdBlock(pm->ncycle);
-    const double tk = vgd_rot_t0 + (static_cast<double>(b) + 1.0)*vgd_rot_dt;
+    const double tk = (static_cast<double>(b) + 1.0)*vgd_rot_dt;
     return pm->time + pm->dt >= tk - 1.0e-9*vgd_rot_dt;
   }
   if (vgd_rot > 0) {return ((pm->ncycle + 1) % vgd_rot) == 0;}
@@ -1433,20 +1385,17 @@ void RadiationVet::VetGdRotStep() {
   if (vgd_rot_lastblk == INT64_MIN) {
     const Mesh *pm = pmy_pack->pmesh;
     vgd_rot_lastblk = static_cast<int64_t>(
-        std::floor((pm->time - vgd_rot_t0)/vgd_rot_dt - 1.0e-9));
+        std::floor(pm->time/vgd_rot_dt - 1.0e-9));
   }
-  // correct keeps the slope and asks Time2RotCorrect for its jump;
-  // vet_gd_rotate_xfade has no jump: no slope correction
+  // a Cartesian set without the ring keeps the slope and asks Time2RotCorrect for its
+  // jump; the cross-fade has no jump; clean_rot_ring = jump: a backward-Euler step
   if (vgd_xf && vgd_on) {
     vgd_rot_lastblk = b;
     return;
   }
-  if (b != vgd_rot_lastblk && vgd_rot_slope == 3 && time_scheme == VET_TIME_HESDIRK2 &&
-      Time2Active()) {
-    t2_rotcorr = true;
-  } else if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && vgd_rot_slope != 3 &&
-      time_scheme == VET_TIME_HESDIRK2 && t2_ok) {
-    t2_ok = false;
+  if (b != vgd_rot_lastblk && time_scheme == VET_TIME_HESDIRK2) {
+    if (vet_sc && !cln_ring && Time2Active()) t2_rotcorr = true;
+    if (cln_ring == 2) t2_ok = false;
   }
   vgd_rot_lastblk = b;
 }
@@ -1454,7 +1403,7 @@ void RadiationVet::VetGdRotStep() {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::VetGdAlignDt
 //! \brief vet_gd_rotate_align (Mesh::NewTimeStep, after the global min): reach the next
-//! boundary t0 + k dt_rot in n = ceil(rem/dt) equal steps, dt' = rem/n >= dt/2.
+//! boundary k dt_rot in n = ceil(rem/dt) equal steps, dt' = rem/n >= dt/2.
 //! vet_gd_rotate_stretch = s > 0: n - 1 steps when dt' <= (1 + s) dt.
 
 Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
@@ -1470,16 +1419,15 @@ Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
                 << (vgd_rot_unc ? "CFL dt (no dt_fixed / dt_retry cap) " : "dt ")
                 << (vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt) << " = "
                 << ParameterInput::RealToString(vgd_rot_dt)
-                << " (recorded; t0 " << vgd_rot_t0 << ", align "
-                << (vgd_rot_align ? "on" : "off") << ")" << std::endl;
+                << " (recorded)" << std::endl;
     }
   }
-  if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
-  const double x = (time - vgd_rot_t0)/vgd_rot_dt;
+  if (!(vgd_rot_dt > 0.0) || !(dt > 0.0)) {return dt;}
+  const double x = time/vgd_rot_dt;
   double k = std::floor(x) + 1.0;
   // already on a boundary (to round-off): the next one
   if ((k - x)*vgd_rot_dt < 1.0e-9*dt) {k += 1.0;}
-  const double rem = vgd_rot_t0 + k*vgd_rot_dt - time;
+  const double rem = k*vgd_rot_dt - time;
   double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
   if (n > 1.0e6) {return dt;}
   if (n > 1.0 && rem/(n - 1.0) <= 1.02*dt) n -= 1.0;   // (dt may grow by 2%)
@@ -2061,9 +2009,7 @@ void RadiationVet::VetGdTables(const Real alpha) {
               << " (" << n << " directions); "
               << (vgd_rot3 ? "3-D rotation (quasi-random axis; angle = block key)"
                            : "z-rotation") << " every "
-              << ((vgd_rot_dt > 0.0) ? (std::to_string(vgd_rot_dt) + " in time (t0 "
-                                        + std::to_string(vgd_rot_t0) + ", align "
-                                        + (vgd_rot_align ? "on" : "off") + ")")
+              << ((vgd_rot_dt > 0.0) ? (std::to_string(vgd_rot_dt) + " in time")
                                      : (std::to_string(vgd_rot) + " cycle(s)"))
               << " (0 = fixed), first angle " << alpha << ";"
               << " rank 0 wall ghost columns " << nwall << ", direction maps exact "
@@ -5069,9 +5015,9 @@ void RadiationVet::VetGdSweep() {
   const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // vet_bc_diff = face
   const bool imir = (ibc_x1min == VET_IBC_REFLECT) && lcut == 0;
-  const bool spl = vet_seg_split;   // vet_seg = split
-  const int spe = VetSegMode();
-  const int vim = vet_interp;   // vet_interp: 2 corner, 3 auto
+  constexpr bool spl = true;   // (the segment rule: split, emission and jump terms)
+  constexpr int spe = 3;
+  constexpr int vim = 3;   // (corner at a material edge, log elsewhere)
   // inner emission at the physical inner face (icut = 0): black sphere of flux F_in
   // (vet_bc_inner, VetBcEmit: emit, or auto at a Marshak face)
   const bool emi = VetBcEmit() && (lcut == 0) && ibc_x1min != VET_IBC_REFLECT;

@@ -467,6 +467,23 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/time2_fref_wacc", "=true"}, {"rad_vet/time2_gtime_mom", "=true"},
     {"rad_vet/zalesak_active", "+true"}, {"rad_vet/zalesak_halo_skip", "=true"},
     {"rad_vet/restart_pack_per_mb", "=true"}, {"rad_vet/cs_seam_avg", ""},
+    // rays and rotation: constants; rules (recipe::Rule): the rotation axis (3d on the
+    // cubed sphere), the cross-fade and the advancing window (the ring), ema_wb (curved
+    // meshes), the global band (full sphere), the slope at a set change (a Cartesian set)
+    {"rad_vet/vet_gd_rotate_axis", nullptr}, {"rad_vet/vet_gd_rotate_xfade", nullptr},
+    {"rad_vet/vet_rotate_advance", nullptr}, {"rad_vet/vet_rotate_avg_ema_wb", nullptr},
+    {"rad_vet/vet_gd_band_global", nullptr}, {"rad_vet/vet_gd_rotate_slope", nullptr},
+    {"rad_vet/vet_gd_rotate_slope_frac", nullptr},
+    {"rad_vet/vet_gd_rotate_align", "=true"}, {"rad_vet/vet_gd_rotate_t0", "=0"},
+    {"rad_vet/vet_gd_rotate_xfade_m", "=0"}, {"rad_vet/vet_rotate_avg_weight", "=j"},
+    {"rad_vet/vet_rotate_avg_ema_change", "=0.05"},
+    {"rad_vet/vet_rotate_avg_ema_change_j", "=true"},
+    {"rad_vet/vet_gd_halo_compact", "+2"}, {"rad_vet/vet_interp", "+auto"},
+    {"rad_vet/vet_seg", "+jump"}, {"rad_vet/vet_seg_plateau", "=false"},
+    {"rad_vet/vet_scatter_form", "=ma"}, {"rad_vet/vet_scatter_j", "=relaxed"},
+    {"rad_vet/vet_source_noesrc_h2be", "=true"}, {"rad_vet/vet_tensor", "+full"},
+    {"rad_vet/vet_sc_kernel", "!"}, {"rad_vet/vet_sc_set", "!"},
+    {"rad_vet/vet_col_lat_cut_thin", "+1"},
     // early files' names of clean_stag_fs_line
     {"rad_vet/clean_stag_fs_pcr", "=true"}, {"rad_vet/clean_stag_fs_pcr_cs", "=true"},
     // old solver's diagnostics, multi-rate, coupling split, K1 FCT: removed
@@ -757,7 +774,7 @@ void RadiationVet::CleanInit() {
     // rotating rays (CleanFvSets): the closure is the J-weighted mean of the sets, made
     // continuous across blocks by the cross-fade, no slope correction.
     // vet_rotate_avg_ema: only with clean_rot_ring = live (CleanRingEma)
-    if ((vra_ema && cln_ring != 1) || vra_eq ||
+    if ((vra_ema && cln_ring != 1) ||
         (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
         (vgd_rot3 && !pm->three_d)) {
       CleanFatal("<rad_vet>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = "
@@ -767,20 +784,17 @@ void RadiationVet::CleanInit() {
     }
   }
   const bool ring_ok = (vgd_on || vsc_rot) && vra_on && g_vra_adv &&
-                       (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
+                       (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
                        vra_k <= VET_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
     CleanFatal("<rad_vet>/clean_rot_ring needs vet_gd or vet_sc rays rotating in time: "
-               "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
-               "_align, with vet_gd_rotate_xfade for live, without for jump");
+               "vet_rotate_avg = K and vet_gd_rotate_dt");
   }
   // sc rays sweep one set at a time: a mean or cross-fade of sets needs the ring
   if (vgd_on && VgdRotOn() && (vra_on || vgd_xf) && !cln_ring) {
     CleanFatal("<rad_vet>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
                "needs clean_rot_ring");
   }
-  // jump: a block's first step is backward Euler (no slope of the old sets)
-  if (cln_ring == 2) vgd_rot_slope = 2;
   if (pm->use_cubed_sphere) {
     // rays: vet_gd's (clean_rays = sc: its band, VetGdCsSweep) or the analytic sphere
     // (eddington: infinite radius); an even panel resolution keeps cell centres off the z

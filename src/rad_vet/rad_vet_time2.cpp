@@ -1005,7 +1005,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   t2_rotcorr = false;
   if (time_scheme != VET_TIME_HESDIRK2 || !Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
-  const Real dtc = vgd_rot_cfrac*dt;
+  const Real dtc = (1.0 - 1.0/std::sqrt(2.0))*dt;
   // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
   Kokkos::deep_copy(DevExeSpace(), u1, u0);
   Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
@@ -1595,13 +1595,12 @@ void RadiationVet::Time2Report() {
             << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds << " R exchanges="
             << zl_halos;
   std::cout << ")";
-  if (vgd_rot_slope == 3) {
-    std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="
-              << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass << " (frac "
-              << vgd_rot_cfrac << ")";
+  if (vsc_rot && !cln_ring) {
+    std::cout << " set-change slope solves=" << vgd_rot_ncorr << " failed="
+              << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass;
   }
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
-  if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
+  if (vgd_rot_dt > 0.0) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   if (cln_ring) {
     std::cout << " clean_rot_ring guard cells=" << cln_rguard_sum
               << " off-boundary shifts=" << cln_roff_sum;
@@ -1622,12 +1621,12 @@ void RadiationVet::Time2Report() {
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VsrcNoes
 //! \brief vet_source_noesrc in force for the current solve: every backward-Euler solve
-//! (under hesdirk2 unless vet_source_noesrc_h2be = false), never a stage solve
+//! (under hesdirk2 too), never a stage solve
 
 bool RadiationVet::VsrcNoes() const {
   if (!vsrc_noes) return false;
   if (time_scheme == VET_TIME_BE) return true;
-  return vsrc_noes_h2be && (t2_solve != VET_T2S_STAGE1) && (t2_solve != VET_T2S_STAGE2);
+  return (t2_solve != VET_T2S_STAGE1) && (t2_solve != VET_T2S_STAGE2);
 }
 
 }  // namespace radvet

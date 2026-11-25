@@ -700,24 +700,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   }
   vet_nmu = pin->GetOrAddInteger("rad_vet", "vet_nmu", 4);
   vet_nphi = pin->GetOrAddInteger("rad_vet", "vet_nphi", 8);
-  // vet_interp: upwind stencil of the SC segment (VetUpCorner): auto = corner at a
-  // material edge, log elsewhere
-  {
-    const std::string vi = pin->GetOrAddString("rad_vet", "vet_interp",
-        recipe::Fix(pin, "rad_vet", "vet_interp", "auto", "lin") ? "auto" : "lin");
-    if (vi.compare("lin") == 0) {
-      vet_interp = 0;
-    } else if (vi.compare("log") == 0) {
-      vet_interp = 1;
-    } else if (vi.compare("corner") == 0) {
-      vet_interp = 2;
-    } else if (vi.compare("auto") == 0) {
-      vet_interp = 3;
-    } else {
-      VetFatal("<rad_vet>/vet_interp = '" + vi + "' is not a choice (auto | lin | log | "
-               "corner)");
-    }
-  }
   // vet_bc_inner / vet_bc_reflect (VetBcInit); vet_bc_bath: an x1 end with
   // implicit_bc = marshak gives its entering rays the bath implicit_ebath
   VetBcInit(pin, false);
@@ -736,28 +718,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
       VetFatal("<rad_vet>/vet_bc_diff must be cell or face");
     }
   }
-  // vet_seg = mean | split | emit | jump (rad_vet_vetseg.hpp)
-  {
-    const char *sgd = recipe::Fix(pin, "rad_vet", "vet_seg", "jump", "mean") ? "jump"
-                                                                             : "mean";
-    std::string sg = pin->GetOrAddString("rad_vet", "vet_seg", sgd);
-    if (sg.compare("split") == 0) {
-      vet_seg_split = true;
-      vet_seg_emit = false;
-    } else if (sg.compare("emit") == 0) {
-      vet_seg_split = true;
-      vet_seg_emit = true;
-    } else if (sg.compare("jump") == 0) {
-      vet_seg_split = true;
-      vet_seg_emit = true;
-      vet_seg_jump = true;
-      vet_seg_plateau = pin->GetOrAddBoolean("rad_vet", "vet_seg_plateau", false);
-    } else if (sg.compare("mean") == 0) {
-      vet_seg_split = false;
-    } else {
-      VetFatal("<rad_vet>/vet_seg must be mean, split, emit or jump");
-    }
-  }
   {std::string ax = pin->GetOrAddString("rad_vet", "vet_axis", "flux");
   if (ax.compare("flux") == 0) {
     vet_axis_flux = true;
@@ -767,18 +727,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
     VetFatal("<rad_vet>/vet_axis = '" + ax + "' not implemented (flux | eigen)");
   }
   }
-  // vet_tensor = uniaxial | full
-  vet_full = false;
-  {
-    std::string vt = pin->GetOrAddString("rad_vet", "vet_tensor",
-        recipe::Fix(pin, "rad_vet", "vet_tensor", "full", "uniaxial") ? "full"
-                                                                      : "uniaxial");
-    if (vt.compare("full") == 0) {
-      vet_full = true;
-    } else if (vt.compare("uniaxial") != 0) {
-      VetFatal("<rad_vet>/vet_tensor = '" + vt + "' not implemented (uniaxial | full)");
-    }
-  }
+  vet_full = true;
   if (vet_nmu < 1 || vet_nphi < 1) {VetFatal("<rad_vet>/vet_nmu, vet_nphi must be >= 1");}
   // vet_x1_periodic: periodic x1 sweep, up to vet_x1_npass passes, each entering from
   // the exit plane of the pass before; only the last pass accumulates
@@ -853,40 +802,9 @@ void RadiationVet::VetInit(ParameterInput *pin) {
     vet_nray = vring*((vrgrp == 2) ? 3 : 1);
   }
 
-  // vet_sc_set = gd: the vet_gd direction set (product, ls or geodesic) with its pole on
-  // x1; vet_gd's z rotation then turns it about x1
-  if (pin->DoesParameterExist("rad_vet", "vet_sc_set") &&
-      pin->GetString("rad_vet", "vet_sc_set").compare("gd") == 0) {
-    if (vring > 0) VetFatal("<rad_vet>/vet_sc_set = gd replaces vet_ring");
-    vsc_gd = true;
-    vgd_gl_nmu = pin->GetOrAddInteger("rad_vet", "vet_gd_gl_nmu", 0);
-    vgd_gl_nphi = pin->GetOrAddInteger("rad_vet", "vet_gd_gl_nphi", vgd_gl_nphi);
-    vgd_gl_stag = pin->GetOrAddBoolean("rad_vet", "vet_gd_gl_stagger", vgd_gl_stag);
-    vgd_ls = pin->GetOrAddInteger("rad_vet", "vet_gd_ls", 0);
-    // default: geodesic vet_gd_geo = 4 (162 directions; HEALPix's equator ring would lie
-    // in the layers)
-    const int geo = pin->GetOrAddInteger("rad_vet", "vet_gd_geo",
-                                         (vgd_gl_nmu > 0 || vgd_ls != 0) ? 0 : 4);
-    if (geo > 0) vgd_ls = -geo;
-    // period of the rotation about x1: C_nphi of the product set, else a full turn
-    vet_nphi = (vgd_gl_nmu > 0) ? vgd_gl_nphi : 1;
-  }
   vet_ring_n = vring;
   vet_ring_g = vrgrp;
   VetBuildAngles(0.0);
-  if (vsc_gd && vsc_gdmir < 0 && ((vet_bc_mirror && ibc_x1min == VET_IBC_REFLECT) ||
-                                  (vet_bc_mirror_hi && ibc_x1max == VET_IBC_REFLECT))) {
-    VetFatal("<rad_vet>/vet_sc_set = gd: a mirrored x1 end needs a set with x1 mirror "
-             "pairs (e.g. vet_gd_gl_stagger = false)");
-  }
-  if (vsc_gd && global_variable::my_rank == 0) {
-    auto ah = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
-    Real mn = 1.0;
-    for (int r = 0; r < vet_nray; ++r) {mn = std::min(mn, std::fabs(ah(r,0)));}
-    std::cout << "<rad_vet> vet_sc_set = gd: " << vet_nray << " rays, min |mu1| " << mn
-              << ", x1 mirror pairs " << ((vsc_gdmir > 0) ? "yes" : "no") << std::endl;
-  }
-
   auto &indcs = pm->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pm->nmb_maxperrank));
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
@@ -900,16 +818,9 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
-    // vet_sc_kernel = ray (device default) | cell (host): one thread per (block, ray,
-    // cell) then per-cell sums, or one thread per cell over the rays; same bits
+    // device: one thread per (block, ray, cell), then per-cell sums; host: one thread per
+    // cell over the rays; same bits
     vsc_rayk = !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
-    if (pin->DoesParameterExist("rad_vet", "vet_sc_kernel")) {
-      const std::string kn = pin->GetString("rad_vet", "vet_sc_kernel");
-      if (kn.compare("ray") != 0 && kn.compare("cell") != 0) {
-        VetFatal("<rad_vet>/vet_sc_kernel = '" + kn + "' is not a choice (ray | cell)");
-      }
-      vsc_rayk = (kn.compare("ray") == 0);
-    }
     if (vsc_rayk) {Kokkos::realloc(vet_rayg, nmb, 5*vet_nray, ncells3, ncells2);}
     if (vet_x1per && vet_x1ptol > 0.0) {
       Kokkos::realloc(vet_x1ent, nmb, vet_nray, ncells3, ncells2);
@@ -917,18 +828,11 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> closure = sc: short characteristics, " << vet_nray
-              << (vsc_gd ? " rays (vet_sc_set = gd: the vet_gd set, pole on x1"
-                         : " rays (double-Gauss nmu=" + std::to_string(vet_nmu) +
-                           " x nphi=" + std::to_string(vet_nphi))
+              << " rays (double-Gauss nmu=" << vet_nmu << " x nphi=" << vet_nphi
               << "), lagged per hydro step"
               << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
               << ", vet_bc_diff = " << (vet_bc_face ? "face" : "cell")
-              << ", vet_seg = "
-              << (vet_seg_jump ? "jump" : (vet_seg_emit ? "emit"
-                  : (vet_seg_split ? "split" : "mean")))
-              << ((vet_seg_jump && !vet_seg_plateau) ? " without the plateau weights"
-                                                     : "")
               << std::endl;
   }
 }
@@ -939,10 +843,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
 //! beta about x1 (beta = 0: the fixed set)
 
 void RadiationVet::VetBuildAngles(const Real beta) {
-  if (vsc_gd) {
-    VetGdAngles(beta);
-    return;
-  }
   const int vring = vet_ring_n, vrgrp = vet_ring_g;
   // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
   std::vector<double> xg, wg;
@@ -993,80 +893,6 @@ void RadiationVet::VetBuildAngles(const Real beta) {
         ah(q + nhu, c) = (beta != 0.0) ? dn[q][c] : ((c == 0) ? -up[q][c] : up[q][c]);
       }
     }
-  }
-  Kokkos::deep_copy(vet_ang, ah);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdAngles
-//! \brief vet_sc_set = gd: the vet_gd set with its pole on x1, (mu1, mu2, mu3) =
-//! (z, x, y), turned about x1 by beta; up rays first, then ray r + nray/2 the x1 mirror
-//! of ray r where the set has them (vsc_gdmir = 1), else the down rays (vsc_gdmir = -1)
-
-void RadiationVet::VetGdAngles(const Real beta) {
-  std::vector<double> d;
-  VgdBuildSet(d);
-  const int n = static_cast<int>(d.size()/4);
-  // pole: the set's z axis, or, when a ray lies in z = 0, the axis p of a 4096-point
-  // Fibonacci grid maximising min |n . p| (no ray along the x1 layers)
-  double e[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}, best = 0.0;
-  bool tilt = false;
-  for (int q = 0; q < n; ++q) {tilt = tilt || (std::fabs(d[4*q+2]) < 1.0e-9);}
-  for (int g = 0; g < 4096 && tilt; ++g) {
-    const double z = 1.0 - (g + 0.5)/4096.0, rz = std::sqrt(1.0 - z*z);
-    const double ph = g*M_PI*(3.0 - std::sqrt(5.0));
-    const double pg[3] = {rz*std::cos(ph), rz*std::sin(ph), z};
-    double mn = 1.0;
-    for (int q = 0; q < n; ++q) {
-      mn = std::min(mn, std::fabs(d[4*q]*pg[0] + d[4*q+1]*pg[1] + d[4*q+2]*pg[2]));
-    }
-    if (mn <= best + 1.0e-12) continue;
-    best = mn;
-    const double a = (std::fabs(pg[0]) < 0.9) ? 1.0 : 0.0, b = 1.0 - a;
-    const double h = a*pg[0] + b*pg[1], u[3] = {a - h*pg[0], b - h*pg[1], -h*pg[2]};
-    const double un = std::sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
-    for (int c = 0; c < 3; ++c) {
-      e[0][c] = u[c]/un;
-      e[2][c] = pg[c];
-    }
-    for (int c = 0; c < 3; ++c) {
-      e[1][c] = e[2][(c+1)%3]*e[0][(c+2)%3] - e[2][(c+2)%3]*e[0][(c+1)%3];
-    }
-  }
-  for (int q = 0; q < n && tilt; ++q) {
-    double t[3];
-    for (int b = 0; b < 3; ++b) {
-      t[b] = e[b][0]*d[4*q] + e[b][1]*d[4*q+1] + e[b][2]*d[4*q+2];
-    }
-    for (int b = 0; b < 3; ++b) {d[4*q+b] = t[b];}
-  }
-  const double cb = std::cos(beta), sb = std::sin(beta);
-  std::vector<std::array<double, 4>> up, dn;
-  for (int q = 0; q < n; ++q) {
-    const double *u = &d[4*q];
-    const std::array<double, 4> a = {u[2], cb*u[0] - sb*u[1], sb*u[0] + cb*u[1], u[3]};
-    if (std::fabs(a[0]) < 1.0e-9) {
-      VetFatal("<rad_vet>/vet_sc_set = gd: a ray along the x1 layers");
-    }
-    ((a[0] > 0.0) ? up : dn).push_back(a);
-  }
-  const int nh = static_cast<int>(up.size());
-  if (2*nh != n) VetFatal("<rad_vet>/vet_sc_set = gd: the set is not half up, half down");
-  vsc_gdmir = 1;
-  std::vector<std::array<double, 4>> dm;
-  for (int q = 0; q < nh && vsc_gdmir > 0; ++q) {
-    for (const auto &b : dn) {
-      if (std::fabs(b[0] + up[q][0]) + std::fabs(b[1] - up[q][1]) +
-          std::fabs(b[2] - up[q][2]) < 1.0e-12) {dm.push_back(b);}
-    }
-    if (static_cast<int>(dm.size()) != q + 1) vsc_gdmir = -1;
-  }
-  if (vsc_gdmir > 0) dn = dm;
-  vet_nray = n;
-  if (vet_ang.extent_int(0) != n) {Kokkos::realloc(vet_ang, n, 4);}
-  auto ah = Kokkos::create_mirror_view(vet_ang);
-  for (int r = 0; r < n; ++r) {
-    for (int c = 0; c < 4; ++c) {ah(r, c) = (r < nh) ? up[r][c] : dn[r - nh][c];}
   }
   Kokkos::deep_copy(vet_ang, ah);
 }
@@ -1160,7 +986,7 @@ void RadiationVet::VetScRotAvgSetup() {
     t.lo[t.nf] = lo; t.hi[t.nf] = hi; ++t.nf;
   };
   t.jf = 0;
-  t.jw = vra_eq ? -1 : 0;   // the sets weighted by their J (union of the sets)
+  t.jw = 0;   // the sets weighted by their J (union of the sets)
   add(VETRAY_J, 2, 0.0, 0.0);
   for (int c = 0; c < 3; ++c) {add(VETRAY_K11 + c, 3, 0.0, 1.0);}
   for (int c = 3; c < 6; ++c) {add(VETRAY_K11 + c, 3, -1.0, 1.0);}
@@ -1596,9 +1422,9 @@ void RadiationVet::VetSweepMB() {
   const Real bblo = VetBathLo();   // vet_bc_inner
   const Real bbhi = (vet_bc_bath && ibc_x1max == VET_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
-  const bool spl = vet_seg_split;
-  const int spe = VetSegMode();
-  const int vim = vet_interp;   // vet_interp
+  constexpr bool spl = true;   // (the segment rule: split, emission and jump terms)
+  constexpr int spe = 3;
+  constexpr int vim = 3;   // (corner at a material edge, log elsewhere)
   const bool plm_ = true;
 
   // (a) banded extinction/source planes, layer i - is + 2 (moments zeroed by the caller)
@@ -2010,15 +1836,15 @@ void RadiationVet::VetShortCharSweep() {
   const Real ar = arad;
   const Real efl = e_floor;
   const bool thermal = fl_on && coupling && !opac_zero;
-  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const bool vsf = vscat;   // vet_scatter
   const Real bblo = VetBathLo();   // vet_bc_inner
   const Real bbhi = (vet_bc_bath && ibc_x1max == VET_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
   const bool x1src = vet_x1per && vet_x1src;
-  const bool spl = vet_seg_split;
-  const int spe = VetSegMode();
+  constexpr bool spl = true;   // (the segment rule: split, emission and jump terms)
+  constexpr int spe = 3;
   const bool x2o = vet_x2open, x3o = vet_x3open;   // vacuum x2 (x3) faces
-  const int vim = vet_interp;   // vet_interp
+  constexpr int vim = 3;   // (corner at a material edge, log elsewhere)
   const bool plm_ = true;
   // boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
@@ -2042,9 +1868,9 @@ void RadiationVet::VetShortCharSweep() {
     if (thermal) {
       Real tg = iwd_(m,VET_IW_TP,k,j,i);
       Real t2 = tg*tg;
-      if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
+      if (vsf) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
         const Real rkp = fmin(opd_(m,VET_OP_P,k,j,i), chx);
-        s = VetScatterMix(vsf, rkp, chx, opd_(m,VET_OP_S,k,j,i), ar*t2*t2, e);
+        s = VetScatterMix(rkp, chx, ar*t2*t2, e);
       } else {
         Real eth = fmin(opd_(m,VET_OP_P,k,j,i)/chx, 1.0);
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
