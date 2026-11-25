@@ -524,3 +524,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 05:55 02-16: n2r_m35zams_R1 -> n2r_m35zams_R25a
 - 11-25 05:56 02-16: n2r_m35zams_R25a -> n2r_m35zams_C50
 - 11-25 05:57 02-16: n2r_m35zams_C50 -> IDLE
+- 11-25 05:59 02-03: IDLE -> hg60_NEW60
+- 11-25 05:59 02-09: IDLE -> hg60_NEW60
+- 11-25 05:59 02-16: IDLE -> hg60_ONE60
+- 11-25 06:02 02-03: hg60_NEW60 -> hg60_OLD60
+- 11-25 06:02 02-09: hg60_NEW60 -> hg60_OLD60
