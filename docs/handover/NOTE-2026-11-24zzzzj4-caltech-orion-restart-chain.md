@@ -124,3 +124,34 @@
 #### END-row residuals over the 50 cycles (R_E = dEtot - dt (L_in - L_top + P_esrc - P_sponge - E_hflx); R_M = dM_tot + dt M_hflx; bsg: R_L = dLz_tot + dt Lz_hflx)
 - R50: R_E / Etot RMS 1.68e-15 max 4.81e-15 sum -1.04e-15; R_M / M_tot RMS 1.70e-15 max 4.33e-15 sum -2.32e-15
 - C50: R_E / Etot RMS 1.54e-15 max 3.57e-15 sum -9.34e-16; R_M / M_tot RMS 1.72e-15 max 5.10e-15 sum -3.09e-16
+
+## t9mlt (11-24 23:05): rst t9mlt_t9l62.00001.rst (hard link, c2683), rel-f 80d16d39bd1f47bd3f22b5711c660519 against athena_c4speed_d979d5268; own keys: none
+- R1: 2026-11-24 22:52:17 rc=0 (srun) ended: Terminating on cycle limit wall=66 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- R50: 2026-11-24 22:55:40 rc=0 (srun) ended: Terminating on cycle limit wall=203 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- R25a: 2026-11-24 22:59:36 rc=0 (srun) ended: Terminating on cycle limit wall=236 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- R25b: 2026-11-24 23:01:54 rc=0 (srun) ended: Terminating on cycle limit wall=138 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- C50: 2026-11-24 23:05:22 rc=0 (srun) ended: Terminating on cycle limit wall=208 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+#### NOTE lines of the restart (rel-f, 1 step)
+- ### NOTE: <problem>/he_* (hs_*) keys are now named star_*; read so: he_bc_inner he_bc_linhao he_bc_outer he_bc_outer_r2 he_esrc_const he_gm he_gravity he_grid_dump he_ic_balance he_ic_cols he_ic_eint_from_t he_ic_file he_ic_profile he_ic_rad he_ic_rad_atm_post
+- ### NOTE: <hydro>/fofc_flag_exchange = true (restart file without it: the fix applies; name fofc_flag_exchange=false to keep the old behaviour)
+- ### NOTE: <rad_vet>/time2_gtime_pos = true (restart file without it: the fix applies; name time2_gtime_pos=false to keep the old behaviour)
+- NOTE lines: 3; "the fix applies": 2; "added from the command line": 0; "old behaviour": 2; FATAL 0, CLEAN WARNING 0; clean_init lines: []
+#### 50 straight against 25 + rst + 25
+- user.hst: R50 50 rows, R25a 25, R25b 25; rows not printed-identical to R50 at the same t: 0 (first t -) -> BITWISE (printed)
+- hydro.hst: R50 50 rows, R25a 25, R25b 25; rows not printed-identical to R50 at the same t: 0 (first t -) -> BITWISE (printed)
+- final hydro_w dump, payload md5: R50 0c0f66e81802, R25b 0c0f66e81802 -> IDENTICAL
+- final vet dump, payload md5: R50 a6c2eebe8c2a, R25b a6c2eebe8c2a -> IDENTICAL
+#### against the running binary (C50, same rst, same keys, 50 cycles)
+- row 0: t 2.59339782e+05 / 2.59339782e+05, dt 96.622198 / 96.622198, L_top rel -1.11e-16, KE_int rel 1.11e-15, M_tot rel -1.11e-16, Etot rel 2.22e-16
+- row 1: t 2.59436404e+05 / 2.59436404e+05, dt 96.622202 / 96.622202, L_top rel -4.44e-16, KE_int rel -2.00e-15, M_tot rel 1.33e-15, Etot rel -1.89e-15
+- row 2: t 2.59533027e+05 / 2.59533027e+05, dt 96.622206 / 96.622206, L_top rel -1.89e-15, KE_int rel -9.03e-13, M_tot rel -8.88e-16, Etot rel 2.66e-15
+- row 3: t 2.59629649e+05 / 2.59629649e+05, dt 96.622210 / 96.622210, L_top rel -8.10e-15, KE_int rel -1.20e-12, M_tot rel 2.22e-15, Etot rel 6.66e-16
+- row 4: t 2.59726271e+05 / 2.59726271e+05, dt 96.622213 / 96.622213, L_top rel -3.55e-15, KE_int rel -7.04e-13, M_tot rel -7.77e-16, Etot rel -7.77e-16
+- row 9: t 2.60209382e+05 / 2.60209382e+05, dt 96.622234 / 96.622234, L_top rel 9.04e-14, KE_int rel -1.37e-13, M_tot rel -3.89e-15, Etot rel 1.55e-15
+- row 24: t 2.61658716e+05 / 2.61658716e+05, dt 96.622302 / 96.622302, L_top rel -7.91e-11, KE_int rel 5.22e-13, M_tot rel 2.22e-16, Etot rel -3.44e-15
+- row 49: t 2.64074275e+05 / 2.64074275e+05, dt 96.622433 / 96.622433, L_top rel -5.12e-07, KE_int rel -2.20e-10, M_tot rel -4.44e-16, Etot rel -1.03e-13
+- R50: s/cyc (elapsed prints) -; its sum per cycle 27.5, solves 6.96; CW 0 FATAL 0 inf 0 DT_RETRY 0
+- C50: s/cyc (elapsed prints) -; its sum per cycle 27.4, solves 6.94; CW 0 FATAL 0 inf 0 DT_RETRY 0
+#### END-row residuals over the 50 cycles (R_E = dEtot - dt (L_in - L_top + P_esrc - P_sponge - E_hflx); R_M = dM_tot + dt M_hflx; bsg: R_L = dLz_tot + dt Lz_hflx)
+- R50: R_E / Etot RMS 1.85e-15 max 4.89e-15 sum 3.86e-16; R_M / M_tot RMS 1.78e-15 max 3.86e-15 sum 1.54e-15
+- C50: R_E / Etot RMS 1.71e-15 max 4.62e-15 sum 1.34e-16; R_M / M_tot RMS 2.25e-15 max 5.40e-15 sum 1.85e-15
