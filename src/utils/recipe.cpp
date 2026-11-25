@@ -64,6 +64,17 @@ void OldStored(ParameterInput *pin, const std::string &block, const std::string 
             << value << " to switch" << std::endl;
 }
 
+void Rule(ParameterInput *pin, const std::string &block, const std::string &key,
+          const std::string &value) {
+  if (!pin->DoesParameterExist(block, key) ||
+      ParameterInput::SameValue(pin->GetString(block, key), value)) return;
+  std::cout << "### FATAL ERROR <" << block << "/" << key << "> = "
+            << pin->GetString(block, key) << ": the key was removed, the code runs "
+            << value << " here (name " << key << "=" << value << " to continue so)"
+            << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
 void CleanDefaults(ParameterInput *pin) {
   if (global_variable::restart_run || !pin->DoesBlockExist("rad_vet")) return;
   auto named = [&](const char *b, const char *k) {return pin->DoesParameterExist(b, k);};

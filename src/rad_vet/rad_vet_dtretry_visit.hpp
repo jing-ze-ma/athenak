@@ -369,10 +369,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_tol", cln_tol);
   v.value("cln_insteady", cln_insteady);
   v.value("cln_maxit", cln_maxit);
-  v.value("cln_pcr", cln_pcr);
   v.value("cln_optn", cln_optn);
-  v.value("cln_optdr", cln_optdr);
-  v.value("cln_fspcr", cln_fspcr);
   v.view("cln_st", cln_st);
   v.view("cln_csy", cln_csy);
   v.value("cln_csyok", cln_csyok);
@@ -380,13 +377,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("cln_yl", cln_yl);
   v.value("cln_fsweeps", cln_fsweeps);
   v.value("cln_fschur", cln_fschur);
-  v.value("cln_tgid", cln_tgid);
   v.value("cln_maxnl", cln_maxnl);
   v.value("cln_tol_nl", cln_tol_nl);
   v.value("cln_c1b", cln_c1b);
   v.value("cln_bmn", cln_bmn);
-  v.value("cln_gtf", cln_gtf);
-  v.value("cln_wbfct", cln_wbfct);
   v.value("cln_wbxl", cln_wbxl);
   v.value("cln_flrun", cln_flrun);
   v.value("cln_flrid", cln_flrid);
@@ -403,10 +397,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_rfdone", cln_rfdone);
   v.value("cln_rmdone", cln_rmdone);
   v.value("cln_freal", cln_freal);
-  v.value("cln_xd", cln_xd);
   v.value("cln_xd_on", cln_xd_on);
-  v.value("cln_xlag", cln_xlag);
-  v.value("cln_xsrc", cln_xsrc);
   v.value("cln_xqs", cln_xqs);
   v.value("cln_lza", cln_lza);
   v.value("cln_lzbook", cln_lzbook);
@@ -432,7 +423,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_lzs2", cln_lzs2);
   v.value("cln_lzc", cln_lzc);
   v.value("cln_lzp", cln_lzp);
-  v.value("cln_xte", cln_xte);
   v.value("cln_gpic", cln_gpic);
   v.value("cln_ngnsw", cln_ngnsw);
   v.value("cln_fdg", cln_fdg);
@@ -452,7 +442,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_ewr", cln_ewr);
   v.value("cln_eta", cln_eta);
   v.value("cln_verbose", cln_verbose);
-  v.value("cln_stagmg", cln_stagmg);
   v.value("cln_pcsweep", cln_pcsweep);
   v.value("cln_steady", cln_steady);
   v.value("cln_steady_n", cln_steady_n);
@@ -468,10 +457,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_dok", cln_dok);
   v.value("cln_fwork", cln_fwork);
   v.value("cln_fsk", cln_fsk);
-  v.value("cln_vimp", cln_vimp);
   v.value("cln_upw", cln_upw);
-  v.value("cln_ucp", cln_ucp);
-  v.value("cln_ucen", cln_ucen);
   v.value("cln_split", cln_split);
   v.value("cln_nr1", cln_nr1);
   v.value("cln_nr2", cln_nr2);
@@ -936,7 +922,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   id : RadiationVetTaskIDs
 //   pin_cs_ : ParameterInput *
 //   cln_gdx : const CleanArgs *
-//   cln_pcrl : std::map<std::array<int, 8>, DvceArray1D<int>> (protocol counter, kept monotonic)
+//   cln_pcrl : std::map<std::array<int, 7>, DvceArray1D<int>> (protocol counter, kept monotonic)
 //   cln_dbginf : int (one-shot test injection, kept)
 //   pin_rcut_ : ParameterInput *
 //   cln_fwr : std::array<CleanRingMates, 3> (protocol counter, kept monotonic)

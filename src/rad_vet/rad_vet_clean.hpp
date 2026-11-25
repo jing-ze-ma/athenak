@@ -241,10 +241,10 @@ constexpr int CLW_SG = 50;   //   (their scales), the weighted B and a precondit
 constexpr int CLW_BW = 51;   //   input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
-constexpr int CLW_PD = 55;   // clean_stag_central: the rows' diagonal (53, 54 unused)
-constexpr int CLW_XA = 56;   // clean_xt_exact: B less the linearised exchange,
+constexpr int CLW_PD = 55;   // the rows' diagonal of the work (53, 54 unused)
+constexpr int CLW_XA = 56;   // B less the linearised exchange,
 constexpr int CLW_XW = 57;   //   the row's work W
-constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
+constexpr int CLW_NX = 58;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
@@ -270,20 +270,14 @@ struct CleanArgs {
   bool fre;                    // clean_stag_freal: realisable comoving sb
   int fdg;                     // bracket: face slot of its lagged flux DG (-1: none)
   bool fs;                     // clean_stag_fsolve: face F of the F solve (CLF_N)
-  bool tf;                     //   and each face's momentum exchange T (CLF_N + 1)
   bool hi;                     // clean_stag_split: face momentum state F^H (w = 0)
   int xq;                      // clean_stag_xdonor: face slots qL, qR of the lagged
                                // donor part, explicit part, C(E_k) (-1: central)
-  bool pd;                     // clean_stag_central: the rows' diagonal CLW_PD
-  bool xlag, xsrc;             //   xlag: explicit up to the donor's share; xsrc: face
-                               //   sources too
   bool mcl;                    // face momentum term capped at h chi_f E (realisable)
   DvceArray1D<Real> mclc;      // (mcl: count of face terms the cap moved)
   bool fa;                     // store the faces' momentum terms (CLF_PT, CleanStagDrag)
   bool drag;                   // clean_stag_vimp: implicit gas velocity
   bool upw;                    // clean_stag_upwind: donor-cell advective flux
-  bool ucen;                   //   clean_stag_upwind_central: lagged rest central
-  bool ucp;                    //   clean_stag_central: plain central, work on diagonal
   bool fwc;                    // al, ar and the cross factor from CLF_QL
   bool sar;                    // streaming share's net flux in area form
   DvceArray5D<Real> op;        // opacities (VET_OP_*)
@@ -1126,9 +1120,7 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
 //! \brief clean_stag_upwind: the lagged rest of the upwind share phi of a face,
 //!   A_f = a_up E_up + [a_f E_f - a_up E_up]^k,  a_f = (a_L + a_R)/2,
 //! donor cell in the matrix (M-matrix at any beta tau), rest at E^k (CLW_EK); E_f the
-//! upwind van Leer value.  clean_stag_upwind_central: a_f E_up + a_down m/2, m =
-//! minmod(2 (E_up - E_upup), E_down - E_up): central where the TVD bound allows (van Leer
-//! is upwind-biased and does not cancel in convective zones); ucp: plain central
+//! plain central mean
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const int k,
@@ -1137,21 +1129,7 @@ Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const i
   auto e = [&](const int o) {return x.w(m,CLW_EK,k+o*dk,j+o*dj,i+o*di);};
   const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, k-dk, j-dj, i-di);
   const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
-  if (x.ucp) return 0.5*((ul + ur > 0.0) ? ur*e(0) - ul*e(-1) : ul*e(-1) - ur*e(0));
-  if (x.ucen) {   // (sl: the limited E_down - E_up; up, the upwind cell)
-    const bool fw = (ul + ur > 0.0);
-    const Real eu = fw ? e(-1) : e(0), df = (fw ? e(0) : e(-1)) - eu;
-    const Real du = 2.0*(eu - (fw ? e(-2) : e(1)));
-    const Real sl = (df*du > 0.0) ? ((fabs(df) < fabs(du)) ? df : du) : 0.0;
-    return 0.5*((fw ? ur - ul : ul - ur)*eu + (fw ? ur : ul)*sl);
-  }
-  Real ef, dum;
-  if (ul + ur > 0.0) {
-    PLM(e(-2), e(-1), e(0), ef, dum);
-    return 0.5*(ul + ur)*ef - ul*e(-1);
-  }
-  PLM(e(-1), e(0), e(1), dum, ef);
-  return 0.5*(ul + ur)*ef - ur*e(0);
+  return 0.5*((ul + ur > 0.0) ? ur*e(0) - ul*e(-1) : ul*e(-1) - ur*e(0));
 }
 
 //----------------------------------------------------------------------------------------
@@ -1240,9 +1218,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
 //! \fn void CleanStagXSplit
 //! \brief clean_stag_xdonor: split the lagged cross flux C(E_k) (slot CLF_XC) and face
 //! source S (from xr) into a donor part q E_donor (q <= c; slots xq, xq + 1) and an
-//! explicit part (xq + 2).  Without xlag C is all donor; with xlag (and xsrc for S) the
-//! explicit share s keeps the outflow h (A/V) |s L| <= CLN_MEMUP E_old,donor, so the RHS
-//! stays >= 0 and the operator an M-matrix
+//! explicit part (xq + 2).  The explicit share s keeps the outflow h (A/V) |s L| <=
+//! CLN_MEMUP E_old,donor, so the RHS stays >= 0 and the operator an M-matrix
 
 KOKKOS_INLINE_FUNCTION
 void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, const int m,
@@ -1278,19 +1255,10 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       if (!up) qr -= q;
     };
     const Real cf = f(m,CLF_XC,k,j,i);
-    const Real sx = x.xsrc ? sr : 0.0;   // (the face source in the split)
-    if (!x.xsrc) ex += sr;
-    if (x.xlag) {
-      const Real s = share(cf + sx);
-      ex += s*(cf + sx);
-      put((1.0 - s)*cf, false);
-      put((1.0 - s)*sx, true);
-    } else {
-      put(cf, false);
-      const Real s = share(sx);
-      ex += s*sx;
-      put((1.0 - s)*sx, true);
-    }
+    const Real s = share(cf + sr);
+    ex += s*(cf + sr);
+    put((1.0 - s)*cf, false);
+    put((1.0 - s)*sr, true);
   }
   f(m,x.xq,k,j,i) = ql;
   f(m,x.xq+1,k,j,i) = qr;
@@ -1466,7 +1434,7 @@ void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
                      const int i, Real (&c)[CLN_ST]) {
   for (int s = 0; s < CLN_ST; ++s) c[s] = 0.0;
   const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-  c[0] = 1.0 + x.h*x.c*x.op(m,VET_OP_E,k,j,i)*qr + (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0);
+  c[0] = 1.0 + x.h*x.c*x.op(m,VET_OP_E,k,j,i)*qr + x.w(m,CLW_PD,k,j,i);
   CleanStFace<0, 0>(x, m, k, j, i, c);
   CleanStFace<0, 1>(x, m, k, j, i, c);
   if (x.multi_d) {
@@ -1631,11 +1599,9 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       if (tq) tq[side] = 2.0*db;
       continue;
     }
-    // (face tie: T as the face's owner block computed it, CleanStagFaceTie)
-    const Real tu = x.tf ? x.w(m,CLW_L+3*dir,kf,jf,iff) :
-                    (fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
+    const Real tu = fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
                     x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
-                    (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0)));
+                    (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
     if (tq) tq[side] = tu;
     Real t = wt*tu;
     // (mcl, the Newton passes: the conservative term equals the face's absorption
