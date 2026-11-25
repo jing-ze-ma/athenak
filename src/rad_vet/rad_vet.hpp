@@ -52,6 +52,23 @@ struct CleanW {
   }
 };
 
+//! \struct CleanF
+//! \brief the face variables of one direction (CLF_*): slots n < CLF_NS in s, the others
+//! (dead across a closure build) in o (n - CLF_NS; over the intensities, MemArenaBind)
+
+constexpr int CLF_NS = 11;
+
+struct CleanF {
+  DvceArray5D<Real> s, o;
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real &operator()(const int m, const int n, const int k, const int j,
+                   const int i) const {
+    return (n < CLF_NS) ? s(m,n,k,j,i) : o(m,n-CLF_NS,k,j,i);
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  int extent_int(const int r) const {return s.extent_int(r);}   // (not of the slots)
+};
+
 // cubed-sphere geometry (array cln_gn), Cartesian components
 constexpr int CLG_N = 0;     // unit normal of the lower face along dir: CLG_N + 3 dir
 constexpr int CLG_X = 9;     // cell centroid
@@ -1264,7 +1281,7 @@ class RadiationVet {
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   // clean_stag_xdonor: cross flux of the iterate as a donor-cell coefficient of its face
   bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
-  int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),
+  int cln_xqs = -1;   // (3 slots: qL >= 0, qR <= 0, the lagged explicit flux; CLF_XC: C(E_k),
                     //  C's last change)
   bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
   bool cln_colf = false;    // (clean_stag_colflux: column moves in the stored Phi)
@@ -1418,7 +1435,7 @@ class RadiationVet {
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   CleanW cln_w;                 // work vectors (CLW_*)
-  DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
+  CleanF cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   // staggered: cell flux of the faces' energy flux Phi (m,3,k,j,i; output vet_phi); u0 F
   // holds the face momenta's
