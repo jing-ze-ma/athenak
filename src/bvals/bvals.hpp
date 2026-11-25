@@ -476,9 +476,9 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // exchanges (stage CS1, rad_vet_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
   // teams of each (block, buffer, variable) of the CC pack/unpack: 1; the clean VET
-  // exchanges take more.  CUDA: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one
+  // exchanges take more.  GPU: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one
   // team's; A100 RSG 12 ranks -0.28 s/cycle, hst and dumps bitwise)
-#if defined(KOKKOS_ENABLE_CUDA)
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
   int cc_split = 16;
 #else
   int cc_split = 1;
