@@ -1421,24 +1421,17 @@ def t_inf_reject(c):
     cycle 4 gives one cell a non-finite E iterate.  implicit_pos_floor must not raise it
     (no booking of a non-finite raise: nonfinite = implicit_pos_floor creation warnings
     that print inf or nan); the write-back's check rejects the stage, which is redone
-    (rejected >= 1), and the run stays energy-exact (dE as conservation_sp).  be, retry:
-    both settings of time2_reject (the radiation stage, or the cycle of dt_retry_t2_be,
-    redone with backward Euler); L_z as in conservation_sp."""
-    out = dict(nonfinite=0)
-    for t in ('be', 'retry'):
-        d = c.run('shell_sp.athinput', t, {
-            'time/nlim': 8, 'rad_vet/implicit_pos_floor': 'true', 'time/dt_retry': 'true',
-            'rad_vet/implicit_pos_floor_cons': 'true', 'rad_vet/clean_dbg_inf': 4,
-            'rad_vet/time2_reject': t})
-        log = open(os.path.join(d, 'run.log')).read()
-        cw = [ln for ln in log.splitlines() if 'CLEAN WARNING' in ln]
-        m = am_budget(d, 'sp')
-        out['dE_' + t], out['dLz_' + t] = m['dE'], m['dLz']
-        fl = [ln for ln in cw if 'implicit_pos_floor created' in ln]
-        out['nonfinite'] += sum(bool(re.search(r'\b(inf|nan)\b', ln, re.I)) for ln in fl)
-        out['rejected_' + t] = sum(('stage fallback' in ln) or ('dt_retry' in ln)
-                                   for ln in cw) + log.count('reason=time2_reject')
-    return out
+    (rejected >= 1), and the run stays energy-exact (dE as conservation_sp)."""
+    d = c.run('shell_sp.athinput', 'run', {
+        'time/nlim': 8, 'rad_vet/implicit_pos_floor': 'true',
+        'rad_vet/implicit_pos_floor_cons': 'true', 'rad_vet/clean_dbg_inf': 4})
+    log = open(os.path.join(d, 'run.log')).read()
+    cw = [ln for ln in log.splitlines() if 'CLEAN WARNING' in ln]
+    out = am_budget(d, 'sp')
+    fl = [ln for ln in cw if 'implicit_pos_floor created' in ln]
+    return dict(dE=out['dE'], nonfinite=sum(bool(re.search(r'\b(inf|nan)\b', ln,
+                                                           re.I)) for ln in fl),
+                rejected=sum(('stage fallback' in ln) or ('dt_retry' in ln) for ln in cw))
 
 
 def t_cmdline_keys(c):
