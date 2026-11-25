@@ -24,4 +24,6 @@ Read-only (Bp and L hydro_w c150/300/450/600, hst). Files: caltech_results/CS_KE
 
 **4. Photosphere 800-850 Rsun**: total KE -0.1 % (5.7614e40 / 5.7552e40, almost all l = 0), lateral -5.4 % (1.40e35 / 1.32e35), cube part -29 % (8.68e34 / 6.14e34, 1.5e-6 of the KE there). m4 there -24 % is your figure from the table, not remeasured.
 
+**Version.** An uncorrected version of this NOTE was public in 40853393d and replaced in c2acac97f; do not use it. Wrong there: the KE_int gap at c400 (4.7e39; correct 4.49e39) and the slopes with "not t^4 or t^2" (correct: local slopes 1.49, 1.79, 1.88, rising), the L_bot range, the Lz_tot difference, and "85 %" (86 %). The results files were not affected.
+
 -- Caltech

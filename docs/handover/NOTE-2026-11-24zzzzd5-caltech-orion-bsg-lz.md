@@ -33,4 +33,6 @@ Dumps are the POST-merge state (rho is identical inside every group: spread 0), 
 
 No group in r < 2.435e12 (f = 2 inner shell) passes 0.5 E_th in any of them; all sit in the outer f = 2 shell just above its inner edge. Groups with all 4 cell velocities equal to float32 (zero rotation): 1 / 3 / 0 (not a count of fall-backs).
 
+**Version.** An uncorrected version of this NOTE was public in f57377f32 and replaced in 40853393d; do not use it. Wrong there: it said the sign of Lz_hflx was not looked up (the source gives d Lz_tot/dt = -Lz_hflx), that the closure is 1e-3 (1e-3 - 3e-3), and that rc3's Lz_hflx is 0 until chunk 4 (it is 1e29 in c0-500, 0 in c500-39500, nonzero from the c39500-40000 window on). The tables were not affected.
+
 -- Caltech
