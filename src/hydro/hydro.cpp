@@ -25,6 +25,7 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
+#include "utils/fofc_flags.hpp"
 #include "utils/recipe.hpp"
 #include "hydro/hydro_mergelat.hpp"
 #include "hydro/hydro_ringavg.hpp"
@@ -623,11 +624,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
-    if (use_fofc && ppack->pmesh->use_cubed_sphere && ppack->pmesh->nmb_total > 6) {
+    const bool fofc_fx = use_fofc && fofc_flags::Needed(ppack->pmesh);
+    if (fofc_fx) {
       recipe::OldStored(pin, "hydro", "fofc_flag_exchange", "false", "true");
     }
-    if (use_fofc && ppack->pmesh->use_cubed_sphere && ppack->pmesh->nmb_total > 6 &&
-        pin->GetOrAddBoolean("hydro", "fofc_flag_exchange",
+    if (fofc_fx && pin->GetOrAddBoolean("hydro", "fofc_flag_exchange",
             (global_variable::restart_run || recipe::NewDefaults(pin)) &&
             recipe::Fix(pin, "hydro", "fofc_flag_exchange", "true", "false"))) {
       pbval_fofc = new MeshBoundaryValuesCC(ppack, pin, false);

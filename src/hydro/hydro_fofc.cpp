@@ -22,6 +22,7 @@
 #include "rad_vet/rad_vet.hpp"
 #include "hydro/fofc_etotgrav.hpp"
 #include "bvals/bvals.hpp"
+#include "utils/fofc_flags.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -309,7 +310,9 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         fofcv_(m,k,j,i) = false;
       });
     }
-    if (pbval_fofc != nullptr) FofcExchangeFlags();
+    if (pbval_fofc != nullptr) {
+      fofc_flags::Exchange(pmy_pack, pbval_fofc, fofc_x, fofc);
+    }
     // Accumulate the PER-CELL FOFC flag count for the `hydro_fofc` output variable.
     // Placed after every writer of the flag array and before the flux kernel that reads
     // and clears it, so it sees exactly the set of cells this stage flagged -- the same
@@ -813,48 +816,6 @@ Real DflSpec(const int q, const DvceArray5D<Real> &u, const DvceArray5D<Real> &w
                        u(m,IM3,k,j,i)*w(m,IVZ,k,j,i)))/d;
 }
 }  // namespace
-
-//----------------------------------------------------------------------------------------
-//! \fn void Hydro::FofcExchangeFlags
-//! \brief <hydro>/fofc_flag_exchange: the owner's flags in the same-panel face ghosts.
-//! The trial state of a ghost cell across a MeshBlock edge takes its panel-seam face from
-//! the local ghost states (the shared seam states fill active rows only), so its flag
-//! could differ from the owner's and the answer depended on the MeshBlock layout.  The
-//! flags across a panel seam (resampled ghosts) and a physical boundary stay local.
-
-void Hydro::FofcExchangeFlags() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke, ng = indcs.ng;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  if (fofc_x.extent_int(0) != nmb1 + 1) {
-    Kokkos::realloc(fofc_x, nmb1 + 1, 1, indcs.nx3 + 2*ng, indcs.nx2 + 2*ng,
-                    indcs.nx1 + 2*ng);
-  }
-  auto fx = fofc_x;
-  auto fofc_ = fofc;
-  auto &size = pmy_pack->pmb->mb_size;
-  par_for("FOFC-flag", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    fx(m,0,k,j,i) = fofc_(m,k,j,i) ? 1.0 : 0.0;
-  });
-  DvceArray5D<Real> dum("fofc_xc", 1, 1, 1, 1, 1);   // (no refinement)
-  while (pbval_fofc->InitRecv(1) == TaskStatus::incomplete) {}
-  while (pbval_fofc->PackAndSendCC(fx, dum) == TaskStatus::incomplete) {}
-  while (pbval_fofc->RecvAndUnpackCC(fx, dum) == TaskStatus::incomplete) {}
-  while (pbval_fofc->ClearSend() == TaskStatus::incomplete) {}
-  while (pbval_fofc->ClearRecv() == TaskStatus::incomplete) {}
-  par_for("FOFC-owner", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const auto &sz = size.d_view(m);
-    const bool seam = (j < js && sz.x2min <= -1.0 + 1.0e-12) ||
-                      (j > je && sz.x2max >= 1.0 - 1.0e-12) ||
-                      (k < ks && sz.x3min <= -1.0 + 1.0e-12) ||
-                      (k > ke && sz.x3max >= 1.0 - 1.0e-12);
-    const int nout = (i < is || i > ie) + (j < js || j > je) + (k < ks || k > ke);
-    if (!seam && nout == 1) fofc_(m,k,j,i) = (fx(m,0,k,j,i) != 0.0);
-  });
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::DfloorFluxLimit
