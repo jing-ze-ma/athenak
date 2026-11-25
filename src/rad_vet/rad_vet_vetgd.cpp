@@ -16,8 +16,7 @@
 //! Upwind I, ln chi, ln S are bilinear in (theta, phi) index space; S is linear in tau.
 //! Periodic theta/phi walls: ghost intensities are re-indexed by the local-frame map
 //! n -> M n (nearest set direction). Block boundaries: lagged inflow (block-Jacobi).
-//! Output: the vet_col_lat slots VET_TT_LAT0..5 (D_rr - f_K, D_rtheta, D_rphi, and the
-//! trace-free tangential anisotropy D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2).
+//! Output: the intensities vgd_i (CleanClosureFromGd, CleanGdFaceSums).
 
 #include <algorithm>
 #include <array>
@@ -43,19 +42,6 @@
 #pragma clang fp contract(on)
 #endif
 
-// per-cell direction sums (vet_vgd_hr / vet_vgd_mom) read a cell's directions from the
-// VgdRag slab (d fastest): on HIP a team of VGD_LDS_TS cells stages VGD_LDS_DC
-// directions at a time in LDS (coalesced); each thread sums its own cell in the same
-// order (bitwise). Elsewhere plain par_for.
-constexpr int VGD_LDS_TS = 64;
-constexpr int VGD_LDS_DC = 16;
-inline bool VgdMomLds() {
-#if defined(KOKKOS_ENABLE_HIP)
-  return true;
-#else
-  return false;
-#endif
-}
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
@@ -5681,169 +5667,6 @@ void RadiationVet::VetGdSweep() {
 #else
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdMoments
-//! \brief D = K/J in the local (r, theta, phi) frame -> tau_ten LAT slots (relative to
-//! vet_col's uniaxial tensor; VetLatBuild folds LAT0 into slot 0)
-
-void RadiationVet::VetGdMoments() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n = vgd_n;
-  const int ilo = indcs.is + vlat_icut;
-  auto vi_ = vgd_i;
-  const int og = vgd_w - indcs.ng, ok = vgd_w - ks;   // mesh index -> band index
-  const bool sth_ = vgd_sth;
-  auto thn_ = vgd_thn;
-  auto dir_ = vgd_dir;
-  auto tt_ = tau_ten;
-  auto &mbsize = pmy_pack->pmb->mb_size;
-  const VgdLG lg_ = vgd_lg;
-  // vet_gd_replace with vet_col_surface_q: the outer Marshak q = H_r/J of the top cell
-  const bool repq = vgd_replace && vcol_sq;
-  auto vq_ = vcol_q;
-  const Real qlo = vcol_qmin, qhi = vcol_qmax;
-  // shell-major thread order, k fastest: the row order of the VgdRag slab (d, k, j),
-  // so adjacent threads read adjacent rows (same per-cell arithmetic: bitwise)
-  const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;
-  if (VgdMomLds()) {
-    // LDS-staged (see VgdMomLds): same cells, sums and outputs
-    const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
-    const int ncell = (nmb1 + 1)*ni*nj*nk;
-    const int nlg = (ncell + VGD_LDS_TS - 1)/VGD_LDS_TS;
-    const size_t scr = ScrArray1D<Real>::shmem_size(VGD_LDS_TS*VGD_LDS_DC);
-    Kokkos::TeamPolicy<> pol(DevExeSpace(), nlg, VGD_LDS_TS, 1);
-    // light-weight launch (no constant-memory host wait)
-    Kokkos::parallel_for("vet_vgd_mom", Kokkos::Experimental::require(
-        pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
-        Kokkos::Experimental::WorkItemProperty::HintLightWeight),
-    KOKKOS_LAMBDA(const TeamMember_t &tm) {
-      ScrArray1D<Real> sv(tm.team_scratch(0), VGD_LDS_TS*VGD_LDS_DC);
-      const int c0 = tm.league_rank()*VGD_LDS_TS;
-      const int tr = tm.team_rank();
-      auto dec = [&](const int c, int &m, int &i, int &j, int &k) {
-        int t = c;
-        k = ks + t % nk;
-        t /= nk;
-        j = js + t % nj;
-        t /= nj;
-        i = is + t % ni;
-        m = t/ni;
-      };
-      int m = 0, i = 0, j = 0, k = 0;
-      const int c = c0 + tr;
-      const bool val = (c < ncell);
-      if (val) {
-        dec(c, m, i, j, k);
-        for (int cc = 0; cc < VET_TT_NLAT; ++cc) {tt_(m,VET_TT_LAT0+cc,k,j,i) = 0.0;}
-      }
-      const bool act = val && (i >= ilo);
-      Real st = 0.0, ct = 0.0, sp = 0.0, cp = 0.0;
-      if (act) {
-        const Real th = sth_ ? thn_(m,j+og) : lg_.Th(mbsize, m, j, js);
-        const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
-        st = sin(th); ct = cos(th); sp = sin(ph); cp = cos(ph);
-      }
-      Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
-      for (int d0 = 0; d0 < n; d0 += VGD_LDS_DC) {
-        const int dn = (n - d0 < VGD_LDS_DC) ? (n - d0) : VGD_LDS_DC;
-        tm.team_barrier();
-        for (int e = tr; e < VGD_LDS_TS*dn; e += VGD_LDS_TS) {
-          const int cc = e/dn, dd = e - (e/dn)*dn;
-          const int c2 = c0 + cc;
-          if (c2 < ncell) {
-            int m2, i2, j2, k2;
-            dec(c2, m2, i2, j2, k2);
-            if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+ok,j2+og,i2);}
-          }
-        }
-        tm.team_barrier();
-        if (act) {
-          for (int dd = 0; dd < dn; ++dd) {
-            const int d = d0 + dd;
-            const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-            const Real a = nx*st*cp + ny*st*sp + nz*ct;
-            const Real b = nx*ct*cp + ny*ct*sp - nz*st;
-            const Real cq = -nx*sp + ny*cp;
-            const Real wi = dir_(d,3)*sv(tr*VGD_LDS_DC + dd);
-            jm += wi;
-            rr += wi*a*a;
-            rt += wi*a*b;
-            rp += wi*a*cq;
-            tq += wi*b*b;
-            tp += wi*b*cq;
-            pq += wi*cq*cq;
-          }
-        }
-      }
-      if (act && jm > 0.0) {
-        const Real fk = tt_(m,0,k,j,i);
-        tt_(m,VET_TT_LAT0,k,j,i) = rr/jm - fk;
-        tt_(m,VET_TT_LAT0+1,k,j,i) = rt/jm;
-        tt_(m,VET_TT_LAT0+2,k,j,i) = rp/jm;
-        tt_(m,VET_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
-        tt_(m,VET_TT_LAT0+4,k,j,i) = tp/jm;
-        tt_(m,VET_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
-      }
-    });
-  } else {
-  par_for("vet_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
-  KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
-    for (int c = 0; c < VET_TT_NLAT; ++c) {tt_(m,VET_TT_LAT0+c,k,j,i) = 0.0;}
-    if (i < ilo) {return;}
-    const Real th = sth_ ? thn_(m,j+og)
-                         : lg_.Th(mbsize, m, j, js);
-    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
-    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
-    for (int d = 0; d < n; ++d) {
-      const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-      const Real a = nx*st*cp + ny*st*sp + nz*ct;
-      const Real b = nx*ct*cp + ny*ct*sp - nz*st;
-      const Real c = -nx*sp + ny*cp;
-      const Real wi = dir_(d,3)*vi_(m,d,k+ok,j+og,i);
-      jm += wi;
-      rr += wi*a*a;
-      rt += wi*a*b;
-      rp += wi*a*c;
-      tq += wi*b*b;
-      tp += wi*b*c;
-      pq += wi*c*c;
-    }
-    if (jm > 0.0) {
-      const Real fk = tt_(m,0,k,j,i);
-      tt_(m,VET_TT_LAT0,k,j,i) = rr/jm - fk;
-      tt_(m,VET_TT_LAT0+1,k,j,i) = rt/jm;
-      tt_(m,VET_TT_LAT0+2,k,j,i) = rp/jm;
-      tt_(m,VET_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
-      tt_(m,VET_TT_LAT0+4,k,j,i) = tp/jm;
-      tt_(m,VET_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
-    }
-  });
-  }  // !VgdMomLds
-  if (!repq) {return;}
-  // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's face form,
-  // q = H(face)/J_f clamped to [vet_col_surface_qmin, _qmax]; H(face) = r^2 H_r of the
-  // top cell carried to the face; J_f = J of the top cell, or with
-  // vet_col_surface_face jca J_top - jcb J_below limited to [0, jcap J_top]
-  const bool sqf = vcol_sqf;
-  const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap, q0 = marshak_q;
-  auto cx1v = pmy_pack->pcoord->x1v;
-  auto cx1f = pmy_pack->pcoord->xx1f;
-  par_for("vet_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    const Real th = sth_ ? thn_(m,j+og)
-                         : lg_.Th(mbsize, m, j, js);
-    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
-    const VgdRhatSp rh{sin(th), cos(th), sin(ph), cos(ph)};
-    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k + ok - og, j, og, ie,
-                             cx1v(m,ie)/cx1f(m,ie+1), sqf, jca, jcb, jcap, qlo, qhi, q0);
-  });
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSource
 //! \brief source of a gd build: ln chi, ln S of every cell (VetLatSweep) into the band
 //! index space of vgd_cs with its lateral band filled exactly (one multi-shell
@@ -5900,8 +5723,7 @@ void RadiationVet::VetGdBuild() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSweepPost
-//! \brief sweep part of a gd build with the current tables (sweep, moments -> tau_ten LAT
-//! slots, the operator bound of D_r,lat) and VetGdPost
+//! \brief sweep part of a gd build with the current tables, and VetGdPost
 
 void RadiationVet::VetGdSweepPost() {
   Kokkos::Timer tm;
@@ -5912,12 +5734,6 @@ void RadiationVet::VetGdSweepPost() {
   VetGdSweep();
   Kokkos::fence();
   vgd_tswp += tm.seconds();
-  tm.reset();
-  // the clean scheme on the cubed sphere reads the intensities (CleanClosureFromGd)
-  if (!vgd_csg) {VetGdMoments();}
-  VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
-  Kokkos::fence();
-  vgd_tmom += tm.seconds();
   VetGdPost();
 }
 

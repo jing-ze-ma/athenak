@@ -95,11 +95,12 @@ void RadiationVet::VetColInit() {
                 << "the q is built but unused" << std::endl;
     }
   }
-  // vet_col_lat and the cubed sphere: VET_TT_NLAT more slots for the lateral D_ab
-  // (cs: basis r, xi, eta); elsewhere 4 slots
-  Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
-                  (VET_TT_LAT0 + VET_TT_NLAT) : 4, c3, c2, c1);
-  Kokkos::deep_copy(tau_ten, 0.0);
+  // an old file's signal-speed tensor (RssPrime), read until the first clean solve
+  if (rss_stage_mode == 2 || rss_stage_mode == 18) {
+    Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
+                    (VET_TT_LAT0 + VET_TT_NLAT) : 4, c3, c2, c1);
+    Kokkos::deep_copy(tau_ten, 0.0);
+  }
   tau_ready = true;
   if (vlat_on) {VetLatInit();}
 }
@@ -125,7 +126,7 @@ void RadiationVet::VetColReport() {
                 << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
                 << vgd_thalo << ", of which MPI wait " << vgd_tmpi
                 << "), tables (rotation) " << vgd_ttab
-                << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
+                << "; in-solve rebuilds " << vgd_nrb << " ("
                 << vgd_trb << " s)" << std::endl;
       std::cout << "<rad_vet> vet_gd halo (rank 0): exchanges " << vgd_nexch
                 << ", bytes sent "
@@ -307,71 +308,6 @@ void RadiationVet::VetLatInit() {
   if (global_variable::my_rank == 0) {
     std::cout << "### NOTE: <rad_vet>/vet_col_lat = true has no effect without vet_gd"
               << std::endl;
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetLatOdMax
-//! \brief vlat_odmax = max over ranks and active cells of the lateral tau_ten slots;
-//! 0 leaves the operator form untouched
-
-void RadiationVet::VetLatOdMax() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto tt_ = tau_ten;
-  // + tangential slots (vet_gd); cs: D_r,lat is Cartesian in LAT1..3, Q in LAT4, LAT5
-  const bool c3 = cs_geom;
-  const bool tn = vgd_on && vgd_tan && !c3, cst = vgd_on && vgd_tan && c3;
-  // cs_vertex_mono: zero D_r,lat (LAT1..3) within cs_vertex_mono_n + 1 of a cube vertex,
-  // before the ghost exchange, so every user of the slots sees the same zero
-  if (c3 && cs_vtx_mono) {
-    auto cse = cs_seam.d_view;
-    const int vr = cs_vtx_n + 1;
-    par_for("vet_vlat_csvtx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (VetCsVtxDist(k, j, ks, ke, js, je, cse(m,0) != 0, cse(m,1) != 0, cse(m,2) != 0,
-                      cse(m,3) != 0) <= vr) {
-        tt_(m,VET_TT_LAT0+1,k,j,i) = 0.0;
-        tt_(m,VET_TT_LAT0+2,k,j,i) = 0.0;
-        tt_(m,VET_TT_LAT0+3,k,j,i) = 0.0;
-        if (cst) {
-          tt_(m,VET_TT_LAT0+4,k,j,i) = 0.0;
-          tt_(m,VET_TT_LAT0+5,k,j,i) = 0.0;
-        }
-      }
-    });
-  }
-  {
-    Real omx = 0.0;
-    const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
-    Kokkos::parallel_reduce("vet_vlat_odmax",
-      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
-      KOKKOS_LAMBDA(const int idx, Real &mx) {
-        int t = idx/ni;
-        const int i = is + (idx - t*ni);
-        const int j = js + (t % nj);
-        t /= nj;
-        const int k = ks + (t % nk);
-        const int m = t/nk;
-        Real v = fmax(fabs(tt_(m,VET_TT_LAT0+1,k,j,i)),
-                      fabs(tt_(m,VET_TT_LAT0+2,k,j,i)));
-        if (tn) {
-          v = fmax(v, fmax(fabs(tt_(m,VET_TT_LAT0+3,k,j,i)),
-                           fabs(tt_(m,VET_TT_LAT0+4,k,j,i))));
-        }
-        if (c3) {v = fmax(v, fabs(tt_(m,VET_TT_LAT0+3,k,j,i)));}
-        if (cst) {
-          v = fmax(v, fmax(fabs(tt_(m,VET_TT_LAT0+4,k,j,i)),
-                           fabs(tt_(m,VET_TT_LAT0+5,k,j,i))));
-        }
-        mx = (v > mx) ? v : mx;
-      }, Kokkos::Max<Real>(omx));
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &omx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-#endif
-    vlat_odmax = omx;
   }
 }
 

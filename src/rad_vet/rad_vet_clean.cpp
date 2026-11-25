@@ -1141,6 +1141,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
 
 TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   if (!cln_init) CleanInit();
+  tau_ten = DvceArray5D<Real>();   // (an old file's, RssMode: cln_s from here on)
   // the vet_gd direction set first (a restart's first solve reads it before any build)
   if (vgd_on && !tau_ready) VetColInit();
   // sc rays' ring on the cubed sphere: the union's directions and weights too
