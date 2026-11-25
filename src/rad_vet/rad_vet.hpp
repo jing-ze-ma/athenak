@@ -1135,7 +1135,6 @@ class RadiationVet {
   int CleanRstNfv() const;
   int CleanRstNcl() const;   // clean_closure = iterate: the closure in place (cln_s)
   void CleanScUnion2();
-  void CleanCellHalf(const DvceArray2D<Real> &dv);
   void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
                      const int fo);
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
@@ -1371,7 +1370,7 @@ class RadiationVet {
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
-  bool cln_rfh = false;         // cs cell half ranges in the ring (CLN_HO, CleanCellHalf)
+  bool cln_rfh = false;         // cs cell half ranges in the ring (CLN_HO)
   bool cln_wfse = false;        // clean_w_fse
   bool cln_wfst = false;        // clean_w_fse_tau
   bool cln_hctau = false;       // clean_face_hctau
