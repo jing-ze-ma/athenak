@@ -1165,7 +1165,8 @@ def t_wedge_sym(c):
     out['fth'] = float(abs(m['vet_f2'].sum())/np.abs(m['vet_f1']).sum())
     out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
     try:
-        c.run('shell_sp.athinput', 'th20_nosym', th)
+        c.run('shell_sp.athinput', 'th20_nosym', dict(
+            th, **{'rad_vet/vet_gd_theta_seam_sym': 'false'}))
         out['theta_fatal'] = 0
     except RuntimeError:
         log = open(os.path.join(c.dir, 'th20_nosym', 'run.log')).read()
