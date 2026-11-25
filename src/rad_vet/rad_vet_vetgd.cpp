@@ -1117,7 +1117,6 @@ void RadiationVet::VetGdInit() {
     // the fused two-set sweep keeps the ragged band on sp; on the cubed sphere the ring
     // records both sets' compact lists (VetGdCsSweep's ringrec)
   }
-  VgdRagAlloc(vgd_i);   // after the halo init: band sides follow vgd_hloc
   // combinations the fused sweep never covers (VetGdXffOk) keep two sweeps and no
   // second array (the clean ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
@@ -1129,6 +1128,12 @@ void RadiationVet::VetGdInit() {
                 << "xfade_m, ...): two sweeps per build" << std::endl;
     }
   }
+  // the shells below the ray cut are filled just before a set's closure reads them
+  // (CleanClosureFromGd): the fused sweep's two sets share their slabs.  From the cut of
+  // the restart file, with a margin; a lower cut takes two sweeps (VetGdXffOk)
+  vgd_rag_cut = (vgd_xff && vgd_nb1 == 1 && marena_on && !marena_sealed) ?
+                std::max(cln_rcut - indcs.nx1/32, 0) : 0;
+  VgdRagAlloc(vgd_i);   // after the halo init: band sides follow vgd_hloc
   if (vgd_xff) {
     // the other set's intensities, same layout and band sides
     VgdRagAlloc(vgd_i_xb);
@@ -1138,6 +1143,7 @@ void RadiationVet::VetGdInit() {
                 << " GB on rank 0" << std::endl;
     }
   }
+  VgdRagThick();
   // vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_hmpi || vgd_hcomp <= 0)) {
     vgd_hx_on = false;         // does not apply (or nothing to exchange)
@@ -2197,9 +2203,10 @@ void RadiationVet::VgdEs2Make() {
 
 bool RadiationVet::VetGdXffOk() {
   if (!vgd_xff || !vgd_xf) {return false;}
+  if (vlat_icut < vgd_rag_cut) {return false;}   // (a cut below the shared slabs)
   if (vgd_csg) {
     // the cubed-sphere sweep (VetGdCsSweep): pass lists, no early send
-    return !vgd_gband && (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
+    return !vgd_gband && (vgd_i_xb.dummy == vgd_i.dummy);
   }
   if (vgd_gband && !vgd_raw) {
     return false;
@@ -2209,7 +2216,7 @@ bool RadiationVet::VetGdXffOk() {
 #if !defined(KOKKOS_ENABLE_CUDA)
   if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
 #endif
-  if (vgd_i_xb.d.extent(0) != vgd_i.d.extent(0)) {return false;}
+  if (vgd_i_xb.dummy != vgd_i.dummy) {return false;}
   return true;
 }
 
@@ -5840,20 +5847,19 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
     }
     wi_h(i) = wl;
   }
-  int64_t tot = 0;
+  int64_t tot = 0, tth = 0;
+  const int cg = (vgd_rag_cut > 0) ? indcs.is + vgd_rag_cut : 0;
   if (vgd_ring) {
     // vet_gd_band_ring: every shell compact (depth 0) at [0, ...), then vgd_rg_k wide
     // slots of one shell each at the deepest band; shell i's full depth in
     // vgd_rg_wfull (same for both arrays)
     vgd_rg_wfull.assign(c1, 0);
-    vgd_rg_offc.assign(static_cast<size_t>(a.nmb)*c1, 0);
     for (int i = 0; i < c1; ++i) {vgd_rg_wfull[i] = wi_h(i);}
     const int64_t cap = static_cast<int64_t>(a.nx3)*a.nx2*a.n;
     for (int m = 0; m < a.nmb; ++m) {
       for (int i = 0; i < c1; ++i) {
-        off_h(m,i) = tot;
-        vgd_rg_offc[static_cast<size_t>(m)*c1 + i] = tot;
-        tot += cap;
+        off_h(m,i) = (i < cg) ? -1 - tth : tot;   // (below cg: VgdRagThick)
+        ((i < cg) ? tth : tot) += cap;
       }
     }
     const int64_t ncomp = tot;
@@ -5880,19 +5886,15 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
     vgd_rg_sk.assign(c1, 0);
     vgd_rg_se.assign(c1, -1);
     vgd_rg_pend.clear();
-    Kokkos::realloc(vgd_rg_doffc, a.nmb, c1);
+    Kokkos::realloc(a.offc, a.nmb, c1);
     Kokkos::realloc(vgd_rg_dsoff, vgd_rg_k, a.nmb);
-    auto oc_h = Kokkos::create_mirror_view(vgd_rg_doffc);
     auto so_h = Kokkos::create_mirror_view(vgd_rg_dsoff);
     for (int m = 0; m < a.nmb; ++m) {
-      for (int i = 0; i < c1; ++i) {
-        oc_h(m,i) = vgd_rg_offc[static_cast<size_t>(m)*c1 + i];
-      }
       for (int s = 0; s < vgd_rg_k; ++s) {
         so_h(s,m) = vgd_rg_soff[static_cast<size_t>(s)*a.nmb + m];
       }
     }
-    Kokkos::deep_copy(vgd_rg_doffc, oc_h);
+    Kokkos::deep_copy(a.offc, off_h);
     Kokkos::deep_copy(vgd_rg_dsoff, so_h);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd_band_ring: compact intensities "
@@ -5904,13 +5906,14 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
   for (int m = 0; m < a.nmb; ++m) {
     for (int i = 0; i < c1; ++i) {
       const int wl = wi_h(i);
-      off_h(m,i) = tot;
-      tot += static_cast<int64_t>(a.n)*(a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*
-             (a.nx2 + (sb_h(m,2) + sb_h(m,3))*wl);
+      off_h(m,i) = (i < cg) ? -1 - tth : tot;
+      ((i < cg) ? tth : tot) += static_cast<int64_t>(a.n)*
+             (a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*(a.nx2 + (sb_h(m,2) + sb_h(m,3))*wl);
     }
   }
   }
   a.dummy = tot;
+  a.nth = tth;
   Kokkos::deep_copy(a.off, off_h);
   Kokkos::deep_copy(a.wi, wi_h);
   Kokkos::deep_copy(a.sb, sb_h);
@@ -5928,6 +5931,35 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::VgdRagThick
+//! \brief the slabs of the shells below vgd_rag_cut, one set of them for both fused
+//! arrays, behind both in the arena: the arrays' offsets there (their own bases)
+
+void RadiationVet::VgdRagThick() {
+  if (vgd_i.nth == 0) return;
+  MemArenaGrow(marena_sw + vgd_i.nth, false);   // (both arrays hold zeros)
+  Real *t = marena.data() + marena_sw;
+  marena_sw += vgd_i.nth + ((64 - (vgd_i.nth % 64)) % 64);
+  for (VgdRag *a : {&vgd_i, &vgd_i_xb}) {
+    const int64_t b = t - a->d.data();
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), a->off);
+    for (size_t m = 0; m < h.extent(0); ++m) {
+      for (size_t i = 0; i < h.extent(1); ++i) {
+        if (h(m,i) < 0) h(m,i) = b + (-1 - h(m,i));
+      }
+    }
+    Kokkos::deep_copy(a->off, h);
+    if (vgd_ring) Kokkos::deep_copy(a->offc, h);
+    a->d = DvceArray1D<Real>(a->d.data(), b + a->nth);
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse: the shells below " << vgd_rag_cut
+              << " (ray cut " << cln_rcut << ") share one slab, "
+              << vgd_i.nth*sizeof(Real)/1.0e9 << " GB on rank 0" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdRingSweepBegin / VetGdRingSweepEnd / VetGdRingFlush
 //! \brief vet_gd_band_ring (rad_vet.hpp): per-sweep bookkeeping and the kernel of a
 //! group of slab operations (save a shell's inward band; release = interior back to
@@ -5939,7 +5971,7 @@ struct VgdRingK {
   Real *da, *db, *st;
   int64_t *aoff, *boff;
   int *awi, *bwi;
-  const int64_t *oc, *so;
+  const int64_t *oc, *ocb, *so;
   const int *sb, *svdl, *svdw, *rsdl, *rsdw;
   int64_t offs0, offs1, ocs0, ocs1, sos0, sos1;
   int64_t nsv, nrl, ncp, nrs, svso, rsso, svn, rsn;
@@ -6030,15 +6062,15 @@ struct VgdRingK {
       r /= nx3;
       const int jj = r % nx2;
       const int m = r/nx2;
-      const int64_t qc = oc[m*ocs0 + i*ocs1] +
-                         v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
+      const int64_t qi = v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
+      const int64_t qc = oc[m*ocs0 + i*ocs1] + qi, qb = ocb[m*ocs0 + i*ocs1] + qi;
       const int64_t qw = Wadr(s, wl, m, v, kk + w, jj + w);
       if (out) {
         da[qc] = da[qw];
-        if (two) {db[qc] = db[qw];}
+        if (two) {db[qb] = db[qw];}
       } else {
         da[qw] = da[qc];
-        if (two) {db[qw] = db[qc];}
+        if (two) {db[qw] = db[qb];}
       }
       return;
     }
@@ -6071,7 +6103,7 @@ struct VgdRingK {
     for (int m = 0; m < nm; ++m) {
       if (hrl) {
         aoff[m*offs0 + rli*offs1] = oc[m*ocs0 + rli*ocs1];
-        if (two) {boff[m*offs0 + rli*offs1] = oc[m*ocs0 + rli*ocs1];}
+        if (two) {boff[m*offs0 + rli*offs1] = ocb[m*ocs0 + rli*ocs1];}
       }
       if (haq) {
         aoff[m*offs0 + aqi*offs1] = so[aqs*sos0 + m*sos1];
@@ -6280,7 +6312,7 @@ void RadiationVet::VetGdRingFlush() {
     auto a_ = vgd_i;
     auto b_ = xb ? vgd_i_xb : vgd_i;
     auto sb_ = vgd_i.sb;
-    auto oc_ = vgd_rg_doffc;
+    auto oc_ = a_.offc, ocb_ = b_.offc;
     auto so_ = vgd_rg_dsoff;
     auto st_ = vgd_rg_store;
     const int64_t nsv = sv.kind ? (xb ? (sv_n + sv_n2) : sv_n) : 0;
@@ -6303,6 +6335,7 @@ void RadiationVet::VetGdRingFlush() {
     k.awi = a_.wi.data();
     k.bwi = b_.wi.data();
     k.oc = oc_.data();
+    k.ocb = ocb_.data();
     k.so = so_.data();
     k.sb = sb_.data();
     k.offs0 = a_.off.stride(0);

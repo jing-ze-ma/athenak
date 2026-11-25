@@ -351,6 +351,25 @@
    "fatal_ring": 1
   }
  },
+ "ray_cut_slab": {
+  "equal": {
+   "warnings": 0,
+   "maxdiff_nofuse": 0.0,
+   "maxdiff_low": 0.0,
+   "maxdiff_retry": 0.0,
+   "shared": [
+    "low",
+    "retry",
+    "shared"
+   ],
+   "said_low": 1,
+   "said_shared": 0,
+   "fallbacks": [
+    0,
+    1
+   ]
+  }
+ },
  "momentum_box": {
   "_about": "a report: dP_max / dP_cyc are recorded, not bounded; the test passes when the run completes with finite dP and no CLEAN WARNING",
   "equal": {

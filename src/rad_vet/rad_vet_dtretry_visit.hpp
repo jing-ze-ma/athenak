@@ -796,6 +796,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vgd_dir", vgd_dir);
   v.value("vgd_i", vgd_i);
   v.value("vgd_i_xb", vgd_i_xb);
+  v.value("vgd_rag_cut", vgd_rag_cut);
+  v.value("vgd_rag_said", vgd_rag_said);
   v.value("marena_on", marena_on);
   v.value("marena_sealed", marena_sealed);
   v.view("marena", marena);
@@ -813,7 +815,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_rg_sn2", vgd_rg_sn2);
   v.value("vgd_rg_lastx", vgd_rg_lastx);
   v.value("vgd_rg_lastx_e", vgd_rg_lastx_e);
-  v.value("vgd_rg_offc", vgd_rg_offc);
   v.value("vgd_rg_soff", vgd_rg_soff);
   v.value("vgd_rg_wfull", vgd_rg_wfull);
   v.value("vgd_rg_state", vgd_rg_state);
@@ -826,7 +827,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_gbrec_xb", vgd_gbrec_xb);
   v.value("vgd_rg_stop", vgd_rg_stop);
   v.view("vgd_rg_store", vgd_rg_store);
-  v.view("vgd_rg_doffc", vgd_rg_doffc);
   v.view("vgd_rg_dsoff", vgd_rg_dsoff);
   v.value("vgd_rg_pend", vgd_rg_pend);
   v.value("vgd_rg_nk", vgd_rg_nk);

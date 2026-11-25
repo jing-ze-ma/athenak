@@ -1112,7 +1112,19 @@ void RadiationVet::CleanRingMoments() {
   // clean_rot_fuse: sweep the live sets b, b+1 in one fused VetGdSweep (vgd_xff_now;
   // own tables and intensities each); the loop below then takes each set's moments
   const bool fuse = vgd_on && cln_rfuse && !cln_scmem && ns == 2 && !fill && VetGdXffOk();
-  if (vgd_on && cln_rfuse && !fuse && ns == 2 && !fill && !cln_rfuse_said &&
+  // (the cut below the sets' shared slabs, VgdRagThick: the same cut on every rank)
+  const bool low = vgd_rag_cut > vlat_icut;
+  if (vgd_on && cln_rfuse && !fuse && ns == 2 && !fill) {
+    vgd_xff_nfb += 1.0;
+    if (low && !vgd_rag_said && global_variable::my_rank == 0) {
+      std::cout << "<rad_vet> clean_rot_fuse: the ray cut (shell " << vlat_icut << ") is "
+                << "below the shells whose slabs the two sets share (" << vgd_rag_cut
+                << "): two sweeps per build while it does; a restart shares fewer shells"
+                << std::endl;
+    }
+    vgd_rag_said = vgd_rag_said || low;
+  }
+  if (vgd_on && cln_rfuse && !fuse && !low && ns == 2 && !fill && !cln_rfuse_said &&
       global_variable::my_rank == 0) {
     std::cout << "<rad_vet> clean_rot_fuse: not taken (needs the sc rays, no "
               << "reflecting top and a fused-sweep configuration, VetGdXffOk): two "
