@@ -319,6 +319,7 @@ clean_pc_sweep = rb
 vet_rotate_avg_ema = 128
 vet_rotate_avg_ema_wb = true
 clean_cs_lz_tel = true
+clean_cs_lat_wb = true
 clean_stag_fwb = true
 clean_stag_fcone = true
 clean_stag_flim = false

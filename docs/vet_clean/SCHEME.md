@@ -251,6 +251,8 @@ a static state at every turn.
 
 Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured about 5e-9 and 1e-9; with
 the rotating sets `_rot` 4.7e-9 and 9e-10).
+`wb_cs` withholds the static radiation force and cannot see a spurious one on the cubed
+sphere; `shell_force_cs` (`clean_cs_lat_wb`) does.
 
 ### Order of accuracy in space and time
 
