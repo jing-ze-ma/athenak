@@ -51,3 +51,9 @@
 - mg levels stay 4: the code halves the tile 64 -> 32 -> 16 -> 8 -> 4 (x2, x3 only, tile's cells >= 4 and even); no reduction.
 - Same: radial grid 336, box, rays GL 7 x 18 (vet_gd), opacity tables, wb_x1 arrays (radial), IC, dt_retry etc. Different by construction: lateral cell 2 x larger, blocks 336 x 64 x 64, layout_tile 64. Silent points checked: he_seed band, mg levels, the outputs (hydro_w 7200 s; vet, vet_vet, vet_face only at t = 0 and the end; rst only the final one; hst every cycle). dt to be reported.
 - Size estimate: hydro_w 336 x 128 x 128 x 5 x 4 B = 110 MB each, 50 dumps: 5.5 GB; vet / face at 0 and the end about 1 GB; final rst about 7.5 GB (29 GB / 4 plus ghosts); total about 14-15 GB (38 TB free on the group volume).
+
+## Running
+- M35C started 10:47 PST on hpc-sm-02-03 (step 7333072.820, verified in squeue), 4 ranks, fresh directory /resnick/groups/carnegie_poc/jingze/m35c_1126/M35C; start-up: he_star_vet seed = real Y_lm l 16..64 (3969 terms, all m), amplitude 1e-3, rng 1234, r 8.9756e11-9.34835e11 (29 cells): identical to production's print, same warnings (only output1/dt not read, in production too); no FATAL, no CLEAN WARNING.
+- Correction to my seed line above: in cells per wave l = 16 is 144 / 288 cells (128 / 256 grid) and l = 64 is 36 / 72 cells; the numbers I wrote there were wrong.
+- After 200 cycles: s/cycle 0.200 (production 256: 0.64 at the start of its fresh run; 1.03 now), dt 12.1269 s (production 12.0076 at the start), estimate 28860 cycles x 0.20 = 5800 s = 1.6 h wall for 3.5e5 s; guard every 5 min (4 h, FATAL).
+- Silent points: keys that differ from the defaults as production (no difference in that list); 4 blocks, layout_tile 64, mg levels 4; the dt differs by +1.0 % from production's start (lateral cells twice as wide), otherwise the same limiter.
