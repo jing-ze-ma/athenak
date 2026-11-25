@@ -258,8 +258,6 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.ebath[0] = iebath_x1min;
   x.ebath[1] = iebath_x1max;
   for (int s = 0; s < 2; ++s) x.ebath[s] *= (bc[s] != VET_IBC_OUTFLOW);
-  x.marshak_q = marshak_q;
-  x.marshak = (cln_bdry_form == 1);
   x.use_beam = (ibm_n > 0);
   x.feedback = cln_feedback;
   x.vzero = cln_vzero;
@@ -281,8 +279,7 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.upw = cln_upw;
   x.ucen = cln_ucen;
   x.ucp = cln_ucp;
-  x.sar = !cln_gflux || cln_farea;
-  x.bar = cln_bcarea;
+  x.sar = !cln_gflux;
   x.op = opac;
   x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
   x.is = indcs.is;
@@ -1346,14 +1343,9 @@ void RadiationVet::CleanFaceCoefficients() {
   auto fh = cln_fh;
   auto x1f = pmy_pack->pcoord->xx1f;
   auto mbc = pmy_pack->pmb->mb_bcs.d_view;
-  const bool hrm = cln_hface;
   const bool fsc = cln_cssc;   // (the sc rays: their folded sums, CleanFaceHalf)
-  const bool wfs = cln_wfse;   // (clean_w_fse)
-  const bool wft = cln_wfst;   // (clean_w_fse_tau)
-  const bool fjs = cln_jse;    // (clean_face_jse)
-  const bool fjc = cln_jsec;   // (clean_face_jse_cell)
   const bool fho = cln_rfh;    // (vet_rotate_avg_ema_wb: the cells' own)
-  const CleanArgs *px = (fho || fjs || wft) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
+  const CleanArgs *px = CleanDevArgs(CleanMakeArgs(), 0);
   // (clean_closure = eddington | sphere sweeps no rays: the cells' half ranges)
   const int nd = (pmy_pack->pmesh->use_cubed_sphere && !cln_edd && !cln_sphere)
                  ? cln_fvn : 0;
@@ -1369,17 +1361,16 @@ void RadiationVet::CleanFaceCoefficients() {
     par_for("cln_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
-      const Real chi = CleanFaceChi(op, x1f, mbc, hrm, dir, m, k, j, i, is, ie);
-      // (clean_w_fse: g = max(|H|/J, eps C1/1.5) of the cell, else its C1)
+      const Real chi = CleanFaceChi(op, x1f, mbc, dir, m, k, j, i, is, ie);
+      // (g = max(|H|/J, eps C1/1.5) of the cell)
       auto gw = [&](const int kk, const int jj, const int ii) {
-        if (!wfs) return cs(m,CLN_C1,kk,jj,ii);
         Real h2 = 0.0;
         for (int a = 0; a < 3; ++a) {
           h2 += SQR(cs(m,CLN_HP+a,kk,jj,ii) + cs(m,CLN_HM+a,kk,jj,ii));
         }
         const Real ct = op(m,VET_OP_T,kk,jj,ii);
         Real ep = (ct > 0.0) ? fmin(op(m,VET_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
-        if (wft && ep < 1.0) {   // (clean_w_fse_tau: tau_d = chi V/A_f, the faces' mean)
+        if (ep < 1.0) {   // (tau_d = chi V/A_f, the faces' mean)
           Real td = 2.0*ct/(CleanDivW(*px, dir, m, kk, jj, ii, 0) +
                             CleanDivW(*px, dir, m, kk, jj, ii, 1));
           if (px->cub && dir > 0) {   // (the cell's own family: one w at a seam)
@@ -1416,12 +1407,11 @@ void RadiationVet::CleanFaceCoefficients() {
                                        : cs(m,CLN_HP+dir,kl,jl,il);
       fc(m,CLF_HM,k,j,i) = (jr_ > 0.0) ? fmax(fmin(hmf/jr_, 0.0), -1.0)
                                        : cs(m,CLN_HM+dir,k,j,i);
-      // (clean_face_jse: scale h+ by H+_f/H+_L, H+_f = wl H+_L + wr H+_R (CleanHcTauW),
+      // (scale h+ by H+_f/H+_L, H+_f = wl H+_L + wr H+_R (CleanHcTauW),
       // factor in [1/2, 2], blended by eps = min(kappa_P/chi, 1) of the face (h- alike);
-      // radial faces on curved meshes, all on Cartesian.  clean_face_jse_cell: scale the
-      // donor cell's h+- instead of the face value)
+      // radial faces on curved meshes, all on Cartesian)
       auto jse = [&]() {
-        if (!fjs || !(dir == 0 || !(px->sph || px->cub))) return;
+        if (!(dir == 0 || !(px->sph || px->cub))) return;
         auto ep = [&](const int kk, const int jj, const int ii) {
           const Real ct = op(m,VET_OP_T,kk,jj,ii);
           return (ct > 0.0) ? fmin(op(m,VET_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
@@ -1434,11 +1424,11 @@ void RadiationVet::CleanFaceCoefficients() {
         auto &fp = fc(m,CLF_HP,k,j,i), &fm = fc(m,CLF_HM,k,j,i);
         if (ppl > 0.0 && fp > 0.0) {
           const Real ph = fmin(fmax(wl + wr*ppr/ppl, 0.5), 2.0);
-          fp += wt*(fmin((fjc ? cs(m,CLN_HP+dir,kl,jl,il) : fp)*ph, 1.0) - fp);
+          fp += wt*(fmin(fp*ph, 1.0) - fp);
         }
         if (mmr < 0.0 && fm < 0.0) {
           const Real ph = fmin(fmax(wr + wl*mml/mmr, 0.5), 2.0);
-          fm += wt*(fmax((fjc ? cs(m,CLN_HM+dir,k,j,i) : fm)*ph, -1.0) - fm);
+          fm += wt*(fmax(fm*ph, -1.0) - fm);
         }
       };
       if (nd == 0) {

@@ -2030,7 +2030,6 @@ void RadiationVet::VetShortCharSweep() {
   auto iwd_ = iw;
   auto vcd_ = vet_cell;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
-  const bool cvx = cln_srccvx;   // clean_source_convex
   VetFor("vet_vet_srcc", (nmb1 + 1)*nk*nj*ni, KOKKOS_LAMBDA(const int t) {
     const int i = is + t%ni;
     int q = t/ni;
@@ -2044,7 +2043,7 @@ void RadiationVet::VetShortCharSweep() {
       Real tg = iwd_(m,VET_IW_TP,k,j,i);
       Real t2 = tg*tg;
       if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
-        const Real rkp = cvx ? fmin(opd_(m,VET_OP_P,k,j,i), chx) : opd_(m,VET_OP_P,k,j,i);
+        const Real rkp = fmin(opd_(m,VET_OP_P,k,j,i), chx);
         s = VetScatterMix(vsf, rkp, chx, opd_(m,VET_OP_S,k,j,i), ar*t2*t2, e);
       } else {
         Real eth = fmin(opd_(m,VET_OP_P,k,j,i)/chx, 1.0);

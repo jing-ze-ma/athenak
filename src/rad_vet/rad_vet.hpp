@@ -1137,7 +1137,6 @@ class RadiationVet {
   std::map<std::array<int, 8>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
   bool cln_optdr = false;       // clean_stag_opac_drag: the refresh rebuilds the drag
-  bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
   bool cln_fspcr = false;      // clean_stag_fs_line = pcr: F solve x1 lines on a GPU
   // the operator's rows (CLN_ST per active cell, CleanPreconditionerSetup)
   DvceArray5D<Real> cln_st;
@@ -1155,12 +1154,10 @@ class RadiationVet {
   bool cln_bmn = false;         // clean_bud_maxnorm
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_wbfct = false;       // clean_wb_fct
-  bool cln_wbff = false;        // clean_wb_floor_fail
   bool cln_wbxl = false;        // clean_wb_exch_local
   Real cln_flrun = 0.0;         // the last write-back's implicit_pos_floor creation
   int cln_flrid = -1;           // its cycle and t2s, 4 ncycle + t2_solve
   bool cln_wbmc = false;        // clean_wb_mcap
-  Real cln_wbffn = 0.0;         // its steps accepted at the last cut
   int cln_wbfdg = 0;            // clean_wb_floor_diag (diagnostic)
   int cln_dbginf = -1;          // clean_dbg_inf (test): the cycle of the injected inf
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
@@ -1171,30 +1168,23 @@ class RadiationVet {
   bool cln_rcut_on = false;
   int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
   ParameterInput *pin_rcut_ = nullptr;
-  bool cln_jsec = false;        // clean_face_jse_cell (CleanFaceCoefficients)
   bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
                                 // predictor and the budget's time error also in BE steps
-  int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   static constexpr int cln_maxpic = 12;   // passes that update the lagged slopes
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
-  bool cln_rfrst = false;       // clean_rot_ring_fill_rst: full window at an old restart
   bool cln_rfdone = false;      // its fill taken
-  bool cln_rmsh = false;        // clean_rst_mshare: VET share memory at an old restart
   bool cln_rmdone = false;      // its start taken
   void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
   void CleanWorstCell(const Real dnl, const Real dnl0);
-  bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   // clean_stag_xdonor: cross flux of the iterate as a donor-cell coefficient of its face
   bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
   int cln_xqs = -1;   // (3 slots: qL >= 0, qR <= 0, the lagged explicit flux; CLF_XC: C(E_k),
                     //  C's last change)
-  bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
   bool cln_lzt = false;     // clean_cs_lz_tel
-  bool cln_lzbf = false;    // clean_cs_lz_bnd_free
   bool cln_latwb = false;   // clean_cs_lat_wb
   bool cln_thinf = false;   // clean_stag_thinf
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
@@ -1281,12 +1271,6 @@ class RadiationVet {
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
   bool cln_rfh = false;         // cs cell half ranges in the ring (CLN_HO)
-  bool cln_wfse = false;        // clean_w_fse
-  bool cln_wfst = false;        // clean_w_fse_tau
-  bool cln_hctau = false;       // clean_face_hctau
-  bool cln_jse = false;         // clean_face_jse
-  bool cln_farea = false;       // clean_face_area
-  bool cln_bcarea = false;      // clean_bc_area
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number

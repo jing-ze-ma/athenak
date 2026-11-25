@@ -249,7 +249,6 @@ void RadiationVet::VetRaySource() {
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real ar = arad, efl = e_floor;
-  const bool cvx = cln_srccvx;   // clean_source_convex: kappa_P capped at chi
   par_for_lb("vet_ray_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,VET_IW_KT,k,j,i), 1.0e-300);
@@ -261,8 +260,7 @@ void RadiationVet::VetRaySource() {
       Real eth = fmin(opac_(m,VET_OP_P,k,j,i)/chi, 1.0);
       const Real rks = (vsf != 0) ? opac_(m,VET_OP_S,k,j,i) : 0.0;
       if (vsf != 0) {
-        const Real rkp = cvx ? fmin(opac_(m,VET_OP_P,k,j,i), chi) :
-            opac_(m,VET_OP_P,k,j,i);
+        const Real rkp = fmin(opac_(m,VET_OP_P,k,j,i), chi);   // (S between J and B)
         s = VetScatterMix(vsf, rkp, chi, rks, ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
