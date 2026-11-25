@@ -43,7 +43,7 @@
 #pragma clang fp contract(on)
 #endif
 
-// per-cell direction sums (m1_vgd_hr / m1_vgd_mom) read a cell's directions from the
+// per-cell direction sums (vet_vgd_hr / vet_vgd_mom) read a cell's directions from the
 // VgdRag slab (d fastest): on HIP a team of VGD_LDS_TS cells stages VGD_LDS_DC
 // directions at a time in LDS (coalesced); each thread sums its own cell in the same
 // order (bitwise). Elsewhere plain par_for.
@@ -2294,7 +2294,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
 #if defined(KOKKOS_ENABLE_CUDA)
   // IPC form (CUDA lean, no early send): one kernel packs both sets' kept values of
   // partner p into its receive buffer, the last team sets the partners' flags, every
-  // team waits for mine and scatters both sets (bitwise m1_vgd_xff_scatter)
+  // team waits for mine and scatters both sets (bitwise vet_vgd_xff_scatter)
   if (vgd_ipc_state == 1 &&
       vgd_rg_pend.empty() && static_cast<int>(XA.dsto.size()) == np &&
       static_cast<int>(XB.dsto.size()) == np) {
@@ -3416,8 +3416,8 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
       for (int p = 0; p <= np; ++p) {spi.v[p] = X.sp[p];}
       for (int p = 0; p < np; ++p) {doi.v[p] = X.dsto[p];}
       // fused exchange (CUDA lean, no band-ring copy in between): teams pack as
-      // m1_vgd_ipc_pack, the last one sets the partners' flags, every team waits for
-      // mine and scatters as m1_vgd_hl_scatter (bitwise). At most 216 teams of 128: all
+      // vet_vgd_ipc_pack, the last one sets the partners' flags, every team waits for
+      // mine and scatters as vet_vgd_hl_scatter (bitwise). At most 216 teams of 128: all
       // resident, so early spinning teams cannot starve the last one's pack
 #if defined(KOKKOS_ENABLE_CUDA)
       if (vgd_hlp.now && vgd_rg_pend.empty() && X.ns + X.nr + X.nw > 0) {

@@ -732,7 +732,7 @@ void RadiationVet::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb,
   const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
   const int64_t nv = ncomp*ncint;
   const int cs = std::max(1, std::min(nsc, nsl));
-  DvceArray5D<Real> sl("rst-m1r-chunk", 1, cs, n3, n2, n1);
+  DvceArray5D<Real> sl("rst-vetr-chunk", 1, cs, n3, n2, n1);
   for (int m = 0; m < nmb; ++m) {
     for (int s0 = 0; s0 < nsl; s0 += cs) {
       const int ns = std::min(cs, nsl - s0);

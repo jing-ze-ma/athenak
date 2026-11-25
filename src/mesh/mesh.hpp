@@ -122,13 +122,13 @@ struct EventCounters {
   // F4: <rad_vet> solver/limiter totals since the start of this run (or
   // restart), filled at each event-log output (RadiationVet::EventTotals)
   static constexpr int kNVetTot = 13;
-  bool m1on;
-  Real m1tot[kNVetTot];
+  bool veton;
+  Real vettot[kNVetTot];
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
                     neos_vceil(0), neos_fail(0), maxit_c2p(0), neos_tclamp(0),
                     neos_tset(0), efloor_de(0.0), vceil_de(0.0), dfloor_ke(0.0),
                     flr_dm_v(0.0), flr_de_v(0.0), flr_dn(0.0), nfofc_run(0),
-                    m1on(false), m1tot{} {}
+                    veton(false), vettot{} {}
 };
 
 //----------------------------------------------------------------------------------------

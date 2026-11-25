@@ -576,7 +576,7 @@ class RadiationVet {
   //  implicit_thin_gface_shell: x1-face g from shell means (repro::ShellSums)
   //  implicit_hr_fsc: in the blend band the central branch takes c (h_L E_L + h_R E_R)/2
   //  implicit_thin_gface_filter = L: x1-face g from a hat filter of half-width L
-  //  implicit_thin_gw_dump: g_L, g_R and weight AL of the last build (output m1_gw)
+  //  implicit_thin_gw_dump: g_L, g_R and weight AL of the last build (output vet_gw)
   DvceArray5D<Real> gwd;
   // time2_face_fct: the restart file carries K1's face energy flux t2pf1 (one slab per
   // direction, kVetFaxRstMagic). Old files' implicit_hr_cmem_rst slabs: read, ignored.
@@ -995,17 +995,17 @@ class RadiationVet {
   // cubed sphere (sets sph_geom too)
   bool cs_geom = false;
   // cubed-sphere transverse operator (CubedS1Init):
-  //   m1bcs     mb_bcs with BoundaryFlag::panel read as block (a seam is an open face)
+  //   vetbcs     mb_bcs with BoundaryFlag::panel read as block (a seam is an open face)
   //   cs_seam   per MeshBlock: its inner_x2, outer_x2, inner_x3, outer_x3 face is a seam
   //   csg2/3    seam geometry (VetCsSeamGeom) of the x2 / x3 seam faces,
   //             (m, {dth, angm, sfoot, smid}, along-seam cell incl. ghosts, side lo/hi)
-  DualArray2D<BoundaryFlag> m1bcs;
+  DualArray2D<BoundaryFlag> vetbcs;
   DualArray2D<int> cs_seam;
   DvceArray4D<Real> csg2, csg3;
   // effective transverse geometry of the cs operator for kernels that read Coordinates
   // (ImplicitVimpBuild): two-point x2/x3 distances and the seam areas; x1 copied
-  DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
-  DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
+  DvceFaceFld4D<Real> cs_dxf_eff{"vetcsdxf", 1, 1, 1, 1};
+  DvceFaceFld4D<Real> cs_area_eff{"vetcsarea", 1, 1, 1, 1};
   // planar unit normals of the x2 faces (m, j = 0..n2, c) and x3 faces (m, k = 0..n3, c),
   // along +x2 / +x3 (VetCsLat0)
   DvceArray3D<Real> cs_fn2, cs_fn3;
@@ -1423,7 +1423,7 @@ class RadiationVet {
   CleanW cln_w;                 // work vectors (CLW_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
-  // staggered: cell flux of the faces' energy flux Phi (m,3,k,j,i; output m1_phi); u0 F
+  // staggered: cell flux of the faces' energy flux Phi (m,3,k,j,i; output vet_phi); u0 F
   // holds the face momenta's
   DvceArray5D<Real> cln_phic;
   DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's d and its K1 (m,6,k,j,i)

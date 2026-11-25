@@ -396,7 +396,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("sph_geom", sph_geom);
   v.value("sph_q", sph_q);
   v.value("cs_geom", cs_geom);
-  v.dual("m1bcs", m1bcs);
+  v.dual("vetbcs", vetbcs);
   v.dual("cs_seam", cs_seam);
   v.view("csg2", csg2);
   v.view("csg3", csg3);

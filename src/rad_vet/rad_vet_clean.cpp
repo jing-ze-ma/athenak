@@ -4967,7 +4967,7 @@ void RadiationVet::CleanWriteBack() {
   auto pf = (t2_solve == VET_T2S_STAGE1) ? t2pf2 : t2pf1;
   // xdonor: each face's central cross flux once, for both its cells, in cln_xf's scratch
   // (its users write it before they read it)
-  auto phq = cln_phic;   // the cell flux of the faces' Phi (output m1_phi)
+  auto phq = cln_phic;   // the cell flux of the faces' Phi (output vet_phi)
   DvceArray5D<Real> xcv;
   if (xh.hi && x.xq >= 0) {
     xcv = ScratchView<DvceArray5D<Real>>("cln_xf", nmb1 + 1, 3, cln_w.s.extent_int(2),

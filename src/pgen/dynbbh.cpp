@@ -648,7 +648,7 @@ void SuperposedBBH(const Real time, const Real x, const Real y, const Real z,
   Real a2y =  traj_array[AY2];
   Real a2z =  traj_array[AZ2];
 
-  Real m1_t = traj_array[M1T];
+  Real vet_t = traj_array[M1T];
   Real m2_t = traj_array[M2T];
 
   Real a1_t = sqrt( a1x*a1x + a1y*a1y + a1z*a1z + 1e-40);
@@ -709,7 +709,7 @@ void SuperposedBBH(const Real time, const Real x, const Real y, const Real z,
   /* This is useful for reducing the effective mass of each BH */
   /* Adjust by hand to get the correct irreducible mass of the BH */
   Real a1 = a1_t * bbh_.adjust_mass1;
-  Real m1 = m1_t * bbh_.adjust_mass1;
+  Real m1 = vet_t * bbh_.adjust_mass1;
   Real a2 = a2_t * bbh_.adjust_mass2;
   Real m2 = m2_t * bbh_.adjust_mass2;
 

@@ -1625,8 +1625,8 @@ void RadiationVet::VetGdCsSweep() {
     }
   }
 #endif
-  // early-send cells are computed once: m1_vgdcs_estamp stamps the (m, k, j, d) that
-  // m1_vgdcs_eshell computes (stamp vgd_esid); the shell kernel skips them (bitwise)
+  // early-send cells are computed once: vet_vgdcs_estamp stamps the (m, k, j, d) that
+  // vet_vgdcs_eshell computes (stamp vgd_esid); the shell kernel skips them (bitwise)
   const int nkb = ke - ks + 1, njb = je - js + 1;
   if (early && (vgd_est[0].extent_int(0) < nmb1 + 1 || vgd_est[0].extent_int(1) < nkb ||
                 vgd_est[0].extent_int(2) < njb || vgd_est[0].extent_int(3) < n)) {

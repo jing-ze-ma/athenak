@@ -1288,7 +1288,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
-  // m1_vsc: J and F/c of the vet_sc formal solution
+  // vet_vsc: J and F/c of the vet_sc formal solution
   if (name.compare("vet_vsc") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1304,7 +1304,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     });
     i_dv += 4;
   }
-  // m1_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
+  // vet_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
   // (clean_closure = predict, the staggered default; rad_vet_clean_closure.cpp
   // CleanClosure: the formal solution of the predicted state at
   // t^{n+1}, the clean_rot_ring average over the window's sets, CleanClosureFromGd, then
@@ -1312,9 +1312,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   // every solve of the step, not rebuilt after it; a restart restores the ring, so the
   // next step builds the same D), so the D of the step that produced the dumped E and
   // F; a dump before the first build (cycle 0; cln_s is not in the restart file) writes
-  // D = I/3.  Components 11 22 33 12 13 23 in the frame of m1_f1..3, radial first: the
+  // D = I/3.  Components 11 22 33 12 13 23 in the frame of vet_f1..3, radial first: the
   // cubed sphere's Cartesian D turned into CleanCsFrame's (r_hat, ., .), D' = q D q^T
-  // (the old scheme's m1_vet wrote the Cartesian D there).  P_ab = m1_e D_ab.
+  // (the old scheme's vet_vet wrote the Cartesian D there).  P_ab = vet_e D_ab.
   if (name.compare("vet_vet") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1419,15 +1419,15 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // m1_comov: the comoving residuals of the old implicit solve's iterate (its iw slots,
+  // vet_comov: the comoving residuals of the old implicit solve's iterate (its iw slots,
   // which scheme = clean does not fill)
   if (name.compare("vet_comov") == 0) {
-    std::cout << "### FATAL ERROR: output variable m1_comov is not filled under "
+    std::cout << "### FATAL ERROR: output variable vet_comov is not filled under "
               << "<rad_vet>/scheme = clean" << std::endl;
     std::exit(EXIT_FAILURE);
   }
 
-  // m1_face: the transported face-normal comoving fluxes (basetype_output.cpp)
+  // vet_face: the transported face-normal comoving fluxes (basetype_output.cpp)
   if (name.compare("vet_face") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1441,7 +1441,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
                     (fx2.extent_int(2) > je);
     const bool h3 = prm->trans_on && prm->trans_x3 && (fx3.extent_int(0) >= nmb) &&
                     (fx3.extent_int(1) > ke);
-    // m1_ex1: clean, the x1 energy flux Phi of the step's last solve (t2pf1 x c/chat;
+    // vet_ex1: clean, the x1 energy flux Phi of the step's last solve (t2pf1 x c/chat;
     // f0x1 is then the face momentum F, as the star_vet hst L_midE)
     auto pf1 = prm->t2pf1;
     const bool he = prm->t2pf1_ok && (pf1.extent_int(0) >= nmb);
@@ -1457,7 +1457,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 5;
   }
 
-  // m1_gw: x1-face g_L, g_R and weight AL at the left face of cell i
+  // vet_gw: x1-face g_L, g_R and weight AL at the left face of cell i
   if (name.compare("vet_gw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1473,7 +1473,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 5;
   }
 
-  // m1_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)
+  // vet_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)
   if (name.compare("vet_fs") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1512,7 +1512,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
+  // vet_lat: the handed-over closure tensor slots (basetype_output.cpp)
   if (name.compare("vet_lat") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1568,7 +1568,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 12;
   }
 
-  // m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
+  // vet_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
   if (name.compare("vet_gdhr") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1585,7 +1585,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 6;
   }
 
-  // m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
+  // vet_thsw: the thin switch's cell inputs (basetype_output.cpp)
   if (name.compare("vet_thsw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);

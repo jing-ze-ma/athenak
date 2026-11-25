@@ -255,28 +255,28 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   if (pradvet != nullptr) {
-    stage(outarray_m1, Kokkos::subview(pradvet->u0, std::make_pair(0,nmb), Kokkos::ALL,
+    stage(outarray_vet, Kokkos::subview(pradvet->u0, std::make_pair(0,nmb), Kokkos::ALL,
                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     // milestone 3a: the persistent x1 face fluxes of the implicit scheme
     {
-      stage(outarray_m1f, Kokkos::subview(pradvet->f0x1, std::make_pair(0,nmb),
+      stage(outarray_vetf, Kokkos::subview(pradvet->f0x1, std::make_pair(0,nmb),
                                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
     // milestone 3b phase B: the transverse face fluxes, in the SAME order the reader
     // (src/pgen/pgen.cpp) takes them back: f0x1, then f0x2, then f0x3.
     if (pradvet->trans_on) {
-      stage(outarray_m1f2, Kokkos::subview(pradvet->f0x2, std::make_pair(0,nmb),
+      stage(outarray_vetf2, Kokkos::subview(pradvet->f0x2, std::make_pair(0,nmb),
                                            Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       if (pradvet->trans_x3) {
-        stage(outarray_m1f3, Kokkos::subview(pradvet->f0x3, std::make_pair(0,nmb),
+        stage(outarray_vetf3, Kokkos::subview(pradvet->f0x3, std::make_pair(0,nmb),
                                              Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
     }
     // implicit_predictor = step: the stored previous-step increment (radvet::ipred)
     if (pradvet->impl_pred && pradvet->pred_ok) {
       const int npc = static_cast<int>(pradvet->ipred.extent(1));
-      Kokkos::realloc(outarray_m1p, nmb, npc, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1p, Kokkos::subview(pradvet->ipred,
+      Kokkos::realloc(outarray_vetp, nmb, npc, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_vetp, Kokkos::subview(pradvet->ipred,
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
@@ -302,25 +302,29 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
             std::max(1, std::min(nct, static_cast<int>(win_mb_*1048576.0/
                                  (sizeof(Real)*nout1*nout2*nout3)))) : nct;
         if (um) {
-          outarray_m1t_d = DvceArray5D<Real>("rst-m1t-d", nst, nwin, nout3, nout2, nout1);
-          outarray_m1t = HostArray5D<Real>(outarray_m1t_d.data(), nst, nwin, nout3, nout2,
+          outarray_vett_d = DvceArray5D<Real>("rst-vett-d", nst, nwin, nout3, nout2,
+                                              nout1);
+          outarray_vett = HostArray5D<Real>(outarray_vett_d.data(), nst, nwin, nout3,
+                                            nout2,
                                            nout1);
         } else {
-          Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
+          Kokkos::realloc(outarray_vett, nmb, nct, nout3, nout2, nout1);
         }
-        Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-m1t-mb",
+        Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-vett-mb",
             um ? 0 : static_cast<size_t>(nc0)*nout3*nout2*nout1);
         auto AL = Kokkos::ALL;
         for (int m = 0; m < ((nst < nmb) ? 0 : nmb); ++m) {
-          DvceArray5D<Real> tmp(um ? outarray_m1t_d.data() + outarray_m1t_d.stride(0)*m :
+          DvceArray5D<Real> tmp(um ? outarray_vett_d.data() + outarray_vett_d.stride(0)*m
+                                :
                                 pin.data(), 1, nc0, nout3, nout2, nout1);
           pradvet->Time2RstPack(tmp, 1, m);
           if (!um) {
-            Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, std::make_pair(0, nc0), AL,
+            Kokkos::deep_copy(Kokkos::subview(outarray_vett, m, std::make_pair(0, nc0),
+                                              AL,
                                               AL, AL),
                               Kokkos::subview(tmp, 0, AL, AL, AL, AL));
           }
-          auto fv = Kokkos::subview(outarray_m1t, m, std::make_pair(nc0, nct), AL, AL,
+          auto fv = Kokkos::subview(outarray_vett, m, std::make_pair(nc0, nct), AL, AL,
                                     AL);
           if (nfv > 0 && pradvet->CleanRstFv().extent_int(0) > m) {
             Kokkos::deep_copy(fv, Kokkos::subview(pradvet->CleanRstFv(), m, AL, AL, AL,
@@ -331,16 +335,16 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         }
         if (um) Kokkos::fence();
       } else {
-        DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);
+        DvceArray5D<Real> tmp("rst-vett", nmb, nct, nout3, nout2, nout1);
         pradvet->Time2RstPack(tmp, nmb);
-        Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
-        Kokkos::deep_copy(outarray_m1t, tmp);
+        Kokkos::realloc(outarray_vett, nmb, nct, nout3, nout2, nout1);
+        Kokkos::deep_copy(outarray_vett, tmp);
       }
     }
     // implicit_closure_thin_relax: the relaxed closure of the last step (ctr_mem)
     if (pradvet->impl_ctrelax > 0.0 && pradvet->ctr_init) {
-      Kokkos::realloc(outarray_m1c, nmb, 4, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1c, Kokkos::subview(pradvet->ctr_mem,
+      Kokkos::realloc(outarray_vetc, nmb, 4, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_vetc, Kokkos::subview(pradvet->ctr_mem,
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
@@ -352,14 +356,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       // (zero-copy, independent I/O: one MeshBlock's pack, filled MeshBlock by MeshBlock
       // by the writer)
       const bool one = zc && nmb > 1 && !IOWrapper::collective;
-      pack(outarray_m1s, "rst-m1s", one ? 1 : nmb, nrs, [&](DvceArray5D<Real> &t) {
+      pack(outarray_vets, "rst-vets", one ? 1 : nmb, nrs, [&](DvceArray5D<Real> &t) {
         if (!one) pradvet->RssRstPack(t, nmb, rmode);
       });
     }
     // implicit_gas_src = conservative(2): the cell-F slope csk1
     if (pradvet->CskRstNch() > 0) {
-      Kokkos::realloc(outarray_m1k, nmb, 3, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1k, Kokkos::subview(pradvet->csk1,
+      Kokkos::realloc(outarray_vetk, nmb, 3, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_vetk, Kokkos::subview(pradvet->csk1,
                                                       std::make_pair(0,nmb),
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
@@ -368,8 +372,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     if (nra > 0) {
       // packed per MeshBlock in chunks of 4 slabs (was a device copy of the
       // whole record, the largest transient on top of the steady state); same bytes
-      Kokkos::realloc(outarray_m1r, nmb, nra, nout3, nout2, nout1);
-      pradvet->RotAvgRstPackHost(outarray_m1r, nmb, 4);
+      Kokkos::realloc(outarray_vetr, nmb, nra, nout3, nout2, nout1);
+      pradvet->RotAvgRstPackHost(outarray_vetr, nmb, 4);
     }
   }
   // <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's hesdirk2
@@ -1282,7 +1286,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     for (int m=0;  m<noutmbs_max; ++m) {
       // every rank has a MB to write, so write collectively
       if (m < noutmbs_min) {
-        auto mbptr = Kokkos::subview(outarray_m1, m, Kokkos::ALL, Kokkos::ALL,
+        auto mbptr = Kokkos::subview(outarray_vet, m, Kokkos::ALL, Kokkos::ALL,
                                      Kokkos::ALL, Kokkos::ALL);
         int mbcnt = mbptr.size();
         if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
@@ -1296,7 +1300,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
       // some ranks are finished writing, so use non-collective write
       } else if (m < pm->nmb_thisrank) {
-        auto mbptr = Kokkos::subview(outarray_m1, m, Kokkos::ALL, Kokkos::ALL,
+        auto mbptr = Kokkos::subview(outarray_vet, m, Kokkos::ALL, Kokkos::ALL,
                                      Kokkos::ALL, Kokkos::ALL);
         int mbcnt = mbptr.size();
         if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
@@ -1345,7 +1349,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     {
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
-          auto mbptr = Kokkos::subview(outarray_m1f, m, Kokkos::ALL, Kokkos::ALL,
+          auto mbptr = Kokkos::subview(outarray_vetf, m, Kokkos::ALL, Kokkos::ALL,
                                        Kokkos::ALL);
           int mbcnt = mbptr.size();
           if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
@@ -1357,7 +1361,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           }
           myoffset += data_size;
         } else if (m < pm->nmb_thisrank) {
-          auto mbptr = Kokkos::subview(outarray_m1f, m, Kokkos::ALL, Kokkos::ALL,
+          auto mbptr = Kokkos::subview(outarray_vetf, m, Kokkos::ALL, Kokkos::ALL,
                                        Kokkos::ALL);
           int mbcnt = mbptr.size();
           if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
@@ -1374,11 +1378,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       myoffset = offset_myrank;
     }
     if (pradvet->trans_on) {
-      wrface(outarray_m1f2);
+      wrface(outarray_vetf2);
       offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_vet f0x2
       myoffset = offset_myrank;
       if (pradvet->trans_x3) {
-        wrface(outarray_m1f3);
+        wrface(outarray_vetf3);
         offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_vet f0x3
         myoffset = offset_myrank;
       }
@@ -1589,9 +1593,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nwarm > 0) { write_wtemp(outarray_wm1, "rt warm start"); }
   if (nwarm > 1) { write_wtemp(outarray_wm2, "rt warm start 2"); }
   // and the implicit_predictor increment behind that, one slab per channel
-  write_group(outarray_m1p, npred, "rad_vet predictor");
+  write_group(outarray_vetp, npred, "rad_vet predictor");
   // and the hesdirk2 slope behind that
-  write_group(outarray_m1t, nt2, "rad_vet hesdirk2 slope",
+  write_group(outarray_vett, nt2, "rad_vet hesdirk2 slope",
               [&](DvceArray5D<Real> &t, int m, int w0) {
                 pradvet->Time2RstPack(t, 1, m, w0);});
   // and the internal energy last of all (kEintRstMagic)
@@ -1605,16 +1609,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                 Kokkos::ALL), "ck restart state");
   }
   // and the thin_relax closure memory last of all (kVetCtrRstMagic)
-  write_group(outarray_m1c, nctr, "rad_vet thin_relax closure");
+  write_group(outarray_vetc, nctr, "rad_vet thin_relax closure");
   // and the rad_signal_speed inputs behind it (kVetRssRstMagic)
-  write_group(outarray_m1s, nrss, "rad_signal_speed inputs",
+  write_group(outarray_vets, nrss, "rad_signal_speed inputs",
               [&](DvceArray5D<Real> &t, int m, int) {
                 pradvet->RssRstPack(t, 1, pradvet->RssRstMode(), m);});
   // and the vet_gd_async pending source behind it (kVetVgdRstMagic)
   // and the conservative cell-F slope behind it (kVetCskRstMagic)
-  write_group(outarray_m1k, ncsk, "rad_vet conservative cell-F slope");
+  write_group(outarray_vetk, ncsk, "rad_vet conservative cell-F slope");
   // and the vet_rotate_avg history behind it (kVetRaRstMagic)
-  write_group(outarray_m1r, nra, "vet_rotate_avg history");
+  write_group(outarray_vetr, nra, "vet_rotate_avg history");
   // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
   write_group(outarray_ams, nams, "am_vector spin");
   // and the per-cell pgen slabs behind it (kPgenSlabRstMagic)
@@ -1636,14 +1640,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // whose Kokkos::realloc allocates anew anyway): on a unified-memory APU (MI300A) they
   // held a full second copy of the restart data in HBM for the rest of the run
   outarray = HostArray5D<Real>();
-  outarray_hyd = outarray_mhd = outarray_rad = outarray_m1 = outarray_force =
-      outarray_z4c = outarray_adm = outarray_ck = outarray_m1p = outarray_m1t =
-      outarray_m1c = outarray_m1s = outarray_m1r = outarray_m1k =
+  outarray_hyd = outarray_mhd = outarray_rad = outarray_vet = outarray_force =
+      outarray_z4c = outarray_adm = outarray_ck = outarray_vetp = outarray_vett =
+      outarray_vetc = outarray_vets = outarray_vetr = outarray_vetk =
       outarray_ams = outarray_pgs = outarray_fax = outarray_x1e = outarray_wpv =
       HostArray5D<Real>();
-  outarray_m1t_d = DvceArray5D<Real>();
+  outarray_vett_d = DvceArray5D<Real>();
   rst_keep_.clear();
-  outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =
+  outarray_vetf = outarray_vetf2 = outarray_vetf3 = outarray_wth = outarray_wtm =
       outarray_wdp = outarray_wdg = outarray_wdpm = outarray_wdgm = outarray_weh =
       outarray_wem = outarray_wm1 = outarray_wm2 = HostArray4D<Real>();
   outfield.x1f = outfield.x2f = outfield.x3f = HostArray4D<Real>();

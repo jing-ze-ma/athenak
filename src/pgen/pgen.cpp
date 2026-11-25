@@ -1242,13 +1242,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // milestone 3b phase B: the x2/x3 face-normal fluxes of transport = implicit.  A file
   // written before they existed (or by an implicit_x1 run) simply does not have them:
   // that length is accepted below, with one warning, and the arrays stay zero.
-  IOWrapperSizeT m1f23_size = 0;
+  IOWrapperSizeT vetf23_size = 0;
   if (pradvet != nullptr && pradvet->trans_on) {
-    m1f23_size += nout1*(nout2+1)*nout3*sizeof(Real);
-    if (pradvet->trans_x3) {m1f23_size += nout1*nout2*(nout3+1)*sizeof(Real);}
+    vetf23_size += nout1*(nout2+1)*nout3*sizeof(Real);
+    if (pradvet->trans_x3) {vetf23_size += nout1*nout2*(nout3+1)*sizeof(Real);}
   }
-  bool m1_have_f23 = (m1f23_size > 0);
-  data_size_ += m1f23_size;
+  bool vet_have_f23 = (vetf23_size > 0);
+  data_size_ += vetf23_size;
   if (pturb != nullptr) {
     data_size_ += nout1*nout2*nout3*nforce*sizeof(Real); // forcing
   }
@@ -1336,10 +1336,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   // the file predates the transverse face fluxes (or was written by an implicit_x1 run)
-  if (data_size_ != data_size && m1f23_size > 0 &&
-      (data_size_ - m1f23_size) == data_size) {
-    data_size_ -= m1f23_size;
-    m1_have_f23 = false;
+  if (data_size_ != data_size && vetf23_size > 0 &&
+      (data_size_ - vetf23_size) == data_size) {
+    data_size_ -= vetf23_size;
+    vet_have_f23 = false;
     if (global_variable::my_rank == 0) {
       std::cout << "### WARNING: restart file carries no <rad_vet> x2/x3 face fluxes "
                 << "(written before transport = implicit existed); they are "
@@ -1703,7 +1703,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
     };
     {
-      HostArray4D<Real> fcin("m1fcin", nmb, nout3, nout2, nout1+1);
+      HostArray4D<Real> fcin("vetfcin", nmb, nout3, nout2, nout1+1);
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
           auto mbptr = Kokkos::subview(fcin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
@@ -1734,15 +1734,15 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_vet f0x1
       myoffset = offset_myrank;
     }
-    if (m1_have_f23) {
-      HostArray4D<Real> f2in("m1f2in", nmb, nout3, nout2+1, nout1);
+    if (vet_have_f23) {
+      HostArray4D<Real> f2in("vetf2in", nmb, nout3, nout2+1, nout1);
       rdface(f2in);
       Kokkos::deep_copy(Kokkos::subview(pradvet->f0x2, std::make_pair(0,nmb), Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL), f2in);
       offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_vet f0x2
       myoffset = offset_myrank;
       if (pradvet->trans_x3) {
-        HostArray4D<Real> f3in("m1f3in", nmb, nout3+1, nout2, nout1);
+        HostArray4D<Real> f3in("vetf3in", nmb, nout3+1, nout2, nout1);
         rdface(f3in);
         Kokkos::deep_copy(Kokkos::subview(pradvet->f0x3, std::make_pair(0,nmb),
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), f3in);
@@ -2239,7 +2239,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
-      DvceArray5D<Real> rin("rst-m1r-in", nmb, nra_file, nout3, nout2, nout1);
+      DvceArray5D<Real> rin("rst-vetr-in", nmb, nra_file, nout3, nout2, nout1);
       for (int n=0; n<nra_file; ++n) {
         read_slab("vet_rotate_avg history");
         DeepCopyAcross(Kokkos::subview(rin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,

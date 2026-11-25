@@ -375,11 +375,12 @@ Real ColInterp(const DvceArray1D<Real> &c, const Real zlo, const Real dzf,
 // ---- THE GREY M1 MODULE INSIDE THE BOX (milestone 2a, docs/dev/rad_vet_design.md).
 // Everything here is inert unless a <rad_vet> block exists, in which case the two-stream,
 // rt_rad_force and wb_arad_force are all refused: the module owns the radiation.
-bool m1_on_ = false;             // <rad_vet> exists on this pack
-Real m1_fin_ = 0.0;              // the imposed bottom flux, code units (= rad_flux_inner)
-Real m1_cl_ = 0.0;               // c in code units, for the boundary fill
-Real m1_efl_ = 0.0;              // <rad_vet>/e_floor
-// problem/m1_top_bc: `vacuum` is the module's own fill (radvet::VetFillGhost mode 2),
+bool vet_on_ = false;             // <rad_vet> exists on this pack
+// the imposed bottom flux, code units (= rad_flux_inner)
+Real vet_fin_ = 0.0;
+Real vet_cl_ = 0.0;               // c in code units, for the boundary fill
+Real vet_efl_ = 0.0;              // <rad_vet>/e_floor
+// problem/vet_top_bc: `vacuum` is the module's own fill (radvet::VetFillGhost mode 2),
 // which since the 2a diagnosis ALWAYS hands the face a dark ghost, so `vacuum` and
 // `dark` are now the same boundary and the two keys are kept only for compatibility.
 // `outflow` is the OLD copy fill (mode 0) and is kept for diagnosis only: at a
@@ -387,12 +388,12 @@ Real m1_efl_ = 0.0;              // <rad_vet>/e_floor
 // leaves dE/dz = 0 at the boundary and imposes no relation between F and E -- the
 // Marshak condition F ~ c E/2 is absent and the surface value of E floats.
 // See tests_m1/runs_2a/RESULTS.txt.
-int m1_top_bc_ = 0;              // 0 = vacuum (the module's fill), 1 = dark, 2 = outflow
+int vet_top_bc_ = 0;              // 0 = vacuum (the module's fill), 1 = dark, 2 = outflow
 // The REFERENCE radiative acceleration of <rad_vet>/force_reference = wb_arad: the same
 // number the well-balanced effective potential integrates, held per cell so that the
 // module's momentum coupling can subtract it.  pgen state, rebuilt identically on a
 // restart (it is a function of the initial column and the opacity table alone).
-DvceArray4D<Real> m1_aref_;
+DvceArray4D<Real> vet_aref_;
 // problem/bc_mode_top (default -1 = the same wall as bc_mode).  The only extra
 // value is 4: an OPEN (outflow) top.  See the header block.
 int bc_mode_top_ = -1;
@@ -912,7 +913,7 @@ void BoxConvProfileDump(Mesh *pm) {
   // coupling is built from, and the GAS pressure (which the work integral
   // W = oint P_tot d(1/rho), P_tot = p_gas + E/3, needs and cannot get from e_int alone
   // on a tabulated EOS).  The record carries its own nvar, so a reader needs no switch.
-  const bool m1p = m1_on_ && (pmbp->pradvet != nullptr);
+  const bool m1p = vet_on_ && (pmbp->pradvet != nullptr);
   const int nprof = kNProf + (m1p ? 4 : 0);
   if (!prof_alloc_ || prof_d_.extent_int(1) != nx1 ||
       prof_d_.extent_int(0) != nprof) {
@@ -933,8 +934,8 @@ void BoxConvProfileDump(Mesh *pm) {
   auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
   auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
 
-  auto ru0 = m1p ? pmbp->pradvet->u0 : DvceArray5D<Real>("m1prof_unused",1,1,1,1,1);
-  auto rop = m1p ? pmbp->pradvet->opac : DvceArray5D<Real>("m1prof_unused2",1,1,1,1,1);
+  auto ru0 = m1p ? pmbp->pradvet->u0 : DvceArray5D<Real>("vetprof_unused",1,1,1,1,1);
+  auto rop = m1p ? pmbp->pradvet->opac : DvceArray5D<Real>("vetprof_unused2",1,1,1,1,1);
   const Real clp = m1p ? pmbp->pradvet->c_light : 1.0;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nx1, Kokkos::AUTO);
   Kokkos::parallel_for("boxconv_prof", policy,
@@ -1531,8 +1532,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // The module replaces the whole two-stream + radiative
   // conduction + rt_rad_force stack, so those are refused outright rather than left to
   // interact; <hydro>/eos_radiation is already refused by the module itself.
-  m1_on_ = (pmbp->pradvet != nullptr);
-  if (m1_on_) {
+  vet_on_ = (pmbp->pradvet != nullptr);
+  if (vet_on_) {
     radvet::RadiationVet *pvet = pmbp->pradvet;
     std::string bad;
     if (pin->GetOrAddBoolean("problem", "rt_two_stream", false)) {
@@ -1591,8 +1592,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "the operator itself inert)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    m1_fin_ = pc->rad_flux_inner;
-    if (!(m1_fin_ > 0.0)) {
+    vet_fin_ = pc->rad_flux_inner;
+    if (!(vet_fin_ > 0.0)) {
       std::cout << "### FATAL ERROR in box_convection: <rad_vet> needs a positive "
                 << "<hydro>/rad_flux_inner for its bottom boundary" << std::endl;
       std::exit(EXIT_FAILURE);
@@ -1606,18 +1607,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // one reader): Conduction::BuildRadWeights may then skip its sweep when it proves
     // every blend weight 0 (bitwise the same weights; tests_m1/runs_4j_accmerge)
     pc->rad_tauf_unread = !(vdamp_tau_ > 0.0);
-    m1_cl_ = pvet->c_light;
-    m1_efl_ = pvet->e_floor;
+    vet_cl_ = pvet->c_light;
+    vet_efl_ = pvet->e_floor;
     {
       std::string tb = pin->GetOrAddString("problem", "vet_top_bc", "vacuum");
       if (tb.compare("vacuum") == 0) {
-        m1_top_bc_ = 0;
+        vet_top_bc_ = 0;
       } else if (tb.compare("dark") == 0) {
-        m1_top_bc_ = 1;
+        vet_top_bc_ = 1;
       } else if (tb.compare("outflow") == 0) {
-        m1_top_bc_ = 2;
+        vet_top_bc_ = 2;
       } else {
-        std::cout << "### FATAL ERROR in box_convection: problem/m1_top_bc = '" << tb
+        std::cout << "### FATAL ERROR in box_convection: problem/vet_top_bc = '" << tb
                   << "' is not a valid choice (vacuum | dark | outflow)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -1627,7 +1628,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // residual the module applies is exactly zero at t = 0.  It is filled from the fine
     // column arrays, not from u0, which makes it identical on a restart.  The
     // wb_arad_file profile that Phi_eff integrates is built independently (by
-    // bench/m1_stage2/ic/build_ic.py) and the two are compared below.
+    // bench/vet_stage2/ic/build_ic.py) and the two are compared below.
     if (pvet->force_ref == radvet::VET_FREF_WB_ARAD) {
       if (!wb_phi_eff_) {
         std::cout << "### FATAL ERROR in box_convection: <rad_vet>/force_reference = "
@@ -1636,13 +1637,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      Kokkos::realloc(m1_aref_, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
-      auto aref = m1_aref_;
+      Kokkos::realloc(vet_aref_, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
+      auto aref = vet_aref_;
       auto cd_dv = cd.d_view, ct_dv = ct.d_view;
-      const Real zlo_a = zlo, dzf_a = dzf, fin_a = m1_fin_, cl_a = m1_cl_;
+      const Real zlo_a = zlo, dzf_a = dzf, fin_a = vet_fin_, cl_a = vet_cl_;
       const int nf_a = nfine;
       radvet::VetOpacTab ot = pvet->otab;
-      par_for("boxconv_m1aref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+      par_for("boxconv_vetaref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
         const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
@@ -1658,15 +1659,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // BoxConvSrcs gives the reference work (split); set before SetForceReference,
       // which resolves force_reference_work = auto
       pvet->fref_wsplit_ok = pfl->use_wellbalance_dynamic;
-      pvet->SetForceReference(m1_aref_);
+      pvet->SetForceReference(vet_aref_);
       // how far the file-driven Phi_eff profile is from this one
       Real amax = 0.0;
       {
-        auto aref_r = m1_aref_;
+        auto aref_r = vet_aref_;
         auto car_r = car_;
         const Real zlo_r = zlo, dzf_r = dzf;
         const int nf_r = nfine;
-        Kokkos::parallel_reduce("boxconv_m1arefcmp",
+        Kokkos::parallel_reduce("boxconv_vetarefcmp",
         Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,0,0,is},
                                                {nmb1+1,n3m1+1,n2m1+1,indcs.ie+1}),
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
@@ -1703,7 +1704,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (global_variable::my_rank == 0) {
       std::printf("box_convection: <rad_vet> ON -- Rosseland %s, Planck %s (%d x %d), "
                   "F_bot = %.6e (code) = %.6e erg/cm^2/s\n", opac.c_str(), plt.c_str(),
-                  mnT, mnD, m1_fin_, m1_fin_*punit*vunit);
+                  mnT, mnD, vet_fin_, vet_fin_*punit*vunit);
     }
   }
 
@@ -2332,22 +2333,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   });
 
-  // --- THE M1 RADIATION INITIAL STATE.  A three-column file `z E F` (problem/m1_ic_file)
-  // covering the mesh plus its ghosts; E is interpolated in log (it spans two decades
+  // --- THE M1 RADIATION INITIAL STATE.  A three-column file `z E F`
+  // (problem/vet_ic_file) covering the mesh plus its ghosts; E is interpolated in log (it
+  // spans two decades
   // over the box) and F linearly, since it is very nearly constant and may not be.  The
   // transverse fluxes start at zero: the initial field is the plane-parallel grey
-  // atmosphere of bench/m1_stage2/ic.  A RESTART never reaches here -- restart.cpp
+  // atmosphere of bench/vet_stage2/ic.  A RESTART never reaches here -- restart.cpp
   // restores the four moments (design sect. 12).
-  if (m1_on_) {
+  if (vet_on_) {
     const std::string m1ic = pin->GetOrAddString("problem", "vet_ic_file", "");
     if (m1ic.empty()) {
       std::cout << "### FATAL ERROR in box_convection: <rad_vet> needs "
-                << "problem/m1_ic_file (three columns: z E F)" << std::endl;
+                << "problem/vet_ic_file (three columns: z E F)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     std::ifstream rf(m1ic);
     if (!rf.good()) {
-      std::cout << "### FATAL ERROR in box_convection: cannot open problem/m1_ic_file '"
+      std::cout << "### FATAL ERROR in box_convection: cannot open problem/vet_ic_file '"
                 << m1ic << "'" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -2365,7 +2367,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (zr.size() < 2 || zr.front() > zlo || zr.back() < zhi) {
-      std::cout << "### FATAL ERROR in box_convection: problem/m1_ic_file '" << m1ic
+      std::cout << "### FATAL ERROR in box_convection: problem/vet_ic_file '" << m1ic
                 << "' has " << zr.size() << " nodes spanning ["
                 << (zr.empty() ? 0.0 : zr.front()) << ", "
                 << (zr.empty() ? 0.0 : zr.back())
@@ -2373,7 +2375,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << zhi << "]" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    DualArray1D<Real> mce("m1ce", nfine), mcf("m1cf", nfine);
+    DualArray1D<Real> mce("vetce", nfine), mcf("vetcf", nfine);
     std::size_t kr = 0;
     for (int i=0; i<nfine; ++i) {
       const Real z = zlo + i*dzf;
@@ -2388,14 +2390,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto ru0 = pmbp->pradvet->u0;
     const Real zlo_r = zlo, dzf_r = dzf;
     const int nf_r = nfine;
-    // problem/m1_seed_consistent (default false, i.e. bitwise the plain behaviour): the
+    // problem/vet_seed_consistent (default false, i.e. bitwise the plain behaviour): the
     // entropy seed scales the gas internal energy by efac at fixed density and leaves
     // the radiation field at its file value, so the seeded cells start OUT of radiative
     // equilibrium by construction.  With this switch the initial E is scaled by the
     // same cells' efac^4, i.e. E = a T^4 of the perturbed gas in the T ~ e/rho sense.
     const bool seedcons = pin->GetOrAddBoolean("problem", "vet_seed_consistent", false);
     const Real vpert_r = seedcons ? vpert : 0.0;
-    par_for("boxconv_m1ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    par_for("boxconv_vetic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
       const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
@@ -2898,7 +2900,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   // three columns are proper horizontal means over the whole plane, wherever the owning
   // block is, under MPI as well.  Etot and KEcol are volume sums and were always right;
   // V1max and Fres are maxima and were always right.
-  if (m1_on_) {
+  if (vet_on_) {
     MeshBlockPack *pmbp = pm->pmb_pack;
     // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
     radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
@@ -2929,7 +2931,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     // block's first active cell is lx1*nx1.
     const int nx1g = pm->mesh_indcs.nx1;
     const int gb = 0, gm = nx1g/2, gt = nx1g - 1;
-    DualArray2D<int> gplane("boxconv_m1_gplane", pmbp->nmb_thispack, 3);
+    DualArray2D<int> gplane("boxconv_vet_gplane", pmbp->nmb_thispack, 3);
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int off = static_cast<int>(pm->lloc_eachmb[pmbp->gids+m].lx1)*nx1;
       const int gg[3] = {gb, gm, gt};
@@ -2961,7 +2963,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
                           static_cast<Real>(pm->mesh_indcs.nx3));
     array_sum::GlobalSum sum_m1;
     auto gpl = gplane;
-    Kokkos::parallel_reduce("boxconv_m1hist",
+    Kokkos::parallel_reduce("boxconv_vethist",
     Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
     KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
       const int m = idx/(nx3*nx2*nx1);
@@ -2993,7 +2995,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
       mb_sum += hvars;
     }, Kokkos::Sum<array_sum::GlobalSum>(sum_m1));
     Real vmx = 0.0;
-    Kokkos::parallel_reduce("boxconv_m1vmax",
+    Kokkos::parallel_reduce("boxconv_vetvmax",
     Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
                                            {nmb1+1,ke+1,je+1,ie+1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
@@ -3005,7 +3007,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     if (pvet->force_ref == radvet::VET_FREF_WB_ARAD) {
       auto aref = pvet->arad_ref;
       const Real g0l = g0_;
-      Kokkos::parallel_reduce("boxconv_m1fres",
+      Kokkos::parallel_reduce("boxconv_vetfres",
       Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
                                              {nmb1+1,ke+1,je+1,ie+1}),
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
@@ -3447,7 +3449,7 @@ void BoxConvBC(Mesh *pm) {
   // never from any primitive -- so a restart is a bitwise continuation.
   //
   //   TOP     : the module's own `vacuum` state, radvet::VetFillGhost mode 2, which is a
-  //             DARK ghost (no incoming radiation); problem/m1_top_bc = outflow selects
+  //             DARK ghost (no incoming radiation); problem/vet_top_bc = outflow selects
   //             the old copy fill (mode 0) for diagnosis.
   //   BOTTOM  : the imposed internal flux.  F_n = <hydro>/rad_flux_inner, transverse
   //             flux zero, and E from the DIFFUSION LIMIT continued ghost by ghost,
@@ -3455,12 +3457,12 @@ void BoxConvBC(Mesh *pm) {
   //             ACTIVE cell's transport opacity (the array the module filled this
   //             substep; zero on the very first call, which then degenerates to a
   //             zero-gradient E and is corrected one stage later).
-  if (m1_on_ && pmbp->pradvet != nullptr) {
+  if (vet_on_ && pmbp->pradvet != nullptr) {
     auto ru0 = pmbp->pradvet->u0;
     auto rop = pmbp->pradvet->opac;
-    auto aref = m1_aref_;
-    const Real fin = m1_fin_, clm1 = m1_cl_, eflm1 = m1_efl_;
-    const bool topdark = (m1_top_bc_ != 2);
+    auto aref = vet_aref_;
+    const Real fin = vet_fin_, clm1 = vet_cl_, eflm1 = vet_efl_;
+    const bool topdark = (vet_top_bc_ != 2);
     // THE FIRST BOUNDARY CALL OF A RUN has no opacity array yet: the module fills it in
     // its own stage chain, and Driver::InitBoundaryValuesAndPrimitives applies the BCs
     // first.  Reading the zero there makes the bottom ghost a plain zero-gradient E for
@@ -3469,7 +3471,7 @@ void BoxConvBC(Mesh *pm) {
     // kappa_R F/c, so rho*kappa_R = rho*a_ref*c/F recovers exactly what the array will
     // hold; it is pgen state and is therefore available at every call, restart included.
     const bool have_aref = (aref.extent_int(0) > 0);
-    par_for("boxconv_bc_m1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
+    par_for("boxconv_bc_vet", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
       if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real dz1 = (size.d_view(m).x1max - size.d_view(m).x1min)/indcs.nx1;
@@ -3520,7 +3522,7 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   prof_d_ = DvceArray2D<Real>();
   prof_alloc_ = false;
   // and the <rad_vet> reference-acceleration array
-  m1_aref_ = DvceArray4D<Real>();
+  vet_aref_ = DvceArray4D<Real>();
   // and the rt_budget_verbose accumulator, for the same reason
   two_stream_rt::rt_bud_ptr = nullptr;
   rtbud_ = DvceArray1D<Real>();

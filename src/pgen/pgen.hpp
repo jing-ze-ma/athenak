@@ -146,7 +146,7 @@ class ProblemGenerator {
   // right AFTER the M1 implicit coupling wrote the gas u0 and BEFORE the fluid refresh
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).
-  UserCycleFnPtr user_m1post_func=nullptr;
+  UserCycleFnPtr user_vetpost_func=nullptr;
   // called by Hydro::Fluxes as the LAST step of the hydro flux task (after
   // FOFC, the diffusive/viscous fluxes, the etotgrav flux and the WB flux removal), so
   // the RK update, the source terms (incl. the spherical-polar L_z source from the x2
