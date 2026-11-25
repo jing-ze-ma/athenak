@@ -1765,6 +1765,8 @@ class RadiationVet {
     DvceArray1D<Real> oos;                     // (0): out-of-slab accesses
     int nmb = 0, n = 0, nx2 = 0, nx3 = 0, w = 0, c1 = 0;
     int64_t dummy = 0;
+    Kokkos::View<int64_t**, DevMemSpace> offc;   // (m, i): compact slabs (vet_gd_band_ring)
+    int64_t nth = 0;                             // thick shells' values (VgdRagThick)
     // is (k, j) of shell i of block m stored?  (band index space of depth w)
     KOKKOS_INLINE_FUNCTION
     bool Has(const int m, const int k, const int j, const int i) const {
@@ -1796,6 +1798,9 @@ class RadiationVet {
   VgdIView vgd_i;
   VgdIView vgd_i_xb;   // the other cross-fade set's intensities
   void VgdRagAlloc(VgdRag &a);
+  int vgd_rag_cut = 0;   // shells below: one slab for both fused sets (VgdRagThick)
+  bool vgd_rag_said = false;
+  void VgdRagThick();
   // memory arena (with vet_gd): the intensity arrays and the solve scratch dead across a
   // VetGdBuild in one allocation
   bool marena_on = false, marena_sealed = false;
@@ -1834,7 +1839,6 @@ class RadiationVet {
   std::vector<int64_t> vgd_rg_sn2;    // (i) the other set's saved count
   bool vgd_rg_lastx = false;          // the last halo used an exact list
   int vgd_rg_lastx_e = -1;
-  std::vector<int64_t> vgd_rg_offc;   // (m c1 + i): compact slab offsets (host)
   std::vector<int64_t> vgd_rg_soff;   // (s nmb + m): slot offsets (host)
   std::vector<int> vgd_rg_wfull;      // (i): a shell's band depth when lent a slot
   std::vector<int> vgd_rg_state;      // (i): -1 compact, else slot
@@ -1849,7 +1853,6 @@ class RadiationVet {
   DvceArray1D<int> VetGdRawRec(const int key);
   int64_t vgd_rg_stop = 0;            // store fill this sweep
   DvceArray1D<Real> vgd_rg_store;     // saved inward band values (main, then twin)
-  Kokkos::View<int64_t**, DevMemSpace> vgd_rg_doffc;   // (m, i)
   Kokkos::View<int64_t**, DevMemSpace> vgd_rg_dsoff;   // (s, m)
   std::vector<VgdRingOp> vgd_rg_pend;
   Real vgd_rg_nk = 0.0, vgd_rg_ndense = 0.0;

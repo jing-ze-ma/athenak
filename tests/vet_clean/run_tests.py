@@ -841,6 +841,48 @@ def t_ray_clamp(c):
     return out
 
 
+def t_ray_cut_slab(c):
+    """the fused two-set sweep's shared slabs below the ray cut (star_small, live ring,
+    2 ranks): a restart that shares them against one that sweeps the sets one by one
+    (clean_rot_fuse = false, nothing shared), against one whose stored cut is far above the
+    wanted one (clean_ray_cut_now: every build falls back to two sweeps, said once), and
+    with a forced dt_retry at factor 1; clean_ray_cut_wait = 0: the cut is the wanted one
+    at every build in all arms, and moves.  Dumps bitwise (maxdiff)."""
+    o = {'mesh/nx3': 16, 'meshblock/nx3': 8, 'rad_vet/vet_gd_rotate_dt': 1.0e4,
+         'rad_vet/vet_rotate_avg': 4, 'rad_vet/vet_gd_rotate_xfade': 'true',
+         'rad_vet/vet_gd_rotate_align': 'true', 'rad_vet/clean_rot_ring': 'live',
+         'rad_vet/clean_rot_fuse': 'true', 'rad_vet/clean_ray_cut_wait': 0,
+         'rad_vet/clean_verbose': 1, 'time/dt_retry': 'true', 'time/nlim': 3,
+         'output9/file_type': 'rst', 'output9/dcycle': 3}
+    exe, c.exe = c.exe, c.star
+    arms = (('shared', {}), ('nofuse', {'rad_vet/clean_rot_fuse': 'false'}),
+            ('low', {'rad_vet/clean_ray_cut_now': 230}),
+            ('retry', {'time/dt_retry_force_cycle': 5, 'time/dt_retry_force_fac': 1.0}))
+    try:
+        for tag in ('first',) + tuple(a[0] for a in arms):
+            os.makedirs(os.path.join(c.dir, tag), exist_ok=True)
+            os.symlink(STAR_DATA, os.path.join(c.dir, tag, 'star3d_data'))
+        d = c.run('star_small.athinput', 'first', o, ranks=2)
+        rst = os.path.abspath(sorted(vett.glob_rst(d))[-1])
+        go, r = {'time/nlim': 8, 'output9/dcycle': 5}, {}
+        for tag, q in arms:
+            r[tag] = c.run('', tag, dict(go, **q), restart=rst, ranks=2)
+    finally:
+        c.exe = exe
+    log = {t: open(os.path.join(r[t], 'run.log')).read() for t in r}
+    out = {'warnings': sum(vett.warnings(x) for x in log.values())}
+    for t in ('nofuse', 'low', 'retry'):
+        out['maxdiff_' + t] = vett.compare_dirs(r['shared'], r[t], last_only=True)[1]
+    out['shared'] = [t for t in sorted(log) if 'share one slab' in log[t]]
+    out['said_low'] = log['low'].count('is below the shells whose slabs')
+    out['said_shared'] = log['shared'].count('is below the shells whose slabs')
+    fb = [float(re.search(r'two-sweep fallbacks (\S+),', log[t]).group(1))
+          for t in ('shared', 'low')]
+    out['fallbacks'] = [int(fb[0] > 0), int(fb[1] > 0)]
+    out['moves'] = log['shared'].count('CLEAN ray cut')
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # radiation-acoustic waves in every trapping regime
 
@@ -1743,6 +1785,7 @@ TESTS = [  # name, function, in --quick
     ('shell_force_cs', t_shell_force_cs, False),
     ('eddington_cs', t_eddington_cs, True),
     ('ray_clamp', t_ray_clamp, True),
+    ('ray_cut_slab', t_ray_cut_slab, False),
     ('momentum_box', t_momentum_box, True),
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
@@ -1834,7 +1877,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
-                   '(star_smoke, star_cs_ring, wb_star; without it they are skipped)')
+                   '(star_smoke, star_cs_ring, ray_cut_slab, wb_star; without it they are skipped)')
     p.add_argument('--quick', action='store_true', help='the short subset (23 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
@@ -1850,13 +1893,13 @@ def main():
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]
     if not a.star_exe:
-        for n in ('star_smoke', 'star_cs_ring', 'wb_star', 'mlt_time'):
+        for n in ('star_smoke', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time'):
             if any(t[0] == n for t in sel):
                 print('SKIP %-16s        needs --star-exe (a binary built with '
                       '-D PROBLEM=star_vet)' % n)
         sel = [t for t in sel if t[0] not in
-               ('star_smoke', 'star_cs_ring', 'wb_star', 'mlt_time')]
-    for n in ('mpi_ranks', 'star_cs_ring'):
+               ('star_smoke', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time')]
+    for n in ('mpi_ranks', 'star_cs_ring', 'ray_cut_slab'):
         if any(t[0] == n for t in sel) and not has_mpi(a):
             print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' % n)
             sel = [t for t in sel if t[0] != n]
