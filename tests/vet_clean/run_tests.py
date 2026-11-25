@@ -476,6 +476,23 @@ def t_wb_cs(c):
     return t_wb(c, 'rhse_cs.athinput', WB_ROT_CS)
 
 
+def t_shell_force_cs(c):
+    """the cubed-sphere shell at rest, spherically symmetric and opaque, 8 cycles: the gas
+    is pushed along r alone.  lat: rms lateral over rms radial velocity; rad: rms of the
+    radial velocity about its shell mean over rms radial velocity.  (wb_cs cannot see
+    such a force: its force_reference withholds all of the static state's.)"""
+    d = c.run('shell_cs.athinput', 'run', {
+        'problem/lat_amp': 0, 'problem/rho_lat_amp': 0, 'problem/gas_rot': 0,
+        'problem/gas_vr': 0, 'rad_vet/kappa_s': 300, 'time/nlim': 8,
+        'output2/variable': 'hydro_w'})
+    b = [x for _, x in vett.read_blocks(vett.bins(d, 'hydro_w')[-1])]
+    v = [np.array([x[n] for x in b]) for n in ('velx', 'vely', 'velz')]   # (m, k, j, i)
+    rms = np.sqrt((v[0]**2).mean())
+    dv = v[0] - v[0].mean(axis=(0, 1, 2))
+    return dict(lat=float(np.sqrt((v[1]**2 + v[2]**2).mean())/rms),
+                rad=float(np.sqrt((dv**2).mean())/rms))
+
+
 # ---------------------------------------------------------------------------------------
 # radiation-acoustic waves in every trapping regime
 
@@ -1169,6 +1186,7 @@ TESTS = [  # name, function, in --quick
     ('thermal_eq', t_thermal_eq, False),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
+    ('shell_force_cs', t_shell_force_cs, False),
     ('momentum_box', t_momentum_box, True),
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
