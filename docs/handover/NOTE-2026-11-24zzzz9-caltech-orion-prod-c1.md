@@ -63,3 +63,23 @@
 - (11-24 16:56) check c3000: m35mms: cycle 3050, s/cyc 0.6991 (c2750-3050), t 3.6923e+04 dt 12.01 L_top/L_in 1.01155 L_bot/L_in 1.00008, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
 
 - (11-24 16:59) check c3000: bsg: cycle 3050, s/cyc 0.8296 (c2750-3050), t 5.1854e+05 dt 169.4 L_top/L_in 0.97028 L_bot/L_in 1.00739, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+## m35mms c1 (sdorder3, candidate keys, mg 4) vs the T2 run (mg 2) at the same model time, read-only (11-24 17:17)
+c1: t 5.71791e+04, 4822 hst rows; T2 run to t 7.97864e+04
+| model time [s] | c1 cycles | dt min/mean c1 | dt min/mean T2 | s/cyc c1 | s/cyc T2 | its t2s2/t2s3 (solves) c1 | T2 | L_top/L_in c1 / T2 | L_bot/L_in c1 / T2 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0-6000 | 0-500 | 12.01/12.01 | 12.01/12.01 | 0.655 | 0.638 | 8.2 (2.00) / 9.8 (2.15) | 9.2 (2.00) / 10.7 (2.17) | 1.0001 / 1.0001 | 1.00010 / 1.00010 |
+| 6000-12000 | 500-1000 | 12.01/12.01 | 12.01/12.01 | 0.661 | 0.641 | 7.9 (2.01) / 10.6 (2.28) | 8.7 (2.00) / 11.9 (2.26) | 1.0010 / 1.0010 | 1.00008 / 1.00008 |
+| 12000-18000 | 1000-1500 | 12.01/12.01 | 12.01/12.01 | 0.672 | 0.627 | 8.2 (2.00) / 10.8 (2.39) | 8.7 (2.00) / 9.7 (2.10) | 1.0003 / 1.0003 | 1.00009 / 1.00009 |
+| 18000-24000 | 1500-2000 | 12.01/12.01 | 12.01/12.01 | 0.710 | 0.694 | 8.1 (2.00) / 15.5 (2.75) | 9.0 (2.00) / 9.7 (2.09) | 1.0003 / 1.0003 | 1.00008 / 1.00008 |
+| 24000-30000 | 2000-2500 | 12.01/12.01 | 12.01/12.01 | 0.682 | 0.627 | 8.2 (2.00) / 11.8 (2.53) | 10.0 (2.00) / 9.1 (2.04) | 1.0019 / 1.0019 | 1.00008 / 1.00008 |
+| 30000-36000 | 2500-3000 | 12.01/12.01 | 12.01/12.01 | 0.714 | 0.658 | 8.8 (2.00) / 14.7 (2.86) | 10.9 (2.00) / 11.9 (2.40) | 1.0091 / 1.0091 | 1.00008 / 1.00008 |
+| 36000-42000 | 3000-3500 | 12.01/12.01 | 12.01/12.01 | 0.728 | 0.716 | 10.8 (2.00) / 16.0 (2.78) | 12.1 (2.00) / 19.2 (2.81) | 1.0214 / 1.0213 | 1.00008 / 1.00008 |
+| 42000-48000 | 3500-4000 | 12.01/12.01 | 12.01/12.01 | 0.710 | 0.792 | 11.5 (2.00) / 12.2 (2.56) | 13.1 (2.00) / 17.0 (2.86) | 1.0099 / 1.0099 | 1.00008 / 1.00008 |
+| 48000-54000 | 4000-4500 | 10.69/11.93 | 10.71/11.93 | 0.774 | 0.747 | 13.6 (2.30) / 13.1 (3.20) | 15.3 (2.30) / 14.6 (3.15) | 1.0471 / 1.0471 | 1.00007 / 1.00007 |
+| 54000-57179 | 4500-4800 | 9.10/9.92 | 9.11/9.92 | 0.809 | 0.798 | 18.2 (3.46) / 9.5 (2.51) | 22.8 (3.53) / 11.4 (2.42) | 1.0891 / 1.0890 | 1.00002 / 1.00002 |
+c1: first dt < 11.9 at t 5.3398e+04; T2: 5.3410e+04
+- **The dt drop is the flow's, not the candidate's: it starts at the same model time** (first dt < 11.9 at t 5.340e4 in c1, 5.341e4 in T2) and follows the same values (4.8-5.4e4: 10.69 / 10.71 min; 5.4-5.6e4: 9.10 / 9.11). L_top/L_in agree to 1e-4 at every bin end.
+- s/cyc is the same within a few % at equal model time (0.77 now); Krylov its t2s2 17 vs 22 (c1 has mg 4, T2 mg 2), passes 3.07 vs 3.31.
+- **The limiting cell is not known here:** dt_report is off in both runs at this time (no DTREP lines; c1's deck has none, T2 dropped it after its first rst), so the cause of the limit is not measured and I do not infer it. A short side arm with hydro/dt_report=10 from a c1 rst would name it, only if you want it; nothing is run on the production.
+- T2 after this point, for the projection: dt 8.6-12.0 with mean ~10.6, s/cyc 1.0-1.25 (t 6e4-8e4), see zzzz4.
