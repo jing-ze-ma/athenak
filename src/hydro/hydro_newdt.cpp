@@ -132,10 +132,9 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // c_eq^2 = c_g^2 + (4/3) P_r/rho is used, an upper bound of the coupled value for an
   // ideal gas (by <= 3 % in speed at gamma = 5/3).  P_r along direction d is the
   // diagonal of the closure in use, P_dd = E [(1 - chi)/2 + (3 chi - 1)/2 n_d^2]:
-  // (chi, n) of tau_ten (closure = tau | vet_col), of vet_cell (vet_sc; D_dd itself
-  // with vet_tensor = full), VetChi(|F|/cE) about F (m1 | minerbo | kershaw), 1/3
-  // (eddington); E/3 wherever the closure gives no tensor yet (tau_ten before its first
-  // build).  It is E/3 in the optically thick limit.  The radiation term is tapered by
+  // the clean closure's D_dd (cln_s); before its first build (chi, n) of vet_cell (vet_sc;
+  // D_dd itself with vet_tensor = full), VetChi(|F|/cE) about F (m1 | minerbo | kershaw),
+  // else E/3.  It is E/3 in the optically thick limit.  The radiation term is tapered by
   // the cell optical depth along each direction, tau_d = rho kappa_T dx_d (kappa_T the
   // module's transport opacity, opac(VET_OP_T)):
   //   c_d^2 = c_g^2 + (1 - exp(-tau_d)) (c_eq,d^2 - c_g^2),
@@ -171,9 +170,9 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // this one.
   const bool rss_ = rad_signal_speed, rsi_ = rss_inertia, rsd_ = rss_diff;
   const bool rsp_ = rss_phase;
-  DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
+  DvceArray5D<Real> erad_, kopc_, vcel_;
   radvet::CleanGeo gn_;
-  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 3 vet_sc, 4 vet full, 5 clean
   int rss_kind = 0;
   Real rss_cl = 1.0, rss_ch = 1.0;
   if (rss_) {
@@ -191,7 +190,6 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     rss_kind = prm->chi_kind;
     // the same selection decides what a restart file carries (RadiationVet::RssPrime)
     rss_mode = prm->RssMode();
-    if (rss_mode == 2) tten_ = prm->tau_ten;
     if (rss_mode >= 3) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
     if (rss_mode == 5) gn_ = prm->cln_gn;   // (cubed sphere: D Cartesian)
   }
@@ -218,10 +216,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       }
     } else if (rss_mode >= 1) {
       Real chi, n1, n2, n3;
-      if (rss_mode == 2) {
-        chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
-        n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
-      } else if (rss_mode == 3) {
+      if (rss_mode == 3) {
         chi = vcel_(m,radvet::VETRAY_CHI,k,j,i);
         n1 = vcel_(m,radvet::VETRAY_N1,k,j,i);
         n2 = vcel_(m,radvet::VETRAY_N1+1,k,j,i);
@@ -235,7 +230,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         chi = (er > 0.0) ? radvet::VetChi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
         n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
       }
-      if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
+      if (chi > 0.0) {   // (vet_cell is zero before its first build: keep 1/3)
         const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
         dd[0] = dg + an*n1*n1;
         dd[1] = dg + an*n2*n2;

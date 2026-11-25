@@ -191,13 +191,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       }
     }
   }
-  // closure = vet_col sets tau_closure too; its tensor is built at U^n
-  if (tau_closure && !vet_col) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/time_scheme = hesdirk2 is not wired for "
-              << "closure = tau" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // time2_enth_be: the backward-Euler solves of a hesdirk2 run take the stage solves'
   // enthalpy face rule too (else the operator changes for one step: an O(dt) error)
   t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
@@ -397,14 +390,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   if (vet_sc) {
     Kokkos::realloc(vet_prev, nmb, VET_T2_NVET, n3, n2, n1);
     Kokkos::deep_copy(vet_prev, 0.0);
-  }
-  if (vet_col) {
-    // time2_vet_col = extrap: the previous build's D and q
-    if (t2_vcmode == 3) {
-      Kokkos::realloc(vcol_prev, nmb, n3, n2, n1);
-      Kokkos::realloc(vcol_qprev, nmb, n3, n2);
-      t2_vcprev = false;
-    }
   }
   if (t2_pcap > 0.0) {
     Kokkos::realloc(t2pth, nmb, n3, n2, n1);
@@ -1338,9 +1323,6 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   }
   t2_solve = VET_T2S_NONE;
   t2_fail = false;
-  // the stage-1 solve keeps this build (vet_col predict | rebuild only)
-  t2_vcreuse = ok && vgd_rot_creuse && vet_col && !vet_sc &&
-               (t2_vcmode == 1 || t2_vcmode == 2);
   return true;
 }
 

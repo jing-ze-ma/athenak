@@ -972,7 +972,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
                       pin->GetBoolean("problem","rad_eq_boost");
     // (the chi(f) closures solve f = beta (1 + chi(f)); VET / eddington take chi = 1/3)
     const bool rqm1 = reqb && (pmbp->pradvet != nullptr) && !pmbp->pradvet->eddington &&
-                      !pmbp->pradvet->tau_closure && !pmbp->pradvet->vet_sc;
+                      !pmbp->pradvet->vet_col && !pmbp->pradvet->vet_sc;
     const int rqck = (pmbp->pradvet != nullptr) ? pmbp->pradvet->chi_kind : 0;
     auto ccl_ = pmbp->pcoord->cos_cell;
     const Real ara = (pmbp->pradvet != nullptr) ? pmbp->pradvet->arad : 1.0;

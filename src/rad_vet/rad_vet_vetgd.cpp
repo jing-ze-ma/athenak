@@ -740,11 +740,8 @@ void RadiationVet::VetGdInit() {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd on the CUBED SPHERE: seam "
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
-                << "(the sp halo lists / IPC / overlap keys do not apply); hand-over "
-                << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator"
-                              : ((vlat_odm == 1) ? " + D_r,lat lagged"
-                                                 : " only (vet_col_lat_offdiag = none)"))
-                << ", no tangential part" << std::endl;
+                << "(the sp halo lists / IPC / overlap keys do not apply)"
+                << std::endl;
     }
   }
   // stretched theta / full sphere (rad_vet_vetgd_sph2.inc): options that assume the
@@ -5705,7 +5702,7 @@ void RadiationVet::VetGdSource() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdBuild
-//! \brief the gd build inside VetLatBuild: source and first shell (VetLatSweep),
+//! \brief the gd build: source and first shell (VetLatSweep),
 //! sweep(s) with the lagged lateral inflow, moments; timed per part (fenced)
 
 void RadiationVet::VetGdBuild() {

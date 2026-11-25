@@ -43,8 +43,8 @@ namespace radvet {
 void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   std::string why;
   auto *pm = pmy_pack->pmesh;
-  // vet_sc and tau (plane-parallel column depth in index space) are refused
-  if (vet_sc || (tau_closure && !vet_col)) {why += " closure = vet_sc | tau;";}
+  // vet_sc is refused
+  if (vet_sc) {why += " closure = vet_sc;";}
   if (pm->multilevel) {why += " SMR/AMR;";}
   if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
@@ -76,7 +76,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   // cubed sphere: closure = eddington | vet_col (radial axis), no lagged off-diagonal
   if (cs_geom) {
     std::string wcs;
-    if ((!eddington && !vet_col) || vet_sc || (tau_closure && !vet_col)) {
+    if ((!eddington && !vet_col) || vet_sc) {
       wcs += " closure != eddington | vet_col;";
     }
     if (vet_col && vcol_axis_flux) {wcs += " vet_col_axis = flux;";}
