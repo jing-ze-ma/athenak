@@ -568,3 +568,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 10:27 02-09: pg_spA -> IDLE
 - 11-25 10:31 02-16: b_n3suite b_next3 -> IDLE
 - 11-25 10:32 02-16: IDLE -> suiten30 suiten31 suiten32 suiten33
+- 11-25 10:34 02-16: suiten30 suiten31 suiten32 suiten33 -> suiten30 suiten32 suiten33
+- 11-25 10:35 02-03: IDLE -> pg_sp3
+- 11-25 10:35 02-09: IDLE -> pg_sp3
+- 11-25 10:36 02-03: pg_sp3 -> IDLE
+- 11-25 10:36 02-09: pg_sp3 -> IDLE
