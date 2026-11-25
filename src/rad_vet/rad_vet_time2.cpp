@@ -1557,17 +1557,24 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   const int nq = CleanRstNq();
   if (cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
-    for (int n = 0; n < nq && have; ++n) {
-      const int s = CleanRstSlot(n);
-      if (s >= cln_mn.extent_int(1)) {   // (a slot this mesh lacks: 0)
+    auto a_ = a;
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+    for (int n = 0; n < 2*nq && have; ++n) {   // (ghosts and slots this mesh lacks: 0)
+      auto mx = (n < nq) ? cln_mn : cln_mc;
+      const int s = CleanRstSlot(n%nq), cc = c + n - w0;
+      if (cc < 0 || cc >= nw) continue;
+      if (s >= mx.extent_int(1)) {
         one(c + n, 0.0);
-        one(c + nq + n, 0.0);
         continue;
       }
-      put(c + n, 1, cln_mn, s);
-      put(c + nq + n, 1, cln_mc, s);
+      par_for("vet_t2_clnrsm", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0,
+              na1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const bool in = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+        a_(m,cc,k,j,i) = in ? mx(m+m0,s,k-ks,j-js,i-is) : 0.0;
+      });
     }
-    auto a_ = a;
     const int cq = c + 2*nq - w0;
     const Real v0 = cln_tn, v1 = cln_tm, v2 = (have && cln_have_n) ? 1.0 : 0.0;
     const Real v3 = (have && cln_have_c) ? 1.0 : 0.0, v4 = cln_cand_be ? 1.0 : 0.0;
@@ -1716,10 +1723,21 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       auto &mx = (ch < nq) ? cln_mn : cln_mc;
       const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
       const int s = CleanRstSlot(ch%nq);
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, js = id.js, ks = id.ks;
       if (mx.extent_int(0) != nmb) {
-        Kokkos::realloc(mx, nmb, ns, w.extent_int(1), w.extent_int(2), w.extent_int(3));
+        Kokkos::realloc(mx, nmb, ns, id.nx3, id.nx2, id.nx1);
       }
-      if (s < ns) DeepCopyAcross(Kokkos::subview(mx, mb, s, AL, AL, AL), w);
+      if (s >= ns) return;
+      DvceArray4D<Real> t("vet_t2_clnrd", nmb, w.extent_int(1), w.extent_int(2),
+                          w.extent_int(3));
+      DeepCopyAcross(t, w);
+      auto mx_ = mx;
+      par_for("vet_t2_clnset", DevExeSpace(), 0, nmb - 1, 0, id.nx3 - 1, 0, id.nx2 - 1, 0,
+              id.nx1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        mx_(m,s,k,j,i) = t(m,k+ks,j+js,i+is);
+      });
       return;
     }
     if (ch == 2*nq) {

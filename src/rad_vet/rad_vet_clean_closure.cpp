@@ -265,7 +265,8 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
     for (int n = 0; n < cs.extent_int(1); ++n) {
-      dst(m,n,k,j,i) = ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*cs(m,n,k,j,i);
+      dst(m,n,k-ks,j-js,i-is) = ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*
+                                cs(m,n,k,j,i);
     }
   });
   cln_havec = false;
@@ -445,17 +446,19 @@ void RadiationVet::CleanClosureExtrap() {
     }
     const Real wc = wx/(1.0 + z);
     Real q[CLN_N];
+    const int kr = k - ks, jr = j - js, ir = i - is;
     for (int n = 0; n < CLN_N; ++n) {
-      q[n] = (n >= ns) ? 0.0 : mb(m,n,k,j,i) + wc*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
+      q[n] = (n >= ns) ? 0.0 :
+             mb(m,n,kr,jr,ir) + wc*(mb(m,n,kr,jr,ir) - ma(m,n,kr,jr,ir));
     }
     // the extrapolated moments must be those of a non-negative intensity
-    const bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0 &&
+    const bool ok = line && ma(m,CLN_J,kr,jr,ir) > 0.0 && q[CLN_J] > 0.0 &&
                     CleanRealizable(x, q, m, k, j, i);
     if (!ok) {
-      if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
+      if (line && mn(m,CLN_J,kr,jr,ir) > 0.0) ++ng;
       // (cubed sphere: face sums, held on both sides, stay extrapolated alike)
       for (int n = 0; n < ns; ++n) {
-        if (!x.cub || CleanCellMoment(n)) q[n] = mn(m,n,k,j,i);
+        if (!x.cub || CleanCellMoment(n)) q[n] = mn(m,n,kr,jr,ir);
       }
     }
     CleanStoreMoments(cs, valid, q, m, k, j, i);
@@ -1264,8 +1267,7 @@ void RadiationVet::CleanRingMoments() {
   const bool ring = cln_rok;
   const bool nxt = ring && cln_rlast && slot[nk] >= 0;
   if (nxt && cln_rnew.extent_int(0) != nmb) {   // (the layout of cln_mc it becomes)
-    Kokkos::realloc(cln_rnew, nmb, cln_s.extent_int(1), cln_s.extent_int(2),
-                    cln_s.extent_int(3), cln_s.extent_int(4));
+    Kokkos::realloc(cln_rnew, nmb, cln_s.extent_int(1), c3, c2, c1);
   }
   auto rw = cln_rnew;
   auto iw_ = iw;
@@ -1317,7 +1319,7 @@ void RadiationVet::CleanRingMoments() {
         if (CleanCellMoment(n)) q[n] = 0.0;
       }
     }
-    for (int n = 0; n < cs.extent_int(1); ++n) rw(m,n,k,j,i) = q[n];
+    for (int n = 0; n < cs.extent_int(1); ++n) rw(m,n,kr,jr,ir) = q[n];
   }, Kokkos::Sum<int>(nguard));
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);
