@@ -225,3 +225,12 @@ FileNotFoundError: [Errno 2] No such file or directory: '/resnick/groups/carnegi
 #6  0x00007f698cf0ed40 in clone3 () from /lib64/libc.so.6
 #0  0x00007f698ce868ba in __futex_abstimed_wait_common () from /lib64/libc.so.6
 ```
+
+### Main-thread stacks of the four ranks (frames above #11 cut by bt 12), and the GPUs
+- rank 1 (02-03): PMPI_Waitall <- CleanHaloFinish <- CleanGhostExchange <- CleanGhostFillT <- CleanGhostFill <- CleanClosureFill <- CleanClosureExtrap <- CleanSolve
+- rank 3 (02-03): PMPI_Waitall <- CleanHaloFinish <- CleanGhostExchange <- CleanGhostFlush
+- rank 4 (02-09): PMPI_Waitall <- CleanHaloFinish (UCX progress)
+- rank 5 (02-09): pthread_rwlock_wrlock <- libcuda <- libcupti (7 frames) <- cut at frame 11 (the application frame that called in is not in the 12 frames); state S. Its other 12 threads sit in waits: libcupti semaphores, NSys comms, epoll, poll; none of them is running code.
+- So, of the sampled four, only rank 5 is not in an MPI wait: it is blocked in the CUDA driver's lock under CUPTI, and three ranks wait in MPI_Waitall of the clean-solver halo for messages that do not come. This points to a lock inside nsys / CUPTI on that rank, not to a spin wait between ranks; the other ranks (0, 2, 6, 7) were not sampled, and the app frame of rank 5 is not known.
+- GPU utilisation 0 % on all 8 GPUs at the capture, memory 73.6-74.1 GB each.
+- Cancelled step 7333072.584 (own). gdb attach was permitted (ptrace_scope 0).
