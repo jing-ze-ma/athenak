@@ -447,3 +447,11 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 04:16 02-09: s7_BASE1 -> s7_NEW1
 - 11-25 04:16 02-16: IDLE -> kt7s_t9l62_base_6
 - 11-25 04:17 02-16: kt7s_t9l62_base_6 -> kt7s_t9l62_1d10_6
+- 11-25 04:18 02-03: s7_NEW1 -> s7_NEW2
+- 11-25 04:18 02-09: s7_NEW1 -> s7_NEW2
+- 11-25 04:18 02-16: kt7s_t9l62_1d10_6 -> kt7s_t9l62_base_26
+- 11-25 04:19 02-03: s7_NEW2 -> s7_BASE2
+- 11-25 04:19 02-09: s7_NEW2 -> s7_BASE2
+- 11-25 04:21 02-03: s7_BASE2 -> s7_BASE1
+- 11-25 04:21 02-09: s7_BASE2 -> s7_BASE1
+- 11-25 04:21 02-16: kt7s_t9l62_base_26 -> kt7s_t9l62_1d10_26
