@@ -477,7 +477,7 @@ bool surf_alloc_ = false;
 // WHAT WAS WRONG BEFORE.  Slot 5 was wtemp RAW, i.e. the code temperature, which on this
 // star is 8.3145e7 times the kelvin the comment promises (T = 1.19e5 K at 0.94 R read out
 // as 9.88e12).  Slot 6 was u0(IEN) - KE with NO rho*Phi subtraction, so under
-// <hydro>/etotgrav = true (which every he4_presn input sets) it was eint + rho*GM(1/rin
+// <hydro>/etotgrav = true (which every red_giant input sets) it was eint + rho*GM(1/rin
 // - 1/r): right at the inner wall, and 80x the true eint at the top of the domain, where
 // eint is 1e-8 of the base and rho*Phi is not.  Slot 7 used w0(IPR) as `p`, but IPR ==
 // IEN and under a GENERAL EOS the primitive slot holds the INTERNAL ENERGY, not the
