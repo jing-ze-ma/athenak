@@ -1131,9 +1131,7 @@ class RadiationVet {
   Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
   // clean_init_cnorm: the steady start's per-cell test (0 off)
-  Real cln_cnorm = 0.0;
   bool cln_insteady = false;    // in CleanSteadyStart's passes
-  Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   std::map<std::array<int, 8>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
@@ -1148,11 +1146,9 @@ class RadiationVet {
   bool cln_csyok = false;       //   cln_csy is of the current closure (no rebuild)
   bool cln_ysum = false;        // clean_stag_lat_sums: the sums Y off the cubed sphere
   DvceArray5D<Real> cln_yl;     //   (in their own array: CLW_L is the F solve's scratch)
-  int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks
   bool cln_tgid = false;        // clean_stag_tie_gid: sp/C owner the lower gid (cs tie)
-  Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   bool cln_c1b = false;         // clean_clos1_budget
@@ -1173,28 +1169,19 @@ class RadiationVet {
   // vet_col_lat_cut_thin), less clean_ray_cut_margin optical depths, at
   // tau_top >= clean_ray_cut_taumin; rises only after clean_ray_cut_wait builds
   bool cln_rcut_on = false;
-  Real cln_rcut_r = 0.01, cln_rcut_mg = 10.0, cln_rcut_tau = 0.0;
   int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
   ParameterInput *pin_rcut_ = nullptr;
-  int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
-  bool cln_fillcs = false;      // clean_fill_cs_remap (CleanClosureFill)
   bool cln_jsec = false;        // clean_face_jse_cell (CleanFaceCoefficients)
-  bool cln_pred = true;         // clean_predict: closure of the predicted state
-  bool cln_pst = false;         // clean_pred_stage (CleanFirstIterate)
-  int cln_gsec = 0;             // clean_gas_secant (CleanRightHandSide)
-  bool cln_pxc = false;         // clean_pred_xch (CleanFirstIterate)
   bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
                                 // predictor and the budget's time error also in BE steps
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
-  int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
+  static constexpr int cln_maxpic = 12;   // passes that update the lagged slopes
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
-  bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   bool cln_rfrst = false;       // clean_rot_ring_fill_rst: full window at an old restart
   bool cln_rfdone = false;      // its fill taken
   bool cln_rmsh = false;        // clean_rst_mshare: VET share memory at an old restart
   bool cln_rmdone = false;      // its start taken
-  bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
   void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
   void CleanWorstCell(const Real dnl, const Real dnl0);
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
@@ -1234,8 +1221,6 @@ class RadiationVet {
   void CleanLzBook(const Real s, const bool start);
   Real CleanLzTotal();   // gas + radiation + ledger L_z
   int cln_xte = 0;   // clean_xt_exact: 0 off, 1 cons, 2 x2
-  int cln_gnsw = 0, cln_gnswmin = 20;   // clean_gas_newton_switch, _min
-  Real cln_stfac = 0.5;   // clean_stall_fac
   bool cln_gpic = false;   // a stalled solve's passes without the gas Newton slope
   Real cln_ngnsw = 0.0;   // solves switched so far
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
@@ -1247,9 +1232,7 @@ class RadiationVet {
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
   Real cln_sph_r = 0.0;         // clean_sphere_radius
-  bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
-  Real cln_trtol = 0.0;        // clean_troot_rtol: residual stop of the exchange root
-  Real cln_nl_escale = 0.0;     // E scale of clean_nl_efloor: max E of the iterate
+  static constexpr Real cln_trtol = 1.0e-13;   // residual stop of the exchange root
   int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
   static constexpr int cln_hmax = 16;   // most variables of one ghost exchange
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve

@@ -2167,21 +2167,18 @@ int RadiationVet::CleanBiCGStab() {
     cln_eta = eta;
     tol = fmax(eta*r0, 0.1*cln_tolb);
   }
-  // clean_init_cnorm (steady start) / clean_lin_cnorm (steps), not with the budget: also
+  // not with the budget: also
   // require max_i |r_i|/(a_i E_i) <= cnorm, a_i the diagonal, E_i the max of E^k and |X|
   // over the stencil (an M-matrix row's round-off bound, Oettli-Prager), since the |b|
   // test alone leaves faint regions unconverged.  If this stalls with the global test
   // met, it is at round-off: converged
-  const Real cnt = cln_insteady ? cln_cnorm : cln_lcnorm;
-  const bool cn = (cnt > 0.0) && !bud;
-  const Real efl = e_floor, inf = std::numeric_limits<Real>::infinity();
-  Real cmin = inf, cwin = inf;
-  bool cmet = false;
+  constexpr Real cnt = 1.0e-10;
+  const Real efl = e_floor;
   auto conv = [&](const int s, const Real r2, const Real t) {
     if (!(std::sqrt(r2) <= t) && !(mn && std::sqrt(r2) <= sqn*t && vmax(s) <= t)) {
       return false;
     }
-    if (!cn) return true;
+    if (bud) return true;
     CleanGhostFill(w, sx, 1, 0, 1);   // (X's ghosts are those of the last apply of X)
     Real a = 0.0;
     const int dj = pmy_pack->pmesh->multi_d, dk = pmy_pack->pmesh->three_d;
@@ -2199,37 +2196,13 @@ int RadiationVet::CleanBiCGStab() {
       }
       mx = fmax(mx, fabs(w(m,s,k,j,i))/fmax(cnt*fabs(w(m,CLW_A0,k,j,i))*e, 1.0e-300));
     }, Kokkos::Max<Real>(a));
-    a = CleanReduce(a, true);
-    cmet = true;
-    cmin = fmin(cmin, a);
-    return a <= 1.0;
+    return CleanReduce(a, true) <= 1.0;
   };
   if (conv(sr, rr, tol)) return 0;
   auto done = [&](const int it) {return restart(it, true) && conv(sr, rr, 10.0*tol);};
 
   const Real eps = std::numeric_limits<Real>::epsilon();
-  // clean_bicg_stall_its N: fail if the least residual fell by less than
-  // clean_bicg_stall_fac over the last N iterations
-  Real rmin = std::sqrt(rr), rwin = rmin;
   for (int it = 1; it <= cln_maxit; ++it) {
-    rmin = fmin(rmin, std::sqrt(rr));
-    if (cln_stall_n > 0 && it > 1 && (it - 1) % cln_stall_n == 0) {
-      if (cmet) {   // (cnorm with the global test met: the per-cell measure's window)
-        if (!(cmin < cln_stall_f*cwin)) {
-          const bool ok = restart(it, true) && std::sqrt(rr) <= 10.0*tol;
-          cln_ncwin += ok ? 1 : 0;   // (the CLEAN line's cwin count)
-          return ok ? it : -it;
-        }
-        cwin = cmin;
-      } else if (!(rmin < cln_stall_f*rwin)) {
-        if (global_variable::my_rank == 0) {
-          std::printf("CLEAN BICGSTAB stall cycle %d it %d |r|/tol %.3e\n",
-                      pmy_pack->pmesh->ncycle, it - 1, rmin/tol);
-        }
-        return -it;
-      }
-      rwin = rmin;
-    }
     if (!(fabs(rho_new) > eps*std::sqrt(r0r0*rr))) {
       if (restart(it)) continue;
       return -it;
