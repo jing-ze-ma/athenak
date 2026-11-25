@@ -1423,6 +1423,7 @@ class RadiationVet {
   DvceArray5D<Real> cln_rpd;    // the pending Delta g_{b+1} - g_b, J_{b+1}/J_b
   Real cln_rguard_sum = 0.0, cln_roff_sum = 0.0;   // guard falls, off-boundary shifts
   DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
+  DvceArray5D<Real> cln_vf;     // cubed sphere: the F solve's cells, faces (m,18,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
   // converged states at t^n (cln_mn), t^{n-1} (cln_mp), the end of the last step solved
