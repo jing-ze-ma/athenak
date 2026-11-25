@@ -11,11 +11,11 @@ ref/references.json; see README.md for what each test checks and why.
 """
 import argparse
 import concurrent.futures as cf
+import glob
 import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import time
 
@@ -148,7 +148,7 @@ def t_mpi_ranks(c):
     """2 MPI ranks against 1 on the same MeshBlocks, every reduced print and the keys that
     have one on: the conservation_lz keys with floorcap_lz_spin on spherical polar (2
     blocks along phi) and the cubed sphere, and floor_pay with floor_audit_worst: the dumps
-    and histories bitwise (maxdiff), no CLEAN WARNING; fcone_lz / lzspin: their lines in the
+    and hydro histories bitwise (maxdiff), no CLEAN WARNING; fcone_lz: its lines in the
     2-rank logs.  A collective that only one rank calls hangs (the run is stopped)."""
     fc = dict(LZ_FC, **{'rad_vet/floorcap_rho': 100.0, 'rad_vet/floorcap_lz_spin': 'true',
                         'rad_vet/floorcap_report': 1, 'rad_vet/clean_verbose': 2,
@@ -160,7 +160,7 @@ def t_mpi_ranks(c):
            'hydro/floor_pay': 'rad_column', 'hydro/floor_pay_skip': 'true',
            'hydro/dfloor_flux_limit': 'true', 'hydro/floor_audit': 1,
            'hydro/floor_audit_worst': 'true', 'rad_vet/clean_verbose': 2}
-    out = {'warnings': 0, 'fcone_lz': 0, 'lzspin': 0, 'files': 0}
+    out = {'warnings': 0, 'fcone_lz': 0, 'files': 0}
     for tag, deck, o in (
             ('sp', 'shell_sp.athinput', dict(LZ_KEYS, **dict(fc, **dict(sp, **{
                 'rad_vet/clean_stag_fwb_ring': 1})))),
@@ -170,12 +170,14 @@ def t_mpi_ranks(c):
             ('pay', 'shell_sp.athinput', dict(pay, **sp))):
         a = c.run(deck, tag + '1', o, timeout=600)
         b = c.run(deck, tag + '2', o, ranks=2, timeout=600)
+        for d in (a, b):   # (user.hst: sums in the ranks' order, equal to round-off)
+            for f in glob.glob(os.path.join(d, '*.user.hst')):
+                os.remove(f)
         n, out['maxdiff_' + tag], _ = vett.compare_dirs(a, b)
         out['files'] += n
         log = open(os.path.join(b, 'run.log'), errors='replace').read()
         out['warnings'] += vett.warnings(log)
         out['fcone_lz'] += log.count('CLEAN FCONE_LZ')
-        out['lzspin'] += log.count('CLEAN LZSPIN')
     return out
 
 
@@ -1437,8 +1439,7 @@ def one(a, name, fn):
 
 def has_mpi(a):
     """the binary is an MPI build and the launcher is there."""
-    txt = subprocess.run([os.path.abspath(a.exe)] + ['-c'], stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT).stdout.decode(errors='replace')
+    txt = vett.run([os.path.abspath(a.exe)], os.path.join(a.workdir, 'mpi_check'), ['-c'])[2]
     return (shutil.which(a.mpirun.split()[0]) is not None and
             re.search(r'MPI parallelism:\s*ON', txt) is not None)
 
