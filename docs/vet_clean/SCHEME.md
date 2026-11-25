@@ -129,7 +129,9 @@ With `floor_pay_skip = true` (production) the energy changed by the density floo
 velocity ceiling is paid as well. The initial conversion's floors are paid before the t = 0 output.
 With `<hydro>/floor_from_ekin` (general EOS) a fast cell pays its floor deficit from its own
 r / theta kinetic energy instead (E kept, $L_z$ kept: the phi momentum is never scaled).
-Energy is created only when a column holds too little radiation to pay; each such event
+Known failure: with `floor_from_ekin = true` the total energy of a run jumps by 1e-9 to 5e-8 of
+itself in rare single steps (2.19e-9 in the `floor_pay` deck; round-off with the key off; cause
+not known; not measured on a star run). Energy is created only when a column holds too little radiation to pay; each such event
 prints a `CLEAN WARNING`.
 
 Test: `conservation_sp`, `conservation_cs` (closed rotating shells, dE/E <= 1e-13; measured
@@ -382,7 +384,10 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
 ### Reproducibility
 
 - **Same binary, same layout:** bitwise from run to run.
-- **MPI rank count:** bitwise. With `<mesh>/layout_invariant = true` (default) every global
+- **MPI rank count:** bitwise for the state (dumps, restart files, `hydro.hst`). The columns of
+  a `user.hst` that a test problem adds from plain sums (gas, radiation and momentum totals)
+  differ by the order of the ranks' partial sums (1e-15 of the largest value; larger relative
+  values only where a total is near 0); they are written, not read back. With `<mesh>/layout_invariant = true` (default) every global
   or shell sum goes through an exact binned accumulator, so it does not depend on the order
   of its terms. Test: `mpi_ranks` (1 and 2 ranks).
 - **MeshBlock layout, tile mode** (`layout_invariant_mode = tile`, `layout_tile = N`): the
