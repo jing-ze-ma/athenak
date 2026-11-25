@@ -130,12 +130,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // stream h+ + h- x A_c/A_f
     cln_bcarea = pin->GetOrAddBoolean("rad_vet","clean_bc_area",true);
     cln_tol = pin->GetOrAddReal("rad_vet","clean_tol",1.0e-10);
-    cln_cnorm = pin->GetOrAddReal("rad_vet","clean_init_cnorm",1.0e-10);
-    cln_lcnorm = pin->GetOrAddReal("rad_vet","clean_lin_cnorm",1.0e-10);
     // clean_maxnl, clean_maxit, clean_conv_max do not take implicit_maxit,
     // implicit_lin_maxit, implicit_tol_rel_max (a named other value prints a NOTE).
-    // clean_lin_pass: a linear solve ending at clean_maxit leaves its iterate to the next
-    // pass (no stall test)
+    // A linear solve ending at clean_maxit leaves its iterate to the next pass.
     {Real ov[3] = {0.0, 0.0, 0.0};   // named implicit_maxit, _lin_maxit, _tol_rel_max
     const char *ok[3] = {"implicit_maxit", "implicit_lin_maxit", "implicit_tol_rel_max"};
     const char *ck[3] = {"clean_maxnl", "clean_maxit", "clean_conv_max"};
@@ -163,9 +160,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                   << " to change it)" << std::endl;
       }
     }
-    const bool pl = (ov[1] > 0.0);
-    cln_linpass = pin->GetOrAddBoolean("rad_vet","clean_lin_pass",
-                                       pl || fix("clean_lin_pass", "true", "false"));}
+    }
     cln_tol_nl = pin->GetOrAddReal("rad_vet","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_vet","clean_ray_min",1.0e-3);
     // clean_rot_ring = off | live | jump (live where the vet_gd rays rotate with a
@@ -184,29 +179,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    cln_fillpass = pin->GetOrAddInteger("rad_vet","clean_fill_passes",8);
-    // clean_fill_cs_remap: the fill's h+- of a cs seam neighbour in our face families
-    cln_fillcs = pin->GetOrAddBoolean("rad_vet","clean_fill_cs_remap",false);
-    cln_pred = pin->GetOrAddBoolean("rad_vet","clean_predict",true);
     // implicit_predictor (step unless named none): the stage solve starts from the
     // predicted E (CleanFirstIterate)
     cln_kpred = !(pin->DoesParameterExist("rad_vet","implicit_predictor") &&
                   !pin->IsParameterDefaulted("rad_vet","implicit_predictor") &&
                   pin->GetString("rad_vet","implicit_predictor") == "none");
-    // clean_pred_stage: sdirk2's stage-2 solve starts from E_old + h K1 of this step's
-    // stage 1, not of the last step's stage 2
-    cln_pst = pin->GetOrAddBoolean("rad_vet","clean_pred_stage",false);
-    // clean_gas_secant = false | true | stage2 | max | max_stage2: exchange slopes from
-    // the chord through the last pass's gas T (max: only where steeper than the tangent)
-    {const std::string gs = pin->GetOrAddString("rad_vet","clean_gas_secant",
-        fix("clean_gas_secant", "max_stage2", "false") ? "max_stage2" : "false");
-    cln_gsec = (gs == "true") ? 1 : ((gs == "stage2") ? 2 : ((gs == "max") ? 3 :
-               ((gs == "max_stage2") ? 4 : 0)));}
-    // clean_pred_xch: stage-2 start E_old + h K, K the stage-1 slope where the exchange
-    // is slow, the last stage-2 slope where stiff (weights 1 : z,
-    // z = h (ch kE + 4 c kP a T^4/e))
-    cln_pxc = pin->GetOrAddBoolean("rad_vet","clean_pred_xch",
-                                   fix("clean_pred_xch", "true", "false"));
     {std::string bf = pin->GetOrAddString("rad_vet","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
@@ -238,9 +215,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_fspcr = (fl == "pcr");}
-    cln_stall_n = pin->GetOrAddInteger("rad_vet","clean_bicg_stall_its",
-                                      cln_linpass ? 0 : 50);
-    cln_stall_f = pin->GetOrAddReal("rad_vet","clean_bicg_stall_fac",0.99);
     // face tie: a face two MeshBlocks share (or one across a periodic wrap) takes its
     // owner's F, momentum exchange, energy-flux memory and Phi (CleanStagFaceTie).
     // clean_stag_tie_gid: on every mesh the cs rule (CleanStagCsTie), owner the lower gid
@@ -322,7 +296,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool vg = VetCurvedRays(pin);
     cln_split = true;
     cln_consist = pin->GetOrAddBoolean("rad_vet","clean_consistency", !curv || vg);
-    cln_maxpic = pin->GetOrAddInteger("rad_vet","clean_maxpic",12);
     // staggered: energy flux apart from the face momentum (split), face momentum of its
     // own F solve (fsolve) in the Newton loop (fwork); with clean_consistency the rays'
     // kinetic momentum flux (fkin) and face flux as flux factors (gflux); donor-cell
@@ -512,7 +485,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_ring_jmin: a ring J ratio J_s/J_b only where both J >= clean_ray_min E
     // (elsewhere the offset is invalid)
-    cln_ringjmin = pin->GetOrAddBoolean("rad_vet","clean_ring_jmin",true);
     // clean_rot_ring_fill_rst: at a restart from a file without the clean state the ring
     // fill takes the older sets' offsets swept at the restart state (CleanRingMoments)
     cln_rfrst = pin->GetOrAddBoolean("rad_vet","clean_rot_ring_fill_rst",true);
@@ -588,21 +560,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","clean_dbg_inf")) {
       cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
     }
-    // clean_gas_newton_switch W (0 = off; W in [3, 64]), clean_gas_newton_switch_min,
-    // clean_stall_fac: a stalled solve's remaining passes on the bracketed gas root
-    // without the Newton slope
-    cln_gnsw = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch",
-                                    fix("clean_gas_newton_switch", "4", "0") ? 4 : 0);
-    cln_gnswmin = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch_min",
-        fix("clean_gas_newton_switch_min", "6", "20") ? 6 : 20);
-    cln_stfac = pin->GetOrAddReal("rad_vet","clean_stall_fac",0.5);
-    if (cln_gnsw < 0 || cln_gnsw > 64 || (cln_gnsw > 0 && cln_gnsw < 3) ||
-        cln_gnswmin < 1 || !(cln_stfac > 0.0 && cln_stfac <= 1.0)) {
-      std::cout << "### FATAL ERROR <rad_vet>/clean_gas_newton_switch must be 0 or in "
-                << "[3, 64], clean_gas_newton_switch_min >= 1, clean_stall_fac in (0, 1]"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // preconditioner: mg (CleanStagVCycle)
     {// clean_stag_mg_color = mirror | parity: the mg's line colours (CleanStagLineSolve)
     const std::string mc = pin->GetOrAddString("rad_vet","clean_stag_mg_color",
@@ -677,15 +634,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_vet","clean_sphere_radius");}
-    {const std::string nn = pin->GetOrAddString("rad_vet","clean_nl_norm","global");
-    if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/clean_nl_norm = global | cell" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_nl_cell = (nn.compare("cell") == 0);}
-    // clean_troot_rtol: the exchange root stops at its residual noise
-    cln_trtol = pin->GetOrAddReal("rad_vet","clean_troot_rtol",1.0e-13);
     // clean_verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
     // and events; 1 also the per-solve diagnostics (CLEAN MCAP, OLDVEC, FCONE, FWB, LZ,
     // WBFCT, KPOS, KREAL, XPAT, the write-back closure and the ray cut); 2 also the
@@ -1493,14 +1441,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (vet_rotate_avg_ema_wb: the ring carries the cells' half ranges, CLN_HO, so that a
     // set change keeps them in a static state, as the moments)
     cln_rfh = cln_cssc && vra_ema_wb;
-    // clean_w_face_min: false only
-    if (pin->GetOrAddBoolean("rad_vet","clean_w_face_min",false)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_w_face_min = true was removed "
-                << "(only false)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_rot_ring unnamed: live where the vet_gd rays rotate in time with a cross-fade
     // (decided before a restart file's channels are counted)
     if (!cln_ring_named && vgd_on && vra_on && g_vra_adv &&
@@ -1698,23 +1638,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
               << std::endl;
   }
   if (cln_rcut_on) {
-    cln_rcut_r = pin->GetOrAddReal("rad_vet","clean_ray_cut_r",0.01);
-    cln_rcut_mg = pin->GetOrAddReal("rad_vet","clean_ray_cut_margin",10.0);
-    cln_rcut_tau = pin->GetOrAddReal("rad_vet","clean_ray_cut_taumin",0.0);
     cln_rcut_wait = pin->GetOrAddInteger("rad_vet","clean_ray_cut_wait",10);
     // the cut and its count in a restart file (CleanRayCut)
     cln_rcut = pin->GetOrAddInteger("rad_vet","clean_ray_cut_now",-1);
     cln_rcut_n = pin->GetOrAddInteger("rad_vet","clean_ray_cut_count",0);
     pin_rcut_ = pin;
   }
-  // polar_ring_avg: false only
-  if (pin->GetOrAddBoolean("rad_vet", "polar_ring_avg", false)) {
-    std::cout << "### FATAL ERROR <rad_vet>/polar_ring_avg = true was removed (only "
-                 "false)"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-
   if (sph_geom) {SphericalS1Check(pin);}
   if (cs_geom) {
     pin_cs_ = pin;

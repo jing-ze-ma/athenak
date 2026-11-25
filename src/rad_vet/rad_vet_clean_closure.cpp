@@ -496,7 +496,7 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
 
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fluid = fl.on;
-  const bool exch = use_k1 && cln_pred;
+  const bool exch = use_k1;
   const bool rates = exch && t2_ok && (t2k1.extent_int(0) > nmb1);
 
   // opacities at the predicted state; the solve itself uses those of the stage
@@ -1101,9 +1101,9 @@ void RadiationVet::CleanRingMoments() {
   bool fh0 = true;
   const Real ray_min = cln_raymin;
   cln_raymin = 0.0;
-  // (clean_ring_jmin: J ratios only where both sets' J >= clean_ray_min E, so a source
+  // (J ratios only where both sets' J >= clean_ray_min E, so a source
   // hole's J ~ 1e-200 gives no huge ratio)
-  const Real jmin = cln_ringjmin ? ray_min : 0.0;
+  const Real jmin = ray_min;
   auto iwr = iw;
   auto cs = cln_s;
   const CleanRingL rl{cln_rl, cln_s, fm, nf, ol, ks, js, is};
@@ -1451,9 +1451,8 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 //! \brief clean_ray_cut: first swept shell vray_icut (global min over columns); below
 //! it the closure is the diffusion limit (CleanThickI, error O(R^2),
 //! R = |grad S|/(chi S)).
-//! A column's cut: clean_ray_cut_margin optical depths below its lowest cell with R >=
-//! clean_ray_cut_r or thinner than vet_col_lat_cut_thin, and at tau_top >=
-//! clean_ray_cut_taumin.  Moves down at once, up after clean_ray_cut_wait builds (both
+//! A column's cut: 10 optical depths below its lowest cell with R >= 0.01 or thinner than
+//! vet_col_lat_cut_thin.  Moves down at once, up after clean_ray_cut_wait builds (both
 //! in the restart file).  sc rays only; no cut with several MeshBlocks along x1
 
 #if VET_TU_PART(1)
@@ -1465,22 +1464,15 @@ void RadiationVet::CleanRayCut() {
   const int ks = indcs.ks, ke = indcs.ke, n1 = indcs.nx1;
   const int nk = ke - ks + 1, nj = je - js + 1, nf = pmy_pack->pmesh->three_d ? 3 :
                                                   (pmy_pack->pmesh->multi_d ? 2 : 1);
-  const Real tcut = cln_rcut_tau, tthin = vray_cut_thin, er = cln_rcut_r;
-  const Real mg = cln_rcut_mg;
+  const Real tthin = vray_cut_thin;
   CleanArgs x = CleanMakeArgs();
   auto cs_ = vray_cs;
-  int lmin = 2*n1;
+  int lmin = n1;
   Kokkos::parallel_reduce("cln_raycut", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           pmy_pack->nmb_thispack*nk*nj),
   KOKKOS_LAMBDA(const int idx, int &lm) {
     const int m = idx/(nk*nj), k = ks + (idx/nj) % nk, j = js + idx % nj;
     auto tc = [&](const int i) {return exp(cs_(m,0,k,j,i))*(x.x1f(m,i+1) - x.x1f(m,i));};
-    int lt = 0;   // (tau_top >= clean_ray_cut_taumin, as vet_col_lat_taucut)
-    Real tau = 0.0;
-    for (int i = ie; i >= is; --i) {
-      if (tau + 0.5*tc(i) >= tcut) {lt = i - is; break;}
-      tau += tc(i);
-    }
     int i = is;
     for (; i <= ie && !(tthin > 0.0 && tc(i) < tthin); ++i) {
       Real r2 = 0.0;
@@ -1495,17 +1487,14 @@ void RadiationVet::CleanRayCut() {
         }
         r2 += g*g;
       }
-      if (!(sqrt(r2) < er*exp(cs_(m,0,k,j,i)))) break;
+      if (!(sqrt(r2) < 0.01*exp(cs_(m,0,k,j,i)))) break;
     }
     int lc = i - is;
-    for (Real t = 0.0; lc > 0 && t < mg;) t += tc(is + --lc);
-    // (2 lc + 1 where tau_top binds the column)
-    lc = (lc <= lt) ? 2*lc : 2*lt + 1;
+    for (Real t = 0.0; lc > 0 && t < 10.0;) t += tc(is + --lc);
     lm = (lc < lm) ? lc : lm;
   }, Kokkos::Min<int>(lmin));
   lmin = -static_cast<int>(CleanReduce(-lmin, true));
-  const bool bt = (lmin % 2 == 1);
-  lmin = std::max(0, std::min(lmin/2, n1 - 2));
+  lmin = std::max(0, std::min(lmin, n1 - 2));
   const int prev = cln_rcut;
   cln_rcut_n = (lmin > cln_rcut && cln_rcut >= 0) ? cln_rcut_n + 1 : 0;
   if (lmin < cln_rcut || cln_rcut < 0 || cln_rcut_n >= cln_rcut_wait) {
@@ -1514,8 +1503,7 @@ void RadiationVet::CleanRayCut() {
   }
   if (global_variable::my_rank == 0 && cln_verbose > 0 && prev != cln_rcut) {
     std::cout << "CLEAN ray cut cycle " << pmy_pack->pmesh->ncycle << " shell "
-              << prev << " -> " << cln_rcut << " (want " << lmin << ", "
-              << (bt ? "tau_top" : "R") << ")" << std::endl;
+              << prev << " -> " << cln_rcut << " (want " << lmin << ")" << std::endl;
   }
   pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_now", cln_rcut);
   pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_count", cln_rcut_n);
@@ -2395,10 +2383,6 @@ void RadiationVet::CleanClosureFill() {
   auto valid = cln_v;
   // (D, h+- and, where held, k+: the slots t < CLN_C1, then CLN_KP + t - CLN_C1)
   const int nfl = CLN_C1 + std::max(std::min(cln_s.extent_int(1) - CLN_KP, 9), 0);
-  // (clean_fill_cs_remap: a neighbour's h+- across a cubed-sphere seam remapped to our
-  // axes (CleanCsSlot); families the seam turns, and diagonal neighbours, left out)
-  const bool rmp = cln_fillcs && pmy_pack->pmesh->use_cubed_sphere;
-  CleanArgs x = CleanMakeArgs();
   auto iw_ = iw;
   const bool thf = cln_thinf;
   const Real efl = fmax(e_floor, 1.0e-300);
@@ -2420,49 +2404,27 @@ void RadiationVet::CleanClosureFill() {
     CleanGhostFill(cln_v, 2, 1);
   }
 
-  for (int pass = 0; pass < cln_fillpass; ++pass) {
+  constexpr int npass = 8;   // fill layers
+  for (int pass = 0; pass < npass; ++pass) {
     // (only what cln_fill reads: D, h+- (and the held k+ or HO), valid(0), at depth 1;
     // callers exchange all of cln_s afterwards; the last pass also valid(1))
     CleanGhostDefer(cln_s, 0, CLN_C1, 1);
     if (nfl > CLN_C1) CleanGhostDefer(cln_s, CLN_KP, nfl - CLN_C1, 1);
-    CleanGhostFill(cln_v, 0, (pass + 1 < cln_fillpass) ? 1 : 2, true, 0, 1);
+    CleanGhostFill(cln_v, 0, (pass + 1 < npass) ? 1 : 2, true, 0, 1);
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       valid(m,1,k,j,i) = valid(m,0,k,j,i);
       if (valid(m,0,k,j,i) > 0.0) return;
-      Real sum[CLN_C1 + 9] = {0.0}, nh[6] = {0.0}, nv = 0.0;
+      Real sum[CLN_C1 + 9] = {0.0}, nv = 0.0;
       for (int kk = k-dk; kk <= k+dk; ++kk) {
         for (int jj = j-dj; jj <= j+dj; ++jj) {
           for (int ii = i-1; ii <= i+1; ++ii) {
             if (valid(m,0,kk,jj,ii) <= 0.0) continue;
             const Real wt = (thf && pass == 0) ? valid(m,2,kk,jj,ii) : 1.0;
             nv += wt;
-            // (rmp: the families q[a] of its h+- slots in our axes, sign sg[a], -1: none)
-            int q[3] = {0, 1, 2};
-            Real sg[3] = {1.0, 1.0, 1.0};
-            for (int d = 1; d < 3 && rmp; ++d) {
-              const int o = (d == 1) ? jj - j : kk - k;
-              if (o == 0) continue;
-              Real sd;
-              const int n = CleanCsSlot(x, d, m, k + (d == 2 && o > 0),
-                                        j + (d == 1 && o > 0), i, kk, jj, ii, false,
-                                        sd)/2;
-              if (n == d && sd > 0.0) continue;
-              const bool dg = (jj != j) && (kk != k);
-              q[d] = dg ? -1 : n, sg[d] = sd, q[3 - d] = -1;
-            }
             for (int t = 0; t < nfl; ++t) {
-              const int a = (t >= CLN_HP && t < CLN_HP + 6) ? (t - CLN_HP)%3 : -1;
-              if (a < 0) {
-                sum[t] += wt*cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
-                continue;
-              }
-              if (q[a] < 0) continue;
-              const bool hp = t < CLN_HM;   // (a reversed axis: h+ = -h- of the other)
-              const int u = ((hp == (sg[a] > 0.0)) ? CLN_HP : CLN_HM) + q[a];
-              sum[t] += wt*sg[a]*cs(m,u,kk,jj,ii);
-              nh[t - CLN_HP] += wt;
+              sum[t] += wt*cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
             }
           }
         }
@@ -2470,10 +2432,7 @@ void RadiationVet::CleanClosureFill() {
       if (nv == 0.0) return;
       valid(m,1,k,j,i) = 1.0;
       for (int t = 0; t < nfl; ++t) {
-        const bool h = rmp && t >= CLN_HP && t < CLN_HP + 6;
-        if (h && nh[t - CLN_HP] == 0.0) continue;
-        cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,k,j,i) =
-            sum[t]/(h ? nh[t - CLN_HP] : nv);
+        cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,k,j,i) = sum[t]/nv;
       }
     });
     par_for("cln_fill_mark", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

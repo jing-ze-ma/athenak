@@ -339,7 +339,8 @@ static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh,
 #if VET_TU_PART(0)
 void RadiationVet::CleanPreflight(ParameterInput *pin) {
   // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal unless off, "x"
-  // removed (fatal when named), "=v" fatal unless v (old restart value), else clean key
+  // removed (fatal when named), "=v" fatal unless v (old restart value), "+v" too, with a
+  // NOTE where a restart file of an older code has no such key; else clean key
   static const char *tab[][2] = {
     {"rad_vet/implicit_bc_advect", ""}, {"rad_vet/implicit_bc_*", nullptr},
     // inner-flux time hooks: removed
@@ -426,6 +427,20 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_rotate_avg_ema_dema", "=false"},
     {"rad_vet/vet_rotate_avg_ema_diag", "=0"}, {"rad_vet/vet_rotate_avg_ema_lc", "=0"},
     {"rad_vet/vet_rotate_avg_ema_tau", "=0"},
+    // linear solve and passes: constants
+    {"rad_vet/clean_bicg_stall_its", "=0"}, {"rad_vet/clean_bicg_stall_fac", "=0.99"},
+    {"rad_vet/clean_init_cnorm", "=1e-10"}, {"rad_vet/clean_lin_cnorm", "=1e-10"},
+    {"rad_vet/clean_lin_pass", "+true"}, {"rad_vet/clean_maxpic", "=12"},
+    {"rad_vet/clean_nl_norm", "=global"}, {"rad_vet/clean_troot_rtol", "=1e-13"},
+    {"rad_vet/clean_gas_newton_switch", "+4"},
+    {"rad_vet/clean_gas_newton_switch_min", "+6"}, {"rad_vet/clean_stall_fac", "=0.5"},
+    {"rad_vet/clean_gas_secant", "+max_stage2"}, {"rad_vet/clean_pred_stage", "=false"},
+    {"rad_vet/clean_pred_xch", "+true"}, {"rad_vet/clean_predict", "=true"},
+    // closure: constants
+    {"rad_vet/clean_fill_passes", "=8"}, {"rad_vet/clean_fill_cs_remap", "=false"},
+    {"rad_vet/clean_ring_jmin", "=true"}, {"rad_vet/clean_ray_cut_r", "=0.01"},
+    {"rad_vet/clean_ray_cut_margin", "=10"}, {"rad_vet/clean_ray_cut_taumin", "=0"},
+    {"rad_vet/polar_ring_avg", "=false"}, {"rad_vet/clean_w_face_min", "=false"},
     // early files' names of clean_stag_fs_line
     {"rad_vet/clean_stag_fs_pcr", "=true"}, {"rad_vet/clean_stag_fs_pcr_cs", "=true"},
     // old solver's diagnostics, multi-rate, coupling split, K1 FCT: removed
@@ -531,7 +546,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
         if (t[1] == nullptr) break;
         // handled here: never reported as unread (a default-echo line: no message)
         ln.accessed = true;
-        const std::string c(t[1]);
+        std::string c(t[1]);
+        if (c[0] == '+') c[0] = '=';
         // (a removed key's value counts also where an older code recorded its default)
         if (ln.param_comment == ParameterInput::default_comment &&
             !(c[0] == '=' && global_variable::restart_run)) break;
@@ -562,6 +578,21 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
   }
   if (say && !none.empty()) {
     std::cout << "### WARNING (scheme = clean): no effect:" << none << std::endl;
+  }
+  if (say && global_variable::restart_run &&
+      !pin->DoesParameterExist("rad_vet", "rst_version")) {
+    std::string mv;
+    for (const auto &t : tab) {
+      const std::string k = t[0], b = k.substr(0, k.find('/'));
+      if (t[1] == nullptr || t[1][0] != '+' ||
+          pin->DoesParameterExist(b, k.substr(b.size() + 1))) continue;
+      mv += " " + k.substr(b.size() + 1) + "=" + (t[1] + 1);
+    }
+    if (!mv.empty()) {
+      std::cout << "### NOTE: the restart file is of an older code and holds no value of "
+                << "these removed keys; where they apply the code runs" << mv
+                << std::endl;
+    }
   }
   // implicit_* keys the clean solve does not read leave a fresh run's input, so
   // ImplicitInit parses its defaults; a restart keeps its file's keys (its layout)
@@ -1229,7 +1260,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   const bool t2stage = (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0;
   std::array<int, 2> nfirst = {0, 0};
-  cln_ncwin = 0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
   // lagged slopes settle only to the linear tolerance.  clean_conv = budget: the pass's
@@ -1305,7 +1335,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
       // implicit_lin_maxit: a linear solve that ends at its cap leaves its iterate to the
       // pass, which is then not the last one
-      const bool lp = cln_linpass && nit < 0 && inl + 1 < maxnl;
+      const bool lp = nit < 0 && inl + 1 < maxnl;
       if (!iterate || (nit < 0 && !lp)) break;
       const bool fbl = lp;
       if (!t2stage && inl + 1 == maxnl) {   // for CleanWorstCell
@@ -1326,10 +1356,10 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       // twice in the window) drops the gas Newton slope for its remaining passes: the gas
       // T takes the bracketed root of its row, a contraction (Newton cycles where c_v
       // jumps, e.g. H ionisation).  Deterministic in the passes: restarts bitwise.
-      if (cln_gnsw > 0 && !cln_gpic) {
+      if (!cln_gpic) {
         rhist.push_back(dnl);
-        const int nw = cln_gnsw;
-        if (inl + 1 >= cln_gnswmin && inl + 1 > nw) {
+        constexpr int nw = 4;
+        if (inl + 1 >= 6) {
           Real mwin = 1.0e300, mpre = 1.0e300;
           int nup = 0;
           for (int q = 0; q <= inl; ++q) {
@@ -1340,7 +1370,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
               mpre = fmin(mpre, rhist[q]);
             }
           }
-          if (mwin >= cln_stfac*mpre && nup >= 2) {
+          if (mwin >= 0.5*mpre && nup >= 2) {
             cln_gpic = true;
             cln_ngnsw += 1.0;
             if (global_variable::my_rank == 0) {
@@ -1410,9 +1440,9 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   }
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos 0 mark 0 all 0 neg %d "
-                "r1 %d r2 %d first %d %d guard %d solves %d cwin %d\n",
+                "r1 %d r2 %d first %d %d guard %d solves %d\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, nneg, cln_nr1, cln_nr2,
-                nfirst[0], nfirst[1], cln_nguard, nsolve, cln_ncwin);
+                nfirst[0], nfirst[1], cln_nguard, nsolve);
   }
   if (cln_mclc.extent_int(0) == 1) {   // last pass's face momentum terms at the cap
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_mclc);
@@ -1905,12 +1935,11 @@ void RadiationVet::CleanFirstIterate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
-  // clean_pred_stage: sdirk2's stage 2 from this step's stage-1 slope, E^n + dt K1
-  auto k1 = (cln_pst && t2_tab == 2 && t2_solve == VET_T2S_STAGE2) ? t2k2 : t2k1;
-  // clean_pred_xch: sdirk2's stage 2 from (K1 + z K2^{n-1})/(1 + z), z = h (ch kE +
+  auto k1 = t2k1;
+  // sdirk2's stage 2 from (K1 + z K2^{n-1})/(1 + z), z = h (ch kE +
   // 4 c kP a T^4/e) the exchange stiffness: stiff cells follow the last step's stage-2
   // slope (the slow manifold's drift), slow ones the latest slope
-  const bool pxc = cln_pxc && t2_tab == 2 && t2_solve == VET_T2S_STAGE2;
+  const bool pxc = t2_tab == 2 && t2_solve == VET_T2S_STAGE2;
   auto ks1 = t2k2, ks2 = t2k1;   // sdirk2 stage 2: K1 of this step, K2 of the last
   const Real ch = chat;
   const bool pred = cln_kpred && (t2_ok || cln_k1ok) &&
@@ -2077,10 +2106,8 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
   const bool pdo = x.pd;   // clean_stag_central: the rows' diagonal CLW_PD
   const bool xte = (cln_xte > 0) && x.feedback;   // clean_xt_exact: CLW_XA, CLW_XW
   const bool gpic = cln_gpic;   // clean_gas_newton_switch
-  // clean_gas_secant: CLW_RR holds the last pass's T
-  const bool gsc = cln_gsec == 1 || cln_gsec == 3 ||
-                   ((cln_gsec == 2 || cln_gsec == 4) && t2_solve == VET_T2S_STAGE2);
-  const bool gmx = cln_gsec >= 3;   // max: the chord only where it is the steeper
+  // sdirk2's stage 2: the chord, CLW_RR holds the last pass's T
+  const bool gsc = t2_solve == VET_T2S_STAGE2;
   const Real eps_ = std::numeric_limits<Real>::epsilon();
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2177,17 +2204,16 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
         cg = (eg - ei)/(t - to);
         s = hckp*arad_*(t + to)*(t*t + to*to);
       }
-      // clean_gas_secant: elsewhere the chord through the last pass's T (the tangent at
+      // stage 2: elsewhere the chord through the last pass's T (the tangent at
       // a c_v jump, e.g. H ionisation, cycles across the jump); the root is unchanged
       const Real tp = x.w(m,CLW_RR,k,j,i);
-      // max: the chord only where it exceeds the tangent d cv by more than the round-off
+      // The chord only where it exceeds the tangent d cv by more than the round-off
       // of e(T) - e(T_p) (Newton where e(T) is smooth; bitwise tangent for an ideal gas)
       if (gsc && !sec && tp > 0.0 && tp != t) {
         Real ep, pp, crp, ctp, cvp;
         eos.ThermoAt(d, tp, ep, pp, crp, ctp, cvp);
         const Real dx = (eg - ep - cg*(t - tp))*(t - tp);
-        if (!gmx ||
-            dx > 16.0*eps_*(fabs(eg) + fabs(ep) + fabs(cg*(t - tp)))*fabs(t - tp)) {
+        if (dx > 16.0*eps_*(fabs(eg) + fabs(ep) + fabs(cg*(t - tp)))*fabs(t - tp)) {
           cg = (eg - ep)/(t - tp);
           s = hckp*arad_*(t + tp)*(t*t + tp*tp);
         }
@@ -2301,7 +2327,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
 //! \fn Real RadiationVet::CleanNewtonUpdate
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
 //! (absorption of max(X, 0); also the iterate without clean_stag_gflux).  Returns
-//! max |dE|/E, |dT|/T (clean_nl_norm = cell: |dE| over max(|E|, cln_nl_escale)).
+//! max |dE|/E, |dT|/T.
 
 Real RadiationVet::CleanNewtonUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2310,8 +2336,6 @@ Real RadiationVet::CleanNewtonUpdate() {
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   const Real hc = dt_sub*c_light, arad_ = arad;
-  const bool ncell = cln_nl_cell;
-  const Real esc = fmax(cln_nl_escale, 1.0e-300);
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
@@ -2366,8 +2390,7 @@ Real RadiationVet::CleanNewtonUpdate() {
     }
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
-    const Real de = ncell ? fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), esc)
-                          : fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), 1.0e-300);
+    const Real de = fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     if (bud) {
       const Real d = uh(m,IDN,k,j,i), se = w(m,CLW_SE,k,j,i);
