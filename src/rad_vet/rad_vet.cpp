@@ -349,7 +349,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
     // clean_stag_upwind_central: an upwind face carries the central mean of a E within
     // the TVD bound (CleanStagAdvectCorr)
-    cln_ucen = pin->GetOrAddBoolean("rad_vet","clean_stag_upwind_central",false);
+    cln_ucen = pin->GetOrAddBoolean("rad_vet","clean_stag_upwind_central",nw);
     // clean_stag_central: the rest as the plain central mean, the work drain and the gas
     // kick in the same Patankar weight (CleanStagMprkWeight)
     cln_ucp = pin->GetOrAddBoolean("rad_vet","clean_stag_central",
@@ -643,9 +643,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","clean_wb_floor_fail")) {
       cln_wbff = pin->GetBoolean("rad_vet","clean_wb_floor_fail");
     }
-    // clean_wb_exch_local (needs clean_gas_tfloor, EOS tfloor > 0): the write-back's cell
-    // exchange solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))
-    cln_wbxl = pin->GetOrAddBoolean("rad_vet","clean_wb_exch_local",cln_wbxl);
+    // clean_wb_exch_local (default with clean_gas_tfloor): the write-back's cell exchange
+    // solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))
+    cln_wbxl = pin->GetOrAddBoolean("rad_vet","clean_wb_exch_local",
+        cln_gtf && fix("clean_wb_exch_local", "true", "false"));
     // clean_wb_mcap (read only when named; default false): the write-back gives the gas
     // the face momentum terms at the Newton passes' cap h chi_f E, the momentum whose
     // work the E row paid (CleanMomentumChange); the terms withheld are printed
