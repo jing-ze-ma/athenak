@@ -23,10 +23,10 @@ parameters are put together in this order (`main.cpp`):
 
 1. the input block **stored in the restart file**;
 2. the `-i` deck, if given: every key it names replaces the stored value;
-3. the command line: every `block/key=value` replaces the value so far. On a restart a key
-   that is not in the stored block is added (the code prints a `### NOTE`). On a **fresh**
-   start a command-line key that is not in the deck is FATAL (typo guard), so put every key
-   of a fresh run in the deck.
+3. the command line: every `block/key=value` replaces the value so far. A key that
+   is not in the deck (or the stored block) is added, and the code prints a `### NOTE`. On a
+   **fresh** start such a key that the code never reads (a typo) stops the run after the
+   first cycle (FATAL); a block that does not exist stops it at once.
 
 **On a restart, a key that is not given in the deck or on the command line takes the value
 stored in the restart file, not the code default.** If the file does not hold the key either,
