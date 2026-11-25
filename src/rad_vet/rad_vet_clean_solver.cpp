@@ -1706,6 +1706,7 @@ void RadiationVet::CleanPreconditionerSetup() {
     x.w(m,CLW_A0,k,j,i) = a0;
   });
   CleanStagCoarseSetup();
+  if (cln_pcrf) CleanStagPcrFactors();
 }
 
 //----------------------------------------------------------------------------------------
@@ -1715,6 +1716,7 @@ void RadiationVet::CleanPreconditionerSetup() {
 
 CleanLevel RadiationVet::CleanStagLevel(const int l) {
   CleanLevel lv;
+  lv.lev = l;
   if (l == 0) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
     lv.u = cln_w;
@@ -1802,6 +1804,70 @@ void RadiationVet::CleanStagCoarseSetup() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanStagPcrFactors
+//! \brief clean_stag_pcr_factor: the rounds' multipliers f, g and the last diagonal of the
+//! PCR of every x1 line of every mg level, the same for all its right-hand sides
+
+void RadiationVet::CleanStagPcrFactors() {
+  const int nmb = pmy_pack->nmb_thispack, nlev = static_cast<int>(cln_mg.size()) + 1;
+  for (int lc = 0; lc < nlev; ++lc) {
+    const CleanLevel l = CleanStagLevel(lc);
+    const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1], is = l.o[0];
+    int nround = 0;
+    while ((1 << nround) < nx) ++nround;
+    if (cln_pf.size() <= static_cast<size_t>(lc)) {
+      cln_pf.emplace_back("cln_pf", nmb, 2*nround + 1, l.n[2], n2, nx);
+    }
+    auto w = l.u;
+    auto pf = cln_pf[lc];
+    const size_t scr = ScrArray1D<Real>::shmem_size(6*nx);
+    Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nmb*n32,
+                                        std::min(1024, (nx + 31)/32*32));
+    const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
+    pol.set_scratch_size(lv0, Kokkos::PerTeam(scr));
+    Kokkos::parallel_for("cln_pcrf", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
+      ScrArray1D<Real> sw(tm.team_scratch(lv0), 6*nx);
+      const int m = tm.league_rank()/n32, pk = (tm.league_rank() - m*n32)/n2;
+      const int pj = tm.league_rank() - m*n32 - pk*n2;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+        const int k = l.o[2] + pk, j = l.o[1] + pj, i = is + q;
+        sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
+        sw(nx + q) = w(m,l.a0,k,j,i);
+        sw(2*nx + q) = (q < nx - 1) ? w(m,l.sp[0],k,j,i) : 0.0;
+      });
+      tm.team_barrier();
+      int o = 0;
+      for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
+        const int d = 3*nx - o;
+        Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+          Real a = 0.0, b = sw(o + nx + q), c = 0.0;
+          if (q >= s) {
+            const Real f = -sw(o + q)/sw(o + nx + q - s);
+            a = f*sw(o + q - s);
+            b += f*sw(o + 2*nx + q - s);
+            pf(m,2*rd,pk,pj,q) = f;
+          }
+          if (q + s < nx) {
+            const Real g = -sw(o + 2*nx + q)/sw(o + nx + q + s);
+            c = g*sw(o + 2*nx + q + s);
+            b += g*sw(o + q + s);
+            pf(m,2*rd+1,pk,pj,q) = g;
+          }
+          sw(d + q) = a;
+          sw(d + nx + q) = b;
+          sw(d + 2*nx + q) = c;
+        });
+        tm.team_barrier();
+        o = d;
+      }
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+        pf(m,2*nround,pk,pj,q) = sw(o + nx + q);
+      });
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagLineSolve
 //! \brief u(dst) = L^{-1} u(src), L the x1-line tridiagonal part, on the lines of colour
 //! col = (j + k) mod 2 (-1: all), with the neighbours of colour != col and <= lim on the
@@ -1859,7 +1925,9 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
       nt = ll.extent_int(0);
     }
     const bool lst = (col >= 0);
-    const size_t scr = ScrArray1D<Real>::shmem_size(8*nx);
+    const bool fct = cln_pcrf;   // (the matrix' part is in cln_pf: the rhs alone)
+    const int ro = fct ? 0 : 3*nx;
+    const size_t scr = ScrArray1D<Real>::shmem_size((fct ? 2 : 8)*nx);
     Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nt, ts);
     const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
     pol.set_scratch_size(lv0, Kokkos::PerTeam(scr));
@@ -1881,14 +1949,40 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
           if (pk%t2 > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
           if (pk%t2 < t2 - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
+        sw(ro + q) = r;
+        if (fct) return;
         sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
         sw(2*nx + q) = (q < nx - 1) ? w(m,l.sp[0],k,j,i) : 0.0;
-        sw(3*nx + q) = r;
       });
       tm.team_barrier();
       return true;
     };
+    if (fct) {
+      auto pf = cln_pf[l.lev];
+      Kokkos::parallel_for("cln_pcr3", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
+        ScrArray1D<Real> sw(tm.team_scratch(lv0), 2*nx);
+        int m, k, j;
+        if (!ld(tm, sw, m, k, j)) return;
+        const int pk = k - l.o[2], pj = j - l.o[1];
+        int o = 0;
+        for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
+          const int d = nx - o;
+          Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+            Real r = sw(o + q);
+            if (q >= s) r += pf(m,2*rd,pk,pj,q)*sw(o + q - s);
+            if (q + s < nx) r += pf(m,2*rd+1,pk,pj,q)*sw(o + q + s);
+            sw(d + q) = r;
+          });
+          tm.team_barrier();
+          o = d;
+        }
+        Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+          w(m,dst,k,j,is+q) = sw(o + q)/pf(m,2*nround,pk,pj,q);
+        });
+      });
+      return;
+    }
     Kokkos::parallel_for("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
       ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
       int m, k, j;

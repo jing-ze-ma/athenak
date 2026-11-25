@@ -430,6 +430,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_lcnorm", cln_lcnorm);
   v.value("cln_maxit", cln_maxit);
   v.value("cln_pcr", cln_pcr);
+  v.value("cln_pcrf", cln_pcrf);
   v.value("cln_optn", cln_optn);
   v.value("cln_optdr", cln_optdr);
   v.value("cln_hface", cln_hface);
@@ -1090,6 +1091,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   id : RadiationVetTaskIDs
 //   pin_cs_ : ParameterInput *
 //   cln_gdx : const CleanArgs *
+//   cln_pf : std::vector<DvceArray5D<Real>> (protocol counter, kept monotonic)
 //   cln_pcrl : std::map<std::array<int, 8>, DvceArray1D<int>> (protocol counter, kept monotonic)
 //   cln_dbginf : int (one-shot test injection, kept)
 //   pin_rcut_ : ParameterInput *

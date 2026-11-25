@@ -436,6 +436,7 @@ struct CleanLevel {
   int n[3];                    // active cells along x1, x2, x3
   int t[3];                    // cells of a tile along x1, x2, x3 (layout_tile)
   int a0;                      // diagonal block
+  int lev;                     // level (0 the mesh)
   int sm[3], sp[3];            // blocks of the lower and upper neighbour along each dir
 };
 

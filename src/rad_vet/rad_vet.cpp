@@ -193,6 +193,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
+    // clean_stag_pcr_factor (read only when named; GPU PCR): the line solves' matrix part
+    // is factored once per pass and stored (same arithmetic, same result)
+    if (cln_pcr && pin->DoesParameterExist("rad_vet", "clean_stag_pcr_factor")) {
+      cln_pcrf = pin->GetBoolean("rad_vet", "clean_stag_pcr_factor");
+    }
     // clean_stag_opac_update (default on for a fresh run, every mesh) and clean_face_opac
     // (default harmonic on a fresh run), USER 11-21, recorded; a restart file without a
     // key keeps the old default (echoed)

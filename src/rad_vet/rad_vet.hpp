@@ -1098,6 +1098,7 @@ class RadiationVet {
   void CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
                           const int col, const int lim = -1);
   void CleanStagCoarseSetup();
+  void CleanStagPcrFactors();
   void CleanStagVCycle(const int l, const int src, const int dst);
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
@@ -1212,6 +1213,8 @@ class RadiationVet {
   Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
+  bool cln_pcrf = false;        // clean_stag_pcr_factor
+  std::vector<DvceArray5D<Real>> cln_pf;   // its PCR factors per mg level (a pass's)
   std::map<std::array<int, 8>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
   bool cln_optdr = false;       // clean_stag_opac_drag: the refresh rebuilds the drag
