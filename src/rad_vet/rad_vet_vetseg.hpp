@@ -108,34 +108,6 @@ inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
   std::_Exit(EXIT_FAILURE);
 }
 
-// vet_gd_replace surface q of the top cell ie of column (m,k,j); RH gives the projection
-// a = n_d . r_hat (VgdRhatSp: sp cell-centre angles); rr = r_v(ie)/r_f(ie + 1)
-struct VgdRhatSp {
-  Real st, ct, sp, cp;
-  template <typename VD>
-  KOKKOS_INLINE_FUNCTION Real A(const VD &dir_, const int d) const {
-    return dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
-  }
-};
-template <typename RH, typename VD, typename VI>
-KOKKOS_INLINE_FUNCTION
-Real VgdSurfaceQ(const RH &rh, const VD &dir_, const VI &vi_, const int n, const int m,
-                 const int k, const int j, const int og, const int ie, const Real rr,
-                 const bool sqf, const Real jca, const Real jcb, const Real jcap,
-                 const Real qlo, const Real qhi, const Real q0) {
-  Real jt = 0.0, jb = 0.0, ht = 0.0;
-  for (int d = 0; d < n; ++d) {
-    const Real a = rh.A(dir_, d);
-    const Real w = dir_(d,3);
-    jt += w*vi_(m,d,k+og,j+og,ie);
-    jb += w*vi_(m,d,k+og,j+og,ie-1);
-    ht += w*a*vi_(m,d,k+og,j+og,ie);
-  }
-  const Real hf = ht*rr*rr;
-  const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
-  return (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
-}
-
 // face source S_f of the split segment; emit: 0 split, 1 emit, 2 jump, 3 jump with
 // q = 1 (no S_uu given)
 KOKKOS_INLINE_FUNCTION
