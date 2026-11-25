@@ -67,7 +67,6 @@ integrator = rk2
 nlim = 1200
 tlim = 1.0e30
 ndiag = 10
-dt_retry_fac_t2 = 0.9
 dt_retry_grow = 1.1
 dt_retry_ngood = 20
 
@@ -119,7 +118,6 @@ opacity = table
 temp_unit_kelvin = 1.202724e-8
 e_floor = 1.0e-4
 time2_vet_col = extrap2
-time2_reject = retry
 implicit_flux_x1min = 1.754459175000e+13
 clean_rot_ring = live
 clean_maxit = 200

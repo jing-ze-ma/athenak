@@ -41,7 +41,6 @@ nlim = 8
 tlim = 1e30
 ndiag = 1000000
 dt_retry = true
-dt_retry_fac_t2 = 0.9
 dt_retry_grow = 1.1
 dt_retry_ngood = 20
 
