@@ -1973,7 +1973,7 @@ void RyPerVetPost(Mesh *pm) {
   auto &ccl = pmbp->pcoord->cos_cell;
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
   Real eke = 0.0;
-  Kokkos::parallel_reduce("ryper_m1post", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+  Kokkos::parallel_reduce("ryper_vetpost", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx, Real &sum) {
     const int m = idx/nkji;
@@ -6741,8 +6741,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_bcs_func = RyPerBCEnv;
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
-    if (msk_ || flvc_) user_m1post_func = RyPerVetPost;
-    if (lz_) user_m1post_func = RyPerVetPostLz;   // (RyPerVetPost + the L_z mark)
+    if (msk_ || flvc_) user_vetpost_func = RyPerVetPost;
+    if (lz_) user_vetpost_func = RyPerVetPostLz;   // (RyPerVetPost + the L_z mark)
     // rbk_ (see there): wherever the M1 post hook runs after every solve
     {
       auto *pvet = pmbp->pradvet;
@@ -6750,7 +6750,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           pvet->fl_on &&
              (!pin->DoesParameterExist("problem", "rad_book_lag") ||
               !pin->GetBoolean("problem", "rad_book_lag"));
-      if (rbk_) user_m1post_func = RyPerVetPostRb;
+      if (rbk_) user_vetpost_func = RyPerVetPostRb;
       if (rbk_ && global_variable::my_rank == 0) {
         std::printf("ry_per_accretor: Ebnd radiation out booked per M1 solve "
                     "(problem/rad_book_lag = true: the old one-cycle-late "

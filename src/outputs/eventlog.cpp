@@ -66,8 +66,8 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
                 MPI_COMM_WORLD);
 #endif
   // the <rad_vet> totals (collective: every rank has the module)
-  pm->ecounter.m1on = (pm->pmb_pack->pradvet != nullptr);
-  if (pm->ecounter.m1on) {pm->pmb_pack->pradvet->EventTotals(pm->ecounter.m1tot);}
+  pm->ecounter.veton = (pm->pmb_pack->pradvet != nullptr);
+  if (pm->ecounter.veton) {pm->pmb_pack->pradvet->EventTotals(pm->ecounter.vettot);}
 
   // check if there is any data to be written
   no_output = true;
@@ -83,7 +83,7 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
       pm->ecounter.efloor_de != 0.0 ||
       pm->ecounter.vceil_de != 0.0 ||
       pm->ecounter.dfloor_ke != 0.0 ||
-      pm->ecounter.m1on) {
+      pm->ecounter.veton) {
     no_output=false;
   }
 }
@@ -137,10 +137,10 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       // appended columns: dfloor_keep_velocity KE removed; with <rad_vet>
       // the module's totals since the start of the run or restart (EventTotals)
       std::fprintf(pfile,"  dfloor_ke");
-      if (pm->ecounter.m1on) {
-        std::fprintf(pfile," m1_bcg_break m1_bcg_fall m1_bcg_keep m1_newt_fb");
-        std::fprintf(pfile," m1_gn_switch m1_od_fall m1_vlat_fall m1_opn_skip");
-        std::fprintf(pfile," m1_pos_flr m1_pos_un m1_pos_s2 m1_acl_e m1_acl_f");
+      if (pm->ecounter.veton) {
+        std::fprintf(pfile," vet_bcg_break vet_bcg_fall vet_bcg_keep vet_newt_fb");
+        std::fprintf(pfile," vet_gn_switch vet_od_fall vet_vlat_fall vet_opn_skip");
+        std::fprintf(pfile," vet_pos_flr vet_pos_un vet_pos_s2 vet_acl_e vet_acl_f");
       }
       std::fprintf(pfile,"\n");  // terminate line
       header_written = true;
@@ -170,9 +170,9 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                    static_cast<double>(pm->ecounter.vceil_de));
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.dfloor_ke));
-      if (pm->ecounter.m1on) {
+      if (pm->ecounter.veton) {
         for (int q = 0; q < EventCounters::kNVetTot; ++q) {
-          std::fprintf(pfile, " %12.5e", static_cast<double>(pm->ecounter.m1tot[q]));
+          std::fprintf(pfile, " %12.5e", static_cast<double>(pm->ecounter.vettot[q]));
         }
       }
       std::fprintf(pfile,"\n"); // terminate line

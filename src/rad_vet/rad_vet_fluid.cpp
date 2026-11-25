@@ -60,8 +60,8 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
   eint_ledger::Mark(pmy_pack->pmesh, "vet_ravg");
   if (!coupling || !gas_feedback) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
-  if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
-    (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
+  if (pmy_pack->pmesh->pgen->user_vetpost_func != nullptr) {
+    (pmy_pack->pmesh->pgen->user_vetpost_func)(pmy_pack->pmesh);
   }
   eint_ledger::Mark(pmy_pack->pmesh, "vet_post");
   // skip on a failed solve (dt_retry discards it; inf/NaN would poison the counters)

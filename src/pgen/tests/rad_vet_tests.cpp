@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_tests.cpp
-//! \brief test problems for the grey photon M1 module, selected by <problem>/m1_test.
+//! \brief test problems for the grey photon M1 module, selected by <problem>/vet_test.
 //!
 //!   beam    (design sect. 8, T1): 2-D unit box, no opacity, at the vacuum floor; with
 //!           beam_packet a free-streaming Gaussian packet travelling at beam_angle.
@@ -64,15 +64,15 @@
 
 namespace {
 // beam packet parameters
-Real m1_beam_e = 1.0;
-Real m1_beam_n1 = 1.0/M_SQRT2;
-Real m1_beam_n2 = 1.0/M_SQRT2;
-Real m1_beam_f = 1.0 - 1.0e-6;
-int  m1_test_id = 0;   // 0 = beam, 1 = pulse1d, 2 = thick_pulse
-// m1-mhd2: a UNIFORM field problem/m1_b0_1..3 under <mhd> (force free, div B = 0), so
+Real vet_beam_e = 1.0;
+Real vet_beam_n1 = 1.0/M_SQRT2;
+Real vet_beam_n2 = 1.0/M_SQRT2;
+Real vet_beam_f = 1.0 - 1.0e-6;
+int  vet_test_id = 0;   // 0 = beam, 1 = pulse1d, 2 = thick_pulse
+// m1-mhd2: a UNIFORM field problem/vet_b0_1..3 under <mhd> (force free, div B = 0), so
 // that the uniform-gas tests (equil, marshak, thick_pulse/tophat, advect_uniform) run the
 // |B|^2/2 bookkeeping of every M1 temperature; 0 under <hydro> (never read)
-Real m1_emag = 0.0;
+Real vet_emag = 0.0;
 } // namespace
 
 namespace {
@@ -87,7 +87,7 @@ void VetSetUniformGas(MeshBlockPack *pmbp, Real d, Real e) {
   // m1-mhd2: <hydro> or <mhd>; under <mhd> IEN also carries the uniform |B|^2/2
   radvet::FluidRef flr = radvet::FluidRef::Get(pmbp);
   if (!flr.on) return;
-  const Real eb = flr.mhd ? m1_emag : 0.0;
+  const Real eb = flr.mhd ? vet_emag : 0.0;
   auto &indcs = pmbp->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1 = indcs.nx1 + 2*ng;
@@ -126,7 +126,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
 
   std::string test = pin->GetOrAddString("problem","vet_test","beam");
   // m1-mhd2: the uniform-gas tests below and radwave have an <mhd> mode (FluidRef,
-  // optional uniform field problem/m1_b0_1..3).  The others (advect_pulse and the rest
+  // optional uniform field problem/vet_b0_1..3).  The others (advect_pulse and the rest
   // of rad_vet_tests2.cpp) read phydro directly.
   const bool mhd_ok = (test.compare("beam") == 0 || test.compare("pulse1d") == 0 ||
                        test.compare("equil") == 0 ||
@@ -136,7 +136,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
                        test.compare("sph_shell") == 0);
   if (pmbp->pmhd != nullptr && !mhd_ok) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "
+      << std::endl << "<problem>/vet_test = '" << test << "' is hydro only; with <mhd> "
       << "only beam, pulse1d, equil, marshak, thick_pulse, tophat, "
       << "radwave and advect_uniform (and the box_convection pgen) are supported"
       << std::endl;
@@ -148,14 +148,14 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
                                 pin->DoesParameterExist("problem", "vet_b0_2") ||
                                 pin->DoesParameterExist("problem", "vet_b0_3"))) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "problem/m1_b0_* needs an <mhd> block" << std::endl;
+      << std::endl << "problem/vet_b0_* needs an <mhd> block" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (pmbp->pmhd != nullptr) {
     const Real bx = pin->GetOrAddReal("problem", "vet_b0_1", 0.0);
     const Real by = pin->GetOrAddReal("problem", "vet_b0_2", 0.0);
     const Real bz = pin->GetOrAddReal("problem", "vet_b0_3", 0.0);
-    m1_emag = 0.5*(bx*bx + by*by + bz*bz);
+    vet_emag = 0.5*(bx*bx + by*by + bz*bz);
     if (!restart) {
       auto b = pmbp->pmhd->b0;
       Kokkos::deep_copy(b.x1f, bx);
@@ -166,7 +166,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
   if (test.compare("beam") != 0 && test.compare("pulse1d") != 0 &&
       pmbp->phydro == nullptr && pmbp->pmhd == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<problem>/m1_test = '" << test << "' needs a <hydro> block"
+      << std::endl << "<problem>/vet_test = '" << test << "' needs a <hydro> block"
       << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -186,13 +186,13 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
   auto u0 = pmbp->pradvet->u0;
 
   if (test.compare("beam") == 0) {
-    m1_test_id = 0;
+    vet_test_id = 0;
     // beam direction, amplitude and reduced flux, all optional
     Real theta = pin->GetOrAddReal("problem","beam_angle",0.25*M_PI);
-    m1_beam_n1 = cos(theta);
-    m1_beam_n2 = sin(theta);
-    m1_beam_e = pin->GetOrAddReal("problem","beam_e",1.0);
-    m1_beam_f = pin->GetOrAddReal("problem","beam_f",1.0-1.0e-6);
+    vet_beam_n1 = cos(theta);
+    vet_beam_n2 = sin(theta);
+    vet_beam_e = pin->GetOrAddReal("problem","beam_e",1.0);
+    vet_beam_f = pin->GetOrAddReal("problem","beam_f",1.0-1.0e-6);
 
     if (restart) return;
     // problem/beam_packet = true (default off, read only when named): a free-streaming
@@ -205,7 +205,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
       Real py0 = pin->GetReal("problem","packet_y0");
       Real pw = pin->GetReal("problem","packet_w");
       Real pl = pin->GetReal("problem","packet_l");
-      Real be = m1_beam_e, bf = m1_beam_f, bn1 = m1_beam_n1, bn2 = m1_beam_n2;
+      Real be = vet_beam_e, bf = vet_beam_f, bn1 = vet_beam_n1, bn2 = vet_beam_n2;
       int nx2 = indcs.nx2;
       par_for("vet_packet_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -230,7 +230,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
       u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("pulse1d") == 0) {
-    m1_test_id = 1;
+    vet_test_id = 1;
     Real amp = pin->GetOrAddReal("problem","pulse_amp",1.0);
     Real wid = pin->GetOrAddReal("problem","pulse_width",0.1);
     Real x0 = pin->GetOrAddReal("problem","pulse_x0",0.5);
@@ -252,7 +252,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     // T3 / T3c.  Static uniform gas; the opacity is whatever <rad_vet> says, and with
     // kappa_s only the gas neither emits nor absorbs.
     bool tophat = (test.compare("tophat") == 0);
-    m1_test_id = tophat ? 3 : 2;
+    vet_test_id = tophat ? 3 : 2;
     Real amp = pin->GetOrAddReal("problem","pulse_amp",1.0);
     Real wid = pin->GetOrAddReal("problem","pulse_width",0.05);
     Real x0 = pin->GetOrAddReal("problem","pulse_x0",0.5);
@@ -341,7 +341,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     // The gas is in radiative equilibrium with the pulse, E = arad T^4, and the flux is
     // the dynamic-diffusion one, F = (4/3) v E - (c/(3 rho kappa)) dE/dx, evaluated
     // analytically.  v is UNIFORM and the gas really is advected by hydro.
-    m1_test_id = 6;
+    vet_test_id = 6;
     Real t0 = pin->GetReal("problem","pulse_t0");
     Real t1 = pin->GetReal("problem","pulse_t1");
     Real d0 = pin->GetReal("problem","gas_rho");
@@ -389,14 +389,14 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     // E = arad T^4 instead (the naive reading of "F = (4/3) v E") leaves a REAL O(beta^2)
     // relaxation that has nothing to do with the scheme, which is why the fixed point is
     // solved for here.  The gas temperature must then not move at all.
-    m1_test_id = 7;
+    vet_test_id = 7;
     Real tg = pin->GetReal("problem","gas_temp");
     Real d0 = pin->GetReal("problem","gas_rho");
     Real vx = pin->GetOrAddReal("problem","pulse_v",0.0);
     Real ar = pmbp->pradvet->arad;
     radvet::FluidRef flr = radvet::FluidRef::Get(pmbp);   // m1-mhd2
     Real gm1 = flr.eos.gamma - 1.0;
-    const Real eb = flr.mhd ? m1_emag : 0.0;
+    const Real eb = flr.mhd ? vet_emag : 0.0;
     Real bb = vx/cl;
     // fixed point of f = beta (1 + chi(f)), a handful of Picard steps (contraction
     // factor ~ beta)
@@ -409,7 +409,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     Real erad = ar*tg*tg*tg*tg/((1.0 + bb*bb) - 2.0*bb*ff + bb*bb*chi);
     Real frad = cl*erad*ff;
     if (global_variable::my_rank == 0) {
-      std::cout << "  m1_test = advect_uniform: beta=" << bb << " f=" << ff
+      std::cout << "  vet_test = advect_uniform: beta=" << bb << " f=" << ff
                 << " E=" << erad << " F=" << frad << " F/((4/3)vE)="
                 << frad/((4.0/3.0)*vx*erad) << std::endl;
     }
@@ -437,7 +437,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     // constant c_v (--cv), so the comparison is like for like.  The gas does not move
     // (gas_feedback still writes the energy exchange; the momentum exchange is left in,
     // and stays ~1e-10 of the pressure over the run).
-    m1_test_id = 8;
+    vet_test_id = 8;
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0);
     Real tini = pin->GetReal("problem","gas_temp");
     Real ar = pmbp->pradvet->arad;
@@ -459,7 +459,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     // (blob_x1, blob_x2, blob_x3); a semi-axis <= 0 drops that direction, so (a, 0, 0) is
     // a slab normal to x1 and (a, a, a) a sphere.  Smooth edge: s = (1 -
     // tanh((r-1)/w))/2.
-    m1_test_id = 10;
+    vet_test_id = 10;
     Real rc = pin->GetReal("problem","blob_rho");
     Real tc = pin->GetReal("problem","blob_temp");
     Real rb = pin->GetReal("problem","bg_rho");
@@ -501,7 +501,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
   } else if (test.compare("equil") == 0) {
     // T5.  Uniform single zone: nothing has a gradient, so the transport is exactly
     // zero and what is exercised is the implicit solve alone.
-    m1_test_id = 5;
+    vet_test_id = 5;
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0e-7);
     Real egas = pin->GetReal("problem","gas_eint");
     Real erad = pin->GetReal("problem","e_rad");

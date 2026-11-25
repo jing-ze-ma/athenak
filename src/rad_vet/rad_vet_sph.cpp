@@ -184,10 +184,10 @@ void RadiationVet::CubedS1Init() {
   const int npan = pm->mesh_indcs.nx2;   // cells per panel edge (= nx3, checked)
   auto &bc = pmy_pack->pmb->mb_bcs;
   auto &msz = pmy_pack->pmb->mb_size;
-  m1bcs = DualArray2D<BoundaryFlag>("m1bcs", nmb, 6);
-  cs_seam = DualArray2D<int>("m1csseam", nmb, 4);
-  csg2 = DvceArray4D<Real>("m1csg2", nmb, 4, n3, 2);
-  csg3 = DvceArray4D<Real>("m1csg3", nmb, 4, n2, 2);
+  vetbcs = DualArray2D<BoundaryFlag>("vetbcs", nmb, 6);
+  cs_seam = DualArray2D<int>("vetcsseam", nmb, 4);
+  csg2 = DvceArray4D<Real>("vetcsg2", nmb, 4, n3, 2);
+  csg3 = DvceArray4D<Real>("vetcsg3", nmb, 4, n2, 2);
   auto g2h = Kokkos::create_mirror_view(csg2);
   auto g3h = Kokkos::create_mirror_view(csg3);
   Kokkos::deep_copy(g2h, 0.0);
@@ -195,7 +195,7 @@ void RadiationVet::CubedS1Init() {
   for (int m = 0; m < nmb; ++m) {
     for (int f = 0; f < 6; ++f) {
       BoundaryFlag b = bc.h_view(m,f);
-      m1bcs.h_view(m,f) = (b == BoundaryFlag::panel) ? BoundaryFlag::block : b;
+      vetbcs.h_view(m,f) = (b == BoundaryFlag::panel) ? BoundaryFlag::block : b;
     }
     for (int f = 0; f < 4; ++f) {
       cs_seam.h_view(m,f) = (bc.h_view(m,2+f) == BoundaryFlag::panel) ? 1 : 0;
@@ -220,8 +220,8 @@ void RadiationVet::CubedS1Init() {
       }
     }
   }
-  m1bcs.modify_host();
-  m1bcs.sync_device();
+  vetbcs.modify_host();
+  vetbcs.sync_device();
   cs_seam.modify_host();
   cs_seam.sync_device();
   Kokkos::deep_copy(csg2, g2h);
@@ -230,8 +230,8 @@ void RadiationVet::CubedS1Init() {
   {
     auto *pc = pmy_pack->pcoord;
     const int n1 = indcs.nx1 + 2*ng;
-    cs_dxf_eff = DvceFaceFld4D<Real>("m1csdxf", nmb, n3, n2, n1);
-    cs_area_eff = DvceFaceFld4D<Real>("m1csarea", nmb, n3, n2, n1);
+    cs_dxf_eff = DvceFaceFld4D<Real>("vetcsdxf", nmb, n3, n2, n1);
+    cs_area_eff = DvceFaceFld4D<Real>("vetcsarea", nmb, n3, n2, n1);
     Kokkos::deep_copy(cs_dxf_eff.x1f, pc->dxface.x1f);
     Kokkos::deep_copy(cs_dxf_eff.x2f, pc->dxface.x2f);
     Kokkos::deep_copy(cs_dxf_eff.x3f, pc->dxface.x3f);

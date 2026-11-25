@@ -4,8 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_rhse.cpp
-//! \brief <problem>/m1_test = rhse: a static grey atmosphere in hydrostatic and radiative
-//! equilibrium, plane parallel (Cartesian, x1 = height, gravity rh_g along -x1) or
+//! \brief <problem>/vet_test = rhse: a static grey atmosphere in hydrostatic and
+//! radiative equilibrium, plane parallel (Cartesian, x1 = height, gravity rh_g along -x1)
+//! or
 //! spherical (spherical polar or cubed sphere, x1 = r, gravity rh_gm/r^2).  The test of
 //! the well-balanced clean scheme (<rad_vet>/force_reference = clean with
 //! <hydro>/wellbalance_static).
@@ -97,7 +98,7 @@ void RhseHist(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationVetRhse
-//! \brief m1_test = rhse, see the file header
+//! \brief vet_test = rhse, see the file header
 
 void ProblemGenerator::RadiationVetRhse(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
@@ -105,7 +106,7 @@ void ProblemGenerator::RadiationVetRhse(ParameterInput *pin, const bool restart)
   hydro::Hydro *ph = pmbp->phydro;
   if (ph == nullptr || !ph->peos->eos_data.is_ideal) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<problem>/m1_test = rhse needs <hydro> with an ideal gas"
+              << std::endl << "<problem>/vet_test = rhse needs <hydro> with an ideal gas"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }

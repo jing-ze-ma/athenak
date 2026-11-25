@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file rad_vet_tests2.cpp
 //! \brief the milestone-1d test problems of the grey M1 module, dispatched from
-//! rad_vet_tests.cpp when <problem>/m1_test names none of the 1a-1c tests.  Kept in a
+//! rad_vet_tests.cpp when <problem>/vet_test names none of the 1a-1c tests.  Kept in a
 //! separate file so that the 1a-1c generators are untouched.
 //!
 //!   shadow    (design sect. 8, T2) Hayes & Norman (2003) / HERACLES shadow test: a
@@ -29,8 +29,8 @@
 //!             initialised from the semi-analytic profile written by
 //!             tests_m1/t7_radshock.py --write-ref, so that only a local relaxation is
 //!             needed rather than the many flow-through times a step start would cost.
-//!             With <problem>/m1_shock_ref unset the two far-field states are laid down
-//!             with a tanh jump of <problem>/m1_shock_w cells instead.  Both x1 faces
+//!             With <problem>/vet_shock_ref unset the two far-field states are laid down
+//!             with a tanh jump of <problem>/vet_shock_w cells instead.  Both x1 faces
 //!             are Dirichlet at the far-field states (user BC), in the shock frame.
 //!
 //!   atmosphere (milestone 3a2, gate I6b) STATIC plane-parallel grey column with a
@@ -44,7 +44,7 @@
 //!                                                                    TOP MESH FACE),
 //!
 //!             so the steady state is the closed-form M1 moment solution of
-//!             bench/m1_stage2/ic/build_ic.py: with F = const,
+//!             bench/vet_stage2/ic/build_ic.py: with F = const,
 //!             dP_rad/dtau = F/c and P_rad = chi(f) E = (F/c)(chi/f) give
 //!
 //!               chi(f)/f = q0 + tau,      E(tau) = F/(c f(tau)),
@@ -100,37 +100,37 @@
 namespace {
 // shadow: the clump geometry and the background state, needed by the source term that
 // re-imposes the gas
-Real m1_sh2_rho0 = 1.0, m1_sh2_ratio = 1.0e3, m1_sh2_t0 = 290.0;
-Real m1_sh2_x0 = 0.5, m1_sh2_y0 = 0.0, m1_sh2_ax = 0.1, m1_sh2_ay = 0.06;
-Real m1_sh2_delta = 10.0, m1_sh2_gm1 = 2.0/3.0;
-bool m1_sh2_dsq = false, m1_sh2_peq = false;
-// m1_test = cyl: up to 3 cylinders (along z) in a thin background, each
+Real vet_sh2_rho0 = 1.0, vet_sh2_ratio = 1.0e3, vet_sh2_t0 = 290.0;
+Real vet_sh2_x0 = 0.5, vet_sh2_y0 = 0.0, vet_sh2_ax = 0.1, vet_sh2_ay = 0.06;
+Real vet_sh2_delta = 10.0, vet_sh2_gm1 = 2.0/3.0;
+bool vet_sh2_dsq = false, vet_sh2_peq = false;
+// vet_test = cyl: up to 3 cylinders (along z) in a thin background, each
 // an EMITTER (opaque, T fixed) or an ABSORBER (opaque, T ~ 0); the gas is prescribed
 // and re-imposed every stage (RadVetCylGas).  (x, y, radius, rho, T) per cylinder.
-int m1_cy_n = 0;
+int vet_cy_n = 0;
 // up to 8 objects; (x, y, r, rho, T, rect, half-length, half-width,
 // angle):
 // rect = 1 is an oriented rectangle about (x, y), long axis at `angle` (radians) to x1
-Real m1_cy_p[24][9] = {};
+Real vet_cy_p[24][9] = {};
 // the object table captured by value in the reset kernel (namespace scope: CUDA does
 // not take a function-local type in an extended lambda)
 struct VetCylP {Real v[24][9];};
-Real m1_cy_rhob = 1.0e-6, m1_cy_tb = 1.0e-3, m1_cy_gm1 = 2.0/3.0;
+Real vet_cy_rhob = 1.0e-6, vet_cy_tb = 1.0e-3, vet_cy_gm1 = 2.0/3.0;
 
 // radshock: the two Dirichlet end states (rho, v, E_gas, E_rad, F_rad)
-Real m1_rs_l[5] = {1.0, 0.0, 1.0, 0.0, 0.0};
-Real m1_rs_r[5] = {1.0, 0.0, 1.0, 0.0, 0.0};
+Real vet_rs_l[5] = {1.0, 0.0, 1.0, 0.0, 0.0};
+Real vet_rs_r[5] = {1.0, 0.0, 1.0, 0.0, 0.0};
 
 // atmosphere: the prescribed gas
-Real m1_at_rho = 0.128, m1_at_h = 0.113, m1_at_ztop = 1.0, m1_at_egas = 1.0;
+Real vet_at_rho = 0.128, vet_at_h = 0.113, vet_at_ztop = 1.0, vet_at_egas = 1.0;
 
 // sph_atm (STAGE S2, tests_m1/runs_5b_sp_s2): the held gas rho = rho0 (r/r_in)^-n
-Real m1_sa_rho0 = 1.0, m1_sa_rin = 1.0, m1_sa_n = 0.0;
+Real vet_sa_rho0 = 1.0, vet_sa_rin = 1.0, vet_sa_n = 0.0;
 // atm_scale_h = H > 0: rho = rho0 exp(-(r - r_in)/H) instead
-Real m1_sa_h = 0.0;
+Real vet_sa_h = 0.0;
 
 // STAGE CS1 (cubed sphere, sph_shell): the lateral mode axis of P_l(mu), mu = rhat . axis
-Real m1_cs_ax[3] = {0.0, 0.0, 1.0};
+Real vet_cs_ax[3] = {0.0, 0.0, 1.0};
 
 //----------------------------------------------------------------------------------------
 //! \fn VetLegendre
@@ -206,12 +206,12 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm);
 // problem/am_hist_ebnd (read only when named): RadVetAmHistory adds column 15
 // Eb = the accumulated radiation energy the scheme put in through the physical x1 faces
 // (Ebnd, the hesdirk2 stage weights); absent = the 14 columns as before
-static bool m1_am_ebnd = false;
+static bool vet_am_ebnd = false;
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationVetTests2()
 //! \brief the milestone-1d branches, reached from RadiationVetTests() when
-//! <problem>/m1_test names none of the 1a-1c tests.
+//! <problem>/vet_test names none of the 1a-1c tests.
 
 void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
@@ -257,24 +257,24 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     Real ay = pin->GetOrAddReal("problem","shadow_ay",0.06);
     Real delta = pin->GetOrAddReal("problem","shadow_delta",10.0);
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-    m1_sh2_rho0 = rho0;
-    m1_sh2_ratio = ratio;
-    m1_sh2_t0 = t0;
-    m1_sh2_x0 = x0;
-    m1_sh2_y0 = y0;
-    m1_sh2_ax = ax;
-    m1_sh2_ay = ay;
-    m1_sh2_delta = delta;
+    vet_sh2_rho0 = rho0;
+    vet_sh2_ratio = ratio;
+    vet_sh2_t0 = t0;
+    vet_sh2_x0 = x0;
+    vet_sh2_y0 = y0;
+    vet_sh2_ax = ax;
+    vet_sh2_ay = ay;
+    vet_sh2_delta = delta;
     // shadow_dsq (exponent in D^2) and shadow_peq (pressure equilibrium,
     // T = t0 rho0/rho: Jiang et al. 2012 / Jiang 2021 / Ma et al. 2025)
-    m1_sh2_dsq = pin->GetOrAddBoolean("problem","shadow_dsq",false);
-    m1_sh2_peq = pin->GetOrAddBoolean("problem","shadow_peq",false);
-    const bool dsq = m1_sh2_dsq, peq = m1_sh2_peq;
-    m1_sh2_gm1 = gm1;
+    vet_sh2_dsq = pin->GetOrAddBoolean("problem","shadow_dsq",false);
+    vet_sh2_peq = pin->GetOrAddBoolean("problem","shadow_peq",false);
+    const bool dsq = vet_sh2_dsq, peq = vet_sh2_peq;
+    vet_sh2_gm1 = gm1;
     const Real ein = ar*tr*tr*tr*tr;
     user_srcs_func = RadVetShadowGas;
     if (global_variable::my_rank == 0) {
-      std::cout << "  m1_test = shadow: E_ambient=" << ar*t0*t0*t0*t0
+      std::cout << "  vet_test = shadow: E_ambient=" << ar*t0*t0*t0*t0
                 << " E_source=" << ein << " ratio="
                 << (ein/(ar*t0*t0*t0*t0)) << std::endl;
     }
@@ -302,34 +302,34 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     });
   } else if (test.compare("cyl") == 0) {
     // crossing beams / shadow by opaque cylinders (RadVetCylGas)
-    m1_cy_n = pin->GetOrAddInteger("problem","cyl_n",2);
-    if (m1_cy_n < 1 || m1_cy_n > 24) {
+    vet_cy_n = pin->GetOrAddInteger("problem","cyl_n",2);
+    if (vet_cy_n < 1 || vet_cy_n > 24) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "problem/cyl_n must be 1..24" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    for (int c = 0; c < m1_cy_n; ++c) {
+    for (int c = 0; c < vet_cy_n; ++c) {
       const std::string b = "cyl" + std::to_string(c) + "_";
-      m1_cy_p[c][0] = pin->GetReal("problem", b + "x");
-      m1_cy_p[c][1] = pin->GetReal("problem", b + "y");
-      m1_cy_p[c][2] = pin->GetReal("problem", b + "r");
-      m1_cy_p[c][3] = pin->GetReal("problem", b + "rho");
-      m1_cy_p[c][4] = pin->GetReal("problem", b + "t");
+      vet_cy_p[c][0] = pin->GetReal("problem", b + "x");
+      vet_cy_p[c][1] = pin->GetReal("problem", b + "y");
+      vet_cy_p[c][2] = pin->GetReal("problem", b + "r");
+      vet_cy_p[c][3] = pin->GetReal("problem", b + "rho");
+      vet_cy_p[c][4] = pin->GetReal("problem", b + "t");
       // cyl{c}_shape = rect, with _hl, _hw and _ang (degrees)
       if (pin->GetOrAddString("problem", b + "shape", "cyl").compare("rect") == 0) {
-        m1_cy_p[c][5] = 1.0;
-        m1_cy_p[c][6] = pin->GetReal("problem", b + "hl");
-        m1_cy_p[c][7] = pin->GetReal("problem", b + "hw");
-        m1_cy_p[c][8] = pin->GetReal("problem", b + "ang")*M_PI/180.0;
+        vet_cy_p[c][5] = 1.0;
+        vet_cy_p[c][6] = pin->GetReal("problem", b + "hl");
+        vet_cy_p[c][7] = pin->GetReal("problem", b + "hw");
+        vet_cy_p[c][8] = pin->GetReal("problem", b + "ang")*M_PI/180.0;
       }
     }
-    m1_cy_rhob = pin->GetOrAddReal("problem","cyl_rho_bg",1.0e-6);
-    m1_cy_tb = pin->GetOrAddReal("problem","cyl_t_bg",1.0e-3);
-    m1_cy_gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    vet_cy_rhob = pin->GetOrAddReal("problem","cyl_rho_bg",1.0e-6);
+    vet_cy_tb = pin->GetOrAddReal("problem","cyl_t_bg",1.0e-3);
+    vet_cy_gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     user_srcs_func = RadVetCylGas;
     if (restart) return;
     RadVetCylGas(pmy_mesh_, 0.0);
-    const Real eb = fmax(ar*SQR(SQR(m1_cy_tb)), efl);
+    const Real eb = fmax(ar*SQR(SQR(vet_cy_tb)), efl);
     par_for("vet_cyl_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       u0(m,radvet::VET_E,k,j,i) = eb;
@@ -355,16 +355,16 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     tl *= tun;
     trr *= tun;
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-    m1_rs_l[0] = dl;
-    m1_rs_l[1] = dl*vl;
-    m1_rs_l[2] = dl*tl/gm1 + 0.5*dl*vl*vl;
-    m1_rs_l[3] = ar*tl*tl*tl*tl;
-    m1_rs_l[4] = 0.0;
-    m1_rs_r[0] = dr;
-    m1_rs_r[1] = dr*vr;
-    m1_rs_r[2] = dr*trr/gm1 + 0.5*dr*vr*vr;
-    m1_rs_r[3] = ar*trr*trr*trr*trr;
-    m1_rs_r[4] = 0.0;
+    vet_rs_l[0] = dl;
+    vet_rs_l[1] = dl*vl;
+    vet_rs_l[2] = dl*tl/gm1 + 0.5*dl*vl*vl;
+    vet_rs_l[3] = ar*tl*tl*tl*tl;
+    vet_rs_l[4] = 0.0;
+    vet_rs_r[0] = dr;
+    vet_rs_r[1] = dr*vr;
+    vet_rs_r[2] = dr*trr/gm1 + 0.5*dr*vr*vr;
+    vet_rs_r[3] = ar*trr*trr*trr*trr;
+    vet_rs_r[4] = 0.0;
     user_bcs_func = RadVetShockBC;
     if (restart) return;
 
@@ -375,7 +375,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       std::ifstream fp(ref.c_str());
       if (!fp.is_open()) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "cannot open <problem>/m1_shock_ref = '" << ref << "'"
+          << std::endl << "cannot open <problem>/vet_shock_ref = '" << ref << "'"
           << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -466,10 +466,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     Real qq = pmbp->pradvet->marshak_q;
     Real q0 = radvet::VetChi(qq)/qq;
-    m1_at_rho = rht;
-    m1_at_h = hh;
-    m1_at_ztop = ztop;
-    m1_at_egas = tg/gm1;
+    vet_at_rho = rht;
+    vet_at_h = hh;
+    vet_at_ztop = ztop;
+    vet_at_egas = tg/gm1;
     // the closed-form E at the bottom MESH FACE, which is where tau_bot sits (reported)
     Real taub = VetAtmTau(pmy_mesh_->mesh_size.x1min, rht, kap, hh, ztop);
     Real ebot;
@@ -485,7 +485,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     }
     user_srcs_func = RadVetAtmGas;
     if (global_variable::my_rank == 0) {
-      std::cout << "  m1_test = atmosphere: kappa=" << kap << " rho_top=" << rht
+      std::cout << "  vet_test = atmosphere: kappa=" << kap << " rho_top=" << rht
                 << " H=" << hh << " tau_bot=" << taub << " tau_topcell="
                 << VetAtmTau(ztop - (ztop - pmy_mesh_->mesh_size.x1min)/
                             static_cast<Real>(pmy_mesh_->mesh_indcs.nx1), rht, kap, hh,
@@ -495,7 +495,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     }
     if (restart) return;
     auto uh = pmbp->phydro->u0;
-    Real egas = m1_at_egas;
+    Real egas = vet_at_egas;
     // atm_seed (runs_5c_thinstab): a TRANSVERSE perturbation of the initial E,
     // E *= 1 + atm_seed cos(2 pi atm_seed_k (x2 - x2min)/L2), or (-1)^j for
     // atm_seed_k <= 0.  Default 0: the IC is untouched.
@@ -560,7 +560,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     Real amp = pin->GetOrAddReal("problem","radwave_amp",1.0e-6);
     Real d0 = pin->GetOrAddReal("problem","radwave_rho",1.0);
     Real t0 = pin->GetOrAddReal("problem","radwave_t",1.0);
-    // m1-mhd2: <hydro> or <mhd>; under <mhd> the uniform field problem/m1_b0_1..3 (set
+    // m1-mhd2: <hydro> or <mhd>; under <mhd> the uniform field problem/vet_b0_1..3 (set
     // on b0 by RadiationVetTests) adds its |B|^2/2 to IEN.  B parallel to k leaves the
     // wave exactly the hydro one.
     radvet::FluidRef flr = radvet::FluidRef::Get(pmbp);
@@ -614,7 +614,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     Real derad = 4.0*er0*g3m1*amp;
     Real fdif = (cl/(3.0*kapf*d0))*kmag*derad;
     if (global_variable::my_rank == 0) {
-      std::cout << "  m1_test = radwave: dir=" << wdir << " beta=" << bet
+      std::cout << "  vet_test = radwave: dir=" << wdir << " beta=" << bet
                 << " Gamma1=" << gam1 << " Gamma3-1=" << g3m1 << std::endl
                 << "    c_s=" << cs << " c/c_s=" << (cl/cs) << " lambda=" << lam
                 << " period=" << (lam/cs) << " tau_lambda=" << (kapf*d0*lam)
@@ -837,7 +837,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     // <hydro> or <mhd> (the MHD mode: an optional azimuthal field, below)
     if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<problem>/m1_test = sph_shell needs a <hydro> or <mhd> block"
+        << std::endl << "<problem>/vet_test = sph_shell needs a <hydro> or <mhd> block"
         << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -918,7 +918,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
       if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
       const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
-      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+      vet_cs_ax[0] = a0/an; vet_cs_ax[1] = a1/an; vet_cs_ax[2] = a2/an;
     }
     // (read only when named): problem/am_hist = true takes the user history to the
     // double-precision energy / angular-momentum budget RadVetAmHistory
@@ -928,7 +928,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       user_hist_func = RadVetAmHistory;
       if (pin->DoesParameterExist("problem","am_hist_ebnd") &&
           pin->GetBoolean("problem","am_hist_ebnd") && pmbp->pradvet != nullptr) {
-        m1_am_ebnd = true;
+        vet_am_ebnd = true;
         pmbp->pradvet->ebnd_on = true;
       }
     }
@@ -1045,7 +1045,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         }
       });
     }
-    const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    const Real cax = vet_cs_ax[0], cay = vet_cs_ax[1], caz = vet_cs_ax[2];
     // (cubed sphere, read only when named): rho_lat_amp = a multiplies the gas
     // density by 1 + a P_1(rhat . axis) with the axis along a cube edge, (1,1,0)/sqrt(2):
     // a smooth lateral opacity structure for the seam / vertex order gate (a static cold
@@ -1248,16 +1248,16 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     // (what a well-balanced hydro source would carry), see atm_aref below.
     if (pmbp->phydro == nullptr) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<problem>/m1_test = sph_atm needs a <hydro> block" << std::endl;
+        << std::endl << "<problem>/vet_test = sph_atm needs a <hydro> block" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    m1_sa_rho0 = pin->GetOrAddReal("problem","atm_rho0",1.0);
-    m1_sa_n = pin->GetOrAddReal("problem","atm_rho_n",0.0);
-    m1_sa_rin = pmy_mesh_->mesh_size.x1min;
+    vet_sa_rho0 = pin->GetOrAddReal("problem","atm_rho0",1.0);
+    vet_sa_n = pin->GetOrAddReal("problem","atm_rho_n",0.0);
+    vet_sa_rin = pmy_mesh_->mesh_size.x1min;
     if (pin->DoesParameterExist("problem","atm_scale_h")) {
-      m1_sa_h = pin->GetReal("problem","atm_scale_h");
+      vet_sa_h = pin->GetReal("problem","atm_scale_h");
     }
-    const Real sah = m1_sa_h;
+    const Real sah = vet_sa_h;
     Real tgas = pin->GetOrAddReal("problem","atm_temp",1.0);
     Real eout = pin->GetOrAddReal("problem","e_out",1.0e-10);
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
@@ -1268,7 +1268,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     if (pmbp->pradvet->force_ref == radvet::VET_FREF_WB_ARAD) {
       Real fin = pin->GetOrAddReal("rad_vet","implicit_flux_x1min",0.0);
       Real kt = pmbp->pradvet->kappa_f + pmbp->pradvet->kappa_s;
-      Real rin = m1_sa_rin;
+      Real rin = vet_sa_rin;
       // a local View: the module's copy (arad_ref) keeps it alive and is destroyed with
       // the module, before Kokkos::finalize
       DvceArray4D<Real> aref("vet_sa_aref", nmb1+1, n3, n2, n1);
@@ -1321,9 +1321,9 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
       if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
       const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
-      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+      vet_cs_ax[0] = a0/an; vet_cs_ax[1] = a1/an; vet_cs_ax[2] = a2/an;
     }
-    const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    const Real cax = vet_cs_ax[0], cay = vet_cs_ax[1], caz = vet_cs_ax[2];
     auto mbpan = pmbp->pmb->mb_panel;
     const Real x2a = pmy_mesh_->mesh_size.x2min;
     const Real x2l = pmy_mesh_->mesh_size.x2max - x2a;
@@ -1331,7 +1331,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     const Real x3l = pmy_mesh_->mesh_size.x3max - x3a;
     if (restart) return;
     auto uh = pmbp->phydro->u0;
-    Real rho0 = m1_sa_rho0, rin = m1_sa_rin, en = m1_sa_n;
+    Real rho0 = vet_sa_rho0, rin = vet_sa_rin, en = vet_sa_n;
     Real fin = pin->GetOrAddReal("rad_vet","implicit_flux_x1min",0.0);
     Real kt = pmbp->pradvet->kappa_f + pmbp->pradvet->kappa_s;
     Real rout = pmy_mesh_->mesh_size.x1max;
@@ -1389,7 +1389,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     RadiationVetRhse(pin, restart);   // rad_vet_rhse.cpp
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
+      << std::endl << "<problem>/vet_test = '" << test << "' not implemented "
       << "(beam | pulse1d | thick_pulse | tophat | equil | advect_pulse "
       << "| advect_uniform | marshak | shadow | radshock "
       << "| atmosphere | radwave | sph_shell | sph_atm | rhse)" << std::endl;
@@ -1419,10 +1419,10 @@ void RadVetShadowGas(Mesh *pm, const Real bdt) {
   int nmb1 = (pmbp->nmb_thispack - 1);
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
-  Real rho0 = m1_sh2_rho0, ratio = m1_sh2_ratio, t0 = m1_sh2_t0;
-  Real x0 = m1_sh2_x0, y0 = m1_sh2_y0, ax = m1_sh2_ax, ay = m1_sh2_ay;
-  Real delta = m1_sh2_delta, gm1 = m1_sh2_gm1;
-  const bool dsq = m1_sh2_dsq, peq = m1_sh2_peq;
+  Real rho0 = vet_sh2_rho0, ratio = vet_sh2_ratio, t0 = vet_sh2_t0;
+  Real x0 = vet_sh2_x0, y0 = vet_sh2_y0, ax = vet_sh2_ax, ay = vet_sh2_ay;
+  Real delta = vet_sh2_delta, gm1 = vet_sh2_gm1;
+  const bool dsq = vet_sh2_dsq, peq = vet_sh2_peq;
 
   par_for("vet_shadow_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -1444,7 +1444,7 @@ void RadVetShadowGas(Mesh *pm, const Real bdt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadVetCylGas()
-//! \brief m1_test = cyl: the prescribed static gas (ghosts included),
+//! \brief vet_test = cyl: the prescribed static gas (ghosts included),
 //! re-imposed at the end of every hydro stage: background (cyl_rho_bg, cyl_t_bg), and
 //! inside cylinder c (cell centre within cylc_r of (cylc_x, cylc_y)) (cylc_rho, cylc_t).
 
@@ -1463,12 +1463,12 @@ void RadVetCylGas(Mesh *pm, const Real bdt) {
   int nmb1 = (pmbp->nmb_thispack - 1);
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
-  const int nc = m1_cy_n;
+  const int nc = vet_cy_n;
   VetCylP p;
   for (int c = 0; c < 24; ++c) {
-    for (int q = 0; q < 9; ++q) {p.v[c][q] = m1_cy_p[c][q];}
+    for (int q = 0; q < 9; ++q) {p.v[c][q] = vet_cy_p[c][q];}
   }
-  const Real rb = m1_cy_rhob, tb = m1_cy_tb, gm1 = m1_cy_gm1;
+  const Real rb = vet_cy_rhob, tb = vet_cy_tb, gm1 = vet_cy_gm1;
   par_for("vet_cyl_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real xv = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
@@ -1516,8 +1516,8 @@ void RadVetShockBC(Mesh *pm) {
   auto u0 = pmbp->pradvet->u0;
   auto uh = pmbp->phydro->u0;
   Real cl = pmbp->pradvet->c_light;
-  Real dl = m1_rs_l[0], ml = m1_rs_l[1], el = m1_rs_l[2], rl = m1_rs_l[3];
-  Real dr = m1_rs_r[0], mr = m1_rs_r[1], er = m1_rs_r[2], rr = m1_rs_r[3];
+  Real dl = vet_rs_l[0], ml = vet_rs_l[1], el = vet_rs_l[2], rl = vet_rs_l[3];
+  Real dr = vet_rs_r[0], mr = vet_rs_r[1], er = vet_rs_r[2], rr = vet_rs_r[3];
 
   par_for("vet_shock_bc", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),
   KOKKOS_LAMBDA(int m, int k, int j) {
@@ -1571,7 +1571,7 @@ void RadVetAtmGas(Mesh *pm, const Real bdt) {
   int nmb1 = (pmbp->nmb_thispack - 1);
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
-  Real rht = m1_at_rho, hh = m1_at_h, ztop = m1_at_ztop, egas = m1_at_egas;
+  Real rht = vet_at_rho, hh = vet_at_h, ztop = vet_at_ztop, egas = vet_at_egas;
   (void) bdt;
 
   par_for("vet_atm_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
@@ -1598,7 +1598,7 @@ void RadVetAtmGas(Mesh *pm, const Real bdt) {
 //! e_xi.e_eta (the clean scheme's F in its frame of y, CleanCsFrame); sp: orthonormal.
 
 void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = m1_am_ebnd ? 15 : 14;
+  pdata->nhist = vet_am_ebnd ? 15 : 14;
   const char *lab[15] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
                          "Sz", "Lfx", "Lfy", "Lfz", "Eb"};
   for (int n = 0; n < pdata->nhist; ++n) {pdata->label[n] = lab[n];}
@@ -1715,7 +1715,7 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   for (int n = 0; n < 14; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
   // ebnd_acc is global on every rank; the history output sums over ranks
-  if (m1_am_ebnd) {
+  if (vet_am_ebnd) {
     pdata->hdata[14] = (global_variable::my_rank == 0) ? pmbp->pradvet->ebnd_acc : 0.0;
   }
   // Lz_tot: gas + radiation + ledger L_z of the clean scheme (CleanLzTotal; with

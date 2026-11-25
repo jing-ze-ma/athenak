@@ -285,14 +285,14 @@ class BaseTypeOutput {
   // CC output data on host with dims (n,m,k,j,i) except
   // for restarts, where dims are (m,n,k,j,i)
   HostArray5D<Real> outarray;
-  HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad, outarray_m1,
+  HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad, outarray_vet,
                     outarray_force, outarray_z4c, outarray_adm;
   // <rad_vet>/transport = implicit_x1 (milestone 3a): the x1 FACE fluxes are persistent
   // state of that scheme and are written as one more block after the moments, with
   // (nout1+1) values per row.  Empty -- and not one byte written -- in every other run.
-  HostArray4D<Real> outarray_m1f;
+  HostArray4D<Real> outarray_vetf;
   // milestone 3b phase B: the x2/x3 face-normal fluxes of transport = implicit
-  HostArray4D<Real> outarray_m1f2, outarray_m1f3;
+  HostArray4D<Real> outarray_vetf2, outarray_vetf3;
   // the general EOS temperature cache (Hydro/MHD::wtemp).  It is not state in the sense
   // of an evolved variable, but it IS the warm start of the c2p temperature root find,
   // which converges only to `logtol`: a restart that cold starts it lands on a different
@@ -326,25 +326,25 @@ class BaseTypeOutput {
   HostArray4D<Real> outarray_wm1, outarray_wm2;
   // the <rad_vet> implicit_predictor = step increment (RadiationVet::ipred, 3 channels);
   // empty unless one is stored.  See radvet::kVetPredRstMagic.
-  HostArray5D<Real> outarray_m1p;
+  HostArray5D<Real> outarray_vetp;
   // <rad_vet> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
   // RadiationVet::Time2RstPack); empty unless a slope is stored.
   // radvet::kVetTime2RstMagic.
-  HostArray5D<Real> outarray_m1t;
+  HostArray5D<Real> outarray_vett;
   HostArray5D<Real> outarray_wpv;   // hydro w0 (its IDN, IVX..IVZ go to the eint record)
   std::vector<DvceArray5D<Real>> rst_keep_;   // device packs a zero-copy staging reads
-  DvceArray5D<Real> outarray_m1t_d;   // (its memory where the host reads device memory)
+  DvceArray5D<Real> outarray_vett_d;   // (its memory where the host reads device memory)
   // <rad_vet> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
   // radvet::kVetCtrRstMagic.
-  HostArray5D<Real> outarray_m1c;
+  HostArray5D<Real> outarray_vetc;
   // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationVet::RssSlot);
   // empty unless the signal speed is on.  radvet::kVetRssRstMagic.
-  HostArray5D<Real> outarray_m1s;
+  HostArray5D<Real> outarray_vets;
   // <rad_vet>/vet_rotate_avg: the averaging history, densely packed
   // slabs; empty without a complete history.  radvet::kVetRaRstMagic.
-  HostArray5D<Real> outarray_m1r;
+  HostArray5D<Real> outarray_vetr;
   // implicit_gas_src = conservative(2): the cell-F slope csk1
-  HostArray5D<Real> outarray_m1k;
+  HostArray5D<Real> outarray_vetk;
   HostArray5D<Real> outarray_ams;   // am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // per-cell pgen slabs
   HostArray5D<Real> outarray_fax;   // rad_vet applied face fluxes

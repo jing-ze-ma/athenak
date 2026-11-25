@@ -65,30 +65,30 @@ const char *kDtrMinimal[] = {
   "res.eta_b",
   // <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
   // cycles) and the radiation's hesdirk2 FSAL spin slope; empty/absent unless am_vector
-  "am.am_spin", "m1.amk1",
+  "am.am_spin", "vet.amk1",
   // RadiationVet
-  "m1.u0", "m1.f0x1", "m1.f0x2", "m1.f0x3", "m1.ipred", "m1.t2k1",
-  "m1.vet_prev", "m1.ctr_mem", "m1.csk1",
-  "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell",
-  "m1.vlat_cs",
+  "vet.u0", "vet.f0x1", "vet.f0x2", "vet.f0x3", "vet.ipred", "vet.t2k1",
+  "vet.vet_prev", "vet.ctr_mem", "vet.csk1",
+  "vet.vra_d", "vet.opac", "vet.tau_ten", "vet.vet_cell",
+  "vet.vlat_cs",
   // step 1 time2_face_fct: the face E flux of K1 (rotated with it)
-  "m1.t2pf1",
+  "vet.t2pf1",
   // esrc (the explicit energy source, OLD vector of E in every solve) is
   // rewritten by the pgen only when its ramp weight changes, at the first Heun stage; the
   // solves that run before it (the rotation correction) read last cycle's
-  "m1.esrc",
+  "vet.esrc",
   // the wall flux of the last solve, read by the next
   // stage-1 solve for the L_in history (lbath_l1); absent elsewhere (no entry matches)
-  "m1.lbath_f",
+  "vet.lbath_f",
   // (ry_per_accretor S5 per-column outer bath): the advective radiation
   // flux through the outer face of the last solve, read by the pgen's hydro-stage budget
   // accumulator like f0x1; absent (empty) elsewhere
-  "m1.ibadv_x1max",
+  "vet.ibadv_x1max",
   // vet_gd's half-range ratios (vgd_hr; the rotation average's field
   // array vra_a1 is this View): the closure of a cycle that does not rebuild them
   // reads the last build's.  Without
   // them a forced retry at fac 1 is not bitwise the straight run
-  "m1.vgd_hr",
+  "vet.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the face
   // arrays' clean_stag_fkin energy flux memory d and its slope K1 (CLF_N + 3, CLF_KD;
   // copied to cln_rstd, RadiationVet::CleanDtrD), the sc rays' intensities (cln_fvi),
@@ -100,20 +100,20 @@ const char *kDtrMinimal[] = {
   // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them).
   // (cln_rstd itself is that checkpoint: written only by DtRetryQuiesce, CleanDtrD, so
   // it needs no clone of its own)
-  "m1.cln_fvi", "m1.cln_fh", "m1.cln_top",
-  "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
+  "vet.cln_fvi", "vet.cln_fh", "vet.cln_top",
+  "vet.cln_rr", "vet.cln_rpd", "vet.cln_fvd",
   // (not visited before the generated visitor): the cumulative counters of the run
   // report
-  "m1.cmi_cnt", "m1.fcd_cnt_d",
+  "vet.cmi_cnt", "vet.fcd_cnt_d",
   // vet_x1_periodic (adaptive): the last build's exit plane, the next build's warm start
   // (not cloned before: a forced retry at fac 1 of the Cartesian box was not bitwise)
-  "m1.vet_x1ent",
+  "vet.vet_x1ent",
 };
 
 // the Views of kDtrMinimal that <rad_vet>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
-  "m1.ipred", "m1.csk1", "m1.tau_ten", "m1.cmi_cnt", "m1.fcd_cnt_d",
+  "vet.ipred", "vet.csk1", "vet.tau_ten", "vet.cmi_cnt", "vet.fcd_cnt_d",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
@@ -365,7 +365,7 @@ struct DualEntry : public Entry {
   bool OnHost() const override {return d.OnHost();}
 };
 
-// the visitor that registers every member of one module (prefix "hyd." / "m1.")
+// the visitor that registers every member of one module (prefix "hyd." / "vet.")
 struct Binder {
   std::vector<std::unique_ptr<Entry>> *ent;
   std::string pre;
@@ -384,7 +384,7 @@ struct Binder {
     // (clean_rot_ring's offsets: in pinned host memory always, their copy skipped while
     // clean; the pending Delta, written every build, keeps a device clone: a pinned-host
     // one is a synchronous copy to the host per cycle)
-    const bool rh = (pre + n == "m1.cln_rr");
+    const bool rh = (pre + n == "vet.cln_rr");
     auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host || rh);
     e->name = pre + n;
     ent->push_back(std::move(e));
@@ -583,17 +583,17 @@ void DtRetry::Build(Mesh *pm) {
   {
     // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
     // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
-    auto *m1 = pk->pradvet;
+    auto *vet = pk->pradvet;
     // (on the cubed sphere too; their face half ranges cln_fh where every solve rebuilds
     // them first, CleanFhBuilt)
-    if (!m1->cln_scmem) {
-      sel.erase("m1.cln_fvi");
-      if (!m1->cln_cssc || m1->CleanFhBuilt()) sel.erase("m1.cln_fh");
+    if (!vet->cln_scmem) {
+      sel.erase("vet.cln_fvi");
+      if (!vet->cln_cssc || vet->CleanFhBuilt()) sel.erase("vet.cln_fh");
     }
     // (and the rays' source vlat_cs, each build's, written before it is read)
-    sel.erase("m1.vlat_cs");
-    Binder b{&ent_, "m1.", &sel, all_views_, host_ || hvet_};
-    m1->DtRetryVisit(b);
+    sel.erase("vet.vlat_cs");
+    Binder b{&ent_, "vet.", &sel, all_views_, host_ || hvet_};
+    vet->DtRetryVisit(b);
   }
   // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
   // frame_omega; exists only when one of its keys is named)
@@ -606,12 +606,12 @@ void DtRetry::Build(Mesh *pm) {
   // (and of clean_rot_ring's offsets cln_rr, written only at block boundaries, a fill
   // or a restart: their writers bump vra_gen too)
   for (auto &e : ent_) {
-    if (((host_ || hvet_) && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
+    if (((host_ || hvet_) && e->name == "vet.vra_d") || e->name == "vet.cln_rr") {
       e->SetGen(&(pk->pradvet->vra_gen));
     }
     // (and both, with the pending Delta, while no build of the cycle shifts the ring:
     // RadiationVet::CleanRingPreShift)
-    if (e->name == "m1.cln_rr" || e->name == "m1.cln_rpd") {
+    if (e->name == "vet.cln_rr" || e->name == "vet.cln_rpd") {
       e->SetSkip(&(pk->pradvet->cln_rfix));
     }
   }
@@ -673,20 +673,20 @@ void DtRetry::Save(Mesh *pm) {
 //----------------------------------------------------------------------------------------
 bool DtRetry::Failed(Mesh *pm) {
   if (!on) return false;
-  auto *m1 = pm->pmb_pack->pradvet;
+  auto *vet = pm->pmb_pack->pradvet;
   if (force_cycle_ >= 0 && !forced_done_ && pm->ncycle == force_cycle_) {
     forced_done_ = true;
-    m1->dtr_fail = true;
-    m1->dtr_why = 9;
+    vet->dtr_fail = true;
+    vet->dtr_why = 9;
   }
-  return m1->dtr_fail;
+  return vet->dtr_fail;
 }
 
 //----------------------------------------------------------------------------------------
 bool DtRetry::Retry(Mesh *pm, Driver *pd) {
-  auto *m1 = pm->pmb_pack->pradvet;
-  const int why = m1->dtr_why;
-  const Real res = m1->dtr_resid;
+  auto *vet = pm->pmb_pack->pradvet;
+  const int why = vet->dtr_why;
+  const Real res = vet->dtr_resid;
   const Real dto = pm->dt;
   // the FIRST cut of a cycle raised by time2_reject (why 5) may take its own,
   // gentler factor; further cuts of the same cycle take dt_retry_fac (ncut_ is counted
@@ -723,29 +723,30 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
       if (hit) {e->PoisonPrepare(poison_ == 2); pois.push_back(e);}
     }
   }
-  m1->DtRetryQuiesce(true);
+  vet->DtRetryQuiesce(true);
   for (auto &e : ent_) {e->Restore();}
   Kokkos::fence();
-  m1->DtRetryAfterRestore();
+  vet->DtRetryAfterRestore();
   // (vkick_be_retry bookkeeping); set after the put-back, which
   // (generated visitor) rolls dtr_ncut back to its cycle-start value
-  m1->dtr_ncut = ncut_;
-  if (why != 9 || force_redo_) m1->dtr_redo = true;   // (a failed step, not a forced one)
+  vet->dtr_ncut = ncut_;
+  // (a failed step, not a forced one)
+  if (why != 9 || force_redo_) vet->dtr_redo = true;
   // once this cycle took the backward-Euler redo, it keeps it: a failed
   // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
   // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the
   // loop run12's stream-on smoke died in: BE at dt0 / stage at dt0/2, dt_retry_max)
-  if (t2be_cyc_) {m1->dtr_t2be = true;}
-  m1->dtr_fail = false;
-  m1->dtr_why = 0;
-  m1->dtr_resid = 0.0;
+  if (t2be_cyc_) {vet->dtr_t2be = true;}
+  vet->dtr_fail = false;
+  vet->dtr_why = 0;
+  vet->dtr_resid = 0.0;
   // a time2_reject that dt_retry_t2_be cuts did not cure is not a dt problem:
   // the cycle is taken again at its OWN dt (and cap) with the stage rejection armed to
   // take the backward-Euler redo, as time2_reject = be (no dt is lost to it)
-  const bool t2fb = (why == 5) && (t2_be_ >= 0) && (nt2cut_ >= t2_be_) && !m1->dtr_t2be;
+  const bool t2fb = (why == 5) && (t2_be_ >= 0) && (nt2cut_ >= t2_be_) && !vet->dtr_t2be;
   if (why == 5) {nt2cut_ += 1;}
   if (t2fb) {
-    m1->dtr_t2be = true;
+    vet->dtr_t2be = true;
     t2be_cyc_ = true;
     pm->dt_cap = cap0_;
     ngood_ = ngood0_;
@@ -820,13 +821,13 @@ void DtRetry::Accept(Mesh *pm) {
   // a cycle that took the backward-Euler redo of time2_reject = retry arms the
   // next cycle to take it at once (a rejection that persists from cycle to cycle costs as
   // much as time2_reject = be); the first cycle without a rejection disarms it
-  auto *m1 = pm->pmb_pack->pradvet;
-  if (m1->dtr_t2hit) {nt2be_ += 1;}
-  t2streak_ = m1->dtr_t2hit;
-  m1->dtr_t2hit = false;
+  auto *vet = pm->pmb_pack->pradvet;
+  if (vet->dtr_t2hit) {nt2be_ += 1;}
+  t2streak_ = vet->dtr_t2hit;
+  vet->dtr_t2hit = false;
   nt2cut_ = 0;
   t2be_cyc_ = false;
-  m1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
+  vet->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
   if (pm->dt_cap > 0.0 && pm->dt_cap != fix_) {
     ngood_ += 1;
     if (ngood_ > ngood_req_) {pm->dt_cap *= grow_;}
@@ -986,7 +987,7 @@ void CounterKeep::Report(Mesh *pm) {
   std::cout << "<time> counters_rollback: event counters of discarded attempts dropped: "
             << "dt_retry " << nrb_[0] << ", backward-Euler redo " << nrb_[1]
             << ", hesdirk2 helper solves " << nrb_[2] << "; E-floor created energy "
-            << "dropped (m1_pos_un, x volume) " << a[0] << " / " << a[1] << " / " << a[2]
+            << "dropped (vet_pos_un, x volume) " << a[0] << " / " << a[1] << " / " << a[2]
             << ", vceil_de dropped " << a[3] << " / " << a[4] << " / " << a[5]
             << std::endl;
 }

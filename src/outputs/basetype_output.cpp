@@ -235,15 +235,15 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
   }
   if (ivar==168 && (pm->pmb_pack->pradvet == nullptr)) {
-    std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_vet> block" << std::endl;
+    std::cout << "### FATAL ERROR: vet_gdhr output needs a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if (ivar==167 && (pm->pmb_pack->pradvet == nullptr)) {
-    std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_vet> block" << std::endl;
+    std::cout << "### FATAL ERROR: vet_thsw output needs a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if (ivar==166 && (pm->pmb_pack->pradvet == nullptr)) {
-    std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_vet> block" << std::endl;
+    std::cout << "### FATAL ERROR: vet_vsc output needs a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if (ivar==163 && (pm->pmb_pack->pradvet == nullptr)) {
@@ -758,13 +758,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 4;
     }
     // the thin switch's cell inputs of the last formal solution (vet_sc
-    // vet_cell or vet_gd vgd_hr): m1_tfb = |H|/J, m1_tc1 = C1 = sum w |I - S|/J,
-    // m1_teps = eps, m1_tw = smoothstep((g - h0)/(h1 - h0)) of the cell thinness g of the
-    // run's implicit_thin_switch (fb for hj and none, max(fb, eps C1/1.5) for fse, ...;
-    // the face weight is that of the larger g of its two cells), m1_tj = J.  -1 where no
+    // vet_cell or vet_gd vgd_hr): vet_tfb = |H|/J, vet_tc1 = C1 = sum w |I - S|/J,
+    // vet_teps = eps, vet_tw = smoothstep((g - h0)/(h1 - h0)) of the cell thinness g of
+    // the run's implicit_thin_switch (fb for hj and none, max(fb, eps C1/1.5) for fse,
+    // ...;
+    // the face weight is that of the larger g of its two cells), vet_tj = J.  -1 where no
     // formal solution (below the vet_gd cut).  Derived; not part of m1.
     // P2: the vet_gd half-range ratios (vgd_hr) the halfrange face flux uses:
-    // m1_ghp1/ghm1 = H+_r/J, H-_r/J, then theta, phi.  hp < 0 flags no formal solution.
+    // vet_ghp1/ghm1 = H+_r/J, H-_r/J, then theta, phi.  hp < 0 flags no formal solution.
     // Derived; not part of m1.
     if (variable.compare("vet_gdhr") == 0) {
       out_params.contains_derived = true;
@@ -793,7 +794,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("vet_ce0",3,&(derived_var));
       out_params.n_derived += 4;
     }
-    // scheme = clean: the full D (11 22 33 12 13 23) in the frame of m1_f1..3, no f_K
+    // scheme = clean: the full D (11 22 33 12 13 23) in the frame of vet_f1..3, no f_K
     // (derived_variables.cpp)
     if (variable.compare("vet_vet") == 0) {
       out_params.contains_derived = true;
@@ -811,10 +812,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
 
     // the face-normal comoving fluxes the implicit transport carries (f0x1/f0x2/f0x3),
-    // stored at the cell of their INNER face: m1_fx1 = F0 on x1 face i, m1_fx1o on
-    // face i+1 (so the outer boundary face is there too), m1_fx2/m1_fx3 on the inner
-    // x2/x3 faces.  sum(A_x1f m1_fx1) over a shell is the code's luminosity through
-    // that face.  The cell flux m1_f1 is a DERIVED state (face mean + advective term,
+    // stored at the cell of their INNER face: vet_fx1 = F0 on x1 face i, vet_fx1o on
+    // face i+1 (so the outer boundary face is there too), vet_fx2/vet_fx3 on the inner
+    // x2/x3 faces.  sum(A_x1f vet_fx1) over a shell is the code's luminosity through
+    // that face.  The cell flux vet_f1 is a DERIVED state (face mean + advective term,
     // then limited to |F| <= c E) and is not the transported flux.  Zero where the
     // array does not exist (explicit transport; x2/x3 on a 1-D column).  Derived; not
     // part of variable = m1.
@@ -829,10 +830,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
 
     // the moments of the vet_gd formal solution of the LAST build (closure = vet_col with
-    // vet_gd): m1_jfs = sum_d w_d I_d (E units, compare m1_e) and m1_hfs = sum_d w_d
-    // (n_d . r_hat) I_d (= F_r/c, compare m1_f1/c).  Zero where vet_gd is off or below
+    // vet_gd): vet_jfs = sum_d w_d I_d (E units, compare vet_e) and vet_hfs = sum_d w_d
+    // (n_d . r_hat) I_d (= F_r/c, compare vet_f1/c).  Zero where vet_gd is off or below
     // its first shell.  Diagnostic (GATE2); derived, not part of m1.
-    // m1_sfs, m1_cfs: the source S and extinction chi the sweep used.
+    // vet_sfs, vet_cfs: the source S and extinction chi the sweep used.
     if (variable.compare("vet_gw") == 0) {   // diagnostic
       out_params.contains_derived = true;
       outvars.emplace_back("vet_gl",0,&(derived_var));
@@ -851,12 +852,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 4;
     }
 
-    // m1_lat = the closure tensor the implicit operator reads (VlatTT()):
-    // m1_tt0 = slot 0 (vet_col f_K), m1_lat0..5 = the vet_col_lat slots (sp: D_rr - f_K,
-    // D_rt, D_rp, D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2; cs: D_rr - f_K, the
-    // Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cell tangent frame), the
-    // cell unit vector m1_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of the
-    // current vet_gd formal solution about that vector (m1_jg, m1_hg; E units).  Derived.
+    // vet_lat = the closure tensor the implicit operator reads (VlatTT()):
+    // vet_tt0 = slot 0 (vet_col f_K), vet_lat0..5 = the vet_col_lat slots (sp: D_rr -
+    // f_K, D_rt, D_rp, D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2; cs: D_rr - f_K,
+    // the Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cell tangent frame), the
+    // cell unit vector vet_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of
+    // the
+    // current vet_gd formal solution about that vector (vet_jg, vet_hg; E units).
+    // Derived.
     if (variable.compare("vet_lat") == 0) {
       out_params.contains_derived = true;
       const char *nm[12] = {"vet_tt0", "vet_lat0", "vet_lat1", "vet_lat2", "vet_lat3",
