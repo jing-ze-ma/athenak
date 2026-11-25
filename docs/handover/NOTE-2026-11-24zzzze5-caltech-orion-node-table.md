@@ -262,3 +262,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 01:21 02-09: s50_BASE2 -> IDLE
 - 11-25 01:22 02-03: IDLE -> hgx_HST
 - 11-25 01:22 02-09: IDLE -> hgx_HST
+- 11-25 01:26 02-03: hgx_HST -> IDLE
+- 11-25 01:26 02-09: hgx_HST -> IDLE
+- 11-25 01:29 02-03: IDLE -> b_s5_7b41
+- 11-25 01:29 02-09: IDLE -> b_s5_e8fc
+- 11-25 01:29 02-16: IDLE -> b_s5_6d20
