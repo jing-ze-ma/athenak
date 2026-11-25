@@ -64,7 +64,7 @@ fast-relaxation thermal equilibrium is `thermal_eq`). L1 is sum |q - q_exact| / 
 | `idort_beams_mb` | `idort_beams` | the beams on 4 MeshBlocks vs 1: along x2 in tile mode (`layout_tile = 16`), along x1 in block mode | tile x2: identical; block x1: largest difference <= 1e-8 |
 | `idort_shadow`, `idort_shadow_gl` | `idort_shadow*` | two beams at +-15 deg past an opaque ellipse (128 x 64; ring of 12 rays, or the general 8 x 32 set with the beams snapped to its rays): E vs the exact attenuated beams | L1 within 5 % of 0.0138 and 0.0126 |
 | `idort_cylinder` | `idort_cylinder` | homogeneous emitting cylinder (rho kappa = 10, a T^4 = 1) in vacuum, 128 x 128: E inside and outside, the energy flux Phi_x (`vet_phi1`, `F_out`) and the face momentum F_x (`vet_f1`, `FH_out`) outside along y = 0 vs the exact transport solution (`ref/idort_cylinder_exact.npz`) | each L1 within 5 % of 5.3e-4, 0.011, 0.0116, 0.203 |
-| `idort_radshock_m2`, `_m5` | `idort_radshock_m*` | Lowrie & Edwards (2008) radiative shocks, Mach 2 and 5, 256 cells, started from the semi-analytic profile (`ref/idort_radshock_m*.txt`, its absolute path set by `run_tests.py`) with the Eddington closure of the diffusion-theory reference (`clean_closure = eddington`): rho, v, T_gas, T_rad at t = 2e-10 s, no shift | each L1 within 5 % of the reference (2.5e-4 ... 2.2e-3) |
+| `idort_radshock_m2`, `_m5` | `idort_radshock_m*` | Lowrie & Edwards (2008) radiative shocks, Mach 2 and 5, 256 cells, started from the semi-analytic profile (`ref/idort_radshock_m*.txt`, its absolute path set by `run_tests.py`) with the Eddington closure of the diffusion-theory reference (`clean_closure = eddington`): rho, v, T_gas, T_rad at t = 2e-10 s, no shift | each L1 within 5 % of the reference (2.1e-4 ... 1.7e-3) |
 | `idort_thermal_eq2` | `idort_thermal_eq2` | hot gas cooling into radiation (Jiang 2021 sec. 4.1), dt = 5 to 1e5 relaxation times: T(t) vs the exact ODE | max error within 5 % of 2.0e-3; total-energy drift <= 1e-13 |
 
 `idort_shadow` and `idort_shadow_gl` are in `--quick`; the eight take about 45 s with
@@ -82,10 +82,10 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
   (r F at x = 2-3.5 is 0.989 of exact). The face momentum F (`vet_f1`, `FH_out`) is 20 %
   above exact, a regression reference. A study of 11-21 with other keys attributed it to the
   harmonic face opacity at the cylinder's sharp edge; that is not re-measured on this code.
-- **Shocks.** The method paper's bench table (v20.3) ran the default tableau `hesdirk2`; these
-  decks name the production `time2_tableau = sdirk2`, whose L1 values are 4-27 % higher
-  (Mach 5 rho: 2.2e-3 vs 1.7e-3). With `hesdirk2` the release reproduces the table within
-  2 %; the shock stays at the semi-analytic position (no shift needed).
+- **Shocks.** The decks name the production `time2_tableau = sdirk2`, with its default
+  `time2_gtime_slope`: the L1 values are within 3 % of the method paper's bench table, which
+  ran `hesdirk2` (Mach 2 and 5); the shock stays at the semi-analytic position (no shift
+  needed).
 
 ### Classic radiation tests
 
@@ -96,11 +96,11 @@ other Cartesian decks, Marshak radiation faces).
 
 | test | deck | what | criterion |
 |---|---|---|---|
-| `radshock`, `radshock_m5` | `rad_radshock_m2`, `rad_radshock_m5` | Lowrie & Edwards (2008, Shock Waves 18, 129) steady radiative shock, Mach 2 (subcritical) and 5 (supercritical), 256 cells, 2e-10 s from the semi-analytic profile, with the production closure (`idort_radshock_m*` runs them with `clean_closure = eddington`; same reference): L1 of rho, v, T_gas, T_rad | every L1 <= 1-2 %; L1 of rho, T_rad within 5 % of the reference (0.44 %, 1.1 %; Mach 5: 0.45 %, 0.75 %); E > 0 |
+| `radshock`, `radshock_m5` | `rad_radshock_m2`, `rad_radshock_m5` | Lowrie & Edwards (2008, Shock Waves 18, 129) steady radiative shock, Mach 2 (subcritical) and 5 (supercritical), 256 cells, 2e-10 s from the semi-analytic profile, with the production closure (`idort_radshock_m*` runs them with `clean_closure = eddington`; same reference): L1 of rho, v, T_gas, T_rad | every L1 <= 1-2 %; L1 of rho, T_rad within 5 % of the reference (0.44 %, 1.1 %; Mach 5: 0.39 %, 0.74 %); E > 0 |
 | `diffusion` | `rad_diffusion` | Gaussian pulse in a static pure scatterer at tau_cell = 1, 10, 1e3, 1e5 and in 2-D (64^2, tau_cell 1e3): variance growth vs 2 D t, L1 vs the exact Gaussian; a top-hat at tau_cell = 1e4 (quick and full, ~20 s) | \|growth/(2 D t) - 1\| <= 2e-3 (1e-4 in 2-D) at tau_cell >= 10; L1 within 5 % of the reference; top-hat within [bg, bg + amplitude] to round-off; tau_cell = 1 reported only |
 | `marshak` | `rad_marshak` | non-equilibrium Marshak wave into a cold slab, constant c_v (no analytic solution: not Su & Olson) | E, T > 0 and <= the bath (maximum principle); E non-increasing into the slab; front x_f (T = T_b/2) within 5 % of the reference 0.535 |
 | `advect_uniform` | `rad_advect_uniform` | uniform thick medium at 0.01 c at the coupling's fixed point (quick and full, ~3 s) | max relative change of T <= 1e-5, of E <= 1e-4 |
-| `advect_pulse` | `rad_advect_pulse` | diffusing radiation pulse advected at 3e7 cm/s (Krumholz et al. 2007) vs the same pulse at rest shifted by v t | L1 <= 3e-3 at every dump; the last within 5 % of 7.2e-4 |
+| `advect_pulse` | `rad_advect_pulse` | diffusing radiation pulse advected at 3e7 cm/s (Krumholz et al. 2007) vs the same pulse at rest shifted by v t | L1 <= 3e-3 at every dump; the last within 5 % of 7.75e-4 |
 | `shadow` | `rad_shadow` | opaque clump in a thin gas illuminated by a 1740 K bath (Hayes & Norman 2003), 3 light-crossing times, vs the run without the clump | radiation left in the geometric umbra behind the clump <= 2 % (measured 0.61 %); cells whose sight lines miss the clump unchanged to 2 % |
 
 Not ported: `beam`, `pulse1d` (free streaming of a set-up packet in vacuum: the gas is not
