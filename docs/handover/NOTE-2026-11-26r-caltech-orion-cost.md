@@ -26,3 +26,12 @@
 - mpit arm (26 cycles, MPI per call site, no fences): m35mms mpit rc=0 ended: Terminating on cycle limit wall=55 s mt files 4
 - nsys arm: m35mms nsys rc=0 ended: Terminating on cycle limit wall=75 s reports 4  
 - files: caltech_results/COST26R/m35mms/ (kname_r0..3, gaps_r0..3, stats_r0). Window: kname / gaps C0 = 2 (cycles 0 and 1 of the 25 dropped).
+
+## t9l62 (11-25 12:54): rst t9l62_t9l62.00009.rst (hard link, c22866, state in rst), next3 c3f133b44 ad2f2007, own keys rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=2 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5; node 02-16
+- t9l62 plain: 39 cycles timed, wall per cycle mean 2.7281 median 2.5148 min 2.4077 max 9.1700 s; dt 96.2045 (first) 96.1725 (last); its per cycle 43.7, solves per cycle 5.35; stage fallbacks 0.000000e+00, backward-Euler steps 0.000000e+00, DT_RETRY 0, CLEAN WARNING 0, FATAL 0; peak MiB per GPU 0:73381 1:73179 2:73179 3:73383; start cycle 22866 t 2.073641e+06
+- per cycle wall [s]: 2.555 2.433 2.490 2.843 2.669 2.515 2.412 2.483 2.445 2.564 2.741 2.557 2.478 2.685 2.434 2.480 2.437 2.505 2.434 2.479 2.539 2.673 2.490 2.611 2.413 2.458 2.926 2.670 2.474 2.554 2.754 2.735 2.623 2.408 2.706 2.598 2.484 2.471 9.170
+- <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.038470e+02 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
+- <rad_vet> vet_gd_band_ring (rank 0): sweeps 4.000000e+01, dense band saves 0.000000e+00, save store 2.024421e-01 GB
+- mpit arm (26 cycles, MPI per call site, no fences): t9l62 mpit rc=0 ended: Terminating on cycle limit wall=128 s mt files 4
+- nsys arm: t9l62 nsys rc=137 ended:  wall=381 s reports 0 12:52:40 HANG: nsys step 7333035.262 cancelled (no log progress for 4 min) t9l62 kernel timer (nsys did not finish): Terminating on cycle limit 
+- files: caltech_results/COST26R/t9l62/ (kname_r0..3, gaps_r0..3, stats_r0, kernel timer kt files: nsys did not finish; the timer fences after every kernel). Window: kname / gaps C0 = 2 (cycles 0 and 1 of the 25 dropped).

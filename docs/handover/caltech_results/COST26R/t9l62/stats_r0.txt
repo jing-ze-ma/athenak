@@ -1,0 +1,25 @@
+=== cuda_gpu_kern_sum
+ERROR: Specified input file (nsys_r0.sqlite) does not exist.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.
+=== cuda_gpu_mem_time_sum
+ERROR: Specified input file (nsys_r0.sqlite) does not exist.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.
+=== cuda_api_sum
+ERROR: Specified input file (nsys_r0.sqlite) does not exist.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.
+=== mpi_event_sum
+ERROR: Specified input file (nsys_r0.sqlite) does not exist.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.
+=== osrt_sum
+ERROR: Specified input file (nsys_r0.sqlite) does not exist.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.
