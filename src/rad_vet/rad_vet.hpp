@@ -1545,7 +1545,6 @@ class RadiationVet {
   // (Krylov operator through the stencil and VetLatOp)
   int vlat_odm = 2;
   bool vlat_now = false;       // the term is on in this step (positivity fallback)
-  Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
   // vet_col_lat_posfix = lag: at a positivity trigger the lateral terms leave the
   // operator (M-matrix form) but stay as the lagged Picard term; a second trigger in the
   // step drops them (vlat_nfall)
@@ -1567,7 +1566,6 @@ class RadiationVet {
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   void VetLatInit();
   void VetLatSweep();   // ln chi, ln S of a vet_gd build
-  void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
 
@@ -2152,7 +2150,7 @@ class RadiationVet {
                  const bool mapd);
   // multi-shell (ln chi, ln S) halo in chunks of shells that fit the per-shell buffers
   void VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1);
-  Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_tmom = 0.0;
+  Real vgd_tsrc = 0.0, vgd_tswp = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
   bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
@@ -2195,7 +2193,6 @@ class RadiationVet {
   void VetGdTabPoll();
   void VetGdBuild();
   void VetGdSweep();
-  void VetGdMoments();
   // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)

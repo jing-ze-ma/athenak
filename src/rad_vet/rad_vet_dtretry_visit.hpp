@@ -697,7 +697,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vlat_rat_keys", vlat_rat_keys);
   v.value("vlat_odm", vlat_odm);
   v.value("vlat_now", vlat_now);
-  v.value("vlat_odmax", vlat_odmax);
   v.value("vlat_posfix_lag", vlat_posfix_lag);
   v.value("vlat_lagfb", vlat_lagfb);
   v.value("fbl_any", fbl_any);
@@ -1040,7 +1039,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_wso", vgd_wso);
   v.value("vgd_tsrc", vgd_tsrc);
   v.value("vgd_tswp", vgd_tswp);
-  v.value("vgd_tmom", vgd_tmom);
   v.view("vgd_tabh.dir", vgd_tabh.dir);
   v.view("vgd_tabh.w", vgd_tabh.w);
   v.view("vgd_tabh.mp", vgd_tabh.mp);

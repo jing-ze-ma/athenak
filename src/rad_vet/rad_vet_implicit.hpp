@@ -168,27 +168,6 @@ void VetCsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 }
 
 KOKKOS_INLINE_FUNCTION
-int VetCsSeamDepth(const int c, const int lo, const int hi, const bool slo,
-                  const bool shi) {
-  int d = 1 << 20;
-  if (slo) {d = (c < lo) ? (lo - 1 - c) : (c - lo);}
-  if (shi) {
-    const int e = (c > hi) ? (c - hi - 1) : (hi - c);
-    d = (e < d) ? e : d;
-  }
-  return d;
-}
-
-KOKKOS_INLINE_FUNCTION
-int VetCsVtxDist(const int k, const int j, const int ks, const int ke, const int js,
-                const int je, const bool s2lo, const bool s2hi, const bool s3lo,
-                const bool s3hi) {
-  const int dj = VetCsSeamDepth(j, js, je, s2lo, s2hi);
-  const int dk = VetCsSeamDepth(k, ks, ke, s3lo, s3hi);
-  return (dj > dk) ? dj : dk;
-}
-
-KOKKOS_INLINE_FUNCTION
 void VetSphMarshakCoef(const Real rc, const Real rn, const Real rf, Real &ca, Real &cb) {
   const Real al = (rf - rc)/(rc - rn);
   ca = (1.0 + al)*SQR(rc/rf);
