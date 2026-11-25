@@ -33,3 +33,10 @@ prod_rc4v_1124/bsg/log.0 lines 6 max nfb 0 last cyc 1000
 prod_rc4v_1124/bsg/log.1 lines 10 max nfb 0 last cyc 6000
 ```
 - No reading attached: what it means for L_z is yours. The watchers do not count nfb.
+
+## Build (own worktree wt_orion1121/speed24 at e7b2eea39, CUDA 12.9 + g++ 13, HOPPER90, CPU step on 02-09)
+- BUILD speed24 rc=0 wall=402 s TUs=250
+- BUILD_OK speed24 md5=601f709cb98bf3632f981d79bb9fe5ac prov=e7b2eea39f39130a190fa1f2e0dc18e0e3d8f36a
+- GATE PASS speed24: athena_speed24_e7b2eea39 md5 601f709c node hpc-sm-02-09 pass1=3.686e-11 log date 11-24 18:23:41 end: Terminating on cycle limit
+- Diff 95813cf85..e7b2eea39 (src, tools, docs):  docs/vet_clean/KEYS.md, src/hydro/hydro.cpp, src/hydro/hydro_newdt.cpp, src/rad_vet/rad_vet.cpp, src/rad_vet/rad_vet.hpp, src/rad_vet/rad_vet_clean.cpp, src/rad_vet/rad_vet_clean.hpp, src/rad_vet/rad_vet_clean_solver.cpp, src/rad_vet/rad_vet_dtretry_visit.hpp, src/rad_vet/rad_vet_fluid.cpp, tools/dtretry_gen.py, 11 files changed, 285 insertions(+), 55 deletions(-),
+- Plan: 17 arms (the note's base / tip / base / tip taken literally for F: 12 runs; then G 2, H 3; G off = F tip run 1), plus 2 nsys. The final bins of each arm stay on disk.
