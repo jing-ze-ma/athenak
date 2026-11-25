@@ -27,3 +27,9 @@
 - Watch: watch_mlt.py returned 3 on the preflight dir only because my run.log contains the words FATAL 0 inf 0 and it reads run.log*; on log.0 alone it returns 0. The production dir has log.N only. Script unedited.
 - Time: 7333072 (01-17) ends 11-26 05:21; the run needs 22-24 h, so a start by about 21:00 leaves about 8 h margin.
 - **Question: start, or what is the cause?** The launch is on hold (the coordinator's rule: a listed item off means stop). Everything else is ready: deck b84fa4a9, IC md5, c4speed 3627c9a8, launcher and watchers.
+
+## t9mlt started (11-24 20:48)
+- orion zzzzg9 / zzzzh1: dt accepted, start step 3. Package re-verified: MD5SUMS 6 of 6 OK (watch_mlt.py the fixed one; deck and IC unchanged).
+- Start line (chunks.txt): `2026-11-24 20:47:21 chunk 0 STAR=t9mlt BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_c4speed_d979d5268 md5=3627c9a8876737a8e3ee61e1fa5e89c0 DECK=/resnick/groups/carnegie_poc/jingze/prod_mlt_1125/decks/T9MLT_t9l62.athinput md5=b84fa4a9328046e8c4c4c9e2e18f10bc start=-i /resnick/groups/carnegie_poc/jingze/prod_mlt_1125/t9mlt/deck.athinput WT=32:03:39 HOLDER=7333072 NODE=hpc-sm-01-17 EX=`
+- Node 01-17, holder 7333072 (ends 11-26 05:21, END 05:01); 4 H200, 4 ranks, fresh, no command-line keys, deck b84fa4a9 unchanged, IC 0635a2e8, binary 3627c9a8. If the wall comes first: the launcher writes the final rst at the wall; a restart in another holder is a separate order.
+- Watch: prod watch (c100, 500, 1000, then 10 min; FATAL / inf: clean STOP) and watch_mlt.py every 10 min on another node: STOP only on its hst criteria, or on a log reason confirmed by strict lines (^CLEAN WARNING, ### FATAL, created inf); no relaunch. First rst hard-linked by the watcher, all rsts by the rst keeper (~88 GB each; the launcher itself keeps 3).
