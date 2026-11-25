@@ -81,3 +81,42 @@
 ## bsg F300 (25b item 3; asked in 25e)
 - It finished: bsg F300 2026-11-25 00:36:57 rc=0 (srun) ended: Terminating on cycle limit wall=238 s CW 0 FATAL 0 inf 0 DT_RETRY 0
 - It is 300 cycles of the rel-f binary on one 4-GPU node (02-03); the end line says cycle limit and exit 0. C300 (binary of the run) is running on 02-03 since 00:47 (it had waited for the 25c build steps on that node); m35zams pair runs on 02-16, the 25c suite on 02-09; HGV is queued for 02-03 + 02-09 once the suite and bsg C300 are done, then PRF2 only if HGV ran through.
+
+## m35zams (11-25 00:51): rst m35zams_m35zams.00005.rst (hard link, c99296), rel-f 80d16d39bd1f47bd3f22b5711c660519 against athena_c4speed_d979d5268, 300 cycles, 02-16; own keys: rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=2 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5; R_ph by rph.py (page agent's definitions, 4-byte dumps); dumps at global cycles that are multiples of 100, so about c 4 / 104 / 204 after the rst (the NOTE's c100 / 200 / 300), and the end
+- F300: 2026-11-25 00:49:07 rc=0 (srun) ended: Terminating on cycle limit wall=104 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- C300: 2026-11-25 00:51:06 rc=0 (srun) ended: Terminating on cycle limit wall=104 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+| arm | rows | s/cyc (elapsed prints) | dt min/mean/max | its (sum/cycle), solves | CW/FATAL/inf/DT_RETRY | fallback/BE |
+|---|---|---|---|---|---|---|
+| F300 | 300 | 0.2806 (c99310-99590) | 3.4805/3.4805/3.4805 | 27.8, 4.06 | 0/0/0/0 | 0.000000e+00/0.000000e+00 |
+| C300 | 300 | 0.2817 (c99310-99590) | 3.4805/3.4805/3.4805 | 28.0, 4.10 | 0/0/0/0 | 0.000000e+00/0.000000e+00 |
+
+| row | t (rel-f) | L_top/L_in | rel L_top, L_bot, L_mid, L_int, KE, M_tot, Etot, dt (rel-f / running - 1) |
+|---|---|---|---|
+| 0 | 3.456043e+05 | 1.000356 | -7.22e-15, -2.22e-16, -6.66e-16, 1.33e-15, 1.55e-15, 0.00e+00, 0.00e+00, 0.00e+00 |
+| 9 | 3.456357e+05 | 1.000357 | -8.50e-08, 2.36e-09, -1.31e-11, -7.36e-08, -9.53e-12, 2.44e-15, 8.44e-15, 3.22e-11 |
+| 49 | 3.457749e+05 | 1.000369 | 3.95e-07, 3.34e-10, -2.63e-11, 3.42e-06, 2.58e-08, 1.78e-15, -7.10e-13, 2.11e-12 |
+| 99 | 3.459489e+05 | 1.000369 | -5.14e-07, 4.36e-09, 2.01e-12, 2.32e-06, 1.72e-08, 4.44e-16, 1.98e-13, 6.60e-11 |
+| 199 | 3.462970e+05 | 1.000338 | 2.78e-07, 3.86e-09, 1.99e-11, -4.96e-08, 3.87e-08, 8.88e-16, -2.98e-14, 4.58e-13 |
+| 299 | 3.466450e+05 | 1.000262 | -2.26e-07, 1.97e-09, 4.46e-10, -5.79e-07, 3.36e-08, -9.99e-16, 2.80e-13, -6.89e-11 |
+| 299 | 3.466450e+05 | 1.000262 | -2.26e-07, 1.97e-09, 4.46e-10, -5.79e-07, 3.36e-08, -9.99e-16, 2.80e-13, -6.89e-11 |
+- L_top: max |rel-f / running - 1| over 300 rows 7.042e-06
+- L_bot: max |rel-f / running - 1| over 300 rows 2.838e-08
+- L_mid: max |rel-f / running - 1| over 300 rows 7.114e-10
+- L_int: max |rel-f / running - 1| over 300 rows 9.615e-06
+- KE_int: max |rel-f / running - 1| over 300 rows 1.129e-07
+
+| dump | cycle | t | R_A (mean tau 2/3) | R_A / first production dump before - 1 | T_A [K] | R_M (median column) | T_M [K] |
+|---|---|---|---|---|---|---|---|
+| production before | 98779 | 3.438010e+05 | 5.494805e+11 | -2.21e-05 | 41860.60 | 5.494686e+11 | 41869.99 |
+| production before | 99296 | 3.456010e+05 | 5.494927e+11 | 0.00e+00 | 41865.99 | 5.495181e+11 | 41860.44 |
+| F300 | 99300 | 3.456150e+05 | 5.494932e+11 | 9.53e-07 | 41866.10 | 5.495189e+11 | 41860.91 |
+| F300 | 99400 | 3.459630e+05 | 5.495025e+11 | 1.79e-05 | 41867.13 | 5.495286e+11 | 41861.51 |
+| F300 | 99500 | 3.463110e+05 | 5.495047e+11 | 2.20e-05 | 41865.90 | 5.495191e+11 | 41870.53 |
+| F300 | 99596 | 3.466450e+05 | 5.495031e+11 | 1.89e-05 | 41864.37 | 5.495051e+11 | 41880.46 |
+| C300 | 99300 | 3.456150e+05 | 5.494932e+11 | 9.53e-07 | 41866.10 | 5.495189e+11 | 41860.91 |
+| C300 | 99400 | 3.459630e+05 | 5.495025e+11 | 1.79e-05 | 41867.13 | 5.495286e+11 | 41861.62 |
+| C300 | 99500 | 3.463110e+05 | 5.495047e+11 | 2.20e-05 | 41865.94 | 5.495191e+11 | 41870.59 |
+| C300 | 99596 | 3.466450e+05 | 5.495031e+11 | 1.89e-05 | 41864.37 | 5.495051e+11 | 41880.48 |
+| production after | 99813 | 3.474000e+05 | 5.494928e+11 | 2.14e-07 | 41861.18 | 5.494843e+11 | 41895.92 |
+| production after | 100331 | 3.492030e+05 | 5.495163e+11 | 4.30e-05 | 41868.51 | 5.495063e+11 | 41894.38 |
+| production after | 100848 | 3.510030e+05 | 5.494889e+11 | -6.87e-06 | 41857.98 | 5.494791e+11 | 41920.29 |
