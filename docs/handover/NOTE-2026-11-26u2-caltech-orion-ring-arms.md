@@ -32,3 +32,27 @@
     first 5e3 s: 7.443e-02 -> 9.222e-02; e-fold first 5e3 s 2.430e+04, 0-3e4 s 5.198e+04, 5e4-1e5 s 5.775e+04, whole 1e5 s 6.437e+04 s; last peak k 14, last axis share 0.92
   r 0.76: band A rms 0e+00: 8.397e-02 (k 14, axis 0.92); 1e+04: 8.138e-02 (k 14, axis 0.82); 2e+04: 1.273e-01 (k 14, axis 0.93); 3e+04: 1.016e-01 (k 14, axis 0.84); 4e+04: 1.775e-01 (k 14, axis 0.92); 5e+04: 1.678e-01 (k 14, axis 0.93); 6e+04: 2.137e-01 (k 14, axis 0.89); 7e+04: 2.538e-01 (k 14, axis 0.94); 8e+04: 2.544e-01 (k 14, axis 0.88); 9e+04: 3.697e-01 (k 14, axis 0.94); 1e+05: 2.887e-01 (k 14, axis 0.90)
     first 5e3 s: 8.397e-02 -> 9.977e-02; e-fold first 5e3 s 3.020e+04, 0-3e4 s 7.522e+04, 5e4-1e5 s 7.631e+04, whole 1e5 s 6.580e+04 s; last peak k 14, last axis share 0.90
+
+### R1 checked against R0 (hst and v_r maps; added to the R1 entry)
+- The key was in use: R1's log prints "vet_gd direction set: 120 directions ... level-symmetric LQ10" and rebuilds the closure arrays (per-shell halo, ragged band intensity 1.406 GB against 1.477 GB of R0's GL7x18, 126 directions); the restart does not ignore it.
+hst rows R0 8253 R1 8253; |R1/R0 - 1| of L_top, KE_int, KEr_int, L_mid, Etot at rows: 
+  row 0 t 3.50000e+05: t diff 0.0e+00; L_top 4.74e-02, KE_int 1.67e-10, KEr_int 3.45e-10, L_mid 3.00e-13, Etot 4.46e-10
+  row 1 t 3.50001e+05: t diff 0.0e+00; L_top 4.66e-02, KE_int 1.67e-09, KEr_int 1.24e-09, L_mid 5.24e-14, Etot 1.32e-09
+  row 10 t 3.50078e+05: t diff -2.8e-09; L_top 5.99e-05, KE_int 3.33e-07, KEr_int 1.24e-07, L_mid 4.43e-11, Etot 7.18e-09
+  row 100 t 3.51170e+05: t diff 5.2e-08; L_top 5.99e-06, KE_int 2.26e-06, KEr_int 1.50e-06, L_mid 1.19e-08, Etot 7.35e-09
+  row 1000 t 3.62083e+05: t diff 8.5e-07; L_top 1.29e-05, KE_int 6.66e-05, KEr_int 2.41e-05, L_mid 2.71e-06, Etot 6.17e-09
+  row 3000 t 3.86334e+05: t diff 2.0e-04; L_top 1.41e-03, KE_int 2.63e-04, KEr_int 1.13e-03, L_mid 3.16e-05, Etot 4.63e-08
+  row 8000 t 4.46959e+05: t diff 1.4e-01; L_top 1.27e-02, KE_int 1.40e-01, KEr_int 1.84e-01, L_mid 1.59e-02, Etot 1.83e-06
+  row 8252 t 4.50000e+05: t diff 0.0e+00; L_top 6.20e-03, KE_int 1.01e-01, KEr_int 1.16e-01, L_mid 8.45e-03, Etot 9.37e-07
+  rms over all rows: L_top 6.94e-03, KE_int 4.38e-02, KEr_int 6.76e-02
+map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC: 0.74 0.80 0.87 0.90 0.93 0.95 0.98 1.00 1.03
+  t 3.5521e+05 / 3.5521e+05: 3.00e-07 (rms 9.87e-02); 9.80e-08 (rms 8.35e-02); 2.69e-05 (rms 8.90e-01); 1.95e-05 (rms 1.21e+01); 5.73e-05 (rms 3.22e+01); 2.44e-04 (rms 3.68e+01); 5.54e-03 (rms 2.49e+01); 7.37e-02 (rms 3.88e+01); 1.88e-01 (rms 3.87e+01)
+  t 3.5761e+05 / 3.5761e+05: 3.47e-07 (rms 1.14e-01); 3.54e-06 (rms 7.75e-02); 3.85e-05 (rms 8.31e-01); 1.55e-04 (rms 1.26e+01); 3.53e-04 (rms 3.23e+01); 7.34e-04 (rms 3.74e+01); 1.93e-02 (rms 2.55e+01); 1.03e-01 (rms 3.58e+01); 3.46e-01 (rms 4.56e+01)
+  t 3.6241e+05 / 3.6241e+05: 2.20e-06 (rms 1.23e-01); 5.54e-05 (rms 8.73e-02); 5.97e-04 (rms 1.23e+00); 2.10e-03 (rms 1.03e+01); 2.55e-03 (rms 3.18e+01); 3.76e-03 (rms 3.59e+01); 2.83e-02 (rms 2.36e+01); 1.65e-01 (rms 4.92e+01); 5.38e-01 (rms 4.94e+01)
+  t 3.6960e+05 / 3.6960e+05: 2.86e-05 (rms 1.06e-01); 5.16e-04 (rms 8.06e-02); 1.34e-03 (rms 9.44e-01); 1.10e-02 (rms 1.07e+01); 1.45e-02 (rms 3.24e+01); 2.24e-02 (rms 3.50e+01); 6.02e-02 (rms 2.36e+01); 1.58e-01 (rms 4.25e+01); 3.92e-01 (rms 3.15e+01)
+  t 3.8160e+05 / 3.8160e+05: 3.58e-04 (rms 1.55e-01); 6.28e-03 (rms 8.73e-02); 4.58e-02 (rms 1.19e+00); 1.83e-01 (rms 8.04e+00); 1.37e-01 (rms 2.96e+01); 1.26e-01 (rms 3.76e+01); 2.07e-01 (rms 2.43e+01); 2.40e-01 (rms 4.70e+01); 2.66e-01 (rms 1.51e+01)
+  t 4.0560e+05 / 4.0560e+05: 1.06e-02 (rms 1.82e-01); 1.02e-01 (rms 1.14e-01); 6.74e-01 (rms 7.82e-01); 1.16e+00 (rms 1.01e+01); 9.88e-01 (rms 3.05e+01); 9.53e-01 (rms 3.84e+01); 1.13e+00 (rms 2.57e+01); 9.93e-01 (rms 4.90e+01); 1.19e+00 (rms 3.81e+01)
+  t 4.2961e+05 / 4.2961e+05: 1.92e-02 (rms 3.57e-01); 7.63e-01 (rms 7.36e-02); 1.10e+00 (rms 8.56e-01); 1.41e+00 (rms 9.18e+00); 1.31e+00 (rms 3.28e+01); 1.27e+00 (rms 3.77e+01); 1.40e+00 (rms 2.64e+01); 1.75e+00 (rms 3.36e+01); 2.23e+00 (rms 2.84e+01)
+  t 4.5000e+05 / 4.5000e+05: 2.59e-02 (rms 4.91e-01); 7.49e-01 (rms 8.68e-02); 1.17e+00 (rms 1.00e+00); 1.12e+00 (rms 1.56e+01); 1.34e+00 (rms 3.15e+01); 1.33e+00 (rms 3.82e+01); 1.72e+00 (rms 2.22e+01); 1.13e+00 (rms 7.34e+01); 1.28e+00 (rms 4.08e+01)
+- Reading: the convection zone and photosphere of R1 and R0 separate (chaos) and are uncorrelated by 4.05e5 s: at 0.95 R_ph,IC the map difference over rms v_r goes 2.4e-4 (3.55e5), 2.2e-2 (3.7e5), 0.13 (3.8e5), 0.95 (4.06e5), 1.3 (4.5e5); KE_int differs by 14 % at 4.47e5 s. The ring at 0.74 stays the same: 3e-7, 3e-5, 4e-4, 1.1e-2, 2.6e-2 at the same times, up to 1e5 s later, after the convection zone has decorrelated. At 0.80 it is 0.75 by the end (that shell lies in the transition). So the ring's phase and amplitude at 0.74 do not follow the zone above it: it is not driven from above in this restart, which agrees with an ongoing deep mode.
+- L_top differs by 4.7e-2 in the first row (the new ray set needs one closure rebuild) and 6e-5 ten rows later.
