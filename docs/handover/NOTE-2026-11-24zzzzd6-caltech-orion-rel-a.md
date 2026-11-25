@@ -27,3 +27,16 @@
 -- Generating done (2.6s)
 CMake Generate step failed.  Build files cannot be regenerated correctly.
 ```
+
+## 3. Old-rst check, M35ZAMS (4 ranks, 01-17)
+- wr8: 95813cf85 restarts the T2 stop rst (m35zams.stop1124b, c22155) with time2_gtime_slope = false and clean_stag_thinf = false (my reading of "keys false"; the other candidate keys as in production) for 8 cycles and writes its rst (c22163). base16: 95813cf85 from that rst for 16 cycles. rel8: rel-a from the same rst for 8 cycles, writing its own rst; rel8b: rel-a from that for 8 more. Compared by printed t.
+- wr8: 2026-11-24 18:50:22 rc=0 (srun) ended: Terminating on cycle limit wall=35 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- base16: 2026-11-24 18:50:51 rc=0 (srun) ended: Terminating on cycle limit wall=29 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- rel8: 2026-11-24 18:51:30 rc=0 (srun) ended: Terminating on cycle limit wall=39 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- rel8b: 2026-11-24 18:51:57 rc=0 (srun) ended: Terminating on cycle limit wall=27 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- user.hst rel-a first 8: 8 rows, printed-identical to the base 16-cycle run at the same t: 8; first different or missing t: none
+- user.hst rel-a second 8: 8 rows, printed-identical to the base 16-cycle run at the same t: 8; first different or missing t: none
+- user.hst: base 16 rows; BITWISE (printed)
+- hydro.hst rel-a first 8: 8 rows, printed-identical to the base 16-cycle run at the same t: 8; first different or missing t: none
+- hydro.hst rel-a second 8: 8 rows, printed-identical to the base 16-cycle run at the same t: 8; first different or missing t: none
+- hydro.hst: base 16 rows; BITWISE (printed)
