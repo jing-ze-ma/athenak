@@ -10,13 +10,13 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 
 - energy and mass conserved to round-off (floors paid from the radiation);
 - angular momentum L_z: exact on the cubed sphere; on spherical polar exact except where the
-  face-flux cone cut acts (booked; a fix is in progress);
+  face-flux cone cut acts (booked), and there too with `clean_stag_fcone_lz` + `clean_lz_spin`;
 - linear momentum: not conserved in general (cone cut, well-balancing residual, floor velocity
   rules; not booked), and not a discrete invariant on spherical-polar / cubed-sphere meshes;
 - density positive by construction; radiation energy by the implicit operator and limiters
   (counted backstops); gas internal energy not by construction (the step is redone, or the
   radiation pays);
-- well-balanced: equilibrium envelopes stay at rest to about 1e-9 of the sound speed;
+- well-balanced: equilibrium envelopes stay at rest to below 1e-8 of the sound speed;
 - order of accuracy: the finest pairs of the test ladders give 1.8 (time) and 1.9-2.3 (grid +
   time); also where the gas-radiation exchange is stiff (`time2_gtime_slope`);
 - bitwise restarts and dt retries;

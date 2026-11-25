@@ -1,5 +1,5 @@
 # Cubed sphere, MHD: the MANUFACTURED SOLUTION of Ivan, De Sterck, Northrup & Groth
-# (JCP 2013, sect. 5.2.1, eqs 11-12).  Build with -D PROBLEM=cs_test.  layoutaudit-1103.
+# (JCP 2013, sect. 5.2.1, eqs 11-12).  Build with -D PROBLEM=cs_test.
 #
 #   rho = p = r^-5/2,  v = r^1/2 rhat + kappa r^5/2 zhat,  B = rhat/r^2 + kappa zhat
 # (eq 11 lists PRIMITIVES [rho, v, B, p]); v x B = 0 and B is curl free.  It is steady
@@ -12,7 +12,7 @@
 # conserved variables extrapolated linearly, faces exact.  Outputs as cs_ivan_hyd.
 # Radial cells = 1.25 x nx2 (the paper's 8x8x10 ... grids):
 #   for n in 8 16 32 64; do athena -i cs_ivan_mhd.athinput mesh/nx1=$((5*n/4)) ...; done
-# RESULT 11-03 (CPU athena_cpu_cs_test_iv1, plm/hlld/rk2, cfl 0.3, tlim 10, extend):
+# RESULT (CPU, plm/hlld/rk2, cfl 0.3, tlim 10, extend):
 #   nx2  nx1      L1        L2       Linf     orders L1 / L2 / Linf   seam/int (mean L1)
 #     8   10   1.961e-4  2.111e-4  3.487e-4                           0.80
 #    16   20   4.710e-5  4.928e-5  8.792e-5   2.06 / 2.10 / 1.99      0.87
@@ -26,7 +26,7 @@
 # ppm4 (nghost 3) is no cure.  Its L1 is the same as plm (1.96e-4 / 4.70e-5 / 1.15e-5),
 # but its C32 Linf is 3.41e-5 ON THE SEAM ring (seam/int max ratio 1.43; Linf orders
 # 1.91 / 1.46).
-# GATE (USER 11-03): L1 and L2 order >= 1.95 (PASS: 2.01 / 2.02 at C32 -> C64); Linf is
+# GATE: L1 and L2 order >= 1.95 (PASS: 2.01 / 2.02 at C32 -> C64); Linf is
 # reported only, or >= 1.8 (1.82 here, off the seams at a tangential extremum: limiter
 # clipping, generic); the seam ring must be no worse than the interior (PASS).
 # AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.

@@ -2,7 +2,6 @@
 # RY Per mass gainer: the L1 stream on a rigid, absorbing, rotating stellar surface, in the
 # orbital plane (r-phi), co-rotating frame, isothermal, scale-free in density.
 # Problem generator src/pgen/ry_per_accretor.cpp:  cmake -D PROBLEM=ry_per_accretor.
-# Design: /viper/ptmp2/jinma/accretor_1006/DESIGN.md.
 # UNITS: length Rsun, velocity km/s (time unit 6.957e5 s; P_orb = 0.8525), density in
 # units of the stream's peak density (problem/rho_stream).
 # Grid: r = R_acc = 4.06 .. 0.85 d_L1 = 16.241 Rsun, log spacing (f_stretch_r =

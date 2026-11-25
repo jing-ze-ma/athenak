@@ -202,8 +202,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
-    // clean_stag_opac_update (default on, every mesh) and clean_face_opac (default
-    // harmonic), USER 11-21, recorded
+    // clean_stag_opac_update: opacities at the iterate's temperature; clean_face_opac =
+    // harmonic | arith: the face opacity
     cln_opt = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_update",
                                    fix("clean_stag_opac_update", "true", "false"));
     // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
@@ -613,19 +613,18 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_vimp = false;
     }
-    // clean_clos1_budget (false, the default, recorded: the strict norm): a
-    // pass whose iterate the next pass takes the closure of in the budget's norm, to 0.1
-    // clean_conv_max, the floor of the passes after it at the budget's ceiling (a step
-    // dt_retry redoes strictly, as its budget)
+    // clean_clos1_budget (default false: the strict norm): a pass whose iterate the next
+    // pass takes the closure of in the budget's norm, to 0.1 clean_conv_max, the floor of
+    // the passes after it at the budget's ceiling (a step dt_retry redoes strictly, as
+    // its budget)
     cln_c1b = pin->GetOrAddBoolean("rad_vet","clean_clos1_budget",false);
-    // clean_vel_settled (false, the default, recorded: every pass): the
-    // velocity update (its F solve) only in a pass that can end the solve, one whose E
-    // change settled; the others leave v, F to the next pass (the same fixed point)
+    // clean_vel_settled (default false: every pass): the velocity update (its F solve)
+    // only in a pass that can end the solve, one whose E change settled; the others leave
+    // v, F to the next pass (the same fixed point)
     cln_vset = pin->GetOrAddBoolean("rad_vet","clean_vel_settled",false);
-    // clean_bud_maxnorm (false, the default, recorded: the L2 norm): the
-    // budget passes' linear test and Eisenstat-Walker |r0| in the max norm over the
-    // cells, the norm of the pass's own test (CleanNewtonUpdate), not an L2 sum over the
-    // cells
+    // clean_bud_maxnorm (default false: the L2 norm): the budget passes' linear test and
+    // Eisenstat-Walker |r0| in the max norm over the cells, the norm of the pass's own
+    // test (CleanNewtonUpdate)
     cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",false);
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
@@ -665,10 +664,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","clean_dbg_inf")) {
       cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
     }
-    // clean_gas_newton_switch (default W = 4, USER 11-21, recorded; 0 = off; W in
-    // [3, 64]), clean_gas_newton_switch_min (default 6), clean_stall_fac (0.5): the old
-    // production's implicit_gas_newton_switch, a stalled solve's remaining passes on the
-    // bracketed gas root without the Newton slope
+    // clean_gas_newton_switch W (0 = off; W in [3, 64]), clean_gas_newton_switch_min,
+    // clean_stall_fac: a stalled solve's remaining passes on the bracketed gas root
+    // without the Newton slope
     cln_gnsw = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch",
                                     fix("clean_gas_newton_switch", "4", "0") ? 4 : 0);
     cln_gnswmin = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch_min",
@@ -715,12 +713,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl << "<rad_vet>/clean_stag_mg_levels N >= 0" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_pc_sweep = sym (the default, recorded) | rb | rbr | rbrsym | wave: the mg's
+    // clean_pc_sweep = sym (the default, recorded) | rb | rbr | rbrsym: the mg's
     // smoothing on each level, a forward red-black sweep, + a second red pass (rbr), + a
-    // black-red post-sweep after the coarse correction (sym); wave: symmetric
-    // Gauss-Seidel over the x1 lines in wavefronts from the MeshBlock edges in and back
-    // out, before and after the coarse correction (a ray-dark region's donor-cell
-    // transport across x2, x3) (CleanStagVCycle)
+    // black-red post-sweep after the coarse correction (sym) (CleanStagVCycle)
     const std::string sw = pin->GetOrAddString("rad_vet","clean_pc_sweep",
         fix("clean_pc_sweep", "sym", "rb") ? "sym" : "rb");
     cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
@@ -2369,7 +2364,7 @@ RadiationVet::~RadiationVet() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ReportCounters
 //! \brief one line at the end of the run: cost and health of the implicit energy
-//! exchange solve (failures: cells that hit M1_MAXIT without reaching M1_RTOL)
+//! exchange solve (failures: cells that hit the iteration cap above the tolerance)
 
 void RadiationVet::ReportCounters() {
   if (!coupling) return;

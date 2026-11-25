@@ -327,7 +327,7 @@ void StarEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   // one-shot ACROSS restarts.  A run script that passes the key on every
   // restart link (run.cfg KEYS) would re-fire it on a restart file this code wrote after
   // applying it: e(rho, T) -> T -> e is not the identity to the last bit, so 5 + restart
-  // + 5 then differs from 10 (real RSG, Raven 32089203).  The applying run records
+  // + 5 then differs from 10.  The applying run records
   // problem/eos_reinit_done = true in the input its restart files carry; seen there, the
   // key is ignored.
   if (pin->DoesParameterExist("problem", "eos_reinit_done") &&

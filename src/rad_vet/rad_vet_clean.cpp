@@ -5440,7 +5440,7 @@ void RadiationVet::CleanWriteBack() {
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // its change of the gas eint (cln_neint)
     }
-    // (implicit_pos_floor, the old production's write-back: an E at or below e_floor is
+    // (implicit_pos_floor: an E at or below e_floor is
     // raised to it with the energy of the cell's gas above e_min; what the gas cannot
     // cover is taken from the radiation of the cell's column (implicit_pos_floor_cons,
     // below), else counted as created; counted).  A non-finite E (a diverged iterate) is

@@ -5,7 +5,6 @@
 # photospheric P/rho = c_ph^2 (15.5 km/s) at r = R_acc; temperature relaxed toward that
 # profile (and c_ph^2 outside) with time problem/env_t_relax.  Closed wall at r_in.
 # Problem generator src/pgen/ry_per_accretor.cpp:  cmake -D PROBLEM=ry_per_accretor.
-# Design / trade-off: /viper/ptmp2/jinma/accretor_1006/IMPL2.md.
 # UNITS: length Rsun, velocity km/s (time unit 6.957e5 s; P_orb = 0.8519), density in
 # units of the stream's peak density (problem/rho_stream).
 # Grid: r = 2.835492977 (0.698 R_acc) .. 16.241 Rsun, the stage-1 log spacing (dln r =

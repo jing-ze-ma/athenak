@@ -44,13 +44,6 @@ bool NewDefaults(ParameterInput *pin) {
 
 void Log(const std::string &line) {Lines().push_back(line);}
 
-void Old(ParameterInput *pin, const std::string &block, const std::string &key,
-         const std::string &value) {
-  if (!global_variable::restart_run || pin->DoesParameterExist(block, key)) return;
-  Log("<" + block + ">/" + key + " = " + value +
-      " (a restart file without the key: the old default)");
-}
-
 bool Fix(ParameterInput *pin, const std::string &block, const std::string &key,
          const std::string &value, const std::string &old) {
   if (!global_variable::restart_run) return true;

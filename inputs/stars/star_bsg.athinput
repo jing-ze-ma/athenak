@@ -1,7 +1,7 @@
 # Production star deck template: blue supergiant envelope (fresh start from a 1-D profile file; GL 7x18 rays).
-# The scheme keys are those of the production runs of 2026-11-24 (commit 465aff485), tile
+# The scheme keys are those of the production runs, tile
 # layout mode (layout_tile = the lateral MeshBlock size; change both together).
-# Before running: replace TABLES/ in the he_* table / profile / IC file keys by the
+# Before running: replace TABLES/ in the star_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
 # length and outputs.
 # Needs a binary built with -D PROBLEM=star_vet (docs/vet_clean/BUILD.md).
@@ -277,7 +277,7 @@ floorcap_mesh_vol = true
 star_seed_band = old
 star_seed = 0.0
 star_ic_profile = true
-star_ic_profile_file = TABLES/bsg/linhao_profile_full.txt
+star_ic_profile_file = TABLES/bsg/bsg_profile.txt
 star_ic_profile_amp = 0.05
 star_ic_profile_rho_thr = 6.15245e-7
 star_ic_profile_seed_group = true

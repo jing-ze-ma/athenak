@@ -465,7 +465,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // step of every ladder member is the file's dt, and the members' step boundaries
     // are offset from a schedule in simulated time)
     bool dtfix = false;
-    // (dtfix-1117: a dt_retry cut cap restored from a restart file stays, if smaller)
+    // (a dt_retry cut cap restored from a restart file stays, if smaller)
     if (pin->DoesParameterExist("time", "dt_fixed")) {
       const Real dfx = pin->GetReal("time", "dt_fixed");
       pmesh->dt_cap = (pmesh->dt_cap > 0.0) ? std::min(pmesh->dt_cap, dfx) : dfx;
@@ -473,9 +473,8 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     }
     Real dt_rst = pmesh->dt;
     pmesh->NewTimeStep(tlim);
-    // (rsthip-1121: only a dt_fixed that binds replaces it; an inert cap, e.g. the
-    // ORDER decks' dt_fixed = 1e30, keeps the restored dt, else the restart is not
-    // bitwise)
+    // (only a dt_fixed that binds replaces it; an inert cap, e.g.
+    // dt_fixed = 1e30, keeps the restored dt, else the restart is not bitwise)
     if (res_flag && dt_rst > 0.0 && !(dtfix && pmesh->dt_uncapped > pmesh->dt_cap)) {
       pmesh->dt = dt_rst;
       dt_rst_ = dt_rst;   // checked at the first cycle (Execute)

@@ -105,7 +105,7 @@ ck_dump_m   = 0
 ck_dump_j   = -1
 ck_dump_k   = -1
 met         = 0.0
-opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
+opac_table  = rosseland_he_x0.0_z0.02.txt
 column_dump = column.txt
 
 <output1>

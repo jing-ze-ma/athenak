@@ -1,5 +1,5 @@
 {
- "_about": "Criteria of tests/vet_clean/run_tests.py. Reference values measured 2026-11-23 with commit 512cf768a (branch m1-clean-release), CPU, GCC 13, -ffp-contract=off, MPCDF Raven. max / min: bounds; equal: exact values; near: [reference, relative tolerance] (lists: the last element, i.e. the finest level); last: true applies max / min to the last element of a list only.",
+ "_about": "Criteria of tests/vet_clean/run_tests.py. Reference values measured on CPU with GCC 13, -ffp-contract=off. max / min: bounds; equal: exact values; near: [reference, relative tolerance] (lists: the last element, i.e. the finest level); last: true applies max / min to the last element of a list only.",
  "conservation_sp": {
   "max": {
    "dE": 1e-13,
@@ -385,7 +385,7 @@
   }
  },
  "star_smoke": {
-  "_about": "largest |x - x_ref| / max|x_ref| of the history columns STAR_COLS over 20 cycles against ref/star_smoke.user.hst / .hydro.hst (CPU, recorded with ffc77d4d3, star_vet binary md5 53f436d9, star_small.athinput of the same commit, merge_lat_mom = radial; the reference before, 1e84c765d, was of the rigid merge, max deviation 0.189 in 2-KE). The run is bitwise identical on 1, 4 and 16 OpenMP threads (0 difference). Bound 2e-4: changes at the solver tolerance (clean_pc_sweep = rb, implicit clean_conv_max doubled, MeshBlock splits at tile 4) move these columns by at most 5.1e-5 (measured on 4a26282a6); a physical change moves the history: merge_lat_mom = rigid 0.21, time2_gtime_slope = false 5.3e-3 (clean_face_hctau = false 1.7e-3, cfl_number 0.29 instead of 0.3 3.9e-2: on 1e84c765d)",
+  "_about": "largest |x - x_ref| / max|x_ref| of the history columns STAR_COLS over 20 cycles against ref/star_smoke.user.hst / .hydro.hst (CPU). The run is bitwise identical on 1, 4 and 16 OpenMP threads (0 difference). Bound 2e-4: changes at the solver tolerance (clean_pc_sweep = rb, implicit clean_conv_max doubled, MeshBlock splits at tile 4) move these columns by at most 5.1e-5; a physical change moves the history: merge_lat_mom = rigid 0.21, time2_gtime_slope = false 5.3e-3 (clean_face_hctau = false 1.7e-3, cfl_number 0.29 instead of 0.3 3.9e-2: on 1e84c765d)",
   "max": {
    "dev": 0.0002
   },
@@ -394,13 +394,13 @@
   }
  },
  "wb_star": {
-  "_about": "a report, not a criterion (as momentum_box): the velocities of the unseeded BSG column after 20 cycles in the stars' well-balance mode; not bounded. Measured 4a26282a6: v_in 3.1e-3, v_all 0.68 (photosphere and floor gas), lat_mid 1.4e-11; the static envelope of wb_sp / wb_cs (1e-8) has no counterpart here, see README",
+  "_about": "a report, not a criterion (as momentum_box): the velocities of the unseeded BSG column after 20 cycles in the stars' well-balance mode; not bounded. Measured: v_in 3.1e-3, v_all 0.68 (photosphere and floor gas), lat_mid 1.4e-11; the static envelope of wb_sp / wb_cs (1e-8) has no counterpart here, see README",
   "equal": {
    "warnings": 0
   }
  },
  "idort_beams": {
-  "_about": "L1 = sum |E - E_exact| / sum E_exact over the box; the exact field is the cell average of the straight beams at the angles the code snapped them to. lum_top = energy of the third row below x1max / exact. The beams are 4 cells wide and stay straight (full width at half maximum 0.8 cells above the exact), but carry 1.19 x the exact energy (the cap of the streaming share at the beam edges; before the ray-hole fix of the thin share 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells), which dominates L1: regression references, not accuracy bounds. The energy flux is exact: flux_err = largest |sum of vet_phi1 over a row / injected flux - 1| (6e-8)",
+  "_about": "L1 = sum |E - E_exact| / sum E_exact over the box; the exact field is the cell average of the straight beams at the angles the code snapped them to. lum_top = energy of the third row below x1max / exact. The beams are 4 cells wide and stay straight (full width at half maximum 0.8 cells above the exact), but carry 1.19 x the exact energy (the cap of the streaming share at the beam edges), which dominates L1: regression references, not accuracy bounds. The energy flux is exact: flux_err = largest |sum of vet_phi1 over a row / injected flux - 1| (6e-8)",
   "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.1; Jiang 2021, ApJS 253, 49 sec. 4.2",
   "max": {
    "flux_err": 1e-05
@@ -446,7 +446,7 @@
   }
  },
  "idort_cylinder": {
-  "_about": "L1 along y = 0 of E inside (x < 1) and outside (x > 1.05), and outside of the energy flux Phi_x / c (vet_phi1, F_out; what the paper measures) and of the face momentum F_x / c (vet_f1, FH_out), against the exact transport solution ref/idort_cylinder_exact.npz. FH_out is about 0.2, a regression reference (a study of 11-21 with other keys attributed it to the harmonic face opacity at the cylinder edge; not re-measured)",
+  "_about": "L1 along y = 0 of E inside (x < 1) and outside (x > 1.05), and outside of the energy flux Phi_x / c (vet_phi1, F_out; what the paper measures) and of the face momentum F_x / c (vet_f1, FH_out), against the exact transport solution ref/idort_cylinder_exact.npz. FH_out is about 0.2, a regression reference (likely the harmonic face opacity at the cylinder edge; not measured)",
   "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.2; Jiang 2021, ApJS 253, 49 sec. 4.6",
   "near": {
    "E_in": [
@@ -468,7 +468,7 @@
   }
  },
  "idort_radshock_m2": {
-  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m2.txt (no shift), with the production tableau time2_tableau = sdirk2 and its default time2_gtime_slope; hesdirk2 (the v20.3 bench) gives 3.56 / 2.13 / 3.85 / 2.59e-4",
+  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m2.txt (no shift), with the production tableau time2_tableau = sdirk2 and its default time2_gtime_slope; hesdirk2 gives 3.56 / 2.13 / 3.85 / 2.59e-4",
   "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
   "near": {
    "L1_rho": [
@@ -490,7 +490,7 @@
   }
  },
  "idort_radshock_m5": {
-  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m5.txt (no shift), with the production tableau time2_tableau = sdirk2 and its default time2_gtime_slope; hesdirk2 (the v20.3 bench) gives 1.69 / 0.817 / 1.62 / 0.941e-3",
+  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m5.txt (no shift), with the production tableau time2_tableau = sdirk2 and its default time2_gtime_slope; hesdirk2 gives 1.69 / 0.817 / 1.62 / 0.941e-3",
   "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
   "near": {
    "L1_rho": [

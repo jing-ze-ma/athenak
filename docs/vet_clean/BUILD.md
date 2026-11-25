@@ -124,7 +124,7 @@ The longest translation units are `rad_vet_vetgd.cpp` (about 12 min with nvcc, m
 
 ## 7. After building
 
-Run the CPU test suite (about 1.5 min with `--quick` on 16 cores):
+Run the CPU test suite (about 1 min with `--quick` on 48 cores):
 
 ```bash
 tests/vet_clean/run_tests.sh --exe build_cpu/src/athena --quick

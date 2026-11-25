@@ -29,8 +29,6 @@ enum class Mode {standard, prod1019, none};
 Mode GetMode(ParameterInput *pin);        // validates <job>/recipe (read without adding)
 bool NewDefaults(ParameterInput *pin);    // see above
 void Log(const std::string &line);        // one defaulted key (or why it stayed off)
-void Old(ParameterInput *pin, const std::string &block, const std::string &key,
-         const std::string &value);       // Log: a restart file without key runs value
 bool Fix(ParameterInput *pin, const std::string &block, const std::string &key,
          const std::string &value, const std::string &old);
 // true: the fresh default of a key that corrects the scheme applies; a restart whose file
@@ -43,7 +41,7 @@ void PrintLog();                          // the start-up block (rank 0), then c
 // exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op
 // pgen/early_defaults_none.cpp
 void PgenEarlyDefaults(ParameterInput *pin);
-// a fresh M1 run's defaults of keys read before <rad_vet> exists (main.cpp, after
+// a fresh VET run's defaults of keys read before <rad_vet> exists (main.cpp, after
 // PgenEarlyDefaults): <rad_vet>/transport = implicit; with scheme = clean (named or
 // the default with transport = implicit) closure = vet_col + vet_gd on spherical polar
 // and the cubed sphere, <time>/cfl_number = 0.3, evolution = dynamic, <mesh>/nghost = 3,

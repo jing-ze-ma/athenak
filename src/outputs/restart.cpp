@@ -517,7 +517,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
-    // (version 2: the staggered fkin block carries K1_d, 8349d48ff; version 3, the
+    // (version 2: the staggered fkin block carries K1_d; version 3, the
     // clean scheme: hv[2] also holds t2_ok and cln_k1ok, as bits 2 and 4; versions 4
     // and 5, the clean scheme: no zero channels, the ring dense, then also the cubed
     // sphere's sc rays, Time2RstNchWant; version 7: the ring without the cubed sphere's

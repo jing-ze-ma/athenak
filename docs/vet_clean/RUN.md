@@ -82,8 +82,8 @@ another run), name every key that matters on the command line:
   hydro/floor_pay_skip=true hydro/dfloor_flux_limit=true hydro/rad_signal_speed_diff=true
 ```
 
-and check the start of the log: it prints the value in effect for every key (grep for the
-keys you named). A restart of your own run with an unchanged deck needs no extra keys.
+and check the start of the log: it lists the `<rad_vet>`, `<hydro>`, `<time>` and `<mesh>`
+keys that differ from their default, with where each value came from. A restart of your own run with an unchanged deck needs no extra keys.
 
 Restarts are bitwise: N cycles straight and N/2 + restart + N/2 give identical output (the
 `restart_*` tests check this). The restart file holds every piece of solver state that

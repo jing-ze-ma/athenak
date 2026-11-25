@@ -1,7 +1,7 @@
 # Clean VET radiation test suite
 
 A self-contained CPU test suite for the clean VET radiation scheme: one command, a PASS / FAIL
-line per test, about 1 min (`--quick`) or 3 min (full) on 48 cores (`--jobs 12`).
+line per test, about 1 min (`--quick`) or 5 min (full) on 48 cores (`--jobs 12`).
 
 ```bash
 # build a CPU binary (into build_vettest/) and run the quick subset
@@ -13,7 +13,8 @@ tests/vet_clean/run_tests.sh --exe build_cpu/src/athena --only restart_sp,dt_ret
 
 Requirements: python3 with numpy (nothing else), and for `--build` CMake, MPI (`mpicxx`) and
 a C++17 compiler. The binary needs only the built-in problem generators, so the default
-build (no `-D PROBLEM`) is enough. Every test runs on one MPI rank with OpenMP threads.
+build (no `-D PROBLEM`) is enough. Every test runs on one MPI rank with
+OpenMP threads, except `mpi_ranks` (2 ranks).
 
 Options (`run_tests.py --help`): `--jobs N` tests at the same time (default: cores / 4),
 `--star-exe PATH` a binary built with `-D PROBLEM=star_vet` (for `star_smoke` and
@@ -54,7 +55,7 @@ is a FAIL with the path of its `run.log`.
 | `radwave` | `wave_cart` (80 x 4, x on 64 cells) | linear radiation-acoustic wave (amplitude 1e-3, at 1e-6 the thin wave ends below the solver tolerance; the exact eigenmode, 2 periods, cfl 0.3) at P_rad/P_gas, x = (10, 0.01), (100, 0.1), (10, 1), (1, 100), x = tau_cell c_eq / c the grid-scale trapping parameter; `mid_phase` is 3.17e-3 at N = 64 (bound 3e-3; 2.26e-3 at 80), and the thin phase error of 2e-5 that N = 64 used to show was a cancellation of time and space errors (1.1e-3 at cfl 0.15); phase speed and damping of a k = 1 fit vs the analytic root (`vett.radwave_root`); the x = 0.01 case also without `hydro/rad_signal_speed_diff`, x = 0.1 and 1 also with `hydro/rad_signal_speed_phase` (full only, ~1 min) | phase speed within 3e-3, damping within 5e-3 per radian, no growth; dt gain of the diff key within 2 % of 2.77; the phase key's dt >= the diff key's (2.15 at x = 0.1, 1 at x = 1) |
 | `wedge_sym` | `shell_sp` | the shell at rest, spherically symmetric, GL 7 x 18 rays, 8 cycles, on a 20 deg wedge and (with `vet_gd_wall_sym = true`) 3.7 and 7.3 deg wedges: fphi = \|Σ F_phi\| / Σ \|F_r\|; the 3.7 deg wedge without the key; the 20 deg shell made theta-periodic with `vet_gd_theta_seam_sym = true`: fth = \|Σ F_theta\| / Σ \|F_r\|, and without the key; the theta-periodic 30 deg wedge with GL 11 x 12 turning about z (EMA ring, cross-fade): fth_rot, and GL 10 x 12 staggered (no mirror) | fphi, fth, fth_rot <= 1e-8; the runs without their key, and 10 x 12, stop with the FATAL |
 | `floor_pay` | `shell_sp` | `hydro/eos = general`, `tfloor` just above the gas temperature (the floor acts in most cells every cycle), `floor_pay = rad_column`, `floor_pay_skip`, `dfloor_flux_limit`, `floor_audit = 1`, 40 cycles: total-energy drift from t = 0; then 16 cycles with `floor_from_ekin = true` and `vceil = 1.2e-2`: energy, mass and L_z drift | dE <= 1e-13; floor energy paid > 0, unpaid 0; ekin dE, dM, dLz <= 1e-13; no `CLEAN WARNING` |
-| `star_smoke` | `star_small` | the star3d_sp deck on 256 x 8 x 8 cells with the decided production scheme keys and the BSG tables, 20 cycles, ~15 s (needs `--star-exe`, a `-D PROBLEM=star_vet` binary) | every history column of `STAR_COLS` within 2e-4 of the stored history `ref/star_smoke.*.hst` (relative to its maximum); the two files are in git (`.gitignore` excepts them), recorded with ffc77d4d3 (merge_lat_mom = radial; the reference before was of the rigid merge): re-record both by copying `bsg3d.{user,hydro}.hst` of the run when the scheme is meant to change; no `CLEAN WARNING` |
+| `star_smoke` | `star_small` | the star3d_sp deck on 256 x 8 x 8 cells with the production scheme keys and the BSG tables, 20 cycles, ~15 s (needs `--star-exe`, a `-D PROBLEM=star_vet` binary) | every history column of `STAR_COLS` within 2e-4 of the stored history `ref/star_smoke.*.hst` (relative to its maximum); the two files are in git (`.gitignore` excepts them): re-record both by copying `bsg3d.{user,hydro}.hst` of the run when the scheme is meant to change; no `CLEAN WARNING` |
 | `wb_star` | `star_small` | the stars' well-balance mode (dynamic, `wb_x1`, `force_reference = wb_arad`) on the unseeded BSG column, 20 cycles (needs `--star-exe`) | **a report, not a criterion**: the column is not in discrete equilibrium with its own opacities, so v/c_s reaches 3e-3 in the interior (r < 2.9e12 cm) and 0.7 at the photosphere and in the floor gas; lateral velocity 1.4e-11 outside the merged-cell radius; no `CLEAN WARNING` |
 | `ceiling_metric` | `shell_sp`, `shell_cs` | the rotating shells (`gas_rot = 0.3`, `gas_vr = 0.2`, r 1-3), `hydro/eos = general`, `floor_from_ekin = true`, `vceil = 0.5` (below \|v\| in 1408 / 2928 cells) against the same run without the ceiling, cell by cell at t = 0 (cs: the velocity rebuilt from the contravariant v^a on the unit tangents, \|V\| the metric norm): v_phi kept (L_z), \|V\| = max(vceil, \|v_phi\|) where capped, else unchanged, v_theta 0, the radial part scaled in [0, 1]. A ceiling on Σ v_a² of mixed components or a split along the covariant phi component fails it on cs (dvphi 0.31). The cell-level C++ test `unit/ceiling_cell.cpp` (build line in its header) checks the same, the tfloor payment and the heat = metric KE change, at corner and ghost-extended points of all six panels, on sp, Cartesian and cs | dvphi, dcap, vtheta <= 1e-13; scale_ok |
 | `floor_momentum` | `wave_cart` (8^3), `shell_sp`, `shell_cs` | the momentum ledger of the inversions' floors (`CLEAN FLOORMOM`): periodic box of sound waves (amplitude 0.2, negligible radiation) with `floor_from_ekin`, with `vceil` and with both, and with the energy exchange (`exch_ratio`), per cycle \|P(n+1) - P(n) - ledger\| / Σ\|p_gas\|; the t = 0 inversion of the rotating expanding shells against the dumps' p_r; restart, forced dt_retry, 1 vs 2 MeshBlocks | box and shells <= 1e-12; momentum removed in the box >= 1e-6; the same lines; no `CLEAN WARNING` |
@@ -85,14 +86,14 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
   share at the beam edges. They cross and go on: the field differs from the sum of the two
   single-beam fields by more than 0.05 E_b only in 48 of the 256 rows, around the crossings
   (1.6 % of the energy; the largest E is 1.13 x the exact). The excess falls as the beam
-  widens: 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells (L1 0.78, 0.39, 0.20, 0.11; before the
-  ray-hole fix of the thin share). Both are regression references. The energy flux through every row equals the injected flux to 6e-8
-  (`flux_err`).
+  widens: 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells (L1 0.78, 0.39, 0.20, 0.11).
+  Both are regression references. The energy flux through every row equals the injected flux
+  to 6e-8 (`flux_err`).
 - **Cylinder flux.** E outside the cylinder is within 1.1 % of exact transport and the
   energy flux Phi (`F_out`, `vet_phi1`, the flux the method paper measures) within 1.2 %
   (r F at x = 2-3.5 is 0.989 of exact). The face momentum F (`vet_f1`, `FH_out`) is 20 %
-  above exact, a regression reference. A study of 11-21 with other keys attributed it to the
-  harmonic face opacity at the cylinder's sharp edge; that is not re-measured on this code.
+  above exact, a regression reference. The likely
+  cause is the harmonic face opacity at the cylinder's sharp edge (not measured).
 - **Shocks.** The decks name the production `time2_tableau = sdirk2`, with its default
   `time2_gtime_slope`: the L1 values are within 3 % of the method paper's bench table, which
   ran `hesdirk2` (Mach 2 and 5); the shock stays at the semi-analytic position (no shift
@@ -147,11 +148,11 @@ interpolated, symmetrised walls (cubed sphere: 10 x 12). Not taken:
   (the decks start from their own analytic states); Cartesian decks have no ray set of the
   star kind.
 
-Notes on the results of this release (465aff485):
+Notes on the results of this release:
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
   solve). It is round-off (2e-16) by construction: the ledger books what the step does not
   conserve, so `dLz` checks the bookkeeping, not the conservation. The conservation error
-  is the ledger's growth, `dLz_gr` (gas + radiation alone): 7e-7 on `shell_sp`, from the
+  is the ledger's growth, `dLz_gr` (gas + radiation alone): 6e-7 on `shell_sp`, from the
   face-flux cone cut `clean_stag_fcone` (with `clean_stag_fcone_gas = true` and
   `clean_stag_fwb_ring = 1`, 1.6e-15 with no ledger; without the cut 2e-15). On the cubed
   sphere the ledger stays at round-off; there `dLz_gr` (6e-5) is not a conservation measure,
@@ -159,8 +160,7 @@ Notes on the results of this release (465aff485):
   is its face momenta (`CleanLzTotal`; ~0.6 % of the radiation's L_z apart).
 - **Layout.** Tile mode gives bit-identical results for every layout of whole-tile
   MeshBlocks with one MeshBlock along x1 and x2 (theta): 1 x 2 (along phi) is identical.
-  2 x 2 differs after 8 cycles by 7.8e-14 of the largest value with 4 OpenMP threads, 3.6e-14
-  with 8 (CPU, 89b05b1c7): splitting theta puts ray walls (mirror or vacuum) inside the mesh,
+  2 x 2 differs after 8 cycles by 8e-14 of the largest value (CPU): splitting theta puts ray walls (mirror or vacuum) inside the mesh,
   which is outside the tile guarantee, so the test bounds that difference instead of
   requiring 0.
   The `dfl` pair covers the stage-2 outflow limiter: under `time2_tableau = sdirk2` the u0
@@ -182,7 +182,7 @@ Notes on the results of this release (465aff485):
   `clean_stag_fcone_gas = false`), the well-balancing residual (`clean_stag_fwb`) and the
   floor velocity rules (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling) change it
   and are not booked. Where none of them acts the momentum exchange is exact; at amplitude
-  1e-3 in `momentum_box` none acts and dP is round-off (5.8e-17; per cycle 5.4-5.8e-17, measured at 69bfe5d04).
+  1e-3 in `momentum_box` none acts and dP is round-off (below 1e-16).
   In a non-linear box (amplitude 0.1) the cut changes P by up to ~4e-3 of Σ|p_gas| per
   cycle. `momentum_box` therefore reports dP (printed, and kept with `--record`) and does
   not bound it; on spherical polar and cubed-sphere meshes Cartesian P is not a discrete
@@ -191,10 +191,8 @@ Notes on the results of this release (465aff485):
   below 2 on the whole ladder. The criterion is on the finest pair.
   The exchange is not stiff in deck D and `order_space`; `order_stiff` is the stiff case.
 
-The reference values and tolerances are in `ref/references.json` (measured with commit
-512cf768a, CPU, GCC 13, `-ffp-contract=off`; reproduced to all printed digits on 465aff485 with
-the IA12.2 scheme keys of the decks; `radwave` measured there; the classic radiation tests
-measured with 30d0e3461, CPU, GCC 13, MPCDF Orion). Bitwise tests (restart, dt_retry, layout) need
+The reference values and tolerances are in `ref/references.json` (measured on CPU with GCC 13
+and `-ffp-contract=off`). Bitwise tests (restart, dt_retry, layout) need
 no reference: they compare two runs of the same binary. `momentum_box` has only
 `"equal": {"warnings": 0}`: its dP is recorded, not bounded.
 
@@ -224,10 +222,8 @@ generators; a `star_vet` binary cannot run these decks): `--exe build_tests/src/
 runs of one binary and must pass on a GPU too. The reference tests (`order_*`, `nlte_*`,
 `thermal_eq`, `wb_*`) must agree with the CPU references within their tolerances; a much
 larger difference points at the build (see the CUDA 12.2 warning in
-`docs/vet_clean/BUILD.md`). On MI300A (viper, ROCm 7.2) the quick subset passes 10 of 11:
-`layout_tile` finds 1 x 2 MeshBlocks (a phi split) 1.9e-11 from one MeshBlock, where the CPU
-is bitwise; IA12.2 gives the same numbers, so on a GPU the 1 x 2 case is bounded, not
-bitwise (an open item).
+`docs/vet_clean/BUILD.md`). On MI300A (ROCm 7.2) `layout_tile` finds 1 x 2 MeshBlocks (a phi split) 1.9e-11 from one
+MeshBlock, where the CPU is bitwise: on a GPU the 1 x 2 case is bounded, not bitwise.
 
 ## Notebooks
 

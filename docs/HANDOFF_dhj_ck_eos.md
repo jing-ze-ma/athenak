@@ -13,7 +13,7 @@ chase was a **missing `member.team_barrier()` in the general-EOS x1 flux kernel*
 place the unmodified baseline runs to `tlim` and conserves mass to 7e-4.
 
 Six arms, each 8 h on one apu1 GPU, all on `athena_fixrel` = `6e600f12`, all from
-`inputs/planets/deep_hot_jupiter_rt_blowup.athinput` (= viper's `blowup.athinput`), all
+`inputs/planets/deep_hot_jupiter_rt_blowup.athinput`, all
 `tlim = 1.2e6 s = 3.934 rotations` (rotation = 3.05e5 s):
 
 | job | tag | the single change | pre-fix | **post-fix** |
@@ -208,9 +208,8 @@ and the user rejected it on exactly that ground.
   one — that is what invalidated an entire campaign's worth of arms.
 - On a restart, do **not** override `time/nlim` — a restart resumes at a large cycle
   number, so a small nlim runs zero cycles and the one-shot dumps never fire.
-- GPU runs need `export HSA_XNACK=1` or they die. On viper, GPU scratch was
-  `/viper/ptmp/jinma/claude_eos_gpu` (session /tmp is node-local and invisible to
-  compute nodes).
+- GPU runs need `export HSA_XNACK=1` or they die. Use a scratch directory the
+  compute nodes see (/tmp is node-local).
 - Don't design an experiment whose result can't discriminate between the live
   hypotheses — the user vetoes those, and calls a halt when hypotheses churn without
   converging.
@@ -219,7 +218,7 @@ and the user rejected it on exactly that ground.
 
 **Easiest path: use `inputs/planets/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`), which
 is the reference run, and just repoint `ck_table`/`ck_data_dir`. It differs from
-viper's `/viper/ptmp/jinma/claude_eos_gpu/blowup.athinput` only in `tlim` (8.64e7 vs 1.2e6),
+the first `blowup.athinput` only in `tlim` (8.64e7 vs 1.2e6),
 `rt_de_max` (-1.0 vs 0.5), the two table paths, and one commented-out line — i.e. they are
 the same physics, and `cd2e8815` adds no source change.
 

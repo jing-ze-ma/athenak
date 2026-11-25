@@ -138,7 +138,7 @@ tests/vet_clean/run_tests.sh --exe build_tests/src/athena --only conservation_sp
 It must print a `PASS` line with the drifts `dE`, `dM`, `dLz` at round-off (below 1e-13):
 
 ```
-PASS conservation_sp      14 s  dE 6.67e-16 dM 7.19e-16 dLz 0 dLz_gr 6.94e-07
+PASS conservation_sp       6 s  dE 1e-15 dM 6.74e-16 dLz 1.47e-16 dLz_gr 5.92e-07
 1 passed, 0 failed, 14 s
 ```
 

@@ -1929,7 +1929,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   if (t2_want && t2_read && pradvet->t2_rstd3 && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has the staggered energy-flux memory d "
-              << "without its slope (written before 8349d48ff); the first step is "
+              << "without its slope (an older file version); the first step is "
               << "backward Euler and this restart is not bitwise." << std::endl;
   }
   // the time2_auto_be back-off state of the dumping run (a skip run in

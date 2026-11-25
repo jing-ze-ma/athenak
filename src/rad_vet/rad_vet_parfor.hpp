@@ -46,36 +46,8 @@ inline void par_for_lb(const std::string &name, ExeSpace exec_space,
   });
 }
 
-//! par_reduce_flat: 4-D (m,k,j,i) parallel_reduce on a flat 1-D RangePolicy (faster
-//! than MDRangePolicy). Max/Min/MaxLoc and integer-valued sums are bitwise the MDRange
-//! result; a general floating-point sum is not (different combine order).
-template <typename Function, typename Reducer>
-inline void par_reduce_flat(const std::string &name, const int &nl, const int &nu,
-                            const int &kl, const int &ku, const int &jl, const int &ju,
-                            const int &il, const int &iu, const Function &function,
-                            const Reducer &reducer) {
-  const int nn = nu - nl + 1;
-  const int nk = ku - kl + 1;
-  const int nj = ju - jl + 1;
-  const int ni = iu - il + 1;
-  const int nnkji = nn * nk * nj * ni;
-  const int nkji  = nk * nj * ni;
-  const int nji   = nj * ni;
-  using VT = typename Reducer::value_type;
-  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nnkji),
-  KOKKOS_LAMBDA(const int &idx, VT &v) {
-    int n = (idx)/nkji;
-    int k = (idx - n*nkji)/nji;
-    int j = (idx - n*nkji - k*nji)/ni;
-    int i = (idx - n*nkji - k*nji - j*ni) + il;
-    n += nl;
-    k += kl;
-    j += jl;
-    function(n, k, j, i, v);
-  }, reducer);
-}
-
-//! par_reduce_flat2: par_reduce_flat with two reducers in one pass
+//! par_reduce_flat2: 4-D (m,k,j,i) parallel_reduce with two reducers in one pass, on a
+//! flat 1-D RangePolicy (faster than MDRangePolicy)
 template <typename Function, typename Reducer1, typename Reducer2>
 inline void par_reduce_flat2(const std::string &name, const int &nl, const int &nu,
                              const int &kl, const int &ku, const int &jl, const int &ju,

@@ -1,7 +1,7 @@
 # Production star deck template: T = 9 kK, log L/Lsun = 6.2 envelope.
-# The scheme keys are those of the production runs of 2026-11-24 (commit 465aff485), tile
+# The scheme keys are those of the production runs, tile
 # layout mode (layout_tile = the lateral MeshBlock size; change both together).
-# Before running: replace TABLES/ in the he_* table / profile / IC file keys by the
+# Before running: replace TABLES/ in the star_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
 # length and outputs.
 # Needs a binary built with -D PROBLEM=star_vet (docs/vet_clean/BUILD.md).

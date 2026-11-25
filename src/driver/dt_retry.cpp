@@ -86,9 +86,8 @@ const char *kDtrMinimal[] = {
   "m1.ibadv_x1max",
   // vet_gd's half-range ratios (vgd_hr; the rotation average's field
   // array vra_a1 is this View): the closure of a cycle that does not rebuild them
-  // reads the last build's.  A forced retry at fac 1 on the R136 production restart
-  // (views minimal) was not bitwise the straight run at the next dump; restoring vgd_hr
-  // (or vra_a0/a1/c) alone made it bitwise
+  // reads the last build's.  Without
+  // them a forced retry at fac 1 is not bitwise the straight run
   "m1.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the face
   // arrays' clean_stag_fkin energy flux memory d and its slope K1 (CLF_N + 3, CLF_KD;
@@ -384,7 +383,7 @@ struct Binder {
   template <class T> void view(const char *n, T &x) {
     // (clean_rot_ring's offsets: in pinned host memory always, their copy skipped while
     // clean; the pending Delta, written every build, keeps a device clone: a pinned-host
-    // one was a synchronous 0.5 GB D2H per cycle on R136)
+    // one is a synchronous copy to the host per cycle)
     const bool rh = (pre + n == "m1.cln_rr");
     auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host || rh);
     e->name = pre + n;
@@ -453,7 +452,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   fac_ = pin->GetOrAddReal("time", "dt_retry_fac", 0.5);
   grow_ = pin->GetOrAddReal("time", "dt_retry_grow", 1.25);
   ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", 10);
-  // dtfix-1117: <time>/dt_fixed is the driver's dt cap (read only when named); the grow
+  // <time>/dt_fixed is the driver's dt cap (read only when named); the grow
   // step and the recovery return the cap to it, never above it
   if (pin->DoesParameterExist("time", "dt_fixed")) {
     fix_ = pin->GetReal("time", "dt_fixed");
@@ -466,8 +465,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   // <time>/dt_retry_t2_be (default 0): a cycle that has taken this
   // many time2_reject cuts redoes a further non-admissible hesdirk2 stage with backward
   // Euler (as time2_reject = be) instead of cutting again; < 0 = never.  0 = BE redo at
-  // the cycle dt, no cut (RSG E 230 d: 2 cut dt to the ~2 s stage-2 limit and the cap
-  // kept it there)
+  // the cycle dt, no cut
   t2_be_ = pin->GetOrAddInteger("time", "dt_retry_t2_be", t2_be_);
   // the armed state of the straight run (a restart file's dump; written only once set)
   if (pin->DoesParameterExist("time", "dt_retry_t2be_now")) {
