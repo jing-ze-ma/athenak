@@ -40,7 +40,7 @@ is a FAIL with the path of its `run.log`.
 | `dt_retry` | `shell_sp` | a forced step retry at cycle 4 with factor 1 (the step is repeated at the same dt) and with factor 0.5 | factor 1: identical to the run without retry; factor 0.5: runs on; one retry each |
 | `layout_tile` | `shell_sp` (16 x 16 lateral) | `<mesh>/layout_invariant_mode = tile`, `layout_tile = 8`, 8 cycles: 1 MeshBlock vs 1 x 2 MeshBlocks (along phi) and vs 2 x 2 (theta x phi, vacuum ray walls) | 1 x 2: identical (difference 0); 2 x 2: largest difference / largest value <= 1e-8 (see below); the 1 x 2 pair again with `dfloor_flux_limit` and `dfloor` just below the gas density (the limiter acts in every cell): identical, and its dE, dM, dLz <= 1e-13 |
 | `order_time` | `deckD` | time step halved at a fixed grid (3 levels quick, 5 full); successive-difference L1 of E, F_r, T | order of the finest pair >= 1.7; errors within 5 % of the reference |
-| `order_stiff` | `wave_cart` | radiation-acoustic wave in the trapped regime (x = 100, P_rad/P_gas 1), time step T/64 ... T/512, strict solves, with `rad_vet/time2_gtime_slope` (full only) | order of the finest pair >= 1.7; errors within 5 % of the reference |
+| `order_stiff` | `wave_cart` | radiation-acoustic wave in the trapped regime (x = 100, P_rad/P_gas 1), time step T/64 ... T/512, strict solves (full only) | order of the finest pair >= 1.7; errors within 5 % of the reference |
 | `order_space` | `wave_cart` | linear radiation-hydro wave, one period, N = 16 ... 128 cells with dt following the CFL | order of the finest pair >= 1.7 (full only) |
 | `nlte_eps1e-1`, `nlte_eps1e-4` | `nlte_eps*` | two-level-atom non-LTE atmosphere (Jiang 2021, ApJS 253, 49, sec. 4.5): J vs the exact transport solution (`ref/nlte_exact_eps*.txt`) | L1 within 5 % of the reference value |
 | `thermal_eq` | `thermal_eq` | uniform gas + radiation relaxing to equilibrium (Jiang 2021, sec. 4.1) vs the exact ODE | max relative error of E(t), T(t) <= bound |
@@ -153,7 +153,7 @@ Notes on the results of this release (465aff485):
   invariant at all (local bases), so the test is Cartesian only.
 - **Order.** Deck D's successive orders are 1.57, 1.61, 1.84 (E) over the five time steps:
   below 2 on the whole ladder. The criterion is on the finest pair.
-  Neither order deck has stiff gas-radiation exchange, where the sdirk2 tableau is first order.
+  The exchange is not stiff in deck D and `order_space`; `order_stiff` is the stiff case.
 
 The reference values and tolerances are in `ref/references.json` (measured with commit
 512cf768a, CPU, GCC 13, `-ffp-contract=off`; reproduced to all printed digits on 465aff485 with
