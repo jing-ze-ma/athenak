@@ -48,11 +48,11 @@ use_grid_stretch_r       = true                   # [PAPER-ish] logarithmic radi
 f_stretch_r              = -0.187211542088146     # [PAPER] log bins: = -ln(x1max/x1min) (dlnr = 4.875301e-04; dtheta = 5.006913e-04, dphi = 5.000000e-04)
 layout_invariant = true   # FRESHPREP
 layout_invariant_mode = tile   # GLWEDGE
-layout_tile = 32   # IA12.2: = lateral MeshBlock size (16 blocks)
+layout_tile = 64   # USER Z3 (NOTE 24zb, 11-24): 4 blocks of 384x64x64
 <meshblock>
 nx1                      = 384                    # vet_gd: one x1 block
-nx2 = 32   # IA12.2 (was 64)
-nx3 = 32   # IA12.2 (was 64)
+nx2 = 64   # USER Z3 layout (11-24)
+nx3 = 64   # USER Z3 layout (11-24)
 <time>
 dt_retry = true   # FRESHPREP
 evolution  = dynamic
