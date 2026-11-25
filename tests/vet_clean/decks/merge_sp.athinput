@@ -1,0 +1,69 @@
+# Closed shell of gas in a point-mass potential with merged lateral cells (hydro/merge_lat_rc),
+# 3-D spherical-polar wedge (reflecting radial and theta walls, periodic phi), no radiation.
+# Used by: merge_lat.
+
+<job>
+basename = ms
+
+<mesh>
+nghost = 3
+nx1 = 24
+x1min = 1.0
+x1max = 4.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 16
+x2min = 1.1707963267948966
+x2max = 1.9707963267948967
+ix2_bc = reflect
+ox2_bc = reflect
+nx3 = 16
+x3min = 0.0
+x3max = 1.5707963267948966
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1 = 24
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 200
+tlim = 1e30
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+fofc = true
+merge_lat_rc = 2.0,3.0
+merge_lat_f = 4,2
+merge_lat_diag = 1
+merge_lat_check = true
+
+<problem>
+pgen_name = am_wb
+user_srcs = true
+user_hist = true
+gm = 1.0
+cs2 = 0.5
+rho0 = 1.0
+rot = 0.2
+
+<output1>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 1.0e30
+
+<output2>
+file_type = hst
+data_format = %24.16e
+dt = 1.0e-12

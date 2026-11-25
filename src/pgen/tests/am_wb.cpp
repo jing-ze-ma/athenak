@@ -17,6 +17,11 @@
 //! (reflecting radial walls; cs whole sphere, sp polar or periodic wedge) whose axial
 //! angular momentum may change only through the transport (L_z budget), and a static
 //! hydrostatic state (rot = pert = 0) for the well-balanced property.
+//! Cell noise and flows of the merge_lat tests (read only when named): problem/pert_rand
+//! = D, every cell's density times 10^(D (h - 1/2)), h a hash of its position; v_rand, a
+//! hashed Cartesian velocity of that size per component; vr, v_r = vr sin(pi (r -
+//! x1min)/(x1max - x1min)); vx, a uniform velocity along x; vortex = beta, the isentropic
+//! vortex (axis z, centre vortex_x, vortex_y, radius vortex_w; needs gm = 0).
 //! With <hydro>/wellbalance_static the same profile is the static background (u0wb, w0wb,
 //! w0facewb; radial faces at x1f, lateral faces at the cell-centre radius) and gravity
 //! acts on rho - rho_background (as wb_atm).  ix1_bc / ox1_bc = user hold the ghosts at
@@ -103,6 +108,16 @@ void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
 
   const Real rot = pin->GetOrAddReal("problem", "rot", 0.0);
   const Real pert = pin->GetOrAddReal("problem", "pert", 0.0);
+  auto key = [&](const char *name, const Real def) {
+    return pin->DoesParameterExist("problem", name) ? pin->GetReal("problem", name) : def;
+  };
+  const Real drand = key("pert_rand", 0.0), vrand = key("v_rand", 0.0);
+  const Real vr = key("vr", 0.0), vx0 = key("vx", 0.0), beta = key("vortex", 0.0);
+  const Real xv = key("vortex_x", 0.0), yv = key("vortex_y", 0.0);
+  const Real wv = key("vortex_w", 1.0);
+  const bool noise = drand != 0.0 || vrand != 0.0 || vr != 0.0 || vx0 != 0.0 ||
+                     beta != 0.0;
+  const Real rout = pmy_mesh_->mesh_size.x1max;
   const AmWbVars a = amwb;
   const Real gm1 = a.gamma - 1.0;
   auto &indcs = pmy_mesh_->mb_indcs;
@@ -134,6 +149,29 @@ void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
     u0(m,IM2,k,j,i) = rho*(vx*ta[0] + vy*ta[1]);
     u0(m,IM3,k,j,i) = rho*(vx*tb[0] + vy*tb[1]);
     u0(m,IEN,k,j,i) = pr/gm1 + 0.5*rho*(vx*vx + vy*vy);
+    if (!noise) return;
+    Real p = pr, v[3] = {vx0 + vx, vy, 0.0};
+    if (beta != 0.0) {
+      const Real dx = (r*rh[0] - xv)/wv, dy = (r*rh[1] - yv)/wv;
+      const Real g = sqrt(a.cs2)*beta*exp(0.5*(1.0 - dx*dx - dy*dy))/(2.0*M_PI);
+      const Real t = 1.0 - gm1*g*g/(2.0*a.gamma*a.cs2);
+      rho *= pow(t, 1.0/gm1);
+      p = rho*a.cs2*t;
+      v[0] -= g*dy;
+      v[1] += g*dx;
+    }
+    auto hash = [&](const Real s) {
+      const Real h = sin(r*(12.9898*rh[0] + 78.233*rh[1] + 37.719*rh[2]) + s)*43758.5453;
+      return h - floor(h);
+    };
+    const Real vrad = vr*sin(M_PI*(r - a.rin)/(rout - a.rin));
+    for (int n = 0; n < 3; ++n) v[n] += vrad*rh[n] + vrand*(2.0*hash(1.0 + n) - 1.0);
+    rho *= pow(10.0, drand*(hash(0.0) - 0.5));
+    u0(m,IDN,k,j,i) = rho;
+    u0(m,IM1,k,j,i) = rho*(v[0]*rh[0] + v[1]*rh[1] + v[2]*rh[2]);
+    u0(m,IM2,k,j,i) = rho*(v[0]*ta[0] + v[1]*ta[1] + v[2]*ta[2]);
+    u0(m,IM3,k,j,i) = rho*(v[0]*tb[0] + v[1]*tb[1] + v[2]*tb[2]);
+    u0(m,IEN,k,j,i) = p/gm1 + 0.5*rho*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
   });
 
   if (!pmbp->phydro->use_wellbalance_static) return;

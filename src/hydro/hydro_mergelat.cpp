@@ -27,6 +27,7 @@
 #include "coordinates/coordinates.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_mergelat.hpp"
+#include "utils/recipe.hpp"
 
 namespace hydro {
 namespace {
@@ -51,6 +52,167 @@ std::vector<std::string> MlatSplit(const std::string &s) {
             << "<hydro>/merge_lat: " << msg << std::endl;
   std::exit(EXIT_FAILURE);
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void MlatGroupSums
+//! \brief <hydro>/merge_lat_check: the group's sums M, E, sum V m_r, P, L (Cartesian, arm
+//! x1v rhat) and sum V |m|
+
+KOKKOS_INLINE_FUNCTION
+void MlatGroupSums(const MergeLatGeo &g, const DvceArray5D<Real> &u, const int f,
+                   const int m, const int k, const int j, const int i, Real *s) {
+  const Real r = g.x1v(m,i);
+  for (int n = 0; n < 10; ++n) s[n] = 0.0;
+  for (int kk = k; kk < k + f; ++kk) {
+    for (int jj = j; jj < j + f; ++jj) {
+      Real rh[3], b1[3], b2[3], cc, v[3];
+      MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
+      MlatToCart(rh, b1, b2, cc, u(m,IM1,kk,jj,i), u(m,IM2,kk,jj,i), u(m,IM3,kk,jj,i), v);
+      const Real dv = g.vol(m,kk,jj,i);
+      s[0] += dv*u(m,IDN,kk,jj,i);
+      s[1] += dv*u(m,IEN,kk,jj,i);
+      s[2] += dv*u(m,IM1,kk,jj,i);
+      for (int q = 0; q < 3; ++q) {
+        const int q1 = (q + 1)%3, q2 = (q + 2)%3;
+        s[3+q] += dv*v[q];
+        s[6+q] += dv*r*(rh[q1]*v[q2] - rh[q2]*v[q1]);
+      }
+      s[9] += dv*sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+    }
+  }
+}
+
+//! \brief the largest changes of the group sums, relative to M, E, sum V |m| (x r)
+KOKKOS_INLINE_FUNCTION
+void MlatCheck(const Real *s0, const Real *s1, const Real r,
+               const DvceArray1D<Real> &cerr) {
+  const Real pn = fmax(s0[9], 1.0e-300);
+  Real dp = 0.0, dl = 0.0;
+  for (int q = 0; q < 3; ++q) {
+    dp += SQR(s1[3+q] - s0[3+q]);
+    dl += SQR(s1[6+q] - s0[6+q]);
+  }
+  Kokkos::atomic_max(&cerr(0), fabs(s1[0] - s0[0])/fmax(fabs(s0[0]), 1.0e-300));
+  Kokkos::atomic_max(&cerr(1), fabs(s1[1] - s0[1])/fmax(fabs(s0[1]), 1.0e-300));
+  Kokkos::atomic_max(&cerr(2), fabs(s1[2] - s0[2])/pn);
+  Kokkos::atomic_max(&cerr(3), sqrt(dp)/pn);
+  Kokkos::atomic_max(&cerr(4), sqrt(dl)/(r*pn));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MlatGroupRadial
+//! \brief <hydro>/merge_lat_mom = radial: the group value of the group with first cell
+//! (k,j) (see the file header of hydro_mergelat.hpp).
+
+KOKKOS_INLINE_FUNCTION
+void MlatGroupRadial(const MergeLatGeo &g, const DvceArray5D<Real> &u,
+                     const DvceArray4D<Real> &phi, const bool grav, const int kind,
+                     const int nhyd, const int nvar, const int f, const int m,
+                     const int k, const int j, const int i, const DvceArray1D<int> &nfb,
+                     const DvceArray1D<Real> &amn) {
+  constexpr int nm = kMlatModes;
+  const bool gas = (kind == 0);
+  Real vs = 0.0, es = 0.0, sb[5] = {0.0, 0.0, 0.0, 0.0, 0.0}, vp = 0.0;
+  Real c[3] = {0.0, 0.0, 0.0}, ke0 = 0.0, ep0 = 0.0, rmin = 1.0e300;
+  const int nsc = gas ? nvar - nhyd : 0;
+  for (int kk = k; kk < k + f; ++kk) {
+    for (int jj = j; jj < j + f; ++jj) {
+      Real rh[3], b1[3], b2[3], cc, v[3];
+      MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
+      const Real dv = g.vol(m,kk,jj,i), d = u(m,0,kk,jj,i);
+      vs += dv;
+      sb[0] += dv*d;
+      for (int n = 0; n < nsc; ++n) sb[n+1] += dv*u(m,nhyd+n,kk,jj,i);
+      for (int q = 0; q < 3; ++q) c[q] += dv*rh[q];
+      if (gas) {
+        MlatToCart(rh, b1, b2, cc, u(m,1,kk,jj,i), u(m,2,kk,jj,i), u(m,3,kk,jj,i), v);
+        es += dv*u(m,IEN,kk,jj,i);
+        if (grav) {
+          vp += dv*phi(m,kk,jj,i);
+          ep0 += dv*d*phi(m,kk,jj,i);
+        }
+        rmin = fmin(rmin, d);
+        ke0 += 0.5*dv*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])/d;
+      }
+    }
+  }
+  const Real ms = sb[0];
+  for (int n = 0; n <= nsc; ++n) sb[n] /= vs;
+  const Real db = gas ? sb[0] : 1.0;
+  // the group direction and two tangents (c x the Cartesian axis of its smallest part)
+  const Real cn = 1.0/sqrt(c[0]*c[0] + c[1]*c[1] + c[2]*c[2]);
+  for (int q = 0; q < 3; ++q) c[q] *= cn;
+  const int q0 = (fabs(c[0]) <= fabs(c[1]) && fabs(c[0]) <= fabs(c[2])) ? 0 :
+                 (fabs(c[1]) <= fabs(c[2]) ? 1 : 2);
+  const int q1 = (q0 + 1)%3, q2 = (q0 + 2)%3;
+  const Real tn = 1.0/sqrt(c[q1]*c[q1] + c[q2]*c[q2]);
+  Real t1[3], t2[3];
+  t1[q0] = 0.0;  t1[q1] = -c[q2]*tn;  t1[q2] = c[q1]*tn;
+  for (int q = 0; q < 3; ++q) {
+    t2[q] = c[(q+1)%3]*t1[(q+2)%3] - c[(q+2)%3]*t1[(q+1)%3];
+  }
+  // a = merged share of the density contrast: 1 unless a group of uniform density needs
+  // more kinetic (+ potential) energy for the same momenta than the group has
+  Real a = 1.0, ke = 0.0, ep = db*vp, eth = es, cm[nm] = {}, w[nm] = {};
+  for (int it = 0; it < 2; ++it) {
+    Real G[nm][nm] = {};
+    for (int kk = k; kk < k + f; ++kk) {
+      for (int jj = j; jj < j + f; ++jj) {
+        Real rh[3], b1[3], b2[3], cc, v[3], b[nm][3];
+        MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
+        MlatModes(rh, c, t1, t2, b);
+        const Real dv = g.vol(m,kk,jj,i);
+        const Real d = gas ? db + (1.0 - a)*(u(m,0,kk,jj,i) - db) : 1.0;
+        if (it == 0) {
+          MlatToCart(rh, b1, b2, cc, u(m,1,kk,jj,i), u(m,2,kk,jj,i), u(m,3,kk,jj,i), v);
+        }
+        for (int p = 0; p < nm; ++p) {
+          if (it == 0) cm[p] += dv*(v[0]*b[p][0] + v[1]*b[p][1] + v[2]*b[p][2]);
+          for (int q = 0; q <= p; ++q) {
+            G[p][q] += dv*d*(b[p][0]*b[q][0] + b[p][1]*b[q][1] + b[p][2]*b[q][2]);
+          }
+        }
+      }
+    }
+    if (!(db > 0.0) || !MlatSolve(G, cm, w)) break;
+    ke = 0.0;
+    for (int p = 0; p < nm; ++p) ke += 0.5*cm[p]*w[p];
+    if (it == 0 && gas) {
+      const Real e0 = fmax(es - ke0 - ep0, 0.0), x = ke + ep - ke0 - ep0;
+      if (!(rmin > 0.0) || !(x > 0.0)) break;
+      a = e0/(e0 + x);
+      ep = db*vp + (1.0 - a)*(ep0 - db*vp);
+    } else {
+      break;
+    }
+  }
+  if (gas) {
+    eth = es - ke - ep;
+    if (!(eth > 0.0)) Kokkos::atomic_add(&nfb(0), 1);
+    Kokkos::atomic_min(&amn(0), a);
+  }
+  for (int kk = k; kk < k + f; ++kk) {
+    for (int jj = j; jj < j + f; ++jj) {
+      Real rh[3], b1[3], b2[3], cc, b[nm][3], v[3] = {0.0, 0.0, 0.0};
+      MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
+      MlatModes(rh, c, t1, t2, b);
+      const Real d = gas ? db + (1.0 - a)*(u(m,0,kk,jj,i) - db) : 1.0;
+      for (int p = 0; p < nm; ++p) {
+        for (int q = 0; q < 3; ++q) v[q] += d*w[p]*b[p][q];
+      }
+      u(m,0,kk,jj,i) = gas ? d : sb[0];
+      MlatFromCart(rh, b1, b2, v, u(m,1,kk,jj,i), u(m,2,kk,jj,i), u(m,3,kk,jj,i));
+      if (gas) {
+        u(m,IEN,kk,jj,i) = d*eth/ms + 0.5*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])/d +
+                           (grav ? d*phi(m,kk,jj,i) : 0.0);
+        for (int n = 0; n < nsc; ++n) {
+          u(m,nhyd+n,kk,jj,i) = sb[n+1] + (1.0 - a)*(u(m,nhyd+n,kk,jj,i) - sb[n+1]);
+        }
+      }
+    }
+  }
+}
+
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -106,12 +268,28 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
   if (pin->DoesParameterExist("hydro", "merge_lat_check")) {
     check = pin->GetBoolean("hydro", "merge_lat_check");
   }
+  std::string mom = "rigid";
+  if (pin->DoesParameterExist("hydro", "merge_lat_mom")) {
+    mom = pin->GetString("hydro", "merge_lat_mom");
+  } else if (recipe::NewDefaults(pin)) {
+    mom = pin->GetOrAddString("hydro", "merge_lat_mom", "radial");
+    recipe::Log("<hydro>/merge_lat_mom = radial (default on a fresh start)");
+  }
+  radial = (mom == "radial");
+  if (!radial && mom != "rigid") MlatFatal("merge_lat_mom = radial | rigid");
+  if (radial) {
+    const std::string st = pin->GetString("hydro", "merge_lat_rc") + " " +
+                           pin->GetString("hydro", "merge_lat_f");
+    state_kept = pin->DoesParameterExist("hydro", "merge_lat_state") &&
+                 pin->GetString("hydro", "merge_lat_state") == st;
+    pin->SetString("hydro", "merge_lat_state", st);
+  }
   if (global_variable::my_rank == 0) {
     std::cout << "MLAT merged lateral cells: " << nsh << " shell(s):";
     for (int n = 0; n < nsh; ++n) {
       std::cout << " x1v < " << rc[n] << " f " << fs[n] << ";";
     }
-    std::cout << " mom rigid, rad "
+    std::cout << " mom " << mom << ", rad "
               << (rad ? "merged" : "fine") << std::endl;
   }
 }
@@ -200,13 +378,26 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
   auto phi_ = phi;
   const bool grav_ = grav;
   DvceArray1D<int> nfb("mlat_nfb", 1);
+  DvceArray1D<Real> amn("mlat_amin", 1);
+  Kokkos::deep_copy(amn, 1.0);
   const bool chk_ = check && (kind == 0);
-  DvceArray1D<Real> cerr("mlat_cerr", 4);
+  const bool radial_ = radial;
+  DvceArray1D<Real> cerr("mlat_cerr", 5);
   par_for("mlat_avg", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, imax_loc,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int f = fi_(m,i);
     if (f <= 1) return;
     if (((j - js) % f) != 0 || ((k - ks) % f) != 0) return;
+    if (radial_) {
+      Real s0[10], s1[10];
+      if (chk_) MlatGroupSums(g, u_, f, m, k, j, i, s0);
+      MlatGroupRadial(g, u_, phi_, grav_, kind, nhyd_, nvar_, f, m, k, j, i, nfb, amn);
+      if (chk_) {
+        MlatGroupSums(g, u_, f, m, k, j, i, s1);
+        MlatCheck(s0, s1, g.x1v(m,i), cerr);
+      }
+      return;
+    }
     if (kind == 1) {
       // radiation: E volume average, F the Cartesian volume average
       Real vs = 0.0, es = 0.0, fc[3] = {0.0, 0.0, 0.0};
@@ -242,7 +433,8 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
     // ---- hydro
     const Real r = g.x1v(m,i);
     Real vs = 0.0, ms = 0.0, es = 0.0, ss[4] = {0.0, 0.0, 0.0, 0.0}, vp = 0.0;
-    Real P[3] = {0.0, 0.0, 0.0}, X[3] = {0.0, 0.0, 0.0}, Lo[3] = {0.0, 0.0, 0.0};
+    Real P[3] = {0.0, 0.0, 0.0}, X[3] = {0.0, 0.0, 0.0}, s0[10], s1[10];
+    if (chk_) MlatGroupSums(g, u_, f, m, k, j, i, s0);
     const int nsc = nvar_ - nhyd_;
     for (int kk = k; kk < k + f; ++kk) {
       for (int jj = j; jj < j + f; ++jj) {
@@ -261,11 +453,6 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
         for (int q = 0; q < 3; ++q) {
           P[q] += dv*v[q];
           X[q] += dv*r*rh[q];
-        }
-        if (chk_) {
-          Lo[0] += dv*r*(rh[1]*v[2] - rh[2]*v[1]);
-          Lo[1] += dv*r*(rh[2]*v[0] - rh[0]*v[2]);
-          Lo[2] += dv*r*(rh[0]*v[1] - rh[1]*v[0]);
         }
       }
     }
@@ -358,48 +545,21 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
       }
     }
     if (chk_) {
-      // <hydro>/merge_lat_check: the group sums after the replacement vs before
-      Real m2 = 0.0, e2 = 0.0, p2[3] = {0.0, 0.0, 0.0}, l2[3] = {0.0, 0.0, 0.0};
-      for (int kk = k; kk < k + f; ++kk) {
-        for (int jj = j; jj < j + f; ++jj) {
-          Real rh[3], b1[3], b2[3], cc, v[3];
-          MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
-          const Real dv = g.vol(m,kk,jj,i);
-          MlatToCart(rh, b1, b2, cc, u_(m,IM1,kk,jj,i), u_(m,IM2,kk,jj,i),
-                     u_(m,IM3,kk,jj,i), v);
-          m2 += dv*u_(m,IDN,kk,jj,i);
-          e2 += dv*u_(m,IEN,kk,jj,i);
-          for (int q = 0; q < 3; ++q) {
-            p2[q] += dv*v[q];
-          }
-          l2[0] += dv*r*(rh[1]*v[2] - rh[2]*v[1]);
-          l2[1] += dv*r*(rh[2]*v[0] - rh[0]*v[2]);
-          l2[2] += dv*r*(rh[0]*v[1] - rh[1]*v[0]);
-        }
-      }
-      // momentum and L errors scaled by the group's |P| + M c-free scale: |m| sum
-      Real pn = 0.0, ln = 0.0, dp = 0.0, dl = 0.0;
-      for (int q = 0; q < 3; ++q) {
-        pn += P[q]*P[q];  ln += Lo[q]*Lo[q];
-        dp += (p2[q] - P[q])*(p2[q] - P[q]);  dl += (l2[q] - Lo[q])*(l2[q] - Lo[q]);
-      }
-      const Real pr = sqrt(dp/fmax(pn, 1.0e-300));
-      const Real lr = sqrt(dl)/fmax(sqrt(ln) + r*sqrt(pn), 1.0e-300);
-      Kokkos::atomic_max(&cerr(0), fabs(m2 - ms)/fmax(fabs(ms), 1.0e-300));
-      Kokkos::atomic_max(&cerr(1), fabs(e2 - es)/fmax(fabs(es), 1.0e-300));
-      Kokkos::atomic_max(&cerr(2), pr);
-      Kokkos::atomic_max(&cerr(3), lr);
+      MlatGroupSums(g, u_, f, m, k, j, i, s1);
+      MlatCheck(s0, s1, r, cerr);
     }
   });
   if (chk_) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cerr);
-    for (int n = 0; n < 4; ++n) {
+    for (int n = 0; n < 5; ++n) {
       chkerr[n] = std::max(chkerr[n], static_cast<double>(h(n)));
     }
   }
   if (kind == 0) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), nfb);
     nfallback += h(0);
+    auto ha = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amn);
+    amin = std::min(amin, static_cast<double>(ha(0)));
   }
 }
 
@@ -480,24 +640,29 @@ void MergeLat::Diag(const DvceArray5D<Real> &u, const char *tag) {
     a.the_array[5] += dv*(x[1]*v[2] - x[2]*v[1]);
     a.the_array[6] += dv*(x[2]*v[0] - x[0]*v[2]);
     a.the_array[7] += dv*(x[0]*v[1] - x[1]*v[0]);
+    const Real va = dv*sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+    a.the_array[8] += va;
+    a.the_array[9] += r*va;
   }, Kokkos::Sum<array_sum::GlobalSum>(s));
-  double h[8];
-  for (int n = 0; n < 8; ++n) h[n] = s.the_array[n];
+  double h[10];
+  for (int n = 0; n < 10; ++n) h[n] = s.the_array[n];
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, h, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, h, 10, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   std::int64_t nf = nfallback;
   MPI_Allreduce(MPI_IN_PLACE, &nf, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-  double ce[4] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3]};
-  MPI_Allreduce(MPI_IN_PLACE, ce, 4, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+  double ce[5] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3], chkerr[4]}, am = amin;
+  MPI_Allreduce(MPI_IN_PLACE, ce, 5, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &am, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 #else
   std::int64_t nf = nfallback;
-  double ce[4] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3]};
+  double ce[5] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3], chkerr[4]}, am = amin;
 #endif
   if (global_variable::my_rank == 0) {
     std::printf("MLATDIAG %s cyc %d t %.10e dt %.6e M %.16e E %.16e P %.10e %.10e %.10e "
-                "L %.16e %.16e %.16e nfb %" PRId64 " chk %.2e %.2e %.2e %.2e\n", tag,
+                "L %.16e %.16e %.16e nfb %" PRId64 " chk %.2e %.2e %.2e %.2e %.2e "
+                "amin %.2e Pabs %.10e Labs %.10e\n", tag,
                 pm->ncycle, pm->time, pm->dt, h[0], h[1], h[2], h[3], h[4], h[5], h[6],
-                h[7], nf, ce[0], ce[1], ce[2], ce[3]);
+                h[7], nf, ce[0], ce[1], ce[2], ce[3], ce[4], am, h[8], h[9]);
     std::fflush(stdout);
   }
 }

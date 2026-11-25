@@ -113,6 +113,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     pmlat->Build();
     mlfi_ = pmlat->fi;
   }
+  const bool mlw_ = (mlat_ && pmlat->radial);
   // the averaged polar rows' phi CFL width is the GROUP width N_j dx3
   const bool rav_ = (pravg != nullptr);
   DvceArray2D<Real> rnf_;
@@ -367,8 +368,10 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           if (use_cubed_sphere || use_spherical_polar) {
             h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
             if (mlat_) {
-              h[1] *= static_cast<Real>(mlfi_(m,i));
-              h[2] *= static_cast<Real>(mlfi_(m,i));
+              const Real mf = mlw_ ? MlatWidth(w0_, mlfi_(m,i), js, ks, m, k, j, i) :
+                              static_cast<Real>(mlfi_(m,i));
+              h[1] *= mf;
+              h[2] *= mf;
             }
           } else {
             h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
@@ -400,7 +403,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       if (curv) {
         q1 = dx1_(m,k,j,i)/max_dv1;
         if (mlat_) {
-          const Real mf = static_cast<Real>(mlfi_(m,i));
+          const Real mf = mlw_ ? MlatWidth(w0_, mlfi_(m,i), js, ks, m, k, j, i) :
+                          static_cast<Real>(mlfi_(m,i));
           q2 = mf*dx2_(m,k,j,i)/max_dv2;
           q3 = mf*dx3_(m,k,j,i)/max_dv3;
         } else {
