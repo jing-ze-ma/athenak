@@ -69,7 +69,7 @@ const char *kDtrMinimal[] = {
   // RadiationVet
   "vet.u0", "vet.f0x1", "vet.f0x2", "vet.f0x3", "vet.ipred", "vet.t2k1",
   "vet.vet_prev", "vet.ctr_mem", "vet.csk1",
-  "vet.vra_d", "vet.opac", "vet.tau_ten", "vet.vet_cell",
+  "vet.vra_d", "vet.opac", "vet.vet_cell",
   "vet.vlat_cs",
   // step 1 time2_face_fct: the face E flux of K1 (rotated with it)
   "vet.t2pf1",
@@ -113,7 +113,7 @@ const char *kDtrMinimal[] = {
 // the Views of kDtrMinimal that <rad_vet>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
-  "vet.ipred", "vet.csk1", "vet.tau_ten", "vet.cmi_cnt", "vet.fcd_cnt_d",
+  "vet.ipred", "vet.csk1", "vet.cmi_cnt", "vet.fcd_cnt_d",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of

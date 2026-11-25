@@ -183,10 +183,6 @@ constexpr int VETRAY_F1  = 41;
 constexpr int VETRAY_FX  = 45;
 constexpr int VETRAY_F3  = 49;
 constexpr int VETRAY_NFS = 16;  // the face sums F2, F1, FX, F3
-// tau_ten slots of the lateral correction (vet_col_lat): dD_ab in the mesh basis,
-// rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
-constexpr int VET_TT_LAT0 = 4;
-constexpr int VET_TT_NLAT = 6;
 // extra vgd_hr components of the vet_gd thin switch (VetGdHalfRange)
 constexpr int VET_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J
 constexpr int VET_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
@@ -836,7 +832,6 @@ class RadiationVet {
   bool impl_pos_gas_cons = false;
   DvceArray4D<Real> pgc_def;      // (m,k,j,i) uncovered gas raise x volume
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) uncovered floor energy of the cell
-  bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
   // time2_vet_col_source = state: the predict/rebuild build takes its VET source from the
   // predicted state itself (vet_col_source = gas); relaxed (default)
@@ -848,8 +843,6 @@ class RadiationVet {
   Real t2_pcap = 0.0;
   Real t2_pnlim = 0.0, t2_pncell = 0.0;   // limited / all cell-builds (Time2Report)
   DvceArray4D<Real> t2pth;      // (m,k,j,i) theta of the current build
-  DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
-  DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
   // old files (version < 4) carry time2_vet_col = extrap2 channels: read past
   static constexpr int VET_X2_NCH = 24;
   void Time2Report();
@@ -883,8 +876,8 @@ class RadiationVet {
   // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last VET
   // step: they travel in the restart (kVetRssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
-  //! closure tensor the signal speed reads: 0 E/3, 1 VetChi(F/cE), 2 tau_ten,
-  //! 3 vet_cell (chi, n), 4 vet_cell (D_dd), 5 cln_s (D, clean)
+  //! closure tensor the signal speed reads: 0 E/3, 1 VetChi(F/cE), 3 vet_cell (chi, n),
+  //! 4 vet_cell (D_dd), 5 cln_s (D, clean); 2 was the removed column tensor
   int RssMode() const;
   int RssRstMode() const;   // RssMode + 16 (extended restart state)
   int RssRstNch(int mode) const;  // channels written: opac(VET_OP_T) + the tensor's
@@ -1504,18 +1497,13 @@ class RadiationVet {
   CleanHaloList::Mask &CleanHaloMask(const std::array<uint32_t, 5> &key);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
 
-  // ---- closure = tau / vet_col column tensor (rad_vet_tau.cpp)
-  bool tau_closure{};          // = vet_col: the column tensor tau_ten is in use
-  bool tau_ready{};            // VetColInit has run
-  DvceArray5D<Real> tau_ten;   // (m,4,k,j,i): chi, n1, n2, n3 read by ImplicitSolve
-
-  // ---- closure = vet_col (rad_vet_vetcol.cpp): f_K = K/J of a 1-D formal solution per
-  // radial column (impact-parameter rays on sp, plane-parallel Gauss rays on Cartesian),
-  // a fixed uniaxial tensor about r_hat (or the M1 flux axis) through tau_ten
+  // ---- closure = vet_col (rad_vet_vetcol.cpp): with vet_gd the ray sweeps of the
+  // spherical-polar wedge and the cubed sphere; without it only the analytic closures
   bool vet_col{};              // closure = vet_col (default false)
+  bool tau_ready{};            // VetColInit has run
   bool vcol_sph{};             // spherical rays (sp) or plane-parallel (Cartesian)
   bool vcol_axis_flux{};       // vet_col_axis = flux: n = the M1 cell flux direction
-  int vcol_nc{}, vcol_np{}, vcol_nmu{}, vcol_every{}, vcol_nray{};
+  int vcol_nc{}, vcol_np{}, vcol_nmu{}, vcol_every{};
   // vet_col_fk_min: lower bound of f_K = K/J, 1/3 or 0 (D = diag(f, (1-f)/2, (1-f)/2)
   // stays realizable for 0 <= f <= 1)
   Real vcol_fkmin = 1.0/3.0;
@@ -1540,47 +1528,28 @@ class RadiationVet {
   // limiter's 2 (r_c/r_f)^2
   bool vcol_sqf = false;
   Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
-  bool vcol_built{};           // a tensor exists (vet_col_every > 1 skips builds)
-  Real vcol_time{}, vcol_ncall{}, vcol_nskip{};
   // vet_col_surface_q: outer-x1 Marshak q = H(top face)/J(top cell) per column
   bool vcol_sq{};
   Real vcol_qmin{}, vcol_qmax{};
-  int vcol_lc{};               // shells per chunk of the team build (scratch budget)
   DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
-  void VetColInit();           // checks, tau_ten, vcol_q (first call)
+  void VetColInit();           // checks, vcol_q (first call)
   void VetColReport();
 
-  // ---- vet_col_lat (rad_vet_vetcol.cpp): lateral correction of vet_col from a few-angle
-  // SC sweep, each direction swept through the 3-D field and through the column's
-  // laterally homogeneous twin; their moment difference (0 on a uniform state) is stored
-  // in tau_ten VET_TT_LAT0.. (mesh basis). dD_rr enters the diagonal, D_r,lat the face
-  // equations (VetSphLat).
+  // ---- the source (ln chi, ln S) of the vet_gd rays (rad_vet_vetcol.cpp)
   bool vlat_on = false;        // vet_col_lat
   // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetLatInit
   // refuses them under vet_col_lat / vet_gd
   std::string vlat_rat_keys;
-  // vet_col_lat_offdiag: D_r,lat in the solve, 0 none, 1 lagged Picard term, 2 operator
-  // (Krylov operator through the stencil and VetLatOp)
+  // vet_col_lat_offdiag (no effect)
   int vlat_odm = 2;
-  bool vlat_now = false;       // the term is on in this step (positivity fallback)
-  // vet_col_lat_posfix = lag: at a positivity trigger the lateral terms leave the
-  // operator (M-matrix form) but stay as the lagged Picard term; a second trigger in the
-  // step drops them (vlat_nfall)
-  bool vlat_posfix_lag = false;
-  bool vlat_lagfb = false;     // this step: the lateral terms lagged after a trigger
-  // implicit_fb_diag, implicit_fb_local (rad_vet_meshfb.cpp)
-  bool fbl_any = false;
-  DvceArray5D<Real> vlat_tt_loc;
-  DvceArray5D<Real> VlatTT() const {return fbl_any ? vlat_tt_loc : tau_ten;}
+  bool vlat_posfix_lag = false;   // vet_col_lat_posfix (no effect)
   int vlat_icut = 0;           // first shell of the sweep (CleanRayCut)
   Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
                                // this (0 off)
-  bool vlat_ready = false;     // VetLatInit done
-  Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
+  Real vlat_ncall = 0.0, vlat_nclamp = 0.0;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
   DvceArray1D<Real> vlat_cnt;  // (1): lateral reads clamped to the ghost band
-  MeshBoundaryValuesCC *pbval_ea = nullptr;   // EAUDITF diagnostic
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   void VetLatInit();
   void VetLatSweep();   // ln chi, ln S of a vet_gd build
@@ -1629,7 +1598,6 @@ class RadiationVet {
   // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n); vet_gd_rotate_slope_reuse: the
   // stage-1 solve keeps that closure build
   bool t2_rotcorr = false;
-  bool t2_vcreuse = false;
   bool vgd_rot_creuse = true;
   Real vgd_rot_cfrac = 0.0;
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;

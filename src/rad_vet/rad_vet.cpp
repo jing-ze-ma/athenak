@@ -1358,17 +1358,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_time = 0.0;
   vet_itime = 0.0;
   vet_ncall = 0.0;
-  tau_closure = false;
   tau_ready = false;
   vet_col = false;
   vcol_sph = false;
   vcol_axis_flux = false;
-  vcol_nc = vcol_np = vcol_nmu = vcol_every = vcol_nray = 0;
-  vcol_built = false;
-  vcol_time = vcol_ncall = vcol_nskip = 0.0;
+  vcol_nc = vcol_np = vcol_nmu = vcol_every = 0;
   vcol_sq = false;
   vcol_qmin = vcol_qmax = 0.0;
-  vcol_lc = 1;
   {std::string cl = pin->GetOrAddString("rad_vet","closure","m1");
   chi_kind = VET_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -1409,9 +1405,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       << std::endl;
     std::exit(EXIT_FAILURE);
   } else if (cl.compare("vet_col") == 0) {
-    // per-column 1-D formal solution through tau_ten (rad_vet_vetcol.cpp)
+    // (rad_vet_vetcol.cpp)
     eddington = false;
-    tau_closure = true;
     vet_col = true;
     vcol_nc = pin->GetOrAddInteger("rad_vet","vet_col_ncore",8);
     vcol_np = pin->GetOrAddInteger("rad_vet","vet_col_nsub",1);
@@ -1974,7 +1969,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
               << " advect_split=" << (advect_split ? "true" : "false")
               // the closure as named in the input
               << " closure=" << (vet_col ? "vet_col" : vet_sc ? "vet_sc" :
-                                 tau_closure ? "tau" : eddington ? "eddington" :
+                                 eddington ? "eddington" :
                                  (chi_kind == VET_CHI_MINERBO) ? "minerbo" :
                                  (chi_kind == VET_CHI_KERSHAW) ? "kershaw" : "m1")
               << std::endl;
@@ -2104,20 +2099,15 @@ int RadiationVet::RssRstMode() const {return RssMode() + 16;}
 int RadiationVet::RssMode() const {
   // clean: its own Eddington tensor cln_s, once CleanInit ran
   if (cln_s.extent(0) > 0 && cln_init) return 5;
-  if (tau_closure && tau_ten.extent(0) > 0) return 2;
   if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
-  if (!eddington && !tau_closure && !vet_sc) return 1;
+  if (!eddington && !vet_col && !vet_sc) return 1;
   return 0;
 }
 
 int RadiationVet::RssRstNch(int mode) const {
-  // extended restart state (mode + 16): also the other opacity components and the tau
-  // tensor's lateral slots (read before a step's first rebuild)
-  if (mode >= 16) {
-    const int b = mode - 16;
-    return RssRstNch(b) + (opac.extent_int(1) - 1)
-           + ((b == 2 && tau_ten.extent_int(1) > 4) ? (tau_ten.extent_int(1) - 4) : 0);
-  }
+  // extended restart state (mode + 16): also the other opacity components.  Modes 2, 18
+  // (files of the removed column tensor): its channels are counted and read past
+  if (mode >= 16) return RssRstNch(mode - 16) + (opac.extent_int(1) - 1);
   if (mode == 2 || mode == 3) return 5;
   if (mode == 4) return 4;
   if (mode == 5) return 7;   // opac_T and the six components of cln_s's D
@@ -2125,17 +2115,15 @@ int RadiationVet::RssRstNch(int mode) const {
 }
 
 void RadiationVet::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
-  if (mode >= 16) {   // base slots, then opac (all but T), then tau_ten 4..
-    const int b = mode - 16, nb = RssRstNch(b), nop = opac.extent_int(1) - 1;
+  if (mode >= 16) {   // base slots, then opac (all but T)
+    const int b = mode - 16, nb = RssRstNch(b);
     if (n < nb) {RssSlot(b, n, a, c); return;}
     const int k = n - nb;
-    if (k < nop) {a = &opac; c = (k < VET_OP_T) ? k : (k + 1); return;}
-    a = &tau_ten;
-    c = 4 + (k - nop);
+    a = &opac;
+    c = (k < VET_OP_T) ? k : (k + 1);
     return;
   }
   if (n == 0) {a = &opac; c = VET_OP_T; return;}
-  if (mode == 2) {a = &tau_ten; c = n - 1; return;}
   if (mode == 5) {a = &cln_s; c = CLN_D11 + n - 1; return;}
   a = &vet_cell;
   c = (mode == 3) ? (VETRAY_CHI + n - 1) : (VETRAY_D11 + n - 1);
@@ -2169,10 +2157,9 @@ void RadiationVet::RssPrime(bool restart) {
   if (rss_stage_mode >= 16) {
     // extended record; the tensor slots only into the same closure
     const int mode = rss_stage_mode, b = mode - 16, nb = RssRstNch(b);
-    const bool tens = (b == 2 && tau_closure) || (b == 5 && RssMode() == 5) ||
+    const bool tens = (b == 5 && RssMode() == 5) ||
                       ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
                        (vet_full == (b == 4)));
-    if (b == 2 && tau_closure && !tau_ready) {VetColInit();}
     const int nmb = static_cast<int>(rss_stage.extent(0));
     const int nall = static_cast<int>(rss_stage.extent(1));
     const int nop = opac.extent_int(1) - 1;
@@ -2196,11 +2183,8 @@ void RadiationVet::RssPrime(bool restart) {
     const int mode = rss_stage_mode;
     // the tensor is put back only into the same kind of closure; opac always
     int want = 1;
-    if (mode == 2 && tau_closure) {
-      if (!tau_ready) {VetColInit();}
-      want = RssRstNch(mode);
-    } else if (((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
-                (vet_full == (mode == 4))) || (mode == 5 && RssMode() == 5)) {
+    if (((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
+         (vet_full == (mode == 4))) || (mode == 5 && RssMode() == 5)) {
       want = RssRstNch(mode);
     } else if (mode >= 2 && global_variable::my_rank == 0) {
       std::cout << "### WARNING: <rad_vet> the restart file's signal-speed closure "
@@ -2352,7 +2336,6 @@ RadiationVet::~RadiationVet() {
   delete pbval_u;
   if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_sg != nullptr) {delete pbval_sg;}
-  if (pbval_ea != nullptr) {delete pbval_ea;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_hr != nullptr) {delete pbval_hr;}
   if (pbval_gd != nullptr) {delete pbval_gd;}
