@@ -262,8 +262,6 @@ struct CleanArgs {
   Real ebath[6];               // boundary bath energy densities
   Real iflux[2];               // imposed fluxes of x1 flux faces, x1min/max
   DvceArray3D<Real> ifx2[2];   // imposed fluxes of x2 flux faces (m, k, i), x2min/max
-  Real marshak_q;
-  bool marshak;                // Marshak boundary form (else the rays' half range)
   bool use_beam;
   bool feedback;               // gas coupling (advective flux, exchange linearisation)
   bool vzero;                  // gas momentum frozen (cln_vzero, steady start)
@@ -288,7 +286,6 @@ struct CleanArgs {
   bool ucp;                    //   clean_stag_central: plain central, work on diagonal
   bool fwc;                    // al, ar and the cross factor from CLF_QL
   bool sar;                    // streaming share's net flux in area form
-  bool bar;                    // clean_bc_area: open x1 end's h+- E in area form too
   DvceArray5D<Real> op;        // opacities (VET_OP_*)
   int nf;                      // number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -831,12 +828,12 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceChi
-//! \brief chi of a face: mean of its two cells; clean_face_opac = harmonic: an x1 face
-//! off physical boundaries takes the distance-weighted harmonic mean
+//! \brief chi of a face: mean of its two cells; an x1 face off physical boundaries takes
+//! the distance-weighted harmonic mean
 
 KOKKOS_INLINE_FUNCTION
 Real CleanFaceChi(const DvceArray5D<Real> &op, const DvceArray2D<Real> &x1f,
-                  const DvceArray2D<BoundaryFlag> &bc, const bool hrm, const int dir,
+                  const DvceArray2D<BoundaryFlag> &bc, const int dir,
                   const int m, const int k, const int j, const int i, const int is,
                   const int ie) {
   const Real cl = op(m,VET_OP_T,k-(dir == 2),j-(dir == 1),i-(dir == 0));
@@ -844,7 +841,7 @@ Real CleanFaceChi(const DvceArray5D<Real> &op, const DvceArray2D<Real> &x1f,
   auto phys = [&](const int s) {
     return bc(m,s) != BoundaryFlag::block && bc(m,s) != BoundaryFlag::periodic;
   };
-  if (!hrm || dir != 0 || (i == is && phys(0)) || (i == ie + 1 && phys(1)) ||
+  if (dir != 0 || (i == is && phys(0)) || (i == ie + 1 && phys(1)) ||
       !(cl > 0.0 && cr > 0.0)) {
     return 0.5*(cl + cr);
   }
@@ -876,13 +873,12 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
   al = 0.0;
   ar = 0.0;
-  // (clean_bc_area: an open r end's net outflow h+ + h- in area form, as CleanStagArea)
-  const bool ba = x.bar && !x.marshak && dir == 0 && (x.sph || x.cub);
+  // (an open r end's net outflow h+ + h- in area form, as CleanStagArea)
+  const bool ba = dir == 0 && (x.sph || x.cub);
   if (pos == lo && CleanBc(x, m, 2*dir) != VET_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir)) return;   // (a wall; an imposed flux is all source)
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
-    if (beam && x.marshak) return;
-    ar = x.marshak ? -x.c*x.marshak_q : x.c*x.cs(m,CLN_HM+dir,k,j,i);
+    ar = x.c*x.cs(m,CLN_HM+dir,k,j,i);
     if (ba) ar += x.c*fmin(x.cs(m,CLN_HP,k,j,i) + x.cs(m,CLN_HM,k,j,i), 0.0)*
                   (CleanAreaRatio(x, 0, m, k, j, i, k, j, i) - 1.0);
     // (clean_stag_upwind: an open end carries a E, the end cell's on outflow)
@@ -893,7 +889,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   }
   if (pos == hi && CleanBc(x, m, 2*dir+1) != VET_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir+1)) return;
-    al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
+    al = x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
     if (ba) al += x.c*fmax(x.cs(m,CLN_HP,kl,jl,il) + x.cs(m,CLN_HM,kl,jl,il), 0.0)*
                   (CleanAreaRatio(x, 0, m, k, j, i, kl, jl, il) - 1.0);
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir+1)) {
@@ -1188,8 +1184,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     }
     const bool up = x.upw && x.feedback && !x.hi;
     const Real ab = up ? fmax(CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i), 0.0) : 0.0;
-    return (x.marshak ? x.c*x.marshak_q*x.ebath[2*dir] : 0.25*x.c*x.ebath[2*dir]) +
-           ab*x.ebath[2*dir];
+    return 0.25*x.c*x.ebath[2*dir] + ab*x.ebath[2*dir];
   }
   if (pos == hi && CleanBc(x, m, 2*dir+1) != VET_IBC_PERIODIC) {
     if (CleanBc(x, m, 2*dir+1) == VET_IBC_REFLECT) return 0.0;
@@ -1199,8 +1194,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     const bool up = x.upw && x.feedback && !x.hi;
     const Real ab = up ? fmin(CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il), 0.0)
                        : 0.0;
-    return (x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1]) +
-           ab*x.ebath[2*dir+1];
+    return -0.25*x.c*x.ebath[2*dir+1] + ab*x.ebath[2*dir+1];
   }
   // (clean_stag_xdonor: explicit share of the lagged fluxes, CleanStagXSplit)
   if (x.xq >= 0 && !x.hi) return x.fc[dir](m,x.xq+2,k,j,i);

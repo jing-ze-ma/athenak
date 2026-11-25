@@ -107,28 +107,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     pin->GetOrAddInteger("rad_vet","rst_version",1);
-    // clean_w_fse: thin-share thinness g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
+    // thin-share thinness g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
     // 1), w = smoothstep((g - c0)/(c1 - c0)): upwind streaming where the field is
     // anisotropic, not merely non-local
-    cln_wfse = pin->GetOrAddBoolean("rad_vet","clean_w_fse",true);
-    // clean_w_fse_tau: eps -> 1 - (1 - eps)(1 - exp(-tau_d)), tau_d = chi V/A_f
-    cln_wfst = cln_wfse && pin->GetOrAddBoolean("rad_vet","clean_w_fse_tau",true);
-    cln_c0 = pin->GetOrAddReal("rad_vet","clean_w_c0",cln_wfse ? 0.3 : 0.1);
-    cln_c1 = pin->GetOrAddReal("rad_vet","clean_w_c1",cln_wfse ? 0.6 : 0.5);
-    // clean_face_hctau: the bracket's ray face flux F_y interpolated in optical depth
-    // between the cell centres, kept where the cells' H jump (CleanStagBracket)
-    cln_hctau = pin->GetOrAddBoolean("rad_vet","clean_face_hctau",
-                                     fix("clean_face_hctau", "true", "false"));
-    // clean_face_jse: face half ranges in the shape of the cells' half-range fluxes
-    cln_jse = pin->GetOrAddBoolean("rad_vet","clean_face_jse",true);
-    // clean_face_jse_cell: its factor on the donor cell's h+-, not the face value
-    cln_jsec = pin->GetOrAddBoolean("rad_vet","clean_face_jse_cell",false);
-    // clean_face_area: sp / cs streaming share in area form (CleanStagArea) also under
-    // clean_stag_gflux
-    cln_farea = pin->GetOrAddBoolean("rad_vet","clean_face_area",false);
-    // clean_bc_area: an open x1 end's half-range flux c h+- E in area form, net outward
-    // stream h+ + h- x A_c/A_f
-    cln_bcarea = pin->GetOrAddBoolean("rad_vet","clean_bc_area",true);
+    // eps -> 1 - (1 - eps)(1 - exp(-tau_d)), tau_d = chi V/A_f
+    cln_c0 = pin->GetOrAddReal("rad_vet","clean_w_c0",0.3);
+    cln_c1 = pin->GetOrAddReal("rad_vet","clean_w_c1",0.6);
     cln_tol = pin->GetOrAddReal("rad_vet","clean_tol",1.0e-10);
     // clean_maxnl, clean_maxit, clean_conv_max do not take implicit_maxit,
     // implicit_lin_maxit, implicit_tol_rel_max (a named other value prints a NOTE).
@@ -184,11 +168,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_kpred = !(pin->DoesParameterExist("rad_vet","implicit_predictor") &&
                   !pin->IsParameterDefaulted("rad_vet","implicit_predictor") &&
                   pin->GetString("rad_vet","implicit_predictor") == "none");
-    {std::string bf = pin->GetOrAddString("rad_vet","clean_bc","halfrange");
-    cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
-    // clean_stag_opac_update: opacities at the iterate's temperature; clean_face_opac =
-    // harmonic | arith: the face opacity
+    // clean_stag_opac_update: opacities at the iterate's temperature
     cln_opt = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_update",
                                    fix("clean_stag_opac_update", "true", "false"));
     // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
@@ -197,15 +178,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (CleanStagDrag)
     cln_optdr = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_drag",
                                      fix("clean_stag_opac_drag", "true", "false"));
-    {const std::string fo = pin->GetOrAddString("rad_vet","clean_face_opac",
-        fix("clean_face_opac", "harmonic", "arith") ? "harmonic" : "arith");
-    if (fo != "arith" && fo != "harmonic") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_face_opac = arith | harmonic"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_hface = (fo == "harmonic");}
     // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU
     {const std::string fl = pin->GetOrAddString("rad_vet","clean_stag_fs_line",
         fix("clean_stag_fs_line", "pcr", "thomas") ? "pcr" : "thomas");
@@ -397,10 +369,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xlag = (xd == "lag");
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",
                                               fix("clean_stag_xsrc", "true", "false"));
-    // clean_stag_eicarry: a stage start's gas eint < 0 enters the gas row as is, paid by
-    // its implicit exchange (CleanOldVector)
-    cln_eicry = pin->GetOrAddBoolean("rad_vet","clean_stag_eicarry",
-                                     fix("clean_stag_eicarry", "true", "false"));
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
     // radiation's (CleanLzBook)
@@ -413,9 +381,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_lzt = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_tel",
                                      fix("clean_cs_lz_tel", "true", "false"));
     }
-    // clean_cs_lz_bnd_free: no radiation stress torque through the cs radial boundaries
-    if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_bnd_free",
-        fix("clean_cs_lz_bnd_free", "true", "false"));
     // clean_cs_lat_wb: a spherically symmetric P gives the cs lateral faces no force
     // (CleanStagCsLat).  Default on for the cubed sphere, also on a restart without it
     if (cln_lza == 2) {
@@ -483,17 +448,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "clean_xt_exact=cons, or clean_stag_central=false" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_ring_jmin: a ring J ratio J_s/J_b only where both J >= clean_ray_min E
-    // (elsewhere the offset is invalid)
-    // clean_rot_ring_fill_rst: at a restart from a file without the clean state the ring
-    // fill takes the older sets' offsets swept at the restart state (CleanRingMoments)
-    cln_rfrst = pin->GetOrAddBoolean("rad_vet","clean_rot_ring_fill_rst",true);
-    // clean_rst_mshare: at such a restart the VET share's memory starts at the first
-    // solution's steady flux (CleanStagFSolve)
-    cln_rmsh = pin->GetOrAddBoolean("rad_vet","clean_rst_mshare",true);
-    // clean_source_convex: the rays' vet_scatter source with kappa_P/chi capped at 1,
-    // S = J + min(kappa_P/chi, 1)(B - J) between J and B
-    cln_srccvx = pin->GetOrAddBoolean("rad_vet","clean_source_convex",true);
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_freal needs clean_consistency "
                 << "(the F solve and gflux)" << std::endl;
@@ -532,12 +486,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::cout << "### FATAL ERROR <rad_vet>/clean_wb_fct needs clean_gas_tfloor and "
                 << "clean_xt_exact = cons | x2" << std::endl;
       std::exit(EXIT_FAILURE);
-    }
-    // clean_wb_floor_fail: a write-back whose E floor takes energy its own gas does not
-    // give is not admissible (stage fails; BE step to dt_retry, efloor_column); accepted
-    // at the last cut with a CLEAN WARNING
-    if (pin->DoesParameterExist("rad_vet","clean_wb_floor_fail")) {
-      cln_wbff = pin->GetBoolean("rad_vet","clean_wb_floor_fail");
     }
     // clean_wb_exch_local (default with clean_gas_tfloor): the write-back's cell exchange
     // solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))

@@ -1192,9 +1192,9 @@ void RadiationVet::CleanRingMoments() {
   const int qb = 0, qn = (slot[nk] >= 0) ? 1 : 0;
   auto pd = cln_rpd;
   if (!cln_rok || b != cln_rb) {
-    // (f0: fill outside the steady start; clean_rot_ring_fill_rst: a restart's first
+    // (f0: fill outside the steady start; a restart's first
     // fill from an older-format file fills as the steady start does)
-    const bool f0 = !cln_insteady && !(cln_rfrst && cln_rstold && !cln_rfdone && full);
+    const bool f0 = !cln_insteady && !(cln_rstold && !cln_rfdone && full);
     cln_rfdone = cln_rfdone || (cln_rstold && full);
     if (shift) {
       CleanRingShift(b);
