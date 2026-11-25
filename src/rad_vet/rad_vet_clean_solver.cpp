@@ -1350,8 +1350,13 @@ void RadiationVet::CleanFaceCoefficients() {
         const Real ct = op(m,M1_OP_T,kk,jj,ii);
         Real ep = (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
         if (wft && ep < 1.0) {   // (clean_w_fse_tau: tau_d = chi V/A_f, the faces' mean)
-          const Real td = 2.0*ct/(CleanDivW(*px, dir, m, kk, jj, ii, 0) +
-                                  CleanDivW(*px, dir, m, kk, jj, ii, 1));
+          Real td = 2.0*ct/(CleanDivW(*px, dir, m, kk, jj, ii, 0) +
+                            CleanDivW(*px, dir, m, kk, jj, ii, 1));
+          if (px->cub && dir > 0) {   // (the cell's own family: one w at a seam)
+            Real s;
+            const int q = CleanCsSlot(*px, dir, m, k, j, i, kk, jj, ii, false, s)/2;
+            td = ct*px->g(m,CLG_F+3,kk,jj,ii)/px->g.At<CLG_A>(m,q,kk,jj,ii);
+          }
           ep = 1.0 - (1.0 - ep)*(1.0 - exp(-td));
         }
         return fmax(sqrt(h2), ep*cs(m,CLN_C1,kk,jj,ii)/1.5);
