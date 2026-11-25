@@ -461,8 +461,9 @@ void RhseRelax(Mesh *pm) {
   auto eos = fl.eos;
   const bool gen = eos.IsGeneral(), mhd = fl.mhd;
   auto em = mhd ? RhseEmag(pm) : DvceArray4D<Real>("rhse_e0", 1, 1, 1, 1);
-  par_for("rhse_relax", DevExeSpace(), 0, pmbp->nmb_thispack-1, indcs.ks, indcs.ke,
-          indcs.js, indcs.je,
+  // (with the x2, x3 ghosts, which the next steady start reads)
+  par_for("rhse_relax", DevExeSpace(), 0, pmbp->nmb_thispack-1, 0, uh.extent_int(2)-1,
+          0, uh.extent_int(3)-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int i = is; i < ie; ++i) {
       const Real d = uh(m,IDN,k,j,i)*exp(-(pc(m,k,j,i+1) - pc(m,k,j,i) -
