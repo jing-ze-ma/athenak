@@ -139,6 +139,23 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     if (zc) rst_keep_.push_back(tmp);
     stage(out, tmp);
   };
+  // device packs where the host reads device memory: over rad_vet's arena (marena, dead
+  // between cycles), else their own allocation
+  std::size_t aoff = 0;
+  auto dbuf = [&](const char *lbl, const int n0, const int nf) {
+    const std::size_t n = static_cast<std::size_t>(n0)*nf*nout3*nout2*nout1;
+    Real *p = nullptr;
+    if (pradvet != nullptr && aoff + n <= pradvet->marena.extent(0)) {
+      p = pradvet->marena.data() + aoff;
+      aoff += n;
+    }
+    if (p == nullptr) {
+      return DvceArray5D<Real>(std::string(lbl), n0, nf, nout3, nout2, nout1);
+    }
+    DvceArray5D<Real> d(p, n0, nf, nout3, nout2, nout1);
+    Kokkos::deep_copy(d, 0.0);
+    return d;
+  };
   // hgmem: a module's pack (fn writes a device-typed (n0, nf, k, j, i) View) where the
   // host does not read device memory: straight into pinned host memory (no device copy
   // at a dump; the same bytes), then staged; elsewhere the device array as before
@@ -152,7 +169,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::fence();
       stage(out, HostArray5D<Real>(pin.data(), n0, nf, nout3, nout2, nout1));
     } else {
-      DvceArray5D<Real> tmp(std::string(lbl), n0, nf, nout3, nout2, nout1);
+      DvceArray5D<Real> tmp = dbuf(lbl, n0, nf);
       fn(tmp);
       hold(out, tmp);
     }
@@ -295,15 +312,18 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
             Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
         // (independent I/O, synchronous: one MeshBlock's buffer, packed and written
         // MeshBlock by MeshBlock in WriteOutputFile)
-        const int nst = (um && nfv == 0 && !IOWrapper::collective) ? 1 : nmb;
+        const bool st = um && nfv == 0 && !IOWrapper::collective;
+        const int nst = st ? 1 : nmb;
         // (and, without ray intensities in the record, in windows of at most
-        // <job>/restart_window_mb)
-        const int nwin = (nst < nmb && pradvet->CleanRstNfv() == 0) ?
-            std::max(1, std::min(nct, static_cast<int>(win_mb_*1048576.0/
-                                 (sizeof(Real)*nout1*nout2*nout3)))) : nct;
+        // <job>/restart_window_mb and half of rad_vet's arena, dbuf)
+        const double ns = static_cast<double>(nout1)*nout2*nout3;
+        double nw = win_mb_*1048576.0/(sizeof(Real)*ns);
+        const double na = 0.5*pradvet->marena.extent(0)/ns;
+        if (na >= 1.0) nw = std::min(nw, na);
+        const int nwin = (st && pradvet->CleanRstNfv() == 0) ?
+            std::max(1, static_cast<int>(std::min(static_cast<double>(nct), nw))) : nct;
         if (um) {
-          outarray_vett_d = DvceArray5D<Real>("rst-vett-d", nst, nwin, nout3, nout2,
-                                              nout1);
+          outarray_vett_d = dbuf("rst-vett-d", nst, nwin);
           outarray_vett = HostArray5D<Real>(outarray_vett_d.data(), nst, nwin, nout3,
                                             nout2,
                                            nout1);
@@ -313,7 +333,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-vett-mb",
             um ? 0 : static_cast<size_t>(nc0)*nout3*nout2*nout1);
         auto AL = Kokkos::ALL;
-        for (int m = 0; m < ((nst < nmb) ? 0 : nmb); ++m) {
+        for (int m = 0; m < ((nst < nmb || nwin < nct) ? 0 : nmb); ++m) {
           DvceArray5D<Real> tmp(um ? outarray_vett_d.data() + outarray_vett_d.stride(0)*m
                                 :
                                 pin.data(), 1, nc0, nout3, nout2, nout1);
@@ -1547,13 +1567,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     }
     const IOWrapperSizeT cnt = static_cast<IOWrapperSizeT>(n)*nout1*nout2*nout3;
     // (streamed, the time2 record: packed MeshBlock by MeshBlock in windows of nw slabs)
-    const bool st = (a.extent_int(0) < pm->nmb_thisrank);
+    const bool st = pk && (a.extent_int(0) < pm->nmb_thisrank || a.extent_int(1) < n);
     const int nw = st ? a.extent_int(1) : n;
     const IOWrapperSizeT ns = static_cast<IOWrapperSizeT>(nout1)*nout2*nout3;
     for (int m=0; m<pm->nmb_thisrank; ++m) {
       for (int w0=0; w0<n; w0+=nw) {
         if (st) {
           DvceArray5D<Real> t(const_cast<Real *>(a.data()), 1, nw, nout3, nout2, nout1);
+          Kokkos::deep_copy(t, 0.0);
           pk(t, m, w0);
           Kokkos::fence();
         }
