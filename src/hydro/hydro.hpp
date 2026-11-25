@@ -212,6 +212,11 @@ class Hydro {
   // restart files.
   DvceArray4D<Real> fofc_cnt;
   FofcReport fofc_rep;     // <hydro>/fofc_report (diagnostic, read only when named)
+  // <hydro>/fofc_flag_exchange (cubed sphere, more than one MeshBlock per panel; default
+  // true on a fresh start): the flags of the same-panel ghosts are the owner's
+  MeshBoundaryValuesCC *pbval_fofc = nullptr;
+  DvceArray5D<Real> fofc_x;
+  void FofcExchangeFlags();
   // <problem>/nan_report: scan the fluxes and the conserved state for a non-finite value
   // after each stage-level operator and report the first offender. Default false, in
   // which case not one extra kernel runs. See the NanScan* helpers in hydro_tasks.cpp.

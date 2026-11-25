@@ -623,6 +623,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
+    if (use_fofc && ppack->pmesh->use_cubed_sphere && ppack->pmesh->nmb_total > 6 &&
+        pin->GetOrAddBoolean("hydro", "fofc_flag_exchange", recipe::NewDefaults(pin))) {
+      pbval_fofc = new MeshBoundaryValuesCC(ppack, pin, false);
+      pbval_fofc->SetVectorPairs(1, {});   // (the flag is a scalar)
+      pbval_fofc->InitializeBuffers(1);
+    }
     rec("dfloor_flux_limit", use_dfl);
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
@@ -861,6 +867,7 @@ Hydro::~Hydro() {
   delete peos;
   delete pbval_u;
   if (pbval_fs != nullptr) {delete pbval_fs;}
+  if (pbval_fofc != nullptr) {delete pbval_fofc;}
   if (pseamfs != nullptr) {delete pseamfs;}
   if (pbval_ml != nullptr) {delete pbval_ml;}
   if (mlat_own_rec && pmlfs != nullptr) {delete pmlfs;}

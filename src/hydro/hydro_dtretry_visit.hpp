@@ -50,6 +50,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
   v.view("fofc_cnt", fofc_cnt);
+  v.view("fofc_x", fofc_x);
   v.value("nan_report", nan_report);
   v.view("utest", utest);
   v.value("use_etotgrav", use_etotgrav);
@@ -134,6 +135,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   pcond : Conduction *
 //   psrc : SourceTerms *
 //   fofc_rep : FofcReport
+//   pbval_fofc : MeshBoundaryValuesCC *
 //   pam : hydro::AmModule *
 //   pmlat : hydro::MergeLat *
 //   pravg : hydro::RingAvg *
