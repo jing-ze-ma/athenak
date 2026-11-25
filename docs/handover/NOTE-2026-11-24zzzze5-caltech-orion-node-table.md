@@ -215,3 +215,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 00:28 02-16: lc_t9l62_F300 -> lc_t9l62_C300
 - 11-25 00:33 02-03: p_PRF_hgn -> b_next b_nextsuite lc_bsg_F300
 - 11-25 00:33 02-09: p_PRF_hgn -> lc_m35mms_F300
+- 11-25 00:37 02-03: b_next b_nextsuite lc_bsg_F300 -> b_next b_nextsuite
