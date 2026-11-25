@@ -302,6 +302,7 @@ struct CleanArgs {
   bool cub;
   bool ys = false;    // clean_stag_lat_sums: lateral sums Y off the cubed sphere
   bool lzbf = false;  // clean_lz_bnd_free on spherical polar (CleanFaceStress)
+  bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
   DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
   DvceArray4D<Real> ae0;   // cubed sphere: pcoord's radial face area (CleanDivW)
   CleanGeo g;
@@ -722,7 +723,10 @@ int CleanCsSlot(const CleanArgs &x, const int dir, const int m, const int kf,
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagCsLat
 //! \brief cubed sphere: n.(Y_p + Y_p') of cell (k,j,i), n the face's normal, p, p' the
-//! other two face families (owner's axes)
+//! other two face families (owner's axes).  clean_cs_lat_wb, a lateral face: n less its
+//! part along the cell's radial (centroid) direction, unit: the radial sum of a
+//! spherically symmetric P gives the face no force (the equiangular cells are not mirror
+//! images about it); O(dtheta^2) for a smooth P
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf,
@@ -732,6 +736,19 @@ Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf
   const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
   for (int c = 0; c < 3; ++c) n[c] = x.cub ? x.g.At<CLG_N>(m,3*dir+c,kf,jf,iff)
                                            : (c == q);
+  if (x.lwb && dir > 0) {
+    Real a[3], aa = 0.0, an = 0.0, nn = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      a[c] = x.g.At<CLG_X>(m,c,k,j,i);
+      aa += a[c]*a[c];
+      an += a[c]*n[c];
+    }
+    for (int c = 0; c < 3; ++c) {
+      n[c] -= an/aa*a[c];
+      nn += n[c]*n[c];
+    }
+    for (int c = 0; c < 3; ++c) n[c] /= sqrt(nn);
+  }
   for (int c = 0; c < 3; ++c) {
     d += n[c]*(x.cub ? x.w(m,CLW_L+3*p+c,k,j,i) + x.w(m,CLW_L+3*pp+c,k,j,i)
                      : x.yl(m,3*p+c,k,j,i) + x.yl(m,3*pp+c,k,j,i));
