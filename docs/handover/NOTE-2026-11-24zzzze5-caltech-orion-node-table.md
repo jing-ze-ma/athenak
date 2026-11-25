@@ -239,3 +239,9 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 01:00 02-03: b_fwbmem -> g_GATE_fwbmem
 - 11-25 01:01 02-03: g_GATE_fwbmem -> IDLE
 - 11-25 01:03 02-16: b_speed50 -> g_GATE_speed50
+- 11-25 01:04 02-09: suitenx0 -> IDLE
+- 11-25 01:04 02-16: g_GATE_speed50 -> IDLE
+- 11-25 01:05 02-03: IDLE -> hgx_HGV
+- 11-25 01:05 02-09: IDLE -> hgx_HGV
+- 11-25 01:07 02-03: hgx_HGV -> hgx_PRF2
+- 11-25 01:07 02-09: hgx_HGV -> hgx_PRF2
