@@ -1,0 +1,2 @@
+2026-11-24 17:48:37 start m35zams hpc-sm-01-15 BIN athena_c4_a000d803c md5=3ae130e97b13e5bdfa4a7f9a14370b9f deck /resnick/groups/carnegie_poc/jingze/preflight_1124/m35zams_z3.athinput md5=4cd3936d59572416ac0fcb5307804125; other steps on the node: 
+2026-11-24 17:49:40 rc=0 (srun) ended: Terminating on cycle limit wall=63 s CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
