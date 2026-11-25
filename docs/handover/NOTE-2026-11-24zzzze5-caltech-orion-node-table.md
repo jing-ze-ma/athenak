@@ -470,3 +470,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 04:33 02-03: s7_BASE1 -> s7_NEW1
 - 11-25 04:33 02-09: s7_BASE1 -> s7_NEW1
 - 11-25 04:34 02-16: b_mem50 suitemhd -> suitemhd
+- 11-25 04:35 02-03: s7_NEW1 -> s7_NEW2
+- 11-25 04:35 02-09: s7_NEW1 -> s7_NEW2
+- 11-25 04:37 02-03: s7_NEW2 -> s7_BASE2
+- 11-25 04:37 02-09: s7_NEW2 -> s7_BASE2
+- 11-25 04:38 02-16: suitemhd -> IDLE
