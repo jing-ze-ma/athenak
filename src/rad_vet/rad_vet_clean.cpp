@@ -3555,10 +3555,11 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
 //! \fn void RadiationVet::CleanStagFCone
 //! \brief clean_stag_fcone: the cell flux vector (CleanStagCellVector, F_i = sum_f F_f
 //! u_f) within the realisable cone |F_i| <= c E_i (E of work vector e), by construction.
-//! Each face is scaled towards 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i =
-//! sum_f |F_f| |u_f| >= |F_i|, so |F_i| <= l_i S_i <= c E_i.  One value per face (cubed
-//! sphere: the lower gid's) keeps flux form.  The gas takes the absorption of the scaled
-//! F (CLF_N + 1), G + d is kept, the momentum cut is booked and printed (CLEAN FCONE).
+//! Each face is scaled towards 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i^2 =
+//! sum_fg max(0, F_f u_f . F_g u_g), so |F_i| <= l_i S_i <= c E_i.  One value per face
+//! (cubed sphere: the lower gid's) keeps flux form.  The gas takes the absorption of the
+//! scaled F (CLF_N + 1), G + d is kept, the momentum cut is booked and printed (CLEAN
+//! FCONE).
 
 void RadiationVet::CleanStagFCone(const int e, const int kd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3587,22 +3588,32 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
   auto fcc = cln_fconc;
   CleanFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real s = 0.0, st = 0.0;   // (st: the faces with L_z arm, clean_stag_fcone_lz)
+    // l_i = min(1, c E_i/S_i), S_i^2 = sum_fg max(0, v_f.v_g) of the faces' vectors v_f =
+    // F_f u_f: |sum_f l_f v_f|^2 <= l_i^2 S_i^2 for every l_f in [0, l_i], S_i = |F_i| of
+    // a beam on an orthogonal mesh.  (sa, sb, sc: the faces with L_z arm, the two kinds'
+    // products, the others, clean_stag_fcone_lz)
+    Real v[6][3], sa = 0.0, sb = 0.0, sc = 0.0;
     for (int d = 0; d < 2*x.nf; ++d) {
       const int q = d/2, h = d%2;
-      Real c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, u[3];
-      c[d] = 1.0;
-      CleanStagCellVector(x, m, k, j, i, c, u);
-      const Real a = fabs(x.fc[q](m,CLF_N,k+h*(q == 2),j+h*(q == 1),i+h*(q == 0)))*
-                     sqrt(SQR(u[0]) + SQR(u[1]) + SQR(u[2]));
-      if (lz && !fa(q)) {
-        st += a;
-      } else {
-        s += a;
+      Real c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      c[d] = x.fc[q](m,CLF_N,k+h*(q == 2),j+h*(q == 1),i+h*(q == 0));
+      CleanStagCellVector(x, m, k, j, i, c, v[d]);
+      for (int g = 0; g <= d; ++g) {
+        const Real p = ((g < d) ? 2.0 : 1.0)*
+            fmax(v[d][0]*v[g][0] + v[d][1]*v[g][1] + v[d][2]*v[g][2], 0.0);
+        const int na = (lz && !fa(q)) + (lz && !fa(g/2));
+        if (na == 2) {
+          sa += p;
+        } else if (na == 1) {
+          sb += 0.5*p;
+        } else {
+          sc += p;
+        }
       }
     }
-    const Real ce = x.c*fmax(x.w(m,e,k,j,i), 0.0);
-    x.w(m,CLW_CP,k,j,i) = (st > ce) ? -ce/st : ((s + st > ce) ? (ce - st)/s : 1.0);
+    const Real ce = x.c*fmax(x.w(m,e,k,j,i), 0.0), r = SQR(ce) - sa;
+    x.w(m,CLW_CP,k,j,i) = (r < 0.0) ? -ce/sqrt(sa) :
+        ((2.0*sb + sc > r) ? (sqrt(SQR(sb) + sc*r) - sb)/sc : 1.0);
   });
   CleanGhostFill(cln_w, CLW_CP, 1);
   for (int d = 0; d < x.nf; ++d) {
