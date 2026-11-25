@@ -152,3 +152,9 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 22:23 02-03: suiterg0 suiterg1 suiterg2 suiterg3 -> pg_bsg suiterg0 suiterg1 suiterg2 suiterg3
 - 11-24 22:23 02-09: pg_m35mms rc_m35zams_R25a -> pg_m35mms rc_m35zams_R25b
 - 11-24 22:24 02-09: pg_m35mms rc_m35zams_R25b -> pg_m35mms rcan
+- 11-24 22:25 02-03: pg_bsg suiterg0 suiterg1 suiterg2 suiterg3 -> suiterg0 suiterg1 suiterg2 suiterg3
+- 11-24 22:25 02-09: pg_m35mms rcan -> rc_m35mms_R50
+- 11-24 22:25 02-16: IDLE -> pg_bsg pg_m35mms
+- 11-24 22:27 02-03: suiterg0 suiterg1 suiterg2 suiterg3 -> suiterg0
+- 11-24 22:27 02-09: rc_m35mms_R50 -> rc_m35mms_R25a
+- 11-24 22:28 02-09: rc_m35mms_R25a -> rc_m35mms_R25b
