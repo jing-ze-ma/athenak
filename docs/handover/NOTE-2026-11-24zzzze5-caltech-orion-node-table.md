@@ -88,3 +88,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 20:20 02-09: nm_NM0b -> nm_NMck
 - 11-24 20:21 02-09: nm_NMck -> nm_NM1
 - 11-24 20:22 02-09: nm_NM1 -> nm_MG1
+- 11-24 20:24 02-09: nm_MG1 -> IDLE
