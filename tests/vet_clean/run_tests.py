@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 
@@ -43,7 +44,7 @@ class Ctx:
         shutil.rmtree(self.dir, ignore_errors=True)
         os.makedirs(self.dir)
 
-    def run(self, deck, sub, over=None, args=(), restart=None, ranks=1):
+    def run(self, deck, sub, over=None, args=(), restart=None, ranks=1, timeout=3600):
         """Run deck (a file in decks/) with block/key overrides in DIR/sub; returns the
         run directory.  restart = a restart file to continue from instead.  The --keys
         overrides go into every fresh run (the test's own overrides win); a restart takes
@@ -59,7 +60,8 @@ class Ctx:
             vett.make_deck(os.path.join(DECKS, deck), os.path.join(d, 'in.athinput'), over)
             argv = ['-i', 'in.athinput']
         rc, wall, log = vett.run(self.exe, d, argv + list(args), ranks=ranks,
-                                threads=self.threads, mpirun=self.mpirun)
+                                threads=self.threads, mpirun=self.mpirun,
+                                timeout=timeout)
         if rc != 0:
             raise RuntimeError('%s: return code %s (see %s/run.log)' % (sub, rc, d))
         return d
@@ -139,6 +141,41 @@ def t_conservation_lz(c):
     out['retry_maxdiff'] = vett.compare_dirs(a, b)[1]
     out['warnings'] = sum(vett.warnings(open(os.path.join(c.dir, t, 'run.log')).read())
                           for t in ('sp', 'cs', 'r_straight', 'r_retry1'))
+    return out
+
+
+def t_mpi_ranks(c):
+    """2 MPI ranks against 1 on the same MeshBlocks, every reduced print and the keys that
+    have one on: the conservation_lz keys with floorcap_lz_spin on spherical polar (2
+    blocks along phi) and the cubed sphere, and floor_pay with floor_audit_worst: the dumps
+    and histories bitwise (maxdiff), no CLEAN WARNING; fcone_lz / lzspin: their lines in the
+    2-rank logs.  A collective that only one rank calls hangs (the run is stopped)."""
+    fc = dict(LZ_FC, **{'rad_vet/floorcap_rho': 100.0, 'rad_vet/floorcap_lz_spin': 'true',
+                        'rad_vet/floorcap_report': 1, 'rad_vet/clean_verbose': 2,
+                        'rad_vet/clean_wb_floor_diag': 8, 'hydro/floor_audit': 1,
+                        'time/nlim': 6})
+    sp = {'mesh/nx3': 16, 'meshblock/nx3': 8, 'mesh/nghost': 3}
+    pay = {'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+           'units/time_cgs': 1.0, 'hydro/tfloor': 1.00001e-4, 'time/nlim': 6,
+           'hydro/floor_pay': 'rad_column', 'hydro/floor_pay_skip': 'true',
+           'hydro/dfloor_flux_limit': 'true', 'hydro/floor_audit': 1,
+           'hydro/floor_audit_worst': 'true', 'rad_vet/clean_verbose': 2}
+    out = {'warnings': 0, 'fcone_lz': 0, 'lzspin': 0, 'files': 0}
+    for tag, deck, o in (
+            ('sp', 'shell_sp.athinput', dict(LZ_KEYS, **dict(fc, **dict(sp, **{
+                'rad_vet/clean_stag_fwb_ring': 1})))),
+            ('cs', 'shell_cs.athinput', dict(LZ_KEYS, **dict(fc, **{
+                'rad_vet/floorcap_rho': 1.0, 'rad_vet/floorcap_v': 0.05,
+                'time/nlim': 4}))),
+            ('pay', 'shell_sp.athinput', dict(pay, **sp))):
+        a = c.run(deck, tag + '1', o, timeout=600)
+        b = c.run(deck, tag + '2', o, ranks=2, timeout=600)
+        n, out['maxdiff_' + tag], _ = vett.compare_dirs(a, b)
+        out['files'] += n
+        log = open(os.path.join(b, 'run.log'), errors='replace').read()
+        out['warnings'] += vett.warnings(log)
+        out['fcone_lz'] += log.count('CLEAN FCONE_LZ')
+        out['lzspin'] += log.count('CLEAN LZSPIN')
     return out
 
 
@@ -1235,6 +1272,7 @@ TESTS = [  # name, function, in --quick
     ('conservation_cs', t_conservation_cs, True),
     ('conservation_lz', t_conservation_lz, False),
     ('floorcap_spin', t_floorcap_spin, False),
+    ('mpi_ranks', t_mpi_ranks, False),
     ('floor_dt', t_floor_dt, False),
     ('merge_lat', t_merge_lat, False),
     ('restart_sp', t_restart_sp, True),
@@ -1327,6 +1365,14 @@ def one(a, name, fn):
     return name, res, bad, time.time() - t0
 
 
+def has_mpi(a):
+    """the binary is an MPI build and the launcher is there."""
+    txt = subprocess.run([os.path.abspath(a.exe)] + ['-c'], stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT).stdout.decode(errors='replace')
+    return (shutil.which(a.mpirun.split()[0]) is not None and
+            re.search(r'MPI parallelism:\s*ON', txt) is not None)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
@@ -1352,6 +1398,10 @@ def main():
                 print('SKIP %-16s        needs --star-exe (a binary built with '
                       '-D PROBLEM=star_vet)' % n)
         sel = [t for t in sel if t[0] not in ('star_smoke', 'wb_star')]
+    if any(t[0] == 'mpi_ranks' for t in sel) and not has_mpi(a):
+        print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' %
+              'mpi_ranks')
+        sel = [t for t in sel if t[0] != 'mpi_ranks']
     print('clean VET test suite: %d tests, %s, %d at a time x %d threads, binary %s' % (
         len(sel), 'quick' if a.quick else 'full', a.jobs, a.threads, a.exe))
     t0, rows = time.time(), []
