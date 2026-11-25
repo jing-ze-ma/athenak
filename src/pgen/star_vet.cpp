@@ -454,7 +454,7 @@ void StarReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 // (problem/star_ic_rad = sph1d): helpers of the 1-D spherical grey
 // radiative-equilibrium solve of the initial column (see UserProblem)
 
-// kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
+// kappa_t = of + os (the total, = kappa_R: the rays' extinction and the pgen's
 // own ckt) of the module's tables at (d, t) [code units], one device thread per point
 void StarKtEval(const radvet::VetOpacTab &ot, const std::vector<Real> &d,
                 const std::vector<Real> &t, std::vector<Real> &k) {
@@ -945,7 +945,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // sph1d: above the depth tau_R = star_ic_rad_taub (from the mesh top, the run's
   // own kappa_t), the radiation energy density of the column is replaced by the solution
   // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
-  // vet_col/vet_gd source in RE, the vet_scatter split included) with the column's own
+  // the rays' source in RE, the vet_scatter split included) with the column's own
   // radiative flux F_r: a VET iteration of a p-z formal solution (f = K/J, g_top = H/J)
   // and the radial moment equation (StarSph1dPass).  The file's E above R_ph is an
   // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).

@@ -81,7 +81,6 @@ clean_layout = staggered
 scheme = clean
 c_light = 10
 chat_over_c = 1.0
-closure = vet_sc
 e_floor = 1.0e-30
 opacity = const
 kappa_p = 0.10000000000000001

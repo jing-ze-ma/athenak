@@ -3,9 +3,9 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file rad_vet_vetcol.cpp
-//! \brief Set-up read by the vet_gd closure (VetColInit: checks, outer Marshak q
-//! vcol_q, spherical Marshak coefficients) and the end-of-run cost report; then the checks,
+//! \file rad_vet_vetray.cpp
+//! \brief Set-up read by the vet_gd closure (VetRayInit: checks, outer Marshak q
+//! vcol_q, spherical Marshak coefficients), the end-of-run cost report; the checks,
 //! the buffers and the source (ln chi, ln S) of the vet_gd rays.
 
 #include <algorithm>
@@ -36,25 +36,25 @@
 namespace radvet {
 
 namespace {
-void VcolFatal(const std::string &msg) {
+void VrayFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_vet>/closure = vet_col: " << msg << std::endl;
+            << "<rad_vet> rays: " << msg << std::endl;
   std::exit(EXIT_FAILURE);
 }
 
 } // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetColInit
+//! \fn void RadiationVet::VetRayInit
 //! \brief the checks, the spherical Marshak coefficients and vcol_q
 
-void RadiationVet::VetColInit() {
+void RadiationVet::VetRayInit() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
-  if (!trans_on) {VcolFatal("needs <rad_vet>/transport = implicit on a MULTI-D mesh");}
-  if (pm->multilevel) {VcolFatal("SMR/AMR is not supported");}
-  if (ibc_x1min == VET_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
-  if (indcs.nx1 < 2) {VcolFatal("needs at least 2 cells along x1");}
+  if (!trans_on) {VrayFatal("needs <rad_vet>/transport = implicit on a MULTI-D mesh");}
+  if (pm->multilevel) {VrayFatal("SMR/AMR is not supported");}
+  if (ibc_x1min == VET_IBC_PERIODIC) {VrayFatal("a periodic x1 boundary has no top");}
+  if (indcs.nx1 < 2) {VrayFatal("needs at least 2 cells along x1");}
   vcol_sph = sph_geom;
   vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
   const int ie = indcs.ie;
@@ -78,18 +78,18 @@ void RadiationVet::VetColInit() {
                 << "the q is built but unused" << std::endl;
     }
   }
-  tau_ready = true;
-  VetLatInit();
+  vray_ready = true;
+  VetRaySetup();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetColReport
+//! \fn void RadiationVet::VetRayReport
 //! \brief one cost line at the end of the run (rank 0)
 
-void RadiationVet::VetColReport() {
+void RadiationVet::VetRayReport() {
   if (global_variable::my_rank != 0 || !vgd_on) return;
-  std::cout << "<rad_vet> vet_gd: " << vlat_ncall << " builds checked; lateral "
-            << "reads clamped to the ghost band (rank 0, all sweeps): " << vlat_nclamp
+  std::cout << "<rad_vet> vet_gd: " << vray_ncall << " builds checked; lateral "
+            << "reads clamped to the ghost band (rank 0, all sweeps): " << vray_nclamp
             << std::endl;
   std::cout << "<rad_vet> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
             << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
@@ -169,26 +169,11 @@ void RadiationVet::VetColReport() {
 }
 
 //----------------------------------------------------------------------------------------
-// lateral VET (vet_col_lat) and the vet_gd source
+//! \fn void RadiationVet::VetRaySetup
+//! \brief checks, buffers, exchange objects (called at the end of VetRayInit)
 
-namespace {
-void VlatFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_vet>/vet_gd: " << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
-
-} // namespace
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetLatInit
-//! \brief checks, buffers, exchange objects (called at the end of VetColInit)
-
-void RadiationVet::VetLatInit() {
+void RadiationVet::VetRaySetup() {
   Mesh *pm = pmy_pack->pmesh;
-  if (!sph_geom) {
-    VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
-  }
   // a stretched theta and the full sphere take the node table
   if (!pm->use_cubed_sphere) {
     vgd_pol = pm->use_polar_boundary;
@@ -199,8 +184,8 @@ void RadiationVet::VetLatInit() {
   // Athena++ ratio keys, and any non-uniform built xx2f / xx3f (cs panel coordinates
   // are uniform by construction).
   {
-    if (!vlat_rat_keys.empty()) {
-      VlatFatal("needs a laterally UNIFORM mesh; this input sets" + vlat_rat_keys +
+    if (!vray_rat_keys.empty()) {
+      VrayFatal("needs a laterally UNIFORM mesh; this input sets" + vray_rat_keys +
                 " (Athena++ ratio keys: AthenaK does not read them, its theta/phi grid "
                 "stays uniform -- remove them, or set 1)");
     }
@@ -229,23 +214,23 @@ void RadiationVet::VetLatInit() {
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%s cell widths range %.17g .. %.17g",
                       (a == 0) ? "x2 (theta)" : "x3 (phi)", dmin[a], dmax[a]);
-        VlatFatal(std::string("needs a laterally UNIFORM mesh; the built grid has ") + buf +
-                  " (the SC upwind interpolation is bilinear in (theta, phi) index "
+        VrayFatal(std::string("needs a laterally UNIFORM mesh; the built grid has ") +
+                  buf + " (the SC upwind interpolation is bilinear in (theta, phi) index "
                   "space; only radial stretches are supported)");
       }
     }
   }
   auto &indcs = pm->mb_indcs;
-  if (indcs.nx1 < 3) {VlatFatal("needs at least 3 cells along x1");}
+  if (indcs.nx1 < 3) {VrayFatal("needs at least 3 cells along x1");}
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-  Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
-  Kokkos::deep_copy(vlat_cs, 0.0);
-  Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
-  Kokkos::realloc(vlat_cnt, 1);
-  Kokkos::deep_copy(vlat_cnt, 0.0);
+  Kokkos::realloc(vray_cs, nmb, 2, c3, c2, c1);
+  Kokkos::deep_copy(vray_cs, 0.0);
+  Kokkos::realloc(vray_cs_c, nmb, 2, 1, 1, 1);
+  Kokkos::realloc(vray_cnt, 1);
+  Kokkos::deep_copy(vray_cnt, 0.0);
   pbval_vs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
@@ -255,10 +240,10 @@ void RadiationVet::VetLatInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetLatExchange
+//! \fn void RadiationVet::VetRayExchange
 //! \brief cell-centred ghost exchange of a (m, n, k, j, i) array
 
-void RadiationVet::VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
+void RadiationVet::VetRayExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                                   MeshBoundaryValuesCC *pb) {
   const int nv = static_cast<int>(a.extent(1));
   while (pb->InitRecv(nv) == TaskStatus::incomplete) {}
@@ -269,20 +254,20 @@ void RadiationVet::VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetLatCsFinish
-//! \brief ghosts of vlat_cs, then the ray cut (after VetLatSweep's source kernel)
+//! \fn void RadiationVet::VetRaySourceEnd
+//! \brief ghosts of vray_cs, then the ray cut (after VetRaySource's source kernel)
 
-void RadiationVet::VetLatCsFinish() {
-  VetLatExchange(vlat_cs, vlat_cs_c, pbval_vs);
+void RadiationVet::VetRaySourceEnd() {
+  VetRayExchange(vray_cs, vray_cs_c, pbval_vs);
   CleanRayCut();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetLatSweep
+//! \fn void RadiationVet::VetRaySource
 //! \brief source of a vet_gd build: ln chi, ln S of every active cell, their ghosts and
 //! the ray cut
 
-void RadiationVet::VetLatSweep() {
+void RadiationVet::VetRaySource() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -291,7 +276,7 @@ void RadiationVet::VetLatSweep() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
   auto opac_ = opac;
-  auto cs_ = vlat_cs;
+  auto cs_ = vray_cs;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
 
@@ -302,7 +287,7 @@ void RadiationVet::VetLatSweep() {
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real ar = arad, efl = e_floor;
   const bool cvx = cln_srccvx;   // clean_source_convex: kappa_P capped at chi
-  par_for_lb("vet_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for_lb("vet_ray_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,VET_IW_KT,k,j,i), 1.0e-300);
     Real e = fmax(noes ? ur_(m,VET_E,k,j,i) : iw_(m,VET_IW_EN,k,j,i), efl);
@@ -323,7 +308,7 @@ void RadiationVet::VetLatSweep() {
     cs_(m,0,k,j,i) = log(chi);
     cs_(m,1,k,j,i) = log(fmax(s, 1.0e-300));
   });
-  VetLatCsFinish();
+  VetRaySourceEnd();
 }
 
 } // namespace radvet

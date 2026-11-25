@@ -228,7 +228,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   // a restart's time2_vet (alias time2_vet_col) = extrap2: the extrap2 channels of a file
   // of version < 4 (Time2RstNchWant)
-  if (vet_col && global_variable::restart_run) {
+  if (sph_geom && global_variable::restart_run) {
     const std::string kvc = VetKeyName(pin, "time2_vet", {"time2_vet_col"});
     t2_x2old = pin->DoesParameterExist("rad_vet", kvc) &&
                pin->GetString("rad_vet", kvc).compare("extrap2") == 0;

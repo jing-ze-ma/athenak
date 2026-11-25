@@ -129,6 +129,22 @@ constexpr int VET_NVAR = 4;
 // explicit stages of the PD-ARS (Chu et al. 2019) integrator per substep
 constexpr int VET_NSTAGE = 2;
 
+//! \fn VetAnalytic
+//! \brief the input names an analytic clean_closure (eddington | sphere): no rays
+inline bool VetAnalytic(ParameterInput *pin) {
+  if (!pin->DoesParameterExist("rad_vet", "clean_closure")) {return false;}
+  const std::string c = pin->GetString("rad_vet", "clean_closure");
+  return c == "eddington" || c == "sphere";
+}
+
+//! \fn VetCurvedRays
+//! \brief spherical polar, cubed sphere: the rays of closure = sc.  Off with an analytic
+//! clean_closure; an input that names the old key vet_gd decides
+inline bool VetCurvedRays(ParameterInput *pin) {
+  return pin->DoesParameterExist("rad_vet", "vet_gd") ?
+         pin->GetBoolean("rad_vet", "vet_gd") : !VetAnalytic(pin);
+}
+
 //! \fn VetKeyName
 //! \brief the <rad_vet> name to read for a key with aliases: canon if present, else the
 //! first alias present, else canon. The canonical key wins over a differing alias.
@@ -158,7 +174,7 @@ inline std::string VetLzKey(ParameterInput *pin, const bool cs, const bool k1) {
                        : (k1 ? "clean_sp_lz_bnd_k1" : "clean_sp_lz_bnd")});
 }
 
-// components of RadiationVet::vet_cell (closure = vet_sc)
+// components of RadiationVet::vet_cell (closure = sc)
 constexpr int VETRAY_CHX = 0;   // extinction rho (kappa_F + kappa_s) [1/length]
 constexpr int VETRAY_SRC = 1;   // source function in E units (4 pi S / c)
 constexpr int VETRAY_J   = 2;   // E of the formal solution (4 pi J / c)
@@ -358,7 +374,7 @@ class RadiationVet {
   // esrc_on = true (implicit only): adds dt*(chat/c)*esrc to E's old vector and slope
   DvceArray4D<Real> esrc;
   bool esrc_on = false;
-  // vet_source_noesrc: the vet_col / vet_col_lat / vet_gd source reads E^n without the
+  // vet_source_noesrc: the ray source reads E^n without the
   // explicit esrc deposit (be only)
   bool vsrc_noes = false;
   // vet_source_noesrc_h2be: the same for the backward-Euler solves under hesdirk2
@@ -401,7 +417,7 @@ class RadiationVet {
 
   // ---- vet_sc short characteristics (rad_vet_vet.cpp): Eddington tensor K/J of a grey
   // formal solution, once per hydro step from the start-of-step state
-  bool vet_sc{};             // closure = vet_sc (default false)
+  bool vet_sc{};             // closure = sc on a Cartesian mesh
   int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
   bool vsc_gd = false;       // vet_sc_set = gd: the vet_gd direction set, pole on x1
   int vsc_gdmir = 0;         // ray r + nray/2 is the x1 mirror of ray r (1) or not (-1)
@@ -1472,10 +1488,7 @@ class RadiationVet {
   CleanHaloList::Mask &CleanHaloMask(const std::array<uint32_t, 5> &key);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
 
-  // ---- closure = vet_col (rad_vet_vetcol.cpp): with vet_gd the ray sweeps of the
-  // spherical-polar wedge and the cubed sphere; without it only the analytic closures
-  bool vet_col{};              // closure = vet_col (default false)
-  bool tau_ready{};            // VetColInit has run
+  bool vray_ready{};            // VetRayInit has run
   bool vcol_sph{};             // spherical rays (sp) or plane-parallel (Cartesian)
   // vet_scatter: electron scattering, the opacity split (otab.scat, opac VET_OP_S) and
   // VetScatterMix; vscat_form 1 ma (Jiang 2021 eq. 6), 2 absorption
@@ -1494,29 +1507,29 @@ class RadiationVet {
   bool vcol_sq{};
   Real vcol_qmin{}, vcol_qmax{};
   DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
-  void VetColInit();           // checks, vcol_q (first call)
-  void VetColReport();
+  void VetRayInit();           // checks, vcol_q (first call)
+  void VetRayReport();
 
-  // ---- the source (ln chi, ln S) of the vet_gd rays (rad_vet_vetcol.cpp)
-  // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetLatInit
+  // ---- the source (ln chi, ln S) of the vet_gd rays (rad_vet_vetray.cpp)
+  // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetRaySetup
   // refuses them
-  std::string vlat_rat_keys;
-  int vlat_icut = 0;           // first shell of the sweep (CleanRayCut)
-  Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
+  std::string vray_rat_keys;
+  int vray_icut = 0;           // first shell of the sweep (CleanRayCut)
+  Real vray_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
                                // this (0 off)
-  Real vlat_ncall = 0.0, vlat_nclamp = 0.0;
-  DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
-  DvceArray5D<Real> vlat_cs_c;
-  DvceArray1D<Real> vlat_cnt;  // (1): lateral reads clamped to the ghost band
-  MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
-  void VetLatInit();
-  void VetLatSweep();   // ln chi, ln S of a vet_gd build
-  void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
+  Real vray_ncall = 0.0, vray_nclamp = 0.0;
+  DvceArray5D<Real> vray_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
+  DvceArray5D<Real> vray_cs_c;
+  DvceArray1D<Real> vray_cnt;  // (1): lateral reads clamped to the ghost band
+  MeshBoundaryValuesCC *pbval_vs = nullptr;   // vray_cs
+  void VetRaySetup();
+  void VetRaySource();   // ln chi, ln S of a vet_gd build
+  void VetRayExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
 
   // ---- vet_gd (rad_vet_vetgd.cpp): Eddington tensor from an SC sweep along globally
   // fixed (Cartesian) HEALPix directions; sp wedge / cubed sphere
-  bool vgd_on = false;         // vet_gd
+  bool vgd_on = false;         // closure = sc on spherical polar, cubed sphere
   // HEALPix nside of a set that names none (12 nside^2 directions)
   static constexpr int vgd_nside = 3;
   int vgd_n = 0;
@@ -2141,14 +2154,14 @@ class RadiationVet {
 #if defined(KOKKOS_ENABLE_CUDA)
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // CUDA gx-false closures
 #endif
-  int vgd_scut = 0;            // vlat_icut the running sweep uses (sync: = vlat_icut)
+  int vgd_scut = 0;            // vray_icut the running sweep uses (sync: = vray_icut)
   DevExeSpace vgd_cur;         // instance the sweep/halo use
 #if MPI_PARALLEL_ENABLED
   MPI_Comm vgd_comm = MPI_COMM_WORLD;
 #endif
   void VetGdSource();
   void VetGdPost();
-  void VetLatCsFinish();
+  void VetRaySourceEnd();
 
   // ...in "vet_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

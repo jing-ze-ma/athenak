@@ -680,7 +680,7 @@ void RadiationVet::VgdBuildSet(std::vector<double> &d) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdInit
-//! \brief direction table, intensity array, exchange object, wall maps (from VetLatInit)
+//! \brief direction table, intensity array, exchange object, wall maps (from VetRaySetup)
 
 void RadiationVet::VetGdInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -1156,7 +1156,7 @@ void RadiationVet::VetGdInit() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRotInit
 //! \brief rotation keys of the angle set, shared by vet_gd and vet_sc (one clock, one
-//! key set); called from the closure parse of vet_col and of vet_sc
+//! key set); called from the closure parse, curved and Cartesian
 
 void RadiationVet::VetRotInit(ParameterInput *pin) {
   const bool fresh = !global_variable::restart_run;
@@ -2198,7 +2198,7 @@ void RadiationVet::VgdEs2Make() {
 
 bool RadiationVet::VetGdXffOk() {
   if (!vgd_xff || !vgd_xf) {return false;}
-  if (vlat_icut < vgd_rag_cut) {return false;}   // (a cut below the shared slabs)
+  if (vray_icut < vgd_rag_cut) {return false;}   // (a cut below the shared slabs)
   if (vgd_csg) {
     // the cubed-sphere sweep (VetGdCsSweep): pass lists, no early send
     return !vgd_gband && (vgd_i_xb.dummy == vgd_i.dummy);
@@ -4833,7 +4833,7 @@ void RadiationVet::VetGdIpcCheck() {
 //! ghost shell of the level above (up) or below, its band exchanged as a sweep shell
 
 void RadiationVet::VetGdX1Hand(const bool up) {
-  if (vgd_scut != 0) {VgdFatal("several MeshBlocks along x1 need vlat_icut = 0 (the "
+  if (vgd_scut != 0) {VgdFatal("several MeshBlocks along x1 need vray_icut = 0 (the "
                                "sweep from the inner face)");}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w;
@@ -5057,7 +5057,7 @@ void RadiationVet::VetGdSweep() {
   auto cs_ = vgd_cs;
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
-  auto cnt_ = vlat_cnt;
+  auto cnt_ = vray_cnt;
   auto mr_ = vgd_mr;
   auto x1f_ = vgd_x1f;
   // outside the block: on-rank neighbours are read from their interior (re-indexed at
@@ -5670,19 +5670,19 @@ void RadiationVet::VetGdSweep() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSource
-//! \brief source of a gd build: ln chi, ln S of every cell (VetLatSweep) into the band
+//! \brief source of a gd build: ln chi, ln S of every cell (VetRaySource) into the band
 //! index space of vgd_cs with its lateral band filled exactly (one multi-shell
 //! exchange); with several MeshBlocks along x1 also the x1 ghost shells
 
 void RadiationVet::VetGdSource() {
-  VetLatSweep();
+  VetRaySource();
   // from the first shell up (gd sweep), or every shell for the clean scheme, whose rays
   // and closure read the whole column
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int og = vgd_w - indcs.ng, ok = vgd_w - indcs.ks, x1g = (vgd_nb1 > 1) ? 1 : 0;
   const int cut = 0;
   const int ilo = indcs.is + cut - x1g, ie = indcs.ie + x1g;
-  auto cs_ = vlat_cs;
+  auto cs_ = vray_cs;
   auto cw_ = vgd_cs;
   par_for("vet_vgd_csw", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks,
           indcs.ke, indcs.js, indcs.je, ilo, ie,
@@ -5700,7 +5700,7 @@ void RadiationVet::VetGdSource() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdBuild
-//! \brief the gd build: source and first shell (VetLatSweep),
+//! \brief the gd build: source and first shell (VetRaySource),
 //! sweep(s) with the lagged lateral inflow, moments; timed per part (fenced)
 
 void RadiationVet::VetGdBuild() {
@@ -5731,7 +5731,7 @@ void RadiationVet::VetGdSweepPost() {
   Kokkos::Timer tm;
   // the per-shell halo makes one sweep exact
   vgd_cur = DevExeSpace();
-  vgd_scut = vlat_icut;
+  vgd_scut = vray_icut;
   tm.reset();
   VetGdSweep();
   Kokkos::fence();
@@ -5747,16 +5747,16 @@ void RadiationVet::VetGdSweepPost() {
 void RadiationVet::VetGdPost() {
   Kokkos::fence();
   VetGdIpcCheck();
-  vlat_ncall += 1.0;
+  vray_ncall += 1.0;
   // persistent pinned buffer
-  if (vgd_pin_cnt.extent(0) != vlat_cnt.extent(0)) {
+  if (vgd_pin_cnt.extent(0) != vray_cnt.extent(0)) {
     vgd_pin_cnt = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("vet_vgd_pin_cnt",
-                                                                     vlat_cnt.extent(0));
+                                                                     vray_cnt.extent(0));
   }
-  Kokkos::deep_copy(vgd_pin_cnt, vlat_cnt);
-  vlat_nclamp = vgd_pin_cnt(0);
+  Kokkos::deep_copy(vgd_pin_cnt, vray_cnt);
+  vray_nclamp = vgd_pin_cnt(0);
   // all ranks (sweep exactness: a read beyond the band is clamped and counted)
-  vgd_nclamp_all = vlat_nclamp;
+  vgd_nclamp_all = vray_nclamp;
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &vgd_nclamp_all, 1, MPI_ATHENA_REAL, MPI_SUM,
                 MPI_COMM_WORLD);
