@@ -3437,10 +3437,8 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       fsd = (dir == 0) ? dmax : fmax(fsd, dmax);
       fsf = (dir == 0) ? fmx : fmax(fsf, fmx);
     }
-    // clean_stag_fwb_ring in a closed box: the net torque of s of a theta cone is 0
-    auto open = [&](const int b) {return b != VET_IBC_REFLECT && b != VET_IBC_FLUX;};
-    if (ph == 1 && dir == x.nf - 1 && fwb && cln_fwbpj[2] && !open(x.bc[0]) &&
-        !open(x.bc[1])) {
+    // clean_stag_fwb_ring: no net torque of s
+    if (ph == 1 && dir == x.nf - 1 && fwb && cln_fwbpj[2]) {
       yfill(0);
       CleanStagFwbProject(ln);
     }
@@ -3756,109 +3754,52 @@ void RadiationVet::CleanRingMatesInit(const int d, CleanRingMates &rm) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagFwbProject
-//! \brief clean_stag_fwb_ring (spherical polar, closed radial boundaries): the phi faces'
-//! F less mu o/it, o = w/(1 + tau), mu = sum R V_f s/sum R V_f o over all faces of a theta
-//! cone, so that the net torque sum R V_f s of fwb's s (what the row without fwb's share
-//! lacks) is 0: the rest of the row telescopes round a ring.  (An open radial side: s is a
-//! radial torque flux's divergence that leaves there.)  Each MeshBlock's sums at its
-//! position along phi in one mesh-wide array (one MeshBlock along x1), summed over the
-//! ranks and in order, so mu does not depend on the rank count.  Tile mode: the sums of
-//! each tile along phi, then the tiles in order, so mu does not depend on the MeshBlocks
+//! \brief clean_stag_fwb_ring (spherical polar, periodic x3): the phi faces' F less the
+//! rigid rotation W R E o/it, o = w/(1 + tau), W = sum R V s/sum R^2 V E o over the mesh, so
+//! that the net torque sum R V s of fwb's s (what the row without fwb's share lacks) is 0:
+//! the rest of a row telescopes round its ring, and gas + radiation L_z changes only by the
+//! stress at the radial boundaries.  The sums do not depend on the layout (CleanSumCells)
 
 void RadiationVet::CleanStagFwbProject(const CleanFLine &ln) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks, nmb = pmy_pack->nmb_thispack;
-  const int n1 = indcs.nx1, n2 = indcs.nx2, n3 = indcs.nx3;
-  Mesh *pm = pmy_pack->pmesh;
-  const int nr = pm->nmb_rootx3;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
   auto fc = x.fc[2];
-  const int tn = (repro::tile_n > 0) ? repro::tile_n : n3, nc = n3/tn;
-  auto mu = ScratchView<DvceArray4D<Real>>("cln_fwmu", nmb, n2, 1, 2*nc);
   const CleanArgs *px = CleanDevArgs(x, 0);
-  auto face = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s,
-                            Real &o) {
+  auto lxs = ScratchView<DvceArray4D<Real>>("cln_lxs", nmb1 + 1, u0.extent_int(2),
+                                            u0.extent_int(3), u0.extent_int(4));
+  auto lxi = ScratchView<DvceArray4D<Real>>("cln_lxi", nmb1 + 1, u0.extent_int(2),
+                                            u0.extent_int(3), u0.extent_int(4));
+  // R E o of face (k,j,i) (low side of cell (k,j,i))
+  auto wt = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px;
+    const Real tau = 0.5*(x.op(m,VET_OP_T,k,j,i) + x.op(m,VET_OP_T,k-1,j,i))*
+                     CleanCellFaceDistance(x, 2, m, k, j, i);
+    return x.x1v(m,i)*x.tg(m,2,j)*fc(m,CLF_W,k,j,i)/(1.0 + tau)*
+           fmax(0.5*(x.w(m,x.fwe,k,j,i) + x.w(m,x.fwe,k-1,j,i)), 0.0);
+  };
+  CleanFor("cln_fwbp", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px;
     Real lo, hi, dg, r;
-    s = o = 0.0;
+    lxs(m,k,j,i) = lxi(m,k,j,i) = 0.0;
     if (CleanBoundaryFace(x, 2, m, k, j, i) ||
         !CleanStagFRow(x, ln, fc, 2, m, k, j, i, lo, hi, dg, r, true, nullptr, false)) {
       return;
     }
-    const Real tau = 0.5*(x.op(m,VET_OP_T,k,j,i) + x.op(m,VET_OP_T,k-1,j,i))*
-                     CleanCellFaceDistance(x, 2, m, k, j, i);
-    o = fc(m,CLF_W,k,j,i)/(1.0 + tau);
-    s = lo*ln.Far(x, 2, m, k, j, i, k-1, j, i) + dg*x.w(m,CLW_S,k,j,i) +
-        hi*ln.Far(x, 2, m, k, j, i, k, j, i) - r;
-  };
-  par_for("cln_fwbp", DevExeSpace(), 0, nmb - 1, 0, n2 - 1,
-  KOKKOS_LAMBDA(const int m, const int b) {
-    const CleanArgs &x = *px;
-    for (int c = 0; c < nc; ++c) {
-      Real ss = 0.0, sw = 0.0;
-      for (int k = ks + c*tn; k < ks + (c + 1)*tn; ++k) {
-        for (int i = is; i < is + n1; ++i) {
-          Real s, o;
-          face(m, k, js + b, i, s, o);
-          const Real v = x.x1v(m,i)*(CleanVol(x, m, k, js+b, i) +
-                                     CleanVol(x, m, k-1, js+b, i));
-          ss += v*s;
-          sw += v*o;
-        }
-      }
-      mu(m,b,0,2*c) = ss;
-      mu(m,b,0,2*c+1) = sw;
-    }
+    const Real v = x.x1v(m,i)*x.tg(m,2,j)*0.5*(CleanVol(x, m, k, j, i) +
+                                               CleanVol(x, m, k-1, j, i));
+    lxs(m,k,j,i) = v*(lo*ln.Far(x, 2, m, k, j, i, k-1, j, i) + dg*x.w(m,CLW_S,k,j,i) +
+                      hi*ln.Far(x, 2, m, k, j, i, k, j, i) - r);
+    lxi(m,k,j,i) = v*wt(m, k, j, i);
   });
-  auto mq = mu;
-  if (nr > 1) {   // (the other MeshBlocks' sums, then all positions in order)
-    CleanRingMates &rm = cln_fwr[2];
-    if (rm.nmb != nmb || rm.nt != pm->nmb_total) CleanRingMatesInit(2, rm);
-    auto rb = ScratchView<DvceArray4D<Real>>("cln_fwrb", std::max(rm.nslot, 1), n2, 1,
-                                             2*nc);
-    mq = ScratchView<DvceArray4D<Real>>("cln_fwmq", nmb, n2, 1, 2*nc);
-#if MPI_PARALLEL_ENABLED
-    const int nw = n2*2*nc;
-    std::vector<MPI_Request> rq(rm.rcv.size() + rm.snd.size());
-    DevExeSpace().fence();
-    size_t r = 0;
-    for (auto &v : rm.rcv) {
-      MPI_Irecv(rb.data() + static_cast<size_t>(v[0])*nw, nw, MPI_ATHENA_REAL, v[1],
-                4250 + v[2], MPI_COMM_WORLD, &rq[r++]);
-    }
-    for (auto &v : rm.snd) {
-      MPI_Isend(mu.data() + static_cast<size_t>(v[0])*nw, nw, MPI_ATHENA_REAL, v[1],
-                4250 + v[2], MPI_COMM_WORLD, &rq[r++]);
-    }
-    MPI_Waitall(static_cast<int>(rq.size()), rq.data(), MPI_STATUSES_IGNORE);
-#endif
-    auto src = rm.src;
-    auto mo = mq;
-    par_for("cln_fwbr", DevExeSpace(), 0, nmb - 1, 0, n2 - 1, 0, 1,
-    KOKKOS_LAMBDA(const int m, const int b, const int c) {
-      Real s = 0.0;
-      for (int p = 0; p < nr; ++p) {
-        const int sl = src(m,p);
-        for (int t = 0; t < nc; ++t) {
-          s += (sl >= 0) ? mu(sl,b,0,2*t+c) : rb(-1-sl,b,0,2*t+c);
-        }
-      }
-      mo(m,b,0,c) = s;
-      for (int t = 1; t < nc; ++t) mo(m,b,0,2*t+c) = 0.0;
-    });
-  }
-  par_for("cln_fwbq", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-  KOKKOS_LAMBDA(const int m, const int c3, const int b, const int a) {
+  const Real sx = CleanSumCells(lxs), si = CleanSumCells(lxi);
+  const Real w = (si > 0.0) ? sx/si : 0.0;
+  CleanFor("cln_fwbq", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px;
-    Real ss = 0.0, sw = 0.0, s, o;
-    for (int c = 0; c < nc; ++c) {
-      ss += mq(m,b,0,2*c);
-      sw += mq(m,b,0,2*c+1);
-    }
-    const int k = ks + c3, j = js + b, i = is + a;
-    if (!(sw > 0.0)) return;
-    face(m, k, j, i, s, o);
-    x.w(m,CLW_S,k,j,i) -= (ss/sw)*o*fc(m,CLF_TH,k,j,i);
+    if (lxi(m,k,j,i) > 0.0) x.w(m,CLW_S,k,j,i) -= w*wt(m, k, j, i)*fc(m,CLF_TH,k,j,i);
   });
 }
 
