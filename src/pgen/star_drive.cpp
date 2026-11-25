@@ -123,7 +123,7 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
       if (q == 0) {return u0(m,IDN,k,j,i)*v;}
       if (q == 1) {return v;}
       if (q == 2) {return u0(m,IEN,k,j,i)*v;}
-      return ur(m,radvet::M1_E,k,j,i)*v;
+      return ur(m,radvet::VET_E,k,j,i)*v;
     }, rs);
     for (int q = 0; q < nq; ++q) {
       for (int i = is; i <= ie; ++i) {
@@ -142,7 +142,7 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
           s0 += u0(m,IDN,k,j,i)*v;
           s1 += v;
           s2 += u0(m,IEN,k,j,i)*v;
-          s3 += ur(m,radvet::M1_E,k,j,i)*v;
+          s3 += ur(m,radvet::VET_E,k,j,i)*v;
         }
       }
     }

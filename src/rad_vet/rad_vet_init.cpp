@@ -40,22 +40,22 @@ namespace {
 
 int ImplBCFromString(const std::string &s, const BoundaryFlag mbc) {
   if (s.compare("auto") == 0) {
-    if (mbc == BoundaryFlag::periodic) return M1_IBC_PERIODIC;
-    if (mbc == BoundaryFlag::reflect) return M1_IBC_REFLECT;
-    return M1_IBC_MARSHAK;
+    if (mbc == BoundaryFlag::periodic) return VET_IBC_PERIODIC;
+    if (mbc == BoundaryFlag::reflect) return VET_IBC_REFLECT;
+    return VET_IBC_MARSHAK;
   }
-  if (s.compare("marshak") == 0) return M1_IBC_MARSHAK;
-  if (s.compare("flux") == 0) return M1_IBC_FLUX;
-  if (s.compare("reflect") == 0) return M1_IBC_REFLECT;
-  if (s.compare("periodic") == 0) return M1_IBC_PERIODIC;
-  if (s.compare("efix") == 0) return M1_IBC_EFIX;
-  if (s.compare("outflow") == 0) return M1_IBC_OUTFLOW;
+  if (s.compare("marshak") == 0) return VET_IBC_MARSHAK;
+  if (s.compare("flux") == 0) return VET_IBC_FLUX;
+  if (s.compare("reflect") == 0) return VET_IBC_REFLECT;
+  if (s.compare("periodic") == 0) return VET_IBC_PERIODIC;
+  if (s.compare("efix") == 0) return VET_IBC_EFIX;
+  if (s.compare("outflow") == 0) return VET_IBC_OUTFLOW;
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
     << std::endl << "<rad_vet>/implicit_bc_x1min|max = '" << s << "' is not a valid "
     << "choice (auto | marshak | flux | reflect | periodic | efix | outflow (scheme = "
     << "clean))" << std::endl;
   std::exit(EXIT_FAILURE);
-  return M1_IBC_MARSHAK;
+  return VET_IBC_MARSHAK;
 }
 
 //----------------------------------------------------------------------------------------
@@ -111,9 +111,9 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   {std::string sv = pin->GetOrAddString("rad_vet","implicit_solver","line_jacobi");
   if (sv.compare("line_jacobi") == 0) {
-    impl_solver = M1_ISOLV_LINE_JACOBI;
+    impl_solver = VET_ISOLV_LINE_JACOBI;
   } else if (sv.compare("bicgstab") == 0) {
-    impl_solver = M1_ISOLV_BICGSTAB;
+    impl_solver = VET_ISOLV_BICGSTAB;
   } else {
     ImplFatal("<rad_vet>/implicit_solver = '" + sv
               + "' is not a choice (line_jacobi | bicgstab)");
@@ -123,11 +123,11 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   std::string sod = pin->GetOrAddString("rad_vet","implicit_offdiag","auto");
   bool od_auto = (sod.compare("auto") == 0);
   if (od_auto || sod.compare("lagged") == 0) {
-    impl_offdiag = M1_OD_LAGGED;
+    impl_offdiag = VET_OD_LAGGED;
   } else if (sod.compare("operator") == 0) {
-    impl_offdiag = M1_OD_OPERATOR;
+    impl_offdiag = VET_OD_OPERATOR;
   } else if (sod.compare("none") == 0) {
-    impl_offdiag = M1_OD_NONE;
+    impl_offdiag = VET_OD_NONE;
   } else {
     ImplFatal("<rad_vet>/implicit_offdiag = '" + sod
               + "' is not a choice (auto | lagged | operator | none)");
@@ -163,11 +163,11 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   // implicit_trans_limit: transverse realizability limiter
   {std::string st = pin->GetOrAddString("rad_vet","implicit_trans_limit","none");
   if (st.compare("none") == 0) {
-    impl_tlim = M1_TLIM_NONE;
+    impl_tlim = VET_TLIM_NONE;
   } else if (st.compare("lp") == 0) {
-    impl_tlim = M1_TLIM_LP;
+    impl_tlim = VET_TLIM_LP;
   } else if (st.compare("lpr") == 0) {
-    impl_tlim = M1_TLIM_LPR;
+    impl_tlim = VET_TLIM_LPR;
   } else {
     ImplFatal("<rad_vet>/implicit_trans_limit = '" + st
               + "' is not a choice (none | lp | lpr)");
@@ -224,7 +224,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet","implicit_pos_gas_frac")) {
     impl_pos_gas_frac = pin->GetReal("rad_vet","implicit_pos_gas_frac");
   }
-  Kokkos::realloc(pos_cnt_d, M1_POS_N);
+  Kokkos::realloc(pos_cnt_d, VET_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
   marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
   // implicit_marshak_face: cell | linear (Marshak face value; spherical wedge only)
@@ -250,9 +250,9 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   std::string srn = pin->GetOrAddString("rad_vet","implicit_recon","dc");
   if (srn.compare("dc") == 0) {
-    impl_recon = M1_IRECON_DC;
+    impl_recon = VET_IRECON_DC;
   } else if (srn.compare("plm_dc") == 0) {
-    impl_recon = M1_IRECON_PLMDC;
+    impl_recon = VET_IRECON_PLMDC;
   } else {
     ImplFatal("<rad_vet>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
@@ -261,15 +261,15 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   const std::string sen = pin->GetOrAddString("rad_vet","implicit_enthalpy",
                                               enth_up ? "upwind" : "plm");
   if (sen.compare("upwind") == 0) {
-    impl_enth = M1_IENTH_UPWIND;
+    impl_enth = VET_IENTH_UPWIND;
   } else if (sen.compare("central") == 0) {
-    impl_enth = M1_IENTH_CENTRAL;
+    impl_enth = VET_IENTH_CENTRAL;
   } else if (sen.compare("plm") == 0) {
-    impl_enth = M1_IENTH_PLM;
+    impl_enth = VET_IENTH_PLM;
   } else if (sen.compare("plmc") == 0) {
-    impl_enth = M1_IENTH_PLMC;
+    impl_enth = VET_IENTH_PLMC;
   } else if (sen.compare("lin") == 0) {
-    impl_enth = M1_IENTH_LIN;
+    impl_enth = VET_IENTH_LIN;
   } else {
     ImplFatal("<rad_vet>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
@@ -280,7 +280,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
                         (pin->GetString("time","evolution").compare("dynamic") == 0);
   const bool vdef = ((pin->GetString("rad_vet","time_scheme").compare("hesdirk2") == 0) ||
                      t2_beonly) &&
-                    pmh->multi_d && (impl_solver == M1_ISOLV_BICGSTAB) &&
+                    pmh->multi_d && (impl_solver == VET_ISOLV_BICGSTAB) &&
                     (pmh->mb_indcs.ng >= 2) && fl_on && gas_live &&
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
@@ -404,17 +404,17 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       const bool per = (mbcs[static_cast<int>(f)] == BoundaryFlag::periodic);
       std::string v = "auto";
       if (pin->DoesParameterExist("rad_vet", key)) {v = pin->GetString("rad_vet", key);}
-      if (v.compare("auto") == 0) {return per ? M1_IBC_PERIODIC : M1_IBC_REFLECT;}
+      if (v.compare("auto") == 0) {return per ? VET_IBC_PERIODIC : VET_IBC_REFLECT;}
       int r = -1;
-      if (v.compare("reflect") == 0) {r = M1_IBC_REFLECT;}
-      if (v.compare("marshak") == 0) {r = M1_IBC_MARSHAK;}
+      if (v.compare("reflect") == 0) {r = VET_IBC_REFLECT;}
+      if (v.compare("marshak") == 0) {r = VET_IBC_MARSHAK;}
       // zero-gradient outgoing flux, x2 faces only
       if (v.compare("outflow") == 0 && (f == BoundaryFace::inner_x2 ||
                                         f == BoundaryFace::outer_x2)) {
-        r = M1_IBC_OUTFLOW;
+        r = VET_IBC_OUTFLOW;
       }
       if (v.compare("flux") == 0 && (f == BoundaryFace::inner_x2 ||
-                                     f == BoundaryFace::outer_x2)) {r = M1_IBC_X2FLUX;}
+                                     f == BoundaryFace::outer_x2)) {r = VET_IBC_X2FLUX;}
       if (r < 0 || per) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_vet>/" << key << " = '" << v << "': auto | reflect | "
@@ -433,7 +433,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   iflux_x1max = pin->GetOrAddReal("rad_vet","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_vet","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_vet","implicit_ebath_x1max",0.0);
-  if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
+  if ((ibc_x1min == VET_IBC_PERIODIC) != (ibc_x1max == VET_IBC_PERIODIC)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> implicit x1 boundaries: periodic must be set on BOTH "
       << "ends or neither" << std::endl;
@@ -465,11 +465,11 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(f0x1, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1, 0.0);
-  bicg_on = trans_on && (impl_solver == M1_ISOLV_BICGSTAB);
+  bicg_on = trans_on && (impl_solver == VET_ISOLV_BICGSTAB);
   if (od_auto) {
-    impl_offdiag = bicg_on ? M1_OD_OPERATOR : M1_OD_LAGGED;
+    impl_offdiag = bicg_on ? VET_OD_OPERATOR : VET_OD_LAGGED;
   }
-  if (impl_offdiag == M1_OD_OPERATOR && trans_on && !bicg_on) {
+  if (impl_offdiag == VET_OD_OPERATOR && trans_on && !bicg_on) {
     ImplFatal("<rad_vet>/implicit_offdiag = operator needs implicit_solver = bicgstab");
   }
   od_now = impl_offdiag;
@@ -503,7 +503,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",
       recipe::Fix(pin, "rad_vet", "zalesak_active", "true", "false"));
-  MemArenaInit(pin, nmb, M1_NIW, ncells3, ncells2, ncells1);
+  MemArenaInit(pin, nmb, VET_NIW, ncells3, ncells2, ncells1);
   if (impl_ctrelax > 0.0) {
     if (!trans_on || !clag_step) {
       ImplFatal("<rad_vet>/implicit_closure_thin_relax needs transport = implicit on a "
@@ -519,7 +519,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(f0x3, nmb, ncells3+1, ncells2, ncells1);
       Kokkos::deep_copy(f0x3, 0.0);
     }
-    if (impl_tlim != M1_TLIM_NONE) {
+    if (impl_tlim != VET_TLIM_NONE) {
       Kokkos::realloc(thx2, nmb, ncells3, ncells2+1, ncells1);
       Kokkos::deep_copy(thx2, 0.0);
       if (trans_x3) {
@@ -539,7 +539,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       }
     }
     hr_q = impl_beam_hr && (vet_sc || (vgd_on && sph_geom)) &&
-           (ibc_x1max == M1_IBC_MARSHAK) && !(hrq_col && vet_col);
+           (ibc_x1max == VET_IBC_MARSHAK) && !(hrq_col && vet_col);
     if (hr_q && vcol_q.extent_int(0) < nmb) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);
@@ -551,10 +551,10 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               << (trans_x3 ? " (3-D)" : (trans_on ? " (2-D)" : " (1-D)"))
               << " implicit_cfl=" << impl_cfl << " marshak_q=" << marshak_q
               << " implicit_enthalpy="
-              << ((impl_enth == M1_IENTH_PLM) ? "plm"
-                  : (impl_enth == M1_IENTH_PLMC) ? "plmc"
-                  : (impl_enth == M1_IENTH_LIN) ? "lin"
-                  : (impl_enth == M1_IENTH_UPWIND) ? "upwind" : "central")
+              << ((impl_enth == VET_IENTH_PLM) ? "plm"
+                  : (impl_enth == VET_IENTH_PLMC) ? "plmc"
+                  : (impl_enth == VET_IENTH_LIN) ? "lin"
+                  : (impl_enth == VET_IENTH_UPWIND) ? "upwind" : "central")
               << " implicit_vimp=" << (impl_vimp ? "true" : "false") << std::endl;
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
@@ -563,8 +563,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   if (vet_sc) {VetInit(pin);}
   ImplBeamInit(pin);
   Time2Init(pin);
-  if (time_scheme == M1_TIME_BE) {
-    Kokkos::realloc(u1, u1.extent(0), M1_NVAR, 1, 1, 1);
+  if (time_scheme == VET_TIME_BE) {
+    Kokkos::realloc(u1, u1.extent(0), VET_NVAR, 1, 1, 1);
   }
 }
 
@@ -593,11 +593,11 @@ void RadiationVet::EventTotals(Real *v) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opn_nskip_d);
     v[7] = h(0);
   }
-  if (pos_cnt_d.extent_int(0) >= M1_POS_N) {
+  if (pos_cnt_d.extent_int(0) >= VET_POS_N) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
-    v[8] = h(M1_POS_FLR);
-    v[9] = h(M1_POS_FLR_UN);
-    v[10] = h(M1_POS_FLRS);
+    v[8] = h(VET_POS_FLR);
+    v[9] = h(VET_POS_FLR_UN);
+    v[10] = h(VET_POS_FLRS);
   }
   if (acl_cnt_d.extent_int(0) == 2) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acl_cnt_d);
@@ -621,11 +621,11 @@ void RadiationVet::ImplicitReport() {
   Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
   if (pos) {
     auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
-    for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = hpc(q);}
+    for (int q = 0; q < VET_POS_N; ++q) {pos_cnt[q] = hpc(q);}
 #if MPI_PARALLEL_ENABLED
-    Real g[M1_POS_N];
-    MPI_Allreduce(pos_cnt, g, M1_POS_N, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = g[q];}
+    Real g[VET_POS_N];
+    MPI_Allreduce(pos_cnt, g, VET_POS_N, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < VET_POS_N; ++q) {pos_cnt[q] = g[q];}
     Real gd = 0.0;
     MPI_Allreduce(&pos_un_drop, &gd, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     pos_un_drop = gd;
@@ -646,14 +646,15 @@ void RadiationVet::ImplicitReport() {
   }
   if (pos) {
     std::cout << "<rad_vet> vet-positivity: implicit_pos_gas=" << impl_pos_gas
-              << " (frac " << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
-              << " energy moved rad->gas=" << pos_cnt[M1_POS_GAS_DE]
-              << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
-              << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
-              << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
+              << " (frac " << impl_pos_gas_frac << ") cell-solves=" <<
+                  pos_cnt[VET_POS_GAS]
+              << " energy moved rad->gas=" << pos_cnt[VET_POS_GAS_DE]
+              << " | E floor raises cell-solves=" << pos_cnt[VET_POS_FLR]
+              << " energy from gas=" << pos_cnt[VET_POS_FLR_DE]
+              << " energy created=" << pos_cnt[VET_POS_FLR_UN] << " (code units x volume)"
               << " [in discarded attempts, rolled back: " << pos_un_drop << "]"
               << " taken from the column's radiation (implicit_pos_floor_cons)="
-              << pos_cnt[M1_POS_FLR_MV]
+              << pos_cnt[VET_POS_FLR_MV]
               << " | hydro EOS floors energy created=" << hfl << std::endl;
   }
 }

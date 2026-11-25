@@ -51,16 +51,16 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   }
   {
   // berthon | blend on the radial faces (ImplicitInit refuses them on cs)
-    if (impl_flux != M1_IFLUX_CENTRAL && impl_flux != M1_IFLUX_BERTHON &&
-        impl_flux != M1_IFLUX_BLEND) {
+    if (impl_flux != VET_IFLUX_CENTRAL && impl_flux != VET_IFLUX_BERTHON &&
+        impl_flux != VET_IFLUX_BLEND) {
       why += " implicit_flux = ap_hll;";
     }
     // plm_dc corrects the berthon part: needs berthon | blend
-    if (impl_recon != M1_IRECON_DC && impl_flux == M1_IFLUX_CENTRAL) {
+    if (impl_recon != VET_IRECON_DC && impl_flux == VET_IFLUX_CENTRAL) {
       why += " implicit_recon != dc;";
     }
     // lpr allowed on the wedge, lp not; cs refuses both (skewed rows ignore thx2/thx3)
-    if (impl_tlim == M1_TLIM_LP || (impl_tlim != M1_TLIM_NONE && cs_geom)) {
+    if (impl_tlim == VET_TLIM_LP || (impl_tlim != VET_TLIM_NONE && cs_geom)) {
       why += " implicit_trans_limit != none (lpr only, wedge only);";
     }
     if (pin->DoesParameterExist("rad_vet","implicit_offdiag")) {
@@ -110,14 +110,15 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   if (!cs_geom && pm->use_polar_boundary) {
     const bool p2lo = (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar);
     const bool p2hi = (pm->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar);
-    if ((p2lo && ibc_x2min != M1_IBC_REFLECT) || (p2hi && ibc_x2max != M1_IBC_REFLECT)) {
+    if ((p2lo && ibc_x2min != VET_IBC_REFLECT) || (p2hi && ibc_x2max != VET_IBC_REFLECT))
+        {
       why += " implicit_bc_x2min|max != auto | reflect at a polar face;";
     }
     if (pin->DoesParameterExist("rad_vet","implicit_offdiag") &&
         pin->GetString("rad_vet","implicit_offdiag").compare("lagged") == 0) {
       why += " implicit_offdiag = lagged on the full sphere;";
     }
-    if (impl_tlim != M1_TLIM_NONE) {
+    if (impl_tlim != VET_TLIM_NONE) {
       why += " implicit_trans_limit != none on the full sphere;";
     }
   }
@@ -134,15 +135,15 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     std::exit(EXIT_FAILURE);
   }
   // Eddington: the tensor is diagonal, the off-diagonal terms are identically zero
-  impl_offdiag = M1_OD_NONE;
-  od_now = M1_OD_NONE;
+  impl_offdiag = VET_OD_NONE;
+  od_now = VET_OD_NONE;
   // chi(f) closure: curvature of the diagonal components always on; off-diagonal terms
   // dropped (default, M-matrix) or lagged.  Lagged terms have no fixed point in thin
   // regions at c dt >> dx, hence `none` by default.
   sph_q = !eddington;
   if (sph_q) {
     std::string s = pin->GetOrAddString("rad_vet","implicit_offdiag","auto");
-    impl_offdiag = (s.compare("lagged") == 0) ? M1_OD_LAGGED : M1_OD_NONE;
+    impl_offdiag = (s.compare("lagged") == 0) ? VET_OD_LAGGED : VET_OD_NONE;
     od_now = impl_offdiag;
   }
   if (global_variable::my_rank == 0 && cs_geom) {
@@ -161,7 +162,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
               << "("
               << (sph_q ? "chi(f) closure, radial integrating factor, "
                           "lagged curvature, offdiag " : "")
-              << (sph_q ? ((impl_offdiag == M1_OD_NONE) ? "none; " : "lagged; ") : "")
+              << (sph_q ? ((impl_offdiag == VET_OD_NONE) ? "none; " : "lagged; ") : "")
               << "implicit with areas/volumes/face distances from Coordinates"
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
                   " (stretched radial grid)" : "") << std::endl;

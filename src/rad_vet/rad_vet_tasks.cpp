@@ -58,13 +58,13 @@ void RadiationVet::AssembleRadVetTasks(std::map<std::string,
 //! \brief post non-blocking receives (with MPI) and reset boundary receive flags
 
 TaskStatus RadiationVet::InitRecv(Driver *pdrive, int stage) {
-  TaskStatus tstat = pbval_u->InitRecv(M1_NVAR);
+  TaskStatus tstat = pbval_u->InitRecv(VET_NVAR);
   if (tstat != TaskStatus::complete) return tstat;
 
   // do not post receives for fluxes when stage < 0 (i.e. ICs)
   if (stage >= 0) {
     if (pmy_pack->pmesh->multilevel) {
-      tstat = pbval_u->InitFluxRecv(M1_NVAR);
+      tstat = pbval_u->InitFluxRecv(VET_NVAR);
       if (tstat != TaskStatus::complete) return tstat;
     }
   }

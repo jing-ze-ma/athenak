@@ -334,7 +334,7 @@ if (DEFINED Athena_M1_VGD_NMAX AND NOT DEFINED Athena_VET_VGD_NMAX)   # (the old
   set(Athena_VET_VGD_NMAX ${Athena_M1_VGD_NMAX})
 endif()
 if (DEFINED Athena_VET_VGD_NMAX AND NOT "${Athena_VET_VGD_NMAX}" STREQUAL "")
-  target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_VET_VGD_NMAX})
+  target_compile_definitions(athena PRIVATE VET_VGD_NMAX_BUILD=${Athena_VET_VGD_NMAX})
 endif()
 
 # HIP: the clean RHS / Newton translation unit without VGPR spills to AGPRs.  On gfx942

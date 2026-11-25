@@ -14,9 +14,9 @@
 
 #include "athena.hpp"
 
-// M1_INL: force-inline a KOKKOS_LAMBDA body into the launch wrapper (no call frame in
-// scratch); usage KOKKOS_LAMBDA(...) M1_INL {...}.
-#define M1_INL __attribute__((always_inline))
+// VET_INL: force-inline a KOKKOS_LAMBDA body into the launch wrapper (no call frame in
+// scratch); usage KOKKOS_LAMBDA(...) VET_INL {...}.
+#define VET_INL __attribute__((always_inline))
 
 namespace radvet {
 
@@ -34,7 +34,7 @@ inline void par_for_lb(const std::string &name, ExeSpace exec_space,
   const int nji   = nj * ni;
   Kokkos::parallel_for(name,
   Kokkos::RangePolicy<ExeSpace, Kokkos::LaunchBounds<256,2>>(exec_space, 0, nnkji),
-  KOKKOS_LAMBDA(const int &idx) M1_INL {
+  KOKKOS_LAMBDA(const int &idx) VET_INL {
     int n = (idx)/nkji;
     int k = (idx - n*nkji)/nji;
     int j = (idx - n*nkji - k*nji)/ni;

@@ -515,7 +515,7 @@ Real t2nf_ = -1.0;
 // (<rad_vet>/dbg_energy_audit) found that the kinetic energy
 // RyPerM1Post removes from the sink cells is NOT all unpaid work: the M1 write-back pays
 // the kick's work from E, and only where that drives E below e_floor does the
-// implicit_pos_floor raise create the energy (M1_POS_FLR_UN).  With the key, every
+// implicit_pos_floor raise create the energy (VET_POS_FLR_UN).  With the key, every
 // backward-Euler solve books Emsk += eke - (the solve's FLR_UN increment, all cells): the
 // paid part of the removal is booked as removed and the floor creation as added.
 // skb_un_ = the FLR_UN counter (rank-local, cumulative) at the last booking.
@@ -1468,10 +1468,10 @@ void RyPerBCEnv(Mesh *pm) {
               // problem/stream_rad: the stream's radiation in equilibrium with its gas,
               // E = a T_s^4, lab-frame flux of optically thick advection (4/3) E v
               const Real eg = stp ? sar*SQR(SQR(tg)) : sre;
-              ur(m,radvet::M1_E,k,j,ig) = eg;
-              ur(m,radvet::M1_F1,k,j,ig) = (4.0/3.0)*eg*v1;
-              ur(m,radvet::M1_F2,k,j,ig) = 0.0;
-              ur(m,radvet::M1_F3,k,j,ig) = (4.0/3.0)*eg*v3;
+              ur(m,radvet::VET_E,k,j,ig) = eg;
+              ur(m,radvet::VET_F1,k,j,ig) = (4.0/3.0)*eg*v1;
+              ur(m,radvet::VET_F2,k,j,ig) = 0.0;
+              ur(m,radvet::VET_F3,k,j,ig) = (4.0/3.0)*eg*v3;
             } else {
               radvet::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
             }
@@ -1591,7 +1591,8 @@ void RyPerBCEnv(Mesh *pm) {
   if (rad) {
     // implicit_bc_x2 = outflow (zero-gradient outgoing flux) -> copied ghosts
     auto rmode = [](const int b) {
-      return (b == radvet::M1_IBC_MARSHAK) ? 2 : ((b == radvet::M1_IBC_OUTFLOW) ? 0 : 1);
+      return (b == radvet::VET_IBC_MARSHAK) ? 2 : ((b == radvet::VET_IBC_OUTFLOW) ? 0 :
+                                                   1);
     };
     rm2lo = rmode(pmbp->pradvet->ibc_x2min);
     rm2hi = rmode(pmbp->pradvet->ibc_x2max);
@@ -2012,12 +2013,12 @@ void RyPerM1Post(Mesh *pm) {
   // skipped
   if (skb_) {
     auto *pm1 = pmbp->pradvet;
-    if (!pm1->t2_inprobe && pm1->pos_cnt_d.extent_int(0) >= radvet::M1_POS_N) {
-      auto pcs = Kokkos::subview(pm1->pos_cnt_d, radvet::M1_POS_FLR_UN);
+    if (!pm1->t2_inprobe && pm1->pos_cnt_d.extent_int(0) >= radvet::VET_POS_N) {
+      auto pcs = Kokkos::subview(pm1->pos_cnt_d, radvet::VET_POS_FLR_UN);
       Real un = 0.0;
       Kokkos::deep_copy(un, pcs);
-      const bool be = (pm1->t2_solve == radvet::M1_T2S_NONE) ||
-                      (pm1->t2_solve == radvet::M1_T2S_BESTORE);
+      const bool be = (pm1->t2_solve == radvet::VET_T2S_NONE) ||
+                      (pm1->t2_solve == radvet::VET_T2S_BESTORE);
       if (be) acc0_[3] += eke - (un - skb_un_);
       skb_un_ = un;
     }
@@ -2061,10 +2062,10 @@ void RyPerRadBook(Mesh *pm) {
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   const Real dt = pm->dt;
   Real wy = pm1->dt_sub, wk = 0.0;
-  if (pm1->t2_solve == radvet::M1_T2S_STAGE1) {
+  if (pm1->t2_solve == radvet::VET_T2S_STAGE1) {
     wy = (pm1->t2_w0*g + pm1->t2_c32)*dt;
     wk = (pm1->t2_w0*pm1->t2_a21 + pm1->t2_c31)*dt;
-  } else if (pm1->t2_solve == radvet::M1_T2S_STAGE2) {
+  } else if (pm1->t2_solve == radvet::VET_T2S_STAGE2) {
     wy = g*dt;
   }
   auto &indcs = pm->mb_indcs;
@@ -2124,10 +2125,10 @@ void RyPerHoldBook(Mesh *pm) {
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   const Real dt = pm->dt;
   Real wy = pm1->dt_sub, wk = 0.0;
-  if (pm1->t2_solve == radvet::M1_T2S_STAGE1) {
+  if (pm1->t2_solve == radvet::VET_T2S_STAGE1) {
     wy = (pm1->t2_w0*g + pm1->t2_c32)*dt;
     wk = (pm1->t2_w0*pm1->t2_a21 + pm1->t2_c31)*dt;
-  } else if (pm1->t2_solve == radvet::M1_T2S_STAGE2) {
+  } else if (pm1->t2_solve == radvet::VET_T2S_STAGE2) {
     wy = g*dt;
   }
   auto &indcs = pm->mb_indcs;
@@ -2163,8 +2164,8 @@ void RyPerHoldBook(Mesh *pm) {
     // the upwind enthalpy flux a E' of the face between cells l (lower) and u (upper)
     auto adv = [&](int ca, int cv, int kl, int jl, int il, int ku, int ju, int iu) {
       const Real vf = 0.5*(iw(m,cv,kl,jl,il) + iw(m,cv,ku,ju,iu));
-      return (vf > 0.0) ? iw(m,ca,kl,jl,il)*iw(m,radvet::M1_IW_EP,kl,jl,il)
-                        : iw(m,ca,ku,ju,iu)*iw(m,radvet::M1_IW_EP,ku,ju,iu);
+      return (vf > 0.0) ? iw(m,ca,kl,jl,il)*iw(m,radvet::VET_IW_EP,kl,jl,il)
+                        : iw(m,ca,ku,ju,iu)*iw(m,radvet::VET_IW_EP,ku,ju,iu);
     };
     Real o = 0.0;
     // x1: face i+1 outward +, face i outward -
@@ -2174,37 +2175,37 @@ void RyPerHoldBook(Mesh *pm) {
       if (ph) {
         if (hbdv) f += (wy + wk)*bdv(m,k,j);
       } else {
-        f += (wy + wk)*adv(radvet::M1_IW_ADV, radvet::M1_IW_V1, k, j, i, k, j, i+1);
+        f += (wy + wk)*adv(radvet::VET_IW_ADV, radvet::VET_IW_V1, k, j, i, k, j, i+1);
       }
       o += f*area.x1f(m,k,j,i+1);
       const bool pl = (i == is) && phys(BoundaryFace::inner_x1);
       Real g1 = wy*f1(m,k,j,i) + (hk ? wk*k1(m,k,j,i) : 0.0);
       if (!pl) {
-        g1 += (wy + wk)*adv(radvet::M1_IW_ADV, radvet::M1_IW_V1, k, j, i-1, k, j, i);
+        g1 += (wy + wk)*adv(radvet::VET_IW_ADV, radvet::VET_IW_V1, k, j, i-1, k, j, i);
       }
       o -= g1*area.x1f(m,k,j,i);
     }
     if (tr2) {
       Real f = wy*f2(m,k,j+1,i) + (hk2 ? wk*k2(m,k,j+1,i) : 0.0);
       if (!((j == je) && phys(BoundaryFace::outer_x2))) {
-        f += (wy + wk)*adv(radvet::M1_IW_A2, radvet::M1_IW_V2, k, j, i, k, j+1, i);
+        f += (wy + wk)*adv(radvet::VET_IW_A2, radvet::VET_IW_V2, k, j, i, k, j+1, i);
       }
       o += f*area.x2f(m,k,j+1,i);
       Real g2 = wy*f2(m,k,j,i) + (hk2 ? wk*k2(m,k,j,i) : 0.0);
       if (!((j == js) && phys(BoundaryFace::inner_x2))) {
-        g2 += (wy + wk)*adv(radvet::M1_IW_A2, radvet::M1_IW_V2, k, j-1, i, k, j, i);
+        g2 += (wy + wk)*adv(radvet::VET_IW_A2, radvet::VET_IW_V2, k, j-1, i, k, j, i);
       }
       o -= g2*area.x2f(m,k,j,i);
     }
     if (tr3) {
       Real f = wy*f3(m,k+1,j,i) + (hk3 ? wk*k3(m,k+1,j,i) : 0.0);
       if (!((k == ke) && phys(BoundaryFace::outer_x3))) {
-        f += (wy + wk)*adv(radvet::M1_IW_A3, radvet::M1_IW_V3, k, j, i, k+1, j, i);
+        f += (wy + wk)*adv(radvet::VET_IW_A3, radvet::VET_IW_V3, k, j, i, k+1, j, i);
       }
       o += f*area.x3f(m,k+1,j,i);
       Real g3 = wy*f3(m,k,j,i) + (hk3 ? wk*k3(m,k,j,i) : 0.0);
       if (!((k == ks) && phys(BoundaryFace::inner_x3))) {
-        g3 += (wy + wk)*adv(radvet::M1_IW_A3, radvet::M1_IW_V3, k-1, j, i, k, j, i);
+        g3 += (wy + wk)*adv(radvet::VET_IW_A3, radvet::VET_IW_V3, k-1, j, i, k, j, i);
       }
       o -= g3*area.x3f(m,k,j,i);
     }
@@ -2854,12 +2855,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         const bool inrw = fabs(dph) < rww && (!g3 || fabs(zc) < rwz);
         if (srad && inrw) {
           const Real er = (stp || l1) ? sar*SQR(SQR(tn)) : sre;
-          v.the_array[3] = (er - urd(m,radvet::M1_E,k,j,i))*dv;
-          urd(m,radvet::M1_E,k,j,i) = er;
+          v.the_array[3] = (er - urd(m,radvet::VET_E,k,j,i))*dv;
+          urd(m,radvet::VET_E,k,j,i) = er;
           if (hon) {hmk(m,k,j,i) = 1.0;}
-          urd(m,radvet::M1_F1,k,j,i) = (4.0/3.0)*er*v1;
-          urd(m,radvet::M1_F2,k,j,i) = (4.0/3.0)*er*w2;
-          urd(m,radvet::M1_F3,k,j,i) = (4.0/3.0)*er*w3;
+          urd(m,radvet::VET_F1,k,j,i) = (4.0/3.0)*er*v1;
+          urd(m,radvet::VET_F2,k,j,i) = (4.0/3.0)*er*w2;
+          urd(m,radvet::VET_F3,k,j,i) = (4.0/3.0)*er*w3;
         }
       } else {
         v.the_array[4] = (d0 - dn)*dv;
@@ -2888,12 +2889,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
                                : StreamT(stp, tcs, tsf, dph/sg);
             Real er = stp ? sar*SQR(SQR(tb)) : sre;
             if (ssl == 1) er *= ssc;
-            v.the_array[3] = (er - urd(m,radvet::M1_E,k,j,i))*dv;
-            urd(m,radvet::M1_E,k,j,i) = er;
+            v.the_array[3] = (er - urd(m,radvet::VET_E,k,j,i))*dv;
+            urd(m,radvet::VET_E,k,j,i) = er;
             if (hon) {hmk(m,k,j,i) = 1.0;}
-            urd(m,radvet::M1_F1,k,j,i) = 0.0;
-            urd(m,radvet::M1_F2,k,j,i) = 0.0;
-            urd(m,radvet::M1_F3,k,j,i) = 0.0;
+            urd(m,radvet::VET_F1,k,j,i) = 0.0;
+            urd(m,radvet::VET_F2,k,j,i) = 0.0;
+            urd(m,radvet::VET_F3,k,j,i) = 0.0;
           }
         } else if (mirr) {
           // donor_irr: the lobe is a black body (isotropic, comoving F = 0); its light
@@ -2906,12 +2907,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
             const Real ge = DonorSurfGeff(pr, phl1, xl1, xx, yy, zz);
             eh = fmax(gdc*pow(ge, gdb), gdf);
           }
-          v.the_array[6] = (eh - urd(m,radvet::M1_E,k,j,i))*dv;
-          urd(m,radvet::M1_E,k,j,i) = eh;
+          v.the_array[6] = (eh - urd(m,radvet::VET_E,k,j,i))*dv;
+          urd(m,radvet::VET_E,k,j,i) = eh;
           if (hon) {hmk(m,k,j,i) = 1.0;}
-          urd(m,radvet::M1_F1,k,j,i) = 0.0;
-          urd(m,radvet::M1_F2,k,j,i) = 0.0;
-          urd(m,radvet::M1_F3,k,j,i) = 0.0;
+          urd(m,radvet::VET_F1,k,j,i) = 0.0;
+          urd(m,radvet::VET_F2,k,j,i) = 0.0;
+          urd(m,radvet::VET_F3,k,j,i) = 0.0;
         }
       }
       sum += v;
@@ -3068,7 +3069,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // booking of the stage-1 reset of a failed hesdirk2 stage loop at its redo
   Real rw = 1.0;
   bool t2rd = false;
-  if (rad && rbk_ && pmbp->pradvet->time_scheme == radvet::M1_TIME_HESDIRK2) {
+  if (rad && rbk_ && pmbp->pradvet->time_scheme == radvet::VET_TIME_HESDIRK2) {
     auto *pm1 = pmbp->pradvet;
     if (pm1->t2_ok) {
       if (s == 0) {
@@ -3330,7 +3331,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
       v.the_array[3] = jz;
     }
     if (rad) {
-      const Real er = ur(m,radvet::M1_E,k,j,i);
+      const Real er = ur(m,radvet::VET_E,k,j,i);
       v.the_array[4] = dv*er;
       v.the_array[5] = dv*(u0(m,IEN,k,j,i) + er);
       if (r < racc) {
@@ -3716,8 +3717,8 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
     // neither blocks the poleward flux of the tilted photosphere (reflect) nor drains the
     // star (outflow/Marshak).  Explicit (imposed); its outward total is booked in Ebnd.
     fx2leak_ = 0.0;
-    if (pm1->ibc_x2min == radvet::M1_IBC_X2FLUX
-        || pm1->ibc_x2max == radvet::M1_IBC_X2FLUX) {
+    if (pm1->ibc_x2min == radvet::VET_IBC_X2FLUX
+        || pm1->ibc_x2max == radvet::VET_IBC_X2FLUX) {
       if (first) {
         Kokkos::realloc(fx2lo_, nmb, n3, n1);
         Kokkos::realloc(fx2hi_, nmb, n3, n1);
@@ -3776,10 +3777,10 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
             hlo(m,k,i) = fth(hx1(m,i), tlo, hx3(m,k));
             hhi(m,k,i) = fth(hx1(m,i), thi, hx3(m,k));
             if (k >= ks && k <= ke && i >= is && i <= ie) {
-              if (plo && pm1->ibc_x2min == radvet::M1_IBC_X2FLUX) {
+              if (plo && pm1->ibc_x2min == radvet::VET_IBC_X2FLUX) {
                 lk -= hlo(m,k,i)*ha2(m,k,js,i);
               }
-              if (phi2 && pm1->ibc_x2max == radvet::M1_IBC_X2FLUX) {
+              if (phi2 && pm1->ibc_x2max == radvet::VET_IBC_X2FLUX) {
                 lk += hhi(m,k,i)*ha2(m,k,je+1,i);
               }
             }
@@ -3866,10 +3867,10 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     chk("<rad_vet>/arad", ar, 7.5657e-15*SQR(SQR(tk))/eu, 1.0e-4);
     if (bad) fatal(os.str());
   }
-  if (pm1->opacity_type != radvet::M1_OPAC_TABLE) {
+  if (pm1->opacity_type != radvet::VET_OPAC_TABLE) {
     fatal("needs <rad_vet>/opacity = table");
   }
-  if (pm1->force_ref != radvet::M1_FREF_WB_ARAD) {
+  if (pm1->force_ref != radvet::VET_FREF_WB_ARAD) {
     fatal("needs <rad_vet>/force_reference = wb_arad (Phi_eff carries the column's "
           "radiation force)");
   }
@@ -4093,10 +4094,10 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = p3 ? tc4(m,k,j,i) : tc(m,k,i);
     const Real e = fmax(ar*SQR(SQR(t)), efl);
-    ur(m,radvet::M1_E,k,j,i) = e;
-    ur(m,radvet::M1_F1,k,j,i) = fmin(p3 ? fc4(m,k,j,i) : fc(m,k,i), 0.9*cl*e);
-    ur(m,radvet::M1_F2,k,j,i) = 0.0;
-    ur(m,radvet::M1_F3,k,j,i) = 0.0;
+    ur(m,radvet::VET_E,k,j,i) = e;
+    ur(m,radvet::VET_F1,k,j,i) = fmin(p3 ? fc4(m,k,j,i) : fc(m,k,i), 0.9*cl*e);
+    ur(m,radvet::VET_F2,k,j,i) = 0.0;
+    ur(m,radvet::VET_F3,k,j,i) = 0.0;
   });
   auto ff0 = pm1->f0x1;
   if (ff0.extent_int(0) >= nmb) {
@@ -6679,8 +6680,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       fatal("cubed sphere: problem/coriolis_lz is spherical-polar only; the Coriolis "
             "force is the core <hydro>/frame_omega here (set by this pgen)");
     }
-    if (rad_ && (pmbp->pradvet->ibc_x2min == radvet::M1_IBC_X2FLUX ||
-                 pmbp->pradvet->ibc_x2max == radvet::M1_IBC_X2FLUX)) {
+    if (rad_ && (pmbp->pradvet->ibc_x2min == radvet::VET_IBC_X2FLUX ||
+                 pmbp->pradvet->ibc_x2max == radvet::VET_IBC_X2FLUX)) {
       fatal("cubed sphere: <rad_vet>/implicit_bc_x2min|max = flux is a theta-wall BC");
     }
     auto *pam = pmbp->phydro->pam;

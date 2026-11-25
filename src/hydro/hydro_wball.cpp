@@ -208,7 +208,7 @@ void WbAllBuild(WbAllCtx &c) {
 
 DvceArray5D<Real> WbRadRef(MeshBlockPack *pp) {
   const radvet::RadiationVet *pr = pp->pradvet;
-  return (pr != nullptr && pr->force_ref == radvet::M1_FREF_WB_MD && pr->cln_fref_set) ?
+  return (pr != nullptr && pr->force_ref == radvet::VET_FREF_WB_MD && pr->cln_fref_set) ?
          pr->cln_fref : DvceArray5D<Real>();
 }
 

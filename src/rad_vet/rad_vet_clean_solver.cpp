@@ -43,9 +43,9 @@ struct M1BcgVal {
   Real s0, s1, s2, mx;
 };
 
-constexpr int M1_DR_NT = 256;    // slots per team (a power of 2)
+constexpr int VET_DR_NT = 256;    // slots per team (a power of 2)
 // block mode: level-1 slots per MeshBlock (fills the GPU)
-constexpr int M1_LB_NS = 32768;
+constexpr int VET_LB_NS = 32768;
 
 //----------------------------------------------------------------------------------------
 //! \fn M1GlobalMax
@@ -65,7 +65,7 @@ inline void M1GlobalMax(Real &a) {
 //! [0, n) and all ranks with exact order-independent sums (repro::ReproSum).
 //! Cell mode: every cell term deposited exactly (independent of layout and backend).
 //! Block mode (default): each MeshBlock's (or tile's) partial in a fixed order
-//! (M1_LB_NS strided slots, then a fixed pairwise tree), partials summed exactly on the
+//! (VET_LB_NS strided slots, then a fixed pairwise tree), partials summed exactly on the
 //! host and merged over ranks.  bpart / hpart: device / host scratch.
 
 template <class F>
@@ -73,8 +73,8 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
                  Kokkos::View<Real*, Kokkos::HostSpace> &hpart, const F &fn,
                  M1BcgVal &out, const int *nxb = nullptr) {
   if (repro::block_mode) {
-    // level 1: slot s of M1_LB_NS sums q = s, s + M1_LB_NS, ...; level 2: one team per
-    // unit sums slots t, t + M1_DR_NT, ..., then the pairwise tree.  Tile mode (nxb):
+    // level 1: slot s of VET_LB_NS sums q = s, s + VET_LB_NS, ...; level 2: one team per
+    // unit sums slots t, t + VET_DR_NT, ..., then the pairwise tree.  Tile mode (nxb):
     // the units are N x N (x2, x3) tiles (a MeshBlock-sized tile is bitwise the block)
     const bool tl = repro::tile_n > 0 && nxb != nullptr;
     const int t2 = (tl && nxb[1] > 1) ? repro::tile_n : 1;
@@ -83,7 +83,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
     const int ntb = tl ? nt2*(nxb[2]/t3) : 1;
     const int nmb = (n/nkji)*ntb;   // (the units)
     const int ntc = n1*t2*t3;   // (tile mode: the tile's cells)
-    const int ns = (tl && ntc < M1_LB_NS) ? ntc : M1_LB_NS;
+    const int ns = (tl && ntc < VET_LB_NS) ? ntc : VET_LB_NS;
     const int off2 = 4*nmb*ns;
     if (bpart.extent_int(0) < off2 + 4*nmb) {
       bpart = DvceArray1D<Real>(
@@ -117,21 +117,21 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
     using TP = Kokkos::TeamPolicy<DevExeSpace>;
     using Mem = Kokkos::View<Real*, ScratchMemSpace,
                              Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
-    const size_t sb = Mem::shmem_size(4*M1_DR_NT);
+    const size_t sb = Mem::shmem_size(4*VET_DR_NT);
     Kokkos::parallel_for("vet_lay_red2", TP(DevExeSpace(), nmb, Kokkos::AUTO)
                          .set_scratch_size(0, Kokkos::PerTeam(sb)),
     KOKKOS_LAMBDA(const TP::member_type &tm) {
-      Mem sh(tm.team_scratch(0), 4*M1_DR_NT);
+      Mem sh(tm.team_scratch(0), 4*VET_DR_NT);
       const int m = tm.league_rank();
-      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, M1_DR_NT), [&](const int t) {
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, VET_DR_NT), [&](const int t) {
         Real a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
         // (kU slots' values loaded at once, then added in the slot order: bitwise)
         constexpr int kU = 8;
         int q = t;
-        for (; q + (kU - 1)*M1_DR_NT < ns; q += kU*M1_DR_NT) {
+        for (; q + (kU - 1)*VET_DR_NT < ns; q += kU*VET_DR_NT) {
           Real p[kU][4];
           for (int u = 0; u < kU; ++u) {
-            for (int c = 0; c < 4; ++c) p[u][c] = part(4*(m*ns + q + u*M1_DR_NT) + c);
+            for (int c = 0; c < 4; ++c) p[u][c] = part(4*(m*ns + q + u*VET_DR_NT) + c);
           }
           for (int u = 0; u < kU; ++u) {
             a0 += p[u][0];
@@ -140,7 +140,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
             a3 = (p[u][3] > a3) ? p[u][3] : a3;
           }
         }
-        for (; q < ns; q += M1_DR_NT) {
+        for (; q < ns; q += VET_DR_NT) {
           const int b = 4*(m*ns + q);
           a0 += part(b);
           a1 += part(b + 1);
@@ -153,7 +153,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
         sh(4*t + 3) = a3;
       });
       tm.team_barrier();
-      for (int w = M1_DR_NT/2; w > 0; w /= 2) {
+      for (int w = VET_DR_NT/2; w > 0; w /= 2) {
         Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, w), [&](const int t) {
           sh(4*t) += sh(4*(t + w));
           sh(4*t + 1) += sh(4*(t + w) + 1);
@@ -246,8 +246,8 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   // an outflow face is the open one without an entering bath
   for (int s = 0; s < 6; ++s) {
-    x.bc[s] = (bc[s] == M1_IBC_X2FLUX) ? M1_IBC_FLUX :
-              ((bc[s] == M1_IBC_OUTFLOW) ? M1_IBC_MARSHAK : bc[s]);
+    x.bc[s] = (bc[s] == VET_IBC_X2FLUX) ? VET_IBC_FLUX :
+              ((bc[s] == VET_IBC_OUTFLOW) ? VET_IBC_MARSHAK : bc[s]);
   }
   x.iflux[0] = iflux_x1min;
   x.iflux[1] = iflux_x1max;
@@ -257,7 +257,7 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   for (int n = 0; n < 6; ++n) x.ebath[n] = 0.0;
   x.ebath[0] = iebath_x1min;
   x.ebath[1] = iebath_x1max;
-  for (int s = 0; s < 2; ++s) x.ebath[s] *= (bc[s] != M1_IBC_OUTFLOW);
+  for (int s = 0; s < 2; ++s) x.ebath[s] *= (bc[s] != VET_IBC_OUTFLOW);
   x.marshak_q = marshak_q;
   x.marshak = (cln_bdry_form == 1);
   x.use_beam = (ibm_n > 0);
@@ -1115,7 +1115,7 @@ void RadiationVet::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) 
                   !pmy_pack->pmesh->use_cubed_sphere;
   const int ib[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   int rf = 0;   // (bit s: side s reflects)
-  for (int s = 0; s < 6; ++s) rf |= (ib[s] == M1_IBC_REFLECT) ? (1 << s) : 0;
+  for (int s = 0; s < 6; ++s) rf |= (ib[s] == VET_IBC_REFLECT) ? (1 << s) : 0;
   // (x1min without vet_bc_reflect = mirror: the rays do not mirror there, so the D_12
   // ghost stays even (no spurious shear); D_13 stays odd (no wall torque: L_z exact))
   const bool rm = vet_bc_mirror;
@@ -1254,9 +1254,9 @@ Real RadiationVet::CleanLzTotal() {
     const Real r = CleanLzArm(x, m, k, j, i);
     const Real v = CleanVol(x, m, k, j, i);
     if (!tel) {   // (Cartesian: x p_y - y p_x)
-      s0 += (x.sph || x.cub) ? v*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2) :
-            v*(x.x1v(m,i)*(p[1] + ur(m,M1_F2,k,j,i)*ic2) -
-               x.x2v(m,j)*(p[0] + ur(m,M1_F1,k,j,i)*ic2));
+      s0 += (x.sph || x.cub) ? v*r*(p[2] + ur(m,VET_F3,k,j,i)*ic2) :
+            v*(x.x1v(m,i)*(p[1] + ur(m,VET_F2,k,j,i)*ic2) -
+               x.x2v(m,j)*(p[0] + ur(m,VET_F1,k,j,i)*ic2));
       return;
     }
     Real lr = 0.0;   // (the cell's halves of its lateral faces' V F lambda/c^2)
@@ -1303,7 +1303,7 @@ void RadiationVet::CleanFaceCoefficients() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const Real h = dt_sub, c = c_light;
   const Real c1lo = cln_c0, c1hi = cln_c1;
-  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const bool stage = (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2);
   auto cs = cln_s;
   auto op = opac;
   auto inc = t2inc;
@@ -1336,7 +1336,7 @@ void RadiationVet::CleanFaceCoefficients() {
     auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
     auto f0 = (dir == 0) ? f0x1 : ((dir == 1) ? f0x2 : f0x3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    const int tf = M1_T2_F1 + dir;
+    const int tf = VET_T2_F1 + dir;
 
     par_for("cln_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1349,8 +1349,8 @@ void RadiationVet::CleanFaceCoefficients() {
         for (int a = 0; a < 3; ++a) {
           h2 += SQR(cs(m,CLN_HP+a,kk,jj,ii) + cs(m,CLN_HM+a,kk,jj,ii));
         }
-        const Real ct = op(m,M1_OP_T,kk,jj,ii);
-        Real ep = (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
+        const Real ct = op(m,VET_OP_T,kk,jj,ii);
+        Real ep = (ct > 0.0) ? fmin(op(m,VET_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
         if (wft && ep < 1.0) {   // (clean_w_fse_tau: tau_d = chi V/A_f, the faces' mean)
           Real td = 2.0*ct/(CleanDivW(*px, dir, m, kk, jj, ii, 0) +
                             CleanDivW(*px, dir, m, kk, jj, ii, 1));
@@ -1395,8 +1395,8 @@ void RadiationVet::CleanFaceCoefficients() {
       auto jse = [&]() {
         if (!fjs || !(dir == 0 || !(px->sph || px->cub))) return;
         auto ep = [&](const int kk, const int jj, const int ii) {
-          const Real ct = op(m,M1_OP_T,kk,jj,ii);
-          return (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
+          const Real ct = op(m,VET_OP_T,kk,jj,ii);
+          return (ct > 0.0) ? fmin(op(m,VET_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
         };
         const Real wt = fmin(ep(kl,jl,il), ep(k,j,i));
         Real wl, wr;
@@ -1681,12 +1681,12 @@ void RadiationVet::CleanPreconditionerSetup() {
     CleanFaceWeights(x, 0, m, k, j, i, al_m, ar_m);
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
     const Real pd = x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0;   // (clean_stag_central)
-    Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + pd + x.h*x.idx[0]*(al_p - ar_m);
+    Real a0 = 1.0 + x.h*x.c*op(m,VET_OP_E,k,j,i)*qr + pd + x.h*x.idx[0]*(al_p - ar_m);
     x.w(m,CLW_AM,k,j,i) = -x.h*x.idx[0]*al_m;
     x.w(m,CLW_AP,k,j,i) = x.h*x.idx[0]*ar_p;
     if (x.sph || x.cub) {   // (A_f/V weights, CleanDivW)
       const Real wp = CleanDivW(x, 0, m, k, j, i, 1), wm = CleanDivW(x, 0, m, k, j, i, 0);
-      a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + pd + x.h*(wp*al_p - wm*ar_m);
+      a0 = 1.0 + x.h*x.c*op(m,VET_OP_E,k,j,i)*qr + pd + x.h*(wp*al_p - wm*ar_m);
       x.w(m,CLW_AM,k,j,i) = -x.h*wm*al_m;
       x.w(m,CLW_AP,k,j,i) = x.h*wp*ar_p;
     }

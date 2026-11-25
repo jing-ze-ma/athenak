@@ -29,12 +29,12 @@
 #include "rad_vet/rad_vet_clean.hpp"
 #include "utils/imex_sdirk2.hpp"
 #include "utils/scratch_view.hpp"
-// M1_TU_PART: compiled as 3 TUs (this file part 0, rad_vet_clean_closure_p<k>.cpp part k)
-// to cut nvcc/ptxas time; each member function is in exactly one part
-#ifndef M1_TU_PART_N
-#define M1_TU_PART_N 0
+// VET_TU_PART: compiled as 3 TUs (this file part 0, rad_vet_clean_closure_p<k>.cpp part
+// k) to cut nvcc/ptxas time; each member function is in exactly one part
+#ifndef VET_TU_PART_N
+#define VET_TU_PART_N 0
 #endif
-#define M1_TU_PART(k) (M1_TU_PART_N == (k))
+#define VET_TU_PART(k) (VET_TU_PART_N == (k))
 
 namespace radvet {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_vet_vetgd.cpp)
@@ -158,7 +158,7 @@ Real CleanThickI(const Real e[3][3], const Real f[3], const Real en, const Real 
 //! \brief builds the closure for t^{n+1}, once per step and dt (all stage solves end
 //! there); clean_closure = eddington: isotropic
 
-#if M1_TU_PART(0)
+#if VET_TU_PART(0)
 void RadiationVet::CleanClosure() {
   if (cln_sphere) {
     if (!cln_havec) CleanClosureSphere();
@@ -228,11 +228,11 @@ void RadiationVet::CleanClosureIterate() {
   auto w = cln_w;
   par_for("cln_clositer", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    iw_(m,M1_IW_EN,k,j,i) = fmax(w(m,CLW_EK,k,j,i), 0.0);
-    iw_(m,M1_IW_TP,k,j,i) = w(m,CLW_T,k,j,i);
-    iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
-    iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
-    iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
+    iw_(m,VET_IW_EN,k,j,i) = fmax(w(m,CLW_EK,k,j,i), 0.0);
+    iw_(m,VET_IW_TP,k,j,i) = w(m,CLW_T,k,j,i);
+    iw_(m,VET_IW_F1,k,j,i) = u0_(m,VET_F1,k,j,i);
+    iw_(m,VET_IW_F2,k,j,i) = u0_(m,VET_F1+1,k,j,i);
+    iw_(m,VET_IW_F3,k,j,i) = u0_(m,VET_F1+2,k,j,i);
   });
   CleanRays();
   CleanClosureFill();
@@ -281,8 +281,8 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
 void RadiationVet::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
-  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2) return;
-  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE1) {
+  if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE2) return;
+  if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE1) {
     CleanRayMoments(cln_mc, false);
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     cln_tm = time + ((t2_tab == 0) ? dt : (tb.a21 + tb.g)*dt);
@@ -291,7 +291,7 @@ void RadiationVet::CleanClosureAfterSolve() {
     CleanRingJump();
     return;
   }
-  if (t2_solve == M1_T2S_STAGE1) {
+  if (t2_solve == VET_T2S_STAGE1) {
     if (cln_extrap != 2) return;
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     CleanRayMoments(cln_m1);
@@ -302,7 +302,7 @@ void RadiationVet::CleanClosureAfterSolve() {
   CleanRayMoments(cln_mc);
   cln_tm = time + dt;
   cln_have_c = true;
-  cln_cand_be = (t2_solve != M1_T2S_STAGE2);
+  cln_cand_be = (t2_solve != VET_T2S_STAGE2);
   CleanRingJump();
 }
 
@@ -331,7 +331,7 @@ void RadiationVet::CleanRingJump() {
   cln_cand_be = true;
   cln_rjump = false;
 }
-#endif  // M1_TU_PART(0)
+#endif  // VET_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRealizable
@@ -376,7 +376,7 @@ bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k
 //! line through the last and this step's stage-1 sets, weighted 1/(1 + z), z = c dt/dx
 //! (no over-relaxation where the field is quasi-static)
 
-#if M1_TU_PART(0)
+#if VET_TU_PART(0)
 void RadiationVet::CleanClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
@@ -384,9 +384,9 @@ void RadiationVet::CleanClosureExtrap() {
   const bool sx = (cln_extrap == 3 && t2_tab != 0);   // (stage-1 moments before t^n+1)
   // (stage 2 of sx: the line through two stage-1 sets, the last not from backward
   // Euler, a restart or a ring jump)
-  const bool usec = sx && t2_solve == M1_T2S_STAGE2 && cln_have_c && !cln_cand_be &&
+  const bool usec = sx && t2_solve == VET_T2S_STAGE2 && cln_have_c && !cln_cand_be &&
                     cln_have_n && cln_tn < time && cln_tm > cln_tn;
-  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2 && !usec) return;
+  if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE2 && !usec) return;
 
   // a new step: the end of the last step (sx: its stage-1 time) becomes t^n
   if (cln_have_c && (cln_tm == time || (sx && cln_tm < time))) {
@@ -405,13 +405,13 @@ void RadiationVet::CleanClosureExtrap() {
   }
 
   // the line M(t) = Mb + (t - tb)/(tb - ta) (Mb - Ma) at the stage time ts
-  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const bool stage = (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2);
   Real ts = time + dt;
-  if (t2_solve == M1_T2S_STAGE1) {
+  if (t2_solve == VET_T2S_STAGE1) {
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     ts = time + (tb.a21 + tb.g)*dt;
   }
-  const bool use1 = (cln_extrap == 2) && (t2_solve == M1_T2S_STAGE2) && cln_have_1 &&
+  const bool use1 = (cln_extrap == 2) && (t2_solve == VET_T2S_STAGE2) && cln_have_1 &&
                     (cln_t1 > cln_tn);
   const bool line = stage && (use1 || usec || (cln_have_p && !sx));
   auto ma = (use1 || usec) ? cln_mn : cln_mp;
@@ -467,7 +467,7 @@ void RadiationVet::CleanClosureExtrap() {
   CleanClosureFill();
   CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 }
-#endif  // M1_TU_PART(0)
+#endif  // VET_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanPredictState
@@ -479,7 +479,7 @@ void RadiationVet::CleanClosureExtrap() {
 //! No valid K1 (first step, backward Euler): only 3.  No feedback: gas fixed.
 //! use_k1 = false: the current state itself
 
-#if M1_TU_PART(0)
+#if VET_TU_PART(0)
 void RadiationVet::CleanPredictState(const bool use_k1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -497,7 +497,7 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
   const bool rates = exch && t2_ok && (t2k1.extent_int(0) > nmb1);
 
   // opacities at the predicted state; the solve itself uses those of the stage
-  cln_opsaved = fluid && !opac_zero && (opacity_type != M1_OPAC_CONST);
+  cln_opsaved = fluid && !opac_zero && (opacity_type != VET_OPAC_CONST);
   if (cln_opsaved) {
     if (cln_opb.extent_int(1) != opac.extent_int(1)) {
       Kokkos::realloc(cln_opb, opac.extent_int(0), opac.extent_int(1),
@@ -528,7 +528,7 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
     const bool active = (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie);
     const bool use_rates = rates && active;
     const bool relax = exch && feedback && active;
-    const Real e0 = u0_(m,M1_E,k,j,i);
+    const Real e0 = u0_(m,VET_E,k,j,i);
     Real e = e0, d = 1.0, t = 0.0;
     if (fluid) {
       d = uh(m,IDN,k,j,i);
@@ -538,49 +538,49 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
       t = eos.Temperature(d, eint_h);
       if (use_rates && !feedback) {
         // gas held fixed: E advances at its own rate, which includes the exchange
-        const Real de = dt*k1(m,M1_T2_E,k,j,i);
+        const Real de = dt*k1(m,VET_T2_E,k,j,i);
         e = CleanPredictE(e0, de);
       } else if (relax) {
         // transport over dt (valid K1) less the radiation force's work, then the
         // implicit local exchange of (eint, E)
         if (use_rates) {
-          for (int n = 0; n < 3; ++n) mom[n] += dt*k1(m,M1_T2_M1+n,k,j,i);
+          for (int n = 0; n < 3; ++n) mom[n] += dt*k1(m,VET_T2_M1+n,k,j,i);
           const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
-          const Real de = dt*(k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i))
+          const Real de = dt*(k1(m,VET_T2_E,k,j,i) + k1(m,VET_T2_EN,k,j,i))
                           - (ekin_new - ekin);
           e = CleanPredictE(e0, de);
         }
         // E (1 + h c kE) = e + h c kP a T^4,  eint(T) + E = eint_h + e
-        const Real hce = dt*cl*opac_(m,M1_OP_E,k,j,i);
-        const Real hcp = dt*cl*opac_(m,M1_OP_P,k,j,i)*arad_;
+        const Real hce = dt*cl*opac_(m,VET_OP_E,k,j,i);
+        const Real hcp = dt*cl*opac_(m,VET_OP_P,k,j,i)*arad_;
         t = CleanExchangeTemperature(eos, d, hcp/(1.0 + hce), eint_h + e*hce/(1.0 + hce),
                                      t);
         e = (e + hcp*SQR(SQR(t)))/(1.0 + hce);
       }
     } else if (use_rates) {
-      const Real de = dt*k1(m,M1_T2_E,k,j,i);
+      const Real de = dt*k1(m,VET_T2_E,k,j,i);
       e = CleanPredictE(e0, de);
     }
 
     if (active) {
-      iw_(m,M1_IW_EN,k,j,i) = e;
-      iw_(m,M1_IW_TP,k,j,i) = t;
-      iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
-      iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
-      iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
+      iw_(m,VET_IW_EN,k,j,i) = e;
+      iw_(m,VET_IW_TP,k,j,i) = t;
+      iw_(m,VET_IW_F1,k,j,i) = u0_(m,VET_F1,k,j,i);
+      iw_(m,VET_IW_F2,k,j,i) = u0_(m,VET_F1+1,k,j,i);
+      iw_(m,VET_IW_F3,k,j,i) = u0_(m,VET_F1+2,k,j,i);
     }
     if (new_opac) {
       Real op, oe, of, os;
-      if (otype == M1_OPAC_TABLE) {
+      if (otype == VET_OPAC_TABLE) {
         M1TableOpacities(otab_, d, t, op, oe, of, os);
         M1ScatterEos(otab_, eos, d, t, of, os);
       } else {
         M1Opacities(otype, d, t, kp, ke_, kf, ksc, rref, tref, aa, bb, op, oe, of, os);
       }
-      opac_(m,M1_OP_P,k,j,i) = d*op;
-      opac_(m,M1_OP_E,k,j,i) = d*oe;
-      opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-      if (scat) opac_(m,M1_OP_S,k,j,i) = d*os;
+      opac_(m,VET_OP_P,k,j,i) = d*op;
+      opac_(m,VET_OP_E,k,j,i) = d*oe;
+      opac_(m,VET_OP_T,k,j,i) = d*(of + os);
+      if (scat) opac_(m,VET_OP_S,k,j,i) = d*os;
     }
   });
 }
@@ -690,7 +690,7 @@ void RadiationVet::CleanRays() {
   par_for("cln_gd_chi", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je, indcs.is, indcs.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    iw_(m,M1_IW_KT,k,j,i) = opac_(m,M1_OP_T,k,j,i);
+    iw_(m,VET_IW_KT,k,j,i) = opac_(m,VET_OP_T,k,j,i);
   });
   if (cln_ring) {   // (the sc rays: each set's sweep in CleanRingMoments)
     VetGdSource();
@@ -733,7 +733,7 @@ void RadiationVet::CleanScUnion2() {
   Kokkos::deep_copy(cln_fvd, d_h);
   cln_fvn = 2*n;
 }
-#endif  // M1_TU_PART(0)
+#endif  // VET_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRingMix
@@ -764,7 +764,7 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
                   const int i, Real *q) {
   const Real jb = rl(m,0,CLN_J,k,j,i);
   if (!(jb > 0.0)) return false;
-  Real a[RadiationVet::M1_RA_NF];
+  Real a[RadiationVet::VET_RA_NF];
   const Real wn = s*rl(m,qn,CLN_J,k,j,i)/jb;
   Real na = 1.0 + s, nw = 1.0 + wn;
   for (int r = 0; r < nr; ++r) {
@@ -842,7 +842,7 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //! sphere) CLN_G (mixed as 0).  file: the restart layout; files before version 7 keep the
 //! stress parts (and CLN_G on the cubed sphere)
 
-#if M1_TU_PART(0)
+#if VET_TU_PART(0)
 int RadiationVet::CleanRingFields(int *fm, const bool file) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   const int ns = CleanNs(cub, cln_rfh);   // (the slots of cln_s)
@@ -1187,7 +1187,7 @@ void RadiationVet::CleanRingMoments() {
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
         const Real jb = rl(m,qb,CLN_J,k,j,i), jp = rr(m,fr[int{CLN_J}],k,j,i);
-        const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
+        const Real jm = jmin*iwr(m,VET_IW_EN,k0,j0,i0);
         const bool v = !f0 && jb > 0.0 && jb >= jm && jp > 0.0 && jp >= jm;
         const Real ws = v ? jp/jb : 1.0;
         for (int n = 0; n < CLN_N; ++n) {
@@ -1208,7 +1208,7 @@ void RadiationVet::CleanRingMoments() {
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
         const Real jb = rl(m,qb,CLN_J,k,j,i);
-        const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
+        const Real jm = jmin*iwr(m,VET_IW_EN,k0,j0,i0);
         for (int r = 0; r < nr; ++r) {
           for (int n = 0; n < CLN_N; ++n) {
             const int f = fr[n];
@@ -1236,7 +1236,7 @@ void RadiationVet::CleanRingMoments() {
     KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
       const int k = k0 - ks, j = j0 - js, i = i0 - is;
       const Real jb = rl(m,qb,CLN_J,k,j,i), jn = rl(m,qn,CLN_J,k,j,i);
-      const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
+      const Real jm = jmin*iwr(m,VET_IW_EN,k0,j0,i0);
       for (int n = 0; n < CLN_N; ++n) {
         if (fr[n] < 0) continue;
         pd(m,fr[n],k,j,i) = (n != CLN_J) ? rl(m,qn,n,k,j,i) - rl(m,qb,n,k,j,i) :
@@ -1300,7 +1300,7 @@ void RadiationVet::CleanRingMoments() {
         if (!x.cub || CleanCellMoment(n)) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn, n);
       }
     }
-    if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
+    if (q[CLN_J] < ray_min*iw_(m,VET_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
     if (!nxt) return;
     // (the next block's window: the union at s = 1)
@@ -1311,7 +1311,7 @@ void RadiationVet::CleanRingMoments() {
         if (!x.cub || CleanCellMoment(n)) q[n] = raw(qn, n);
       }
     }
-    if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) {
+    if (q[CLN_J] < ray_min*iw_(m,VET_IW_EN,k,j,i)) {
       for (int n = 0; n < CLN_N; ++n) {
         if (CleanCellMoment(n)) q[n] = 0.0;
       }
@@ -1400,7 +1400,7 @@ void RadiationVet::CleanFvSets(const Real tc, const int cyc) {
     cln_rbld = b;
   }
 }
-#endif  // M1_TU_PART(0)
+#endif  // VET_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn int CleanFvMirror
@@ -1436,7 +1436,7 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 //! clean_ray_cut_taumin.  Moves down at once, up after clean_ray_cut_wait builds (both
 //! in the restart file).  sc rays only; no cut with several MeshBlocks along x1
 
-#if M1_TU_PART(1)
+#if VET_TU_PART(1)
 void RadiationVet::CleanRayCut() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   vlat_icut = 0;
@@ -1501,7 +1501,7 @@ void RadiationVet::CleanRayCut() {
   pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_count", cln_rcut_n);
   vlat_icut = cln_rcut;
 }
-#endif  // M1_TU_PART(1)
+#endif  // VET_TU_PART(1)
 
 // one cell's directions as a strided row: the address once per cell (dummy: stride 0)
 struct CleanRow {
@@ -1523,7 +1523,7 @@ CleanRow VgdRow(const RadiationVet::VgdRag &vi, const int m, const int kb, const
 //! over mu_d > 0, C1 = <|I - S|>/J.  Cubed sphere: Cartesian D, half ranges about the
 //! family normals
 
-#if M1_TU_PART(1)
+#if VET_TU_PART(1)
 void RadiationVet::CleanClosureFromGd() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -1559,8 +1559,8 @@ void RadiationVet::CleanClosureFromGd() {
       const CleanArgs &x = *px;
       Real e[3][3];   // (the cell's frame, F and E once, not per direction)
       CleanThickFrame(x, x3v, m, k, j, i, e);
-      const Real f[3] = {iw_(m,M1_IW_F1,k,j,i), iw_(m,M1_IW_F2,k,j,i),
-                         iw_(m,M1_IW_F3,k,j,i)}, en = iw_(m,M1_IW_EN,k,j,i);
+      const Real f[3] = {iw_(m,VET_IW_F1,k,j,i), iw_(m,VET_IW_F2,k,j,i),
+                         iw_(m,VET_IW_F3,k,j,i)}, en = iw_(m,VET_IW_EN,k,j,i);
       const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, n), [&](const int d) {
         const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
@@ -1610,11 +1610,11 @@ void RadiationVet::CleanClosureFromGd() {
       q[CLN_HM+b] = hm[b];
     }
     q[CLN_JR] = q[CLN_J];
-    if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
+    if (q[CLN_J] < ray_min*iw_(m,VET_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
   });
 }
-#endif  // M1_TU_PART(1)
+#endif  // VET_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanGdI
@@ -1657,7 +1657,7 @@ struct CleanGdI {
 //! its normal (cln_fh), accumulated set by set after each sweep from vgd_i (or, for a
 //! version-5 restart, cln_fvi from row fo); union rows o of dv; zero: first set
 
-#if M1_TU_PART(2)
+#if VET_TU_PART(2)
 void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
                                  const bool zero, const int fo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1793,11 +1793,11 @@ void RadiationVet::CleanGdFaceSums() {
   };
   // inner face: no flux if reflecting, else outward beams from the emission (vet_bc_inner
   // emit) or the first cell, inward beams from the first cell
-  const bool open = (ibc_x1min != M1_IBC_REFLECT);
+  const bool open = (ibc_x1min != VET_IBC_REFLECT);
   const bool emi = VetBcEmit();
   const Real iemit = VetBathLo();
-  const Real ihi = (ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
-  const bool rwsc[2] = {!open, ibc_x1max == M1_IBC_REFLECT};
+  const Real ihi = (ibc_x1max == VET_IBC_MARSHAK) ? iebath_x1max : 0.0;
+  const bool rwsc[2] = {!open, ibc_x1max == VET_IBC_REFLECT};
   auto bmi = ibm_i;
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
   // intensities in the mesh layout with ghosts (re-indexed by the wall map at a periodic
@@ -2159,7 +2159,7 @@ void RadiationVet::CleanGdFaceSums() {
   };
   // rr without a reflecting top: no march, one thread per cell; the columns then only
   // close their ends
-  const bool cel = rr && !x.cub && ibc_x1max != M1_IBC_REFLECT;
+  const bool cel = rr && !x.cub && ibc_x1max != VET_IBC_REFLECT;
   if (cel) {
     CleanFor("cln_gd_cel", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2252,7 +2252,7 @@ void RadiationVet::CleanGdFaceSums() {
   }
   // reflecting top over several levels: remainder and volumes handed down, each level
   // takes its share
-  for (int lev = vgd_nb1 - 2; lev >= 0 && ibc_x1max == M1_IBC_REFLECT; --lev) {
+  for (int lev = vgd_nb1 - 2; lev >= 0 && ibc_x1max == VET_IBC_REFLECT; --lev) {
     VetGdX1Pass(false);
     par_for("cln_gd_top", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -2298,25 +2298,25 @@ void RadiationVet::CleanClosureFromRays() {
   DvceArray1D<Real> nb("cln_raynan", 1);   // (a ray J not finite: counted, no silent D)
   CleanFor("cln_rays", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real jr = vc(m,M1_VET_J,k,j,i);
+    const Real jr = vc(m,VETRAY_J,k,j,i);
     if (!Kokkos::isfinite(jr)) Kokkos::atomic_add(&nb(0), 1.0);
-    for (int n = 0; n < M1_VET_NFS; ++n) {   // (F2, F1, FX, F3)
+    for (int n = 0; n < VETRAY_NFS; ++n) {   // (F2, F1, FX, F3)
       const int c = (n < 4) ? CLN_F2 + n : ((n < 8) ? CLN_F1 + n - 4 : CLN_FX + n - 8);
-      if (c < cs.extent_int(1)) cs(m,c,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
+      if (c < cs.extent_int(1)) cs(m,c,k,j,i) = f2 ? vc(m,VETRAY_F2+n,k,j,i) : 0.0;
     }
     cs(m,CLN_JR,k,j,i) = jr;
-    if (jr > 0.0 && jr >= ray_min*iw_(m,M1_IW_EN,k,j,i)) {
-      for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = vc(m,M1_VET_D11+a,k,j,i);
+    if (jr > 0.0 && jr >= ray_min*iw_(m,VET_IW_EN,k,j,i)) {
+      for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = vc(m,VETRAY_D11+a,k,j,i);
       for (int a = 0; a < 3; ++a) {
-        const Real hp = vc(m,M1_VET_HP1+a,k,j,i)/jr;
-        const Real h = vc(m,M1_VET_H1+a,k,j,i)/jr;
+        const Real hp = vc(m,VETRAY_HP1+a,k,j,i)/jr;
+        const Real h = vc(m,VETRAY_H1+a,k,j,i)/jr;
         cs(m,CLN_HP+a,k,j,i) = fmax(hp, 0.0);
         cs(m,CLN_HM+a,k,j,i) = fmin(h - hp, 0.0);
       }
       for (int a = 0; a < 9 && CLN_KP + a < cs.extent_int(1); ++a) {
-        cs(m,CLN_KP+a,k,j,i) = vc(m,M1_VET_KP+a,k,j,i)/jr;
+        cs(m,CLN_KP+a,k,j,i) = vc(m,VETRAY_KP+a,k,j,i)/jr;
       }
-      cs(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
+      cs(m,CLN_C1,k,j,i) = fmax(vc(m,VETRAY_NL,k,j,i)/jr, 0.0);
       cs(m,CLN_J,k,j,i) = jr;
       valid(m,0,k,j,i) = 1.0;
     } else {
@@ -2372,7 +2372,7 @@ void RadiationVet::CleanClosureFill() {
   if (thf) {   // the weight, E
     par_for("cln_fill_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      valid(m,2,k,j,i) = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+      valid(m,2,k,j,i) = fmax(iw_(m,VET_IW_EN,k,j,i), efl);
     });
     CleanGhostFill(cln_v, 2, 1);
   }
@@ -2446,6 +2446,6 @@ void RadiationVet::CleanClosureFill() {
     });
   }
 }
-#endif  // M1_TU_PART(2)
+#endif  // VET_TU_PART(2)
 
 }  // namespace radvet

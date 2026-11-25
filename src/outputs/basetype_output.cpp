@@ -720,16 +720,16 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
 
     // grey M1 radiation moments
     if (variable.compare("vet_e") == 0 || variable.compare("vet") == 0) {
-      outvars.emplace_back("vet_e",radvet::M1_E,&(pm->pmb_pack->pradvet->u0));
+      outvars.emplace_back("vet_e",radvet::VET_E,&(pm->pmb_pack->pradvet->u0));
     }
     if (variable.compare("vet_f1") == 0 || variable.compare("vet") == 0) {
-      outvars.emplace_back("vet_f1",radvet::M1_F1,&(pm->pmb_pack->pradvet->u0));
+      outvars.emplace_back("vet_f1",radvet::VET_F1,&(pm->pmb_pack->pradvet->u0));
     }
     if (variable.compare("vet_f2") == 0 || variable.compare("vet") == 0) {
-      outvars.emplace_back("vet_f2",radvet::M1_F2,&(pm->pmb_pack->pradvet->u0));
+      outvars.emplace_back("vet_f2",radvet::VET_F2,&(pm->pmb_pack->pradvet->u0));
     }
     if (variable.compare("vet_f3") == 0 || variable.compare("vet") == 0) {
-      outvars.emplace_back("vet_f3",radvet::M1_F3,&(pm->pmb_pack->pradvet->u0));
+      outvars.emplace_back("vet_f3",radvet::VET_F3,&(pm->pmb_pack->pradvet->u0));
     }
     // clean: vet also carries the cell flux of the faces' energy flux Phi (vet_f:
     // the face momenta's, the radiation momentum)

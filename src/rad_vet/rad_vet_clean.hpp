@@ -286,7 +286,7 @@ struct CleanArgs {
   bool fwc;                    // al, ar and the cross factor from CLF_QL
   bool sar;                    // streaming share's net flux in area form
   bool bar;                    // clean_bc_area: open x1 end's h+- E in area form too
-  DvceArray5D<Real> op;        // opacities (M1_OP_*)
+  DvceArray5D<Real> op;        // opacities (VET_OP_*)
   int nf;                      // number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;
@@ -357,13 +357,13 @@ Real CleanGasEint(const CleanArgs &x, const DvceArray5D<Real> &uh, const Real ek
 //----------------------------------------------------------------------------------------
 //! \fn int CleanBc
 //! \brief boundary type of side s of MeshBlock m: the mesh's on a physical boundary,
-//! M1_IBC_PERIODIC on a face shared with a MeshBlock or panel
+//! VET_IBC_PERIODIC on a face shared with a MeshBlock or panel
 
 KOKKOS_INLINE_FUNCTION
 int CleanBc(const CleanArgs &x, const int m, const int s) {
   const BoundaryFlag f = x.mbc(m,s);
   return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
-          f == BoundaryFlag::panel) ? M1_IBC_PERIODIC : x.bc[s];
+          f == BoundaryFlag::panel) ? VET_IBC_PERIODIC : x.bc[s];
 }
 
 //----------------------------------------------------------------------------------------
@@ -373,7 +373,7 @@ int CleanBc(const CleanArgs &x, const int m, const int s) {
 KOKKOS_INLINE_FUNCTION
 bool CleanOpen(const CleanArgs &x, const int m, const int s) {
   const int bc = CleanBc(x, m, s);
-  return bc != M1_IBC_REFLECT && bc != M1_IBC_FLUX;
+  return bc != VET_IBC_REFLECT && bc != VET_IBC_FLUX;
 }
 
 //----------------------------------------------------------------------------------------
@@ -836,8 +836,8 @@ Real CleanFaceChi(const DvceArray5D<Real> &op, const DvceArray2D<Real> &x1f,
                   const DvceArray2D<BoundaryFlag> &bc, const bool hrm, const int dir,
                   const int m, const int k, const int j, const int i, const int is,
                   const int ie) {
-  const Real cl = op(m,M1_OP_T,k-(dir == 2),j-(dir == 1),i-(dir == 0));
-  const Real cr = op(m,M1_OP_T,k,j,i);
+  const Real cl = op(m,VET_OP_T,k-(dir == 2),j-(dir == 1),i-(dir == 0));
+  const Real cr = op(m,VET_OP_T,k,j,i);
   auto phys = [&](const int s) {
     return bc(m,s) != BoundaryFlag::block && bc(m,s) != BoundaryFlag::periodic;
   };
@@ -875,7 +875,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   ar = 0.0;
   // (clean_bc_area: an open r end's net outflow h+ + h- in area form, as CleanStagArea)
   const bool ba = x.bar && !x.marshak && dir == 0 && (x.sph || x.cub);
-  if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
+  if (pos == lo && CleanBc(x, m, 2*dir) != VET_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir)) return;   // (a wall; an imposed flux is all source)
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
     if (beam && x.marshak) return;
@@ -888,7 +888,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     }
     return;
   }
-  if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
+  if (pos == hi && CleanBc(x, m, 2*dir+1) != VET_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir+1)) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
     if (ba) al += x.c*fmax(x.cs(m,CLN_HP,kl,jl,il) + x.cs(m,CLN_HM,kl,jl,il), 0.0)*
@@ -934,7 +934,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     // hc kE beta would break the M-matrix of an opaque moving cell
     const Real rl = 1.0 - x.w(m,CLW_GX,kl,jl,il);
     const Real rr = 1.0 - x.w(m,CLW_GX,k,j,i);
-    const Real bl = b*x.op(m,M1_OP_E,kl,jl,il)*rl, br = b*x.op(m,M1_OP_E,k,j,i)*rr;
+    const Real bl = b*x.op(m,VET_OP_E,kl,jl,il)*rl, br = b*x.op(m,VET_OP_E,k,j,i)*rr;
     al += sl;
     ar += sr;
     al += bl;
@@ -969,8 +969,8 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
-  return (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) ||
-         (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC);
+  return (pos == lo && CleanBc(x, m, 2*dir) != VET_IBC_PERIODIC) ||
+         (pos == hi && CleanBc(x, m, 2*dir+1) != VET_IBC_PERIODIC);
 }
 
 //----------------------------------------------------------------------------------------
@@ -988,7 +988,7 @@ int CleanTransSide(const CleanArgs &x, const int b, const int m, const int k, co
   const int t = CleanBc(x, m, 2*b + s);
   const BoundaryFlag f = x.mbc(m,2*b+s);
   return (pos != end || (f != BoundaryFlag::polar && f != BoundaryFlag::panel &&
-                         (t == M1_IBC_PERIODIC || t == M1_IBC_REFLECT))) ? 1 : 0;
+                         (t == VET_IBC_PERIODIC || t == VET_IBC_REFLECT))) ? 1 : 0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1161,9 +1161,9 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
-  if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
-    if (CleanBc(x, m, 2*dir) == M1_IBC_REFLECT) return 0.0;
-    if (CleanBc(x, m, 2*dir) == M1_IBC_FLUX) return dir ? x.ifx2[0](m,k,i) : x.iflux[0];
+  if (pos == lo && CleanBc(x, m, 2*dir) != VET_IBC_PERIODIC) {
+    if (CleanBc(x, m, 2*dir) == VET_IBC_REFLECT) return 0.0;
+    if (CleanBc(x, m, 2*dir) == VET_IBC_FLUX) return dir ? x.ifx2[0](m,k,i) : x.iflux[0];
     if (x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0) {
       return x.beam(m,k-x.ks,j-x.js);
     }
@@ -1172,9 +1172,10 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     return (x.marshak ? x.c*x.marshak_q*x.ebath[2*dir] : 0.25*x.c*x.ebath[2*dir]) +
            ab*x.ebath[2*dir];
   }
-  if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
-    if (CleanBc(x, m, 2*dir+1) == M1_IBC_REFLECT) return 0.0;
-    if (CleanBc(x, m, 2*dir+1) == M1_IBC_FLUX) return dir ? x.ifx2[1](m,k,i) : x.iflux[1];
+  if (pos == hi && CleanBc(x, m, 2*dir+1) != VET_IBC_PERIODIC) {
+    if (CleanBc(x, m, 2*dir+1) == VET_IBC_REFLECT) return 0.0;
+    if (CleanBc(x, m, 2*dir+1) == VET_IBC_FLUX) return dir ? x.ifx2[1](m,k,i) :
+        x.iflux[1];
     const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
     const bool up = x.upw && x.feedback && !x.hi;
     const Real ab = up ? fmin(CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il), 0.0)
@@ -1199,7 +1200,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     // (less the emission's linear response at E_k, CleanFaceWeights)
     {
       auto rk = [&](const int kk, const int jj, const int ii) {
-        return x.w(m,CLW_GX,kk,jj,ii)*x.op(m,M1_OP_E,kk,jj,ii)*x.w(m,CLW_EK,kk,jj,ii);
+        return x.w(m,CLW_GX,kk,jj,ii)*x.op(m,VET_OP_E,kk,jj,ii)*x.w(m,CLW_EK,kk,jj,ii);
       };
       s -= 0.25*tg*x.c*(CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                         CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*x.h*x.c*
@@ -1452,7 +1453,7 @@ void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
                      const int i, Real (&c)[CLN_ST]) {
   for (int s = 0; s < CLN_ST; ++s) c[s] = 0.0;
   const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-  c[0] = 1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*qr + (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0);
+  c[0] = 1.0 + x.h*x.c*x.op(m,VET_OP_E,k,j,i)*qr + (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0);
   CleanStFace<0, 0>(x, m, k, j, i, c);
   CleanStFace<0, 1>(x, m, k, j, i, c);
   if (x.multi_d) {
@@ -1593,13 +1594,14 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
     // (clean_stag_split: share chi_c/(chi_L + chi_R))
     const int o = 2*side - 1;
-    const Real xc = x.op(m,M1_OP_T,k,j,i), xs = xc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di);
+    const Real xc = x.op(m,VET_OP_T,k,j,i), xs = xc +
+        x.op(m,VET_OP_T,k+o*dk,j+o*dj,i+o*di);
     Real wt = (x.hi && xs > 0.0) ? xc/xs : 0.5;
     if (x.hi && (x.sph || x.cub)) {   // (each half cell its absorption of V_f F)
       const int ko = k + o*dk, jo = j + o*dj, io = i + o*di;
       const Real vc = x.cub ? x.g(m,CLG_F+3,k,j,i) : x.vol(m,k,j,i);
       const Real vo = x.cub ? x.g(m,CLG_F+3,ko,jo,io) : x.vol(m,ko,jo,io);
-      const Real xv = xc*vc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di)*vo;
+      const Real xv = xc*vc + x.op(m,VET_OP_T,k+o*dk,j+o*dj,i+o*di)*vo;
       wt = (xv > 0.0) ? 0.5*xc*(vc + vo)/xv : 0.5;
     }
     if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
@@ -1878,8 +1880,8 @@ void CleanHcTauW(const CleanArgs &x, const int dir, const int m, const int k, co
   const bool rad = (dir == 0 && (x.sph || x.cub));
   const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : 1.0;
   const Real dr = rad ? x.x1v(m,i) - x.x1f(m,i) : 1.0;
-  const Real tl = fmax(x.op(m,M1_OP_T,kl,jl,il), 0.0)*dl;
-  const Real tr = fmax(x.op(m,M1_OP_T,k,j,i), 0.0)*dr;
+  const Real tl = fmax(x.op(m,VET_OP_T,kl,jl,il), 0.0)*dl;
+  const Real tr = fmax(x.op(m,VET_OP_T,k,j,i), 0.0)*dr;
   wl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
   wr = 1.0 - wl;
   const Real gl = rad ? SQR(x.x1v(m,il)/x.x1f(m,i)) : 1.0;

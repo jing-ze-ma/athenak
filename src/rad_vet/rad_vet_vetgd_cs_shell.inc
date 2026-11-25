@@ -5,8 +5,9 @@
 //========================================================================================
 //! \file rad_vet_vetgd_cs_shell.inc
 //! \brief cs shell kernel body of RadiationVet::VetGdCsSweep, included as shell_
-//! (current set) and shellx_ (next set of a fused cross-fade); needs M1_VGDCS_SHELL_NAME.
-      auto M1_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
+//! (current set) and shellx_ (next set of a fused cross-fade); needs
+//! VET_VGDCS_SHELL_NAME.
+      auto VET_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                                const int d, const bool cnt) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real mr = mr_(m,k,j,d);

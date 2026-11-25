@@ -103,14 +103,14 @@ struct CleanGeo {
 
 
 // indices of the evolved moments in u0(m,n,k,j,i)
-constexpr int M1_E  = 0;
-constexpr int M1_F1 = 1;
-constexpr int M1_F2 = 2;
-constexpr int M1_F3 = 3;
-constexpr int M1_NVAR = 4;
+constexpr int VET_E  = 0;
+constexpr int VET_F1 = 1;
+constexpr int VET_F2 = 2;
+constexpr int VET_F3 = 3;
+constexpr int VET_NVAR = 4;
 
 // explicit stages of the PD-ARS (Chu et al. 2019) integrator per substep
-constexpr int M1_NSTAGE = 2;
+constexpr int VET_NSTAGE = 2;
 
 //! \fn M1KeyName
 //! \brief the <rad_vet> name to read for a key with aliases: canon if present, else the
@@ -142,66 +142,67 @@ inline std::string M1LzKey(ParameterInput *pin, const bool cs, const bool k1) {
 }
 
 // components of RadiationVet::vet_cell (closure = vet_sc)
-constexpr int M1_VET_CHX = 0;   // extinction rho (kappa_F + kappa_s) [1/length]
-constexpr int M1_VET_SRC = 1;   // source function in E units (4 pi S / c)
-constexpr int M1_VET_J   = 2;   // E of the formal solution (4 pi J / c)
-constexpr int M1_VET_K11 = 3;   // K_ab in E units: 11 22 33 12 13 23
-constexpr int M1_VET_H1  = 9;   // F_a / c of the formal solution: 1 2 3
-constexpr int M1_VET_CHI = 12;  // the uniaxial projection: chi, n1, n2, n3
-constexpr int M1_VET_N1  = 13;
-constexpr int M1_VET_D11 = 16;  // vet_tensor = full: guarded D = K/J, 11 22 33 12 13 23
-constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
-constexpr int M1_VET_HP1 = 23;  // sum w I max(mu_a, 0), a = 1 2 3 (half-range)
-constexpr int M1_VET_NL  = 26;  // sum w |I - S| (C1 non-locality), fs only
-constexpr int M1_VET_EPS = 27;  // thermal fraction min(kappa_P/chi, 1) (fs)
-constexpr int M1_VET_NC  = 28;
+constexpr int VETRAY_CHX = 0;   // extinction rho (kappa_F + kappa_s) [1/length]
+constexpr int VETRAY_SRC = 1;   // source function in E units (4 pi S / c)
+constexpr int VETRAY_J   = 2;   // E of the formal solution (4 pi J / c)
+constexpr int VETRAY_K11 = 3;   // K_ab in E units: 11 22 33 12 13 23
+constexpr int VETRAY_H1  = 9;   // F_a / c of the formal solution: 1 2 3
+constexpr int VETRAY_CHI = 12;  // the uniaxial projection: chi, n1, n2, n3
+constexpr int VETRAY_N1  = 13;
+constexpr int VETRAY_D11 = 16;  // vet_tensor = full: guarded D = K/J, 11 22 33 12 13 23
+constexpr int VETRAY_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
+constexpr int VETRAY_HP1 = 23;  // sum w I max(mu_a, 0), a = 1 2 3 (half-range)
+constexpr int VETRAY_NL  = 26;  // sum w |I - S| (C1 non-locality), fs only
+constexpr int VETRAY_EPS = 27;  // thermal fraction min(kappa_P/chi, 1) (fs)
+constexpr int VETRAY_NC  = 28;
 // scheme = clean: K+^d_bd = sum w I Omega_b mu_d over mu_d > 0 (slot KP + 3 d + b)
-constexpr int M1_VET_KP  = 28;
-constexpr int M1_VET_NKP = 9;
+constexpr int VETRAY_KP  = 28;
+constexpr int VETRAY_NKP = 9;
 // clean_consistency (VetShortCharSweep): ray fluxes sum w g Phi, sum w g Phi Omega_b
 // (g = |mu_1| dx2/dx1) through the low x2 face; sum w mu_1 I, sum w mu_1 I Omega_b
 // through the x1 boundary face and the low x1 face; low x3 face as x2
-constexpr int M1_VET_F2  = 37;
-constexpr int M1_VET_F1  = 41;
-constexpr int M1_VET_FX  = 45;
-constexpr int M1_VET_F3  = 49;
-constexpr int M1_VET_NFS = 16;  // the face sums F2, F1, FX, F3
+constexpr int VETRAY_F2  = 37;
+constexpr int VETRAY_F1  = 41;
+constexpr int VETRAY_FX  = 45;
+constexpr int VETRAY_F3  = 49;
+constexpr int VETRAY_NFS = 16;  // the face sums F2, F1, FX, F3
 // tau_ten slots of the lateral correction (vet_col_lat): dD_ab in the mesh basis,
 // rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
-constexpr int M1_TT_LAT0 = 4;
-constexpr int M1_TT_NLAT = 6;
+constexpr int VET_TT_LAT0 = 4;
+constexpr int VET_TT_NLAT = 6;
 // extra vgd_hr components of the vet_gd thin switch (VetGdHalfRange)
-constexpr int M1_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J
-constexpr int M1_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
-constexpr int M1_VGD_HRJ  = 8;     // J (E units)
-constexpr int M1_VGD_HRNX = 9;
-#ifdef M1_VGD_NMAX_BUILD
-constexpr int M1_VGD_NMAX = M1_VGD_NMAX_BUILD;   // cmake -D Athena_M1_VGD_NMAX
+constexpr int VET_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J
+constexpr int VET_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
+constexpr int VET_VGD_HRJ  = 8;     // J (E units)
+constexpr int VET_VGD_HRNX = 9;
+#ifdef VET_VGD_NMAX_BUILD
+constexpr int VET_VGD_NMAX = VET_VGD_NMAX_BUILD;   // cmake -D Athena_M1_VGD_NMAX
 #else
-constexpr int M1_VGD_NMAX = 432;   // vet_gd: max directions
+constexpr int VET_VGD_NMAX = 432;   // vet_gd: max directions
 #endif
 // components of opac, all stored as rho*kappa (inverse length)
-constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
-constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
-constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s): transport opacity (flux source,
+constexpr int VET_OP_P = 0;  // rho kappa_P, Planck (emission) mean
+constexpr int VET_OP_E = 1;   // rho kappa_E, energy (absorption) mean
+constexpr int VET_OP_T = 2;   // rho (kappa_F + kappa_s): transport opacity (flux source,
                              // tau_face)
-constexpr int M1_NOPAC = 3;
-// vet_scatter only: rho kappa_e, the electron-scattering part of M1_OP_T (which stays
+constexpr int VET_NOPAC = 3;
+// vet_scatter only: rho kappa_e, the electron-scattering part of VET_OP_T (which stays
 // the total rho kappa_R)
-constexpr int M1_OP_S = 3;
+constexpr int VET_OP_S = 3;
 
 // <rad_vet>/opacity
-constexpr int M1_OPAC_CONST    = 0;
-constexpr int M1_OPAC_POWERLAW = 1;
-constexpr int M1_OPAC_USER     = 2;
-constexpr int M1_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables
+constexpr int VET_OPAC_CONST    = 0;
+constexpr int VET_OPAC_POWERLAW = 1;
+constexpr int VET_OPAC_USER     = 2;
+constexpr int VET_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables
 
 // <rad_vet>/force_reference: what the momentum coupling subtracts from the radiative
 // force (arad_ref; see the head of rad_vet_fluid.cpp)
-constexpr int M1_FREF_NONE    = 0;
-constexpr int M1_FREF_WB_ARAD = 1;
-constexpr int M1_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
-constexpr int M1_FREF_WB_MD   = 3;   // wb_arad_md: staggered clean, steady-start force in
+constexpr int VET_FREF_NONE    = 0;
+constexpr int VET_FREF_WB_ARAD = 1;
+constexpr int VET_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
+// wb_arad_md: staggered clean, steady-start force in
+constexpr int VET_FREF_WB_MD   = 3;
                                      // every direction (cln_fref)
 
 
@@ -256,12 +257,12 @@ Real M1ScatterGuard(const Real kt, const Real ke, const Real kfl) {
 }
 
 // entries of the implicit-solve diagnostic counter (see RadiationVet::cnt)
-constexpr int M1_CNT_NSOLVE = 0;   // cells handed to the bracketed Newton
-constexpr int M1_CNT_ITSUM  = 1;   // total iterations over those cells
-constexpr int M1_CNT_ITMAX  = 2;   // largest iteration count of any one cell
-constexpr int M1_CNT_NFAIL  = 3;   // cells that hit maxit without reaching the tolerance
-constexpr int M1_CNT_NBRAK  = 4;   // cells for which no bracket [T_lo, T_hi] was found
-constexpr int M1_NCNT = 5;
+constexpr int VET_CNT_NSOLVE = 0;   // cells handed to the bracketed Newton
+constexpr int VET_CNT_ITSUM  = 1;   // total iterations over those cells
+constexpr int VET_CNT_ITMAX  = 2;   // largest iteration count of any one cell
+constexpr int VET_CNT_NFAIL  = 3;   // cells that hit maxit without reaching the tolerance
+constexpr int VET_CNT_NBRAK  = 4;   // cells for which no bracket [T_lo, T_hi] was found
+constexpr int VET_NCNT = 5;
 
 //----------------------------------------------------------------------------------------
 //! \struct RadiationVetTaskIDs
@@ -326,20 +327,20 @@ class RadiationVet {
   Real chat_over_c{};  // reduced speed of light factor (default 1)
   Real chat{};         // = chat_over_c * c_light
   Real e_floor{};      // floor on E
-  int chi_kind{};      // M1_CHI_*: levermore | minerbo | kershaw
+  int chi_kind{};      // VET_CHI_*: levermore | minerbo | kershaw
   bool eddington{};    // closure = eddington (chi = 1/3); default is the M1 closure
   bool advect_split{};          // the advective enthalpy-flux split of the E equation
 
   // opacities per unit mass (code units): kappa0, or kappa0 (rho/rho_ref)^a (T/t_ref)^b
-  int opacity_type{};           // M1_OPAC_*
+  int opacity_type{};           // VET_OPAC_*
   Real kappa_p{}, kappa_e{}, kappa_f{}, kappa_s{};
   Real opac_rho_ref{}, opac_t_ref{}, opac_a{}, opac_b{};
   bool opac_zero{};             // all four opacities are identically zero
   M1OpacTab otab;               // opacity = table: filled by SetOpacityTables
 
-  // <rad_vet>/force_reference: with M1_FREF_WB_ARAD the gas gets the residual between the
-  // radiative force and the reference acceleration arad_ref of an external well-balanced
-  // scheme (filled by the pgen through SetForceReference)
+  // <rad_vet>/force_reference: with VET_FREF_WB_ARAD the gas gets the residual between
+  // the radiative force and the reference acceleration arad_ref of an external
+  // well-balanced scheme (filled by the pgen through SetForceReference)
   int force_ref{};
   DvceArray4D<Real> arad_ref;   // (m,k,j,i), a reference x1 acceleration, code units
   // optional explicit radiation energy source (code units), set by a pgen with
@@ -457,7 +458,7 @@ class RadiationVet {
   Real vet_d11_min{};        // full: smallest guarded D_11
   Real vet_time{}, vet_itime{}, vet_ncall{}; // SC seconds, implicit-solve seconds, calls
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
-  DvceArray5D<Real> vet_cell;  // (nmb, M1_VET_NC, k, j, i), M1_VET_*
+  DvceArray5D<Real> vet_cell;  // (nmb, VETRAY_NC, k, j, i), VETRAY_*
   DvceArray5D<Real> vet_ipl;   // (nmb, 2, nray, k, j): intensity of the last two layers
   // multi-block sweep state (plane buffers, neighbour tables, exchange); null on one
   // MeshBlock
@@ -472,7 +473,7 @@ class RadiationVet {
   DvceArray1D<Real> opn_nskip_d;
   // implicit_pos_gas: energy-conserving positivity limiter of the written-back gas eint;
   // implicit_pos_floor: the E floor takes its energy from the gas. pos_cnt_d: device
-  // counters (M1_POS_*), pos_cnt the all-rank totals
+  // counters (VET_POS_*), pos_cnt the all-rank totals
   bool impl_pos_gas = false;
   bool impl_pos_floor = false;
   Real impl_pos_gas_frac = 1.0e-3;
@@ -483,12 +484,12 @@ class RadiationVet {
   int dtr_ncut = 0, dtr_maxcut = 8;   // DtRetry cuts of this cycle, limit
   bool dtr_redo = false;   // this cycle's failed step is redone (clean: solved strictly)
   Real marshak_q{};             // free-surface condition F_f = c*marshak_q*E
-  int ibc_x1min{}, ibc_x1max{}; // M1_IBC_*
+  int ibc_x1min{}, ibc_x1max{}; // VET_IBC_*
   // implicit_bc_x2min|x2max|x3min|x3max: auto (periodic on a periodic mesh, else
   // reflect) | reflect | marshak (F_f = c marshak_q E outward; formal solution I = 0)
   int ibc_x2min = 2, ibc_x2max = 2, ibc_x3min = 2, ibc_x3max = 2;
-  Real iflux_x1min{}, iflux_x1max{}; // imposed face flux of M1_IBC_FLUX
-  Real iebath_x1min{}, iebath_x1max{}; // M1_IBC_MARSHAK: incident bath
+  Real iflux_x1min{}, iflux_x1max{}; // imposed face flux of VET_IBC_FLUX
+  Real iebath_x1min{}, iebath_x1max{}; // VET_IBC_MARSHAK: incident bath
   // per-column inflow of the outer x1 Marshak face (SetX1maxBathColumns, (nmb, n3, n2)):
   // E_in > 0 is a thick inflow face, comoving flux 0 plus the enthalpy inflow
   // v1 (1 + chi) E_in; E_in = 0 keeps the Marshak face. ibadv_x1max: lab-frame advective
@@ -514,7 +515,7 @@ class RadiationVet {
   // The outer face keeps cell under vet_col_surface_q.
   bool impl_mface_lin = false;
   DvceArray4D<Real> f0x1;       // face-normal comoving x1 flux (m,k,j,i), restart state
-  DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
+  DvceArray5D<Real> iw;         // per-cell work array of the solve, VET_NIW components
   Real impl_nstep{}, impl_itsum{}, impl_itmax{};  // Picard counters
   // implicit_thin_freeze: cells with c dt rho kappa_P below it keep their start-of-step
   // opacities for the whole solve
@@ -554,9 +555,9 @@ class RadiationVet {
   DvceArray4D<Real> FrefWacc();
 
   // ---- implicit face fluxes (constants: rad_vet_implicit.hpp)
-  int impl_flux{};              // M1_IFLUX_*: the spatial form of the implicit E-flux
-  int impl_recon{};             // M1_IRECON_*: dc, or plm by deferred correction
-  int impl_enth{};              // M1_IENTH_*: face value of the enthalpy flux a E
+  int impl_flux{};              // VET_IFLUX_*: the spatial form of the implicit E-flux
+  int impl_recon{};             // VET_IRECON_*: dc, or plm by deferred correction
+  int impl_enth{};              // VET_IENTH_*: face value of the enthalpy flux a E
   // half-range / thin-switch face options (read only when named):
   //  implicit_hr_wscale_x1 / _lat: scale the half-range face coefficients (diagnostic)
   //  implicit_hr_fcimp: dissipation form F = F_c(E') + w (c/2)(s_L E_L - s_R E_R),
@@ -598,11 +599,11 @@ class RadiationVet {
   // previous round or its R exchange (others cannot be newly limited: bitwise)
   bool zl_active = false;
   Real zl_rounds = 0.0, zl_halos = 0.0;
-  // implicit_thin_switch (M1_THSW_*): dt-free thin/thick weight frozen per solve
+  // implicit_thin_switch (VET_THSW_*): dt-free thin/thick weight frozen per solve
   // (formal-solution |H|/J, C1, E^n Knudsen number); implicit_thin_corr adds the lagged
   // formal-solution flux
   int impl_thsw = 0;
-  bool thsw_c1 = false;           // the sweep accumulates M1_VET_NL
+  bool thsw_c1 = false;           // the sweep accumulates VETRAY_NL
   Real thsw_h0 = 0.3, thsw_h1 = 0.6;
   // implicit_thin_h0_x1 / _h1_x1: thin-switch band of the x1 faces (_hx1_curv: only on
   // curvilinear meshes); implicit_thin_recon = js (M1ThinJs: ratios from the face mean
@@ -625,7 +626,7 @@ class RadiationVet {
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
-  // with implicit_thin_switch = fs* or implicit_thin_corr vgd_hr has M1_VGD_HRNX
+  // with implicit_thin_switch = fs* or implicit_thin_corr vgd_hr has VET_VGD_HRNX
   // components: + C1, eps, J
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_cnt;
   // implicit_gas_src = matched (term-by-term deposit) | conservative: the gas takes minus
@@ -644,14 +645,14 @@ class RadiationVet {
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass
 
   // ---- implicit transverse (x2/x3) coupling
-  int impl_solver{};            // M1_ISOLV_*: line_jacobi | bicgstab
+  int impl_solver{};            // VET_ISOLV_*: line_jacobi | bicgstab
   bool trans_on{};              // transport == implicit and the mesh is multi-D
   bool trans_x3{};              // ...and three-dimensional
   DvceArray4D<Real> f0x2, f0x3;   // face-normal comoving x2 / x3 fluxes (m,k,j,i),
                                   // restart state (trans_on only)
 
   // ---- implicit_solver = bicgstab (null under line_jacobi)
-  bool bicg_on{};               // impl_solver == M1_ISOLV_BICGSTAB and trans_on
+  bool bicg_on{};               // impl_solver == VET_ISOLV_BICGSTAB and trans_on
   int impl_prec_fb{};           // implicit_precond_fallback: -1 none, else impl_prec code
   bool bcg_capped{};            // the last BiCGStab stopped at lin_maxit, test unmet
   // ---- Krylov GPU cost options (off: nothing allocated)
@@ -684,11 +685,11 @@ class RadiationVet {
   DvceArray5D<Real> ipred;      // (m,3,k,j,i): dE_prev, dT_prev, T^n of this step
 
   // ---- time_scheme = hesdirk2: two implicit stage solves inside the Heun stages
-  int time_scheme{};            // M1_TIME_BE | M1_TIME_HESDIRK2
+  int time_scheme{};            // VET_TIME_BE | VET_TIME_HESDIRK2
   bool t2_ok{};                 // a valid FSAL slope K1 is stored
   bool t2_enth_be{};            // time2_enth_be: the backward-Euler solves of a hesdirk2
                                 // run take the stage a_f rule
-  int t2_solve{};               // what the next ImplicitSolve does (M1_T2S_*)
+  int t2_solve{};               // what the next ImplicitSolve does (VET_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // debug time2_dbg_fail: fail stage 1 at this cycle
   // time2_reject = be | retry: a non-admissible stage raises the dt_retry flag instead
@@ -771,9 +772,9 @@ class RadiationVet {
                                 // implicit_one_pass_safety)
   Real t2_lin_save{};           // implicit_lin_tol put back after a stage solve
   Real t2_nclip{};              // vet_sc cells whose extrapolated tensor was clipped
-  DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
-  DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
-  DvceArray5D<Real> t2inc;      // (m,M1_T2_NK,k,j,i) old vector - stage start state
+  DvceArray5D<Real> t2k1;       // (m,VET_T2_NK,k,j,i) the FSAL slope K1 (restart state)
+  DvceArray5D<Real> t2k2;       // (m,VET_T2_NK,k,j,i) the stage-2 slope K2
+  DvceArray5D<Real> t2inc;      // (m,VET_T2_NK,k,j,i) old vector - stage start state
   DvceArray4D<Real> t2f1, t2f2, t2f3;  // face fluxes of U^n (Heun average)
   bool pred2_ok{};
   Real pred2_dt{};
@@ -810,7 +811,7 @@ class RadiationVet {
   // The raise is paid by the cell's gas above its floor, then by the radiation above
   // e_floor of the same radial column, nearest cells first (donor slopes and
   // |F| <= c E kept). The column is in one MeshBlock: local, exact, layout invariant.
-  // M1_POS_FLR_MV counts moves, M1_POS_FLR_UN columns with nothing left.
+  // VET_POS_FLR_MV counts moves, VET_POS_FLR_UN columns with nothing left.
   bool impl_pos_flr_cons = true;
   // implicit_pos_floor_gas_keep th (-1 off): the clean E floor raise takes at most
   // (1 - th) of the gas eint, the rest from the column's radiation
@@ -836,7 +837,7 @@ class RadiationVet {
   DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
   DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
   // old files (version < 4) carry time2_vet_col = extrap2 channels: read past
-  static constexpr int M1_X2_NCH = 24;
+  static constexpr int VET_X2_NCH = 24;
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
@@ -857,7 +858,7 @@ class RadiationVet {
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- off-diagonal Eddington terms and the closure lag (multi-D implicit)
-  int impl_offdiag{};           // M1_OD_*: lagged | operator | none
+  int impl_offdiag{};           // VET_OD_*: lagged | operator | none
   int od_now{};                 // mode this step runs (impl_offdiag, or none/lagged)
   // implicit_closure_thin_relax = C (0 off; closure_lag = step): relax the step's
   // (chi, n) from the previous step's with w = min(1, 2/(1 + G^2)),
@@ -865,14 +866,14 @@ class RadiationVet {
   Real impl_ctrelax{};
   bool ctr_init{};
   DvceArray5D<Real> ctr_mem;
-  // <hydro>/rad_signal_speed reads opac(M1_OP_T) and the closure tensor of the last M1
+  // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last M1
   // step: they travel in the restart (kM1RssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
   //! closure tensor the signal speed reads: 0 E/3, 1 M1Chi(F/cE), 2 tau_ten,
   //! 3 vet_cell (chi, n), 4 vet_cell (D_dd), 5 cln_s (D, clean)
   int RssMode() const;
   int RssRstMode() const;   // RssMode + 16 (extended restart state)
-  int RssRstNch(int mode) const;  // channels written: opac(M1_OP_T) + the tensor's
+  int RssRstNch(int mode) const;  // channels written: opac(VET_OP_T) + the tensor's
   //! array and channel of restart channel n of a mode
   void RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c);
   void RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode, int m0 = 0);
@@ -881,7 +882,7 @@ class RadiationVet {
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
 
   // ---- transverse realizability limiter, implicit_trans_limit (see ImplicitTransTheta)
-  int impl_tlim{};              // M1_TLIM_*: none | lp
+  int impl_tlim{};              // VET_TLIM_*: none | lp
   DvceArray4D<Real> thx2, thx3;  // theta_f = 1/(1 + c dt (kt_f + klim_f)) on the x2/x3
 
   // implicit_vimp: the gas velocity of the enthalpy flux implicit through the solve's
@@ -940,10 +941,10 @@ class RadiationVet {
   DvceArray5D<Real> u1;         // state at the start of the substep
   DvceArray5D<Real> coarse_u0;  // on 2x coarser grid (for SMR/AMR)
   DvceFaceFld5D<Real> uflx;     // fluxes on cell faces
-  DvceArray5D<Real> opac;       // rho*kappa per cell, M1_NOPAC components
+  DvceArray5D<Real> opac;       // rho*kappa per cell, VET_NOPAC components
   DvceArray5D<Real> ugas1;      // hydro (IEN, IM1, IM2, IM3) at the start of the substep
 
-  // implicit-solve counters (M1_CNT_*), Reals so that long-run sums cannot wrap
+  // implicit-solve counters (VET_CNT_*), Reals so that long-run sums cannot wrap
   DualArray1D<Real> cnt;
 
   // boundary communication
@@ -1508,7 +1509,7 @@ class RadiationVet {
   bool vcol_srelax = true;
   bool vcol_sesc = false;
   Real vcol_sx0 = 1.0;         // time2_vet_col_source_x0 (blend)
-  // vet_scatter: electron scattering, the opacity split (otab.scat, opac M1_OP_S) and
+  // vet_scatter: electron scattering, the opacity split (otab.scat, opac VET_OP_S) and
   // VetScatterMix; vscat_form 1 ma (Jiang 2021 eq. 6), 2 absorption
   bool vscat = false;
   int vscat_form = 1;
@@ -1537,7 +1538,7 @@ class RadiationVet {
   // ---- vet_col_lat (rad_vet_vetcol.cpp): lateral correction of vet_col from a few-angle
   // SC sweep, each direction swept through the 3-D field and through the column's
   // laterally homogeneous twin; their moment difference (0 on a uniform state) is stored
-  // in tau_ten M1_TT_LAT0.. (mesh basis). dD_rr enters the diagonal, D_r,lat the face
+  // in tau_ten VET_TT_LAT0.. (mesh basis). dD_rr enters the diagonal, D_r,lat the face
   // equations (M1SphLat).
   bool vlat_on = false;        // vet_col_lat
   // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetLatInit
@@ -1631,11 +1632,11 @@ class RadiationVet {
   // rotated direction sets. A closure registers its normalised fields (ratios to J); the
   // mean is kept as offsets d_j = g_{b-j} - g_b, each from two sweeps of the same state:
   // used = g_b(now) + sum_j d_j / K. Needs a rotating closure.
-  static constexpr int M1_RA_NF = 16;
+  static constexpr int VET_RA_NF = 16;
   struct RotAvgTab {           // registered fields (POD: captured by the kernels)
     int nf = 0;
-    int arr[M1_RA_NF]{}, comp[M1_RA_NF]{}, kind[M1_RA_NF]{};
-    Real lo[M1_RA_NF]{}, hi[M1_RA_NF]{};
+    int arr[VET_RA_NF]{}, comp[VET_RA_NF]{}, kind[VET_RA_NF]{};
+    Real lo[VET_RA_NF]{}, hi[VET_RA_NF]{};
     int farr = -1, fcomp = 0;  // validity flag field: invalid where < 0 (-1: none)
     int jf = -1;               // J field (index into the table) of kind-3 fields
     int jw = -1;               // the ratio field weighting the sets (-1: equal)
@@ -1720,7 +1721,7 @@ class RadiationVet {
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
   // history in the restart file (kM1RaRstMagic, rad_vet_rotavg.cpp)
-  static constexpr int M1_RA_RST_NH = 11;   // int64 header entries (10)
+  static constexpr int VET_RA_RST_NH = 11;   // int64 header entries (10)
   int RotAvgNf() const;
   int RotAvgRstNslab(const int ncell) const;
   int RotAvgRstI0() const;     // first written radial cell
@@ -1952,8 +1953,8 @@ class RadiationVet {
   // (received)
   std::vector<uint32_t> vgd_csmw_h, vgd_csmw_r;
   // the cache holds max(2, vet_rotate_avg) sets (vgd_csncl): each set's lists made once
-  static constexpr int M1_VGD_CSCL_MAX = 16;
-  VgdCsCl vgd_cscl[M1_VGD_CSCL_MAX];
+  static constexpr int VET_VGD_CSCL_MAX = 16;
+  VgdCsCl vgd_cscl[VET_VGD_CSCL_MAX];
   // read masks of two entries (the set in use and the next); the others keep lists only
   Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> vgd_csmb[2];
   int vgd_csncl = 2;

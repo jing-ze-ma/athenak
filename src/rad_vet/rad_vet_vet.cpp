@@ -8,7 +8,7 @@
 //! from a grey short-characteristics formal solution on the Cartesian M1 grid.
 //!
 //! Solved per build at the lagged state:
-//!     mu . grad I = chi (S - I),   chi = rho (kappa_F + kappa_s)  (opac M1_OP_T),
+//!     mu . grad I = chi (S - I),   chi = rho (kappa_F + kappa_s)  (opac VET_OP_T),
 //!     S = eps_th a T^4 + (1 - eps_th) E,   eps_th = min(kappa_P/chi, 1)
 //! (E units; vet_scatter: S = VetScatterMix).  S is a convex blend, never negative.
 //! D = K/J is used in full (vet_tensor = full, realizability guarded) or projected on the
@@ -63,8 +63,8 @@ namespace {
 // the cells iu, id and the face sums into them (f2) and into their upwind cells (fn),
 // added in ray order (per-cell and ray-parallel kernels give the same bits)
 struct VetScAcc {
-  Real ac[2][10] = {}, hp[2][3] = {}, kp[2][M1_VET_NKP] = {}, nl[2] = {};
-  Real f2[2][M1_VET_NFS] = {}, fn[2][M1_VET_NFS] = {};
+  Real ac[2][10] = {}, hp[2][3] = {}, kp[2][VETRAY_NKP] = {}, nl[2] = {};
+  Real f2[2][VETRAY_NFS] = {}, fn[2][VETRAY_NFS] = {};
   // ray r of intensity iv in a cell of source s0; g the scalars of its face sums (entry,
   // x2 and x3 interpolation flux, face crossing, exit), each times (1, mu)
   template <class A>
@@ -118,33 +118,33 @@ struct VetScAcc {
                                     const bool hrs, const bool kps, const bool nls,
                                     const bool f2s) const {
     for (int n = 0; n < 10; ++n) {
-      vc(m,M1_VET_J+n,k,j,iu) += ac[0][n];
-      vc(m,M1_VET_J+n,k,j,id) += ac[1][n];
+      vc(m,VETRAY_J+n,k,j,iu) += ac[0][n];
+      vc(m,VETRAY_J+n,k,j,id) += ac[1][n];
     }
     if (hrs) {
       for (int n = 0; n < 3; ++n) {
-        vc(m,M1_VET_HP1+n,k,j,iu) += hp[0][n];
-        vc(m,M1_VET_HP1+n,k,j,id) += hp[1][n];
+        vc(m,VETRAY_HP1+n,k,j,iu) += hp[0][n];
+        vc(m,VETRAY_HP1+n,k,j,id) += hp[1][n];
       }
     }
     if (kps) {
-      for (int n = 0; n < M1_VET_NKP; ++n) {
-        vc(m,M1_VET_KP+n,k,j,iu) += kp[0][n];
-        vc(m,M1_VET_KP+n,k,j,id) += kp[1][n];
+      for (int n = 0; n < VETRAY_NKP; ++n) {
+        vc(m,VETRAY_KP+n,k,j,iu) += kp[0][n];
+        vc(m,VETRAY_KP+n,k,j,id) += kp[1][n];
       }
     }
     if (nls) {
-      vc(m,M1_VET_NL,k,j,iu) += nl[0];
-      vc(m,M1_VET_NL,k,j,id) += nl[1];
+      vc(m,VETRAY_NL,k,j,iu) += nl[0];
+      vc(m,VETRAY_NL,k,j,id) += nl[1];
     }
     if (f2s) {
       const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
       const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
-      for (int n = 0; n < M1_VET_NFS; ++n) {
-        vc(m,M1_VET_F2+n,k,j,iu) += f2[0][n];
-        vc(m,M1_VET_F2+n,k,j,id) += f2[1][n];
-        vc(m,M1_VET_F2+n,k,j,ium) += fn[0][n];
-        vc(m,M1_VET_F2+n,k,j,idp) += fn[1][n];
+      for (int n = 0; n < VETRAY_NFS; ++n) {
+        vc(m,VETRAY_F2+n,k,j,iu) += f2[0][n];
+        vc(m,VETRAY_F2+n,k,j,id) += f2[1][n];
+        vc(m,VETRAY_F2+n,k,j,ium) += fn[0][n];
+        vc(m,VETRAY_F2+n,k,j,idp) += fn[1][n];
       }
     }
   }
@@ -664,8 +664,8 @@ void VetX1Move(VetMBState &st, DvceArray5D<Real> &a, const int s, const int rcv,
 
 Real RadiationVet::VetBathLo() const {
   if (!VetBcEmit()) {return -1.0;}
-  if (ibc_x1min == M1_IBC_OUTFLOW) return 0.0;
-  return (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  if (ibc_x1min == VET_IBC_OUTFLOW) return 0.0;
+  return (ibc_x1min == VET_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
 }
 
 //----------------------------------------------------------------------------------------
@@ -687,7 +687,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
                (pm->mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic ||
                 pm->mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic);
   // the moment solve's transverse faces must be the same vacuum (marshak | outflow)
-  auto vac = [](const int b) {return b == M1_IBC_MARSHAK || b == M1_IBC_OUTFLOW;};
+  auto vac = [](const int b) {return b == VET_IBC_MARSHAK || b == VET_IBC_OUTFLOW;};
   if ((vet_x2open && !(vac(ibc_x2min) && vac(ibc_x2max))) ||
       (vet_x3open && !(vac(ibc_x3min) && vac(ibc_x3max)))) {
     VetFatal("<rad_vet>/closure = vet_sc on a non-periodic x2 (x3) mesh needs "
@@ -901,8 +901,8 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   vet_ring_n = vring;
   vet_ring_g = vrgrp;
   VetBuildAngles(0.0);
-  if (vsc_gd && vsc_gdmir < 0 && ((vet_bc_mirror && ibc_x1min == M1_IBC_REFLECT) ||
-                                  (vet_bc_mirror_hi && ibc_x1max == M1_IBC_REFLECT))) {
+  if (vsc_gd && vsc_gdmir < 0 && ((vet_bc_mirror && ibc_x1min == VET_IBC_REFLECT) ||
+                                  (vet_bc_mirror_hi && ibc_x1max == VET_IBC_REFLECT))) {
     VetFatal("<rad_vet>/vet_sc_set = gd: a mirrored x1 end needs a set with x1 mirror "
              "pairs (e.g. vet_gd_gl_stagger = false)");
   }
@@ -919,8 +919,8 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(vet_cell, nmb, M1_VET_NC + M1_VET_NKP +
-                  (cln_consist ? M1_VET_NFS : 0), ncells3, ncells2, ncells1);
+  Kokkos::realloc(vet_cell, nmb, VETRAY_NC + VETRAY_NKP +
+                  (cln_consist ? VETRAY_NFS : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
@@ -1117,8 +1117,8 @@ void RadiationVet::VetRotUpdate() {
 
 Real RadiationVet::VetRotBeta(const int64_t blk) const {
   // a mirrored x1 end needs x1 mirror pairs: a turned ring has none, so it stays fixed
-  if (vet_ring_n > 0 && !vet_x1per && ((vet_bc_mirror && ibc_x1min == M1_IBC_REFLECT) ||
-      (vet_bc_mirror_hi && ibc_x1max == M1_IBC_REFLECT))) {
+  if (vet_ring_n > 0 && !vet_x1per && ((vet_bc_mirror && ibc_x1min == VET_IBC_REFLECT) ||
+      (vet_bc_mirror_hi && ibc_x1max == VET_IBC_REFLECT))) {
     return 0.0;
   }
   // stratified phase with vet_rotate_avg (RotPhase)
@@ -1188,14 +1188,14 @@ void RadiationVet::VetScRotAvgSetup() {
   };
   t.jf = 0;
   t.jw = vra_eq ? -1 : 0;   // the sets weighted by their J (union of the sets)
-  add(M1_VET_J, 2, 0.0, 0.0);
-  for (int c = 0; c < 3; ++c) {add(M1_VET_K11 + c, 3, 0.0, 1.0);}
-  for (int c = 3; c < 6; ++c) {add(M1_VET_K11 + c, 3, -1.0, 1.0);}
-  for (int c = 0; c < 3; ++c) {add(M1_VET_H1 + c, 3, -1.0, 1.0);}
+  add(VETRAY_J, 2, 0.0, 0.0);
+  for (int c = 0; c < 3; ++c) {add(VETRAY_K11 + c, 3, 0.0, 1.0);}
+  for (int c = 3; c < 6; ++c) {add(VETRAY_K11 + c, 3, -1.0, 1.0);}
+  for (int c = 0; c < 3; ++c) {add(VETRAY_H1 + c, 3, -1.0, 1.0);}
   if (impl_beam_hr) {
-    for (int c = 0; c < 3; ++c) {add(M1_VET_HP1 + c, 3, 0.0, 1.0);}
+    for (int c = 0; c < 3; ++c) {add(VETRAY_HP1 + c, 3, 0.0, 1.0);}
   }
-  if (thsw_c1) {add(M1_VET_NL, 3, 0.0, 1.0e300);}
+  if (thsw_c1) {add(VETRAY_NL, 3, 0.0, 1.0e300);}
   t.farr = -1;
   t.fcomp = 0;
 }
@@ -1531,7 +1531,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   Kokkos::deep_copy(st.csw, 0.0);
   Kokkos::realloc(st.ipl, nsb, st.nring, st.nrl, st.n3w, st.n2w);
   Kokkos::deep_copy(st.ipl, 0.0);
-  if (cln_consist) Kokkos::realloc(st.spl, nsb, 4, M1_VET_NFS, st.n3w, st.n2w);
+  if (cln_consist) Kokkos::realloc(st.spl, nsb, 4, VETRAY_NFS, st.n3w, st.n2w);
   Kokkos::realloc(vet_ipl, 1, 1, 1, 1, 1);
   if (vet_full) {
     const int n1 = nx1 + 2*indcs.ng;
@@ -1594,7 +1594,7 @@ void RadiationVet::VetSweepMB() {
   // vet_source_noesrc: source and boundary intensity read the physical E^n = u0
   const bool noes_ = VsrcNoes();
   auto esv_ = noes_ ? u0 : iw;
-  const int esc_ = noes_ ? M1_E : M1_IW_EN;
+  const int esc_ = noes_ ? VET_E : VET_IW_EN;
   VetMBState &st = *vet_mbs;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1605,7 +1605,7 @@ void RadiationVet::VetSweepMB() {
   const int nmb = pmy_pack->nmb_thispack;
   const bool thrd = trans_x3;
   const bool hrs_ = impl_beam_hr;   // the half-range sums (cell kernel)
-  const bool nls_ = thsw_c1;   // sum w |I - S| (M1_VET_NL)
+  const bool nls_ = thsw_c1;   // sum w |I - S| (VETRAY_NL)
   const int nray = vet_nray;
   const int nsb = st.nsb, nrl = st.nrl, nhl = st.nhl;
   const int nx1g = st.nx1g, nbx1 = st.nbx1;
@@ -1621,7 +1621,7 @@ void RadiationVet::VetSweepMB() {
   const Real cl = c_light;
   const Real efl = e_floor;
   const Real bblo = VetBathLo();   // vet_bc_inner
-  const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
+  const Real bbhi = (vet_bc_bath && ibc_x1max == VET_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
   const bool spl = vet_seg_split;
   const int spe = VetSegMode();
@@ -1631,8 +1631,8 @@ void RadiationVet::VetSweepMB() {
   // (a) banded extinction/source planes, layer i - is + 2 (moments zeroed by the caller)
   par_for("vet_vet_mb_csw", DevExeSpace(), 0, nmb-1, is, ie, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
-    cs_(m,i-is+2,0,k-ks+w3,j-js+w2) = vc_(m,M1_VET_CHX,k,j,i);
-    cs_(m,i-is+2,1,k-ks+w3,j-js+w2) = vc_(m,M1_VET_SRC,k,j,i);
+    cs_(m,i-is+2,0,k-ks+w3,j-js+w2) = vc_(m,VETRAY_CHX,k,j,i);
+    cs_(m,i-is+2,1,k-ks+w3,j-js+w2) = vc_(m,VETRAY_SRC,k,j,i);
   });
   // the neighbours' two face layers, nearer first (with nx1 = 1 the farther one is the
   // neighbour's own face layer from its neighbour)
@@ -1684,19 +1684,19 @@ void RadiationVet::VetSweepMB() {
       }
       Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
       Real nlu = 0.0, nld = 0.0;
-      Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
-      for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
+      Real kpu[VETRAY_NKP], kpd[VETRAY_NKP];
+      for (int n = 0; n < VETRAY_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
       // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX, F3)
-      Real f2u[M1_VET_NFS] = {0.0}, f2d[M1_VET_NFS] = {0.0};
-      Real fnu[M1_VET_NFS] = {0.0}, fnd[M1_VET_NFS] = {0.0};
+      Real f2u[VETRAY_NFS] = {0.0}, f2d[VETRAY_NFS] = {0.0};
+      Real fnu[VETRAY_NFS] = {0.0}, fnd[VETRAY_NFS] = {0.0};
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
         if (up ? !ua : !da) continue;
         const int i = up ? iu : id;
         const Real am1 = fabs(m1);
-        const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
-        const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
+        const Real c0 = vc_(m,VETRAY_CHX,k,j,i);
+        const Real s0 = vc_(m,VETRAY_SRC,k,j,i);
         Real iv;
         auto add4 = [&](Real *fx, const Real g) {
           fx[0] += g;
@@ -1708,7 +1708,7 @@ void RadiationVet::VetSweepMB() {
         if (l == 0 && !wrap) {
           // physical x1 face: as the single-block sweep
           const int iin = up ? (i + 1) : (i - 1);
-          const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
+          const Real s1 = vc_(m,VETRAY_SRC,k,j,iin);
           const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
           Real ib = up ? 0.0 : bbhi;
           if (x1src) {
@@ -1720,8 +1720,8 @@ void RadiationVet::VetSweepMB() {
               Real e = esv_(m,esc_,k,j,i);
               if (bfc) e += 0.5*(s0 - s1);   // vet_bc_diff = face
               e = fmax(e, efl);
-              Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
-                        + iw_(m,M1_IW_F3,k,j,i)*m3;
+              Real fo = iw_(m,VET_IW_F1,k,j,i)*m1 + iw_(m,VET_IW_F2,k,j,i)*m2
+                        + iw_(m,VET_IW_F3,k,j,i)*m3;
               ib = fmax(e + 3.0*fo/cl, 0.0);
             }
             const int q = (r == bmr0) ? 0 : ((r == bmr1) ? 1
@@ -1868,42 +1868,42 @@ void RadiationVet::VetSweepMB() {
       if (!accum) return;
       for (int n = 0; n < 10; ++n) {
         if (ua) {
-          vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
+          vc_(m,VETRAY_J+n,k,j,iu) += acu[n];
         }
         if (da) {
-          vc_(m,M1_VET_J+n,k,j,id) += acd[n];
+          vc_(m,VETRAY_J+n,k,j,id) += acd[n];
         }
       }
       if (hrs_) {
         for (int n = 0; n < 3; ++n) {
-          if (ua) {vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];}
-          if (da) {vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];}
+          if (ua) {vc_(m,VETRAY_HP1+n,k,j,iu) += hpu[n];}
+          if (da) {vc_(m,VETRAY_HP1+n,k,j,id) += hpd[n];}
         }
       }
       if (nls_) {
-        if (ua) {vc_(m,M1_VET_NL,k,j,iu) += nlu;}
-        if (da) {vc_(m,M1_VET_NL,k,j,id) += nld;}
+        if (ua) {vc_(m,VETRAY_NL,k,j,iu) += nlu;}
+        if (da) {vc_(m,VETRAY_NL,k,j,id) += nld;}
       }
       if (kps_) {
-        for (int n = 0; n < M1_VET_NKP; ++n) {
-          if (ua) {vc_(m,M1_VET_KP+n,k,j,iu) += kpu[n];}
-          if (da) {vc_(m,M1_VET_KP+n,k,j,id) += kpd[n];}
+        for (int n = 0; n < VETRAY_NKP; ++n) {
+          if (ua) {vc_(m,VETRAY_KP+n,k,j,iu) += kpu[n];}
+          if (da) {vc_(m,VETRAY_KP+n,k,j,id) += kpd[n];}
         }
       }
       if (f2s_) {
-        for (int n = 0; n < M1_VET_NFS; ++n) {
+        for (int n = 0; n < VETRAY_NFS; ++n) {
           if (ua) {
-            vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
+            vc_(m,VETRAY_F2+n,k,j,iu) += f2u[n];
             if (lu > 0) {
-              vc_(m,M1_VET_F2+n,k,j,iu-1) += fnu[n];
+              vc_(m,VETRAY_F2+n,k,j,iu-1) += fnu[n];
             } else {
               sp_(m,0,n,kc,jc) += fnu[n];
             }
           }
           if (da) {
-            vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
+            vc_(m,VETRAY_F2+n,k,j,id) += f2d[n];
             if (ld < nx1 - 1) {
-              vc_(m,M1_VET_F2+n,k,j,id+1) += fnd[n];
+              vc_(m,VETRAY_F2+n,k,j,id+1) += fnd[n];
             } else {
               sp_(m,1,n,kc,jc) += fnd[n];
             }
@@ -1922,13 +1922,13 @@ void RadiationVet::VetSweepMB() {
   }
   if (f2s_) {
     // face sums of the x1 neighbours' boundary cells
-    VetX1Move(st, st.spl, 1, -2, 2, 0, 0, M1_VET_NFS, nsb);
-    VetX1Move(st, st.spl, 0, -2, 3, 1, 0, M1_VET_NFS, nsb);
-    par_for("vet_vet_mb_spill", DevExeSpace(), 0, nmb-1, 0, M1_VET_NFS-1, ks, ke, js,
+    VetX1Move(st, st.spl, 1, -2, 2, 0, 0, VETRAY_NFS, nsb);
+    VetX1Move(st, st.spl, 0, -2, 3, 1, 0, VETRAY_NFS, nsb);
+    par_for("vet_vet_mb_spill", DevExeSpace(), 0, nmb-1, 0, VETRAY_NFS-1, ks, ke, js,
             je,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j) {
-      vc_(m,M1_VET_F2+n,k,j,ie) += sp_(m,2,n,k-ks+w3,j-js+w2);
-      vc_(m,M1_VET_F2+n,k,j,is) += sp_(m,3,n,k-ks+w3,j-js+w2);
+      vc_(m,VETRAY_F2+n,k,j,ie) += sp_(m,2,n,k-ks+w3,j-js+w2);
+      vc_(m,VETRAY_F2+n,k,j,is) += sp_(m,3,n,k-ks+w3,j-js+w2);
     });
   }
 }
@@ -2003,17 +2003,17 @@ void RadiationVet::VetShortChar() {
 
 void RadiationVet::VetShortCharSweep() {
   // vet_source_noesrc: source and boundary intensity read the physical E^n = u0, not
-  // the solve's old vector (M1_IW_EN)
+  // the solve's old vector (VET_IW_EN)
   const bool noes_ = VsrcNoes();
   auto esv_ = noes_ ? u0 : iw;
-  const int esc_ = noes_ ? M1_E : M1_IW_EN;
-  // half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3)
+  const int esc_ = noes_ ? VET_E : VET_IW_EN;
+  // half-range sums sum w I max(mu_a, 0) (VETRAY_HP1..3)
   const bool hrs_ = impl_beam_hr;
-  // half-range stress columns K+^d_bd (M1_VET_KP, boundary fluxes)
+  // half-range stress columns K+^d_bd (VETRAY_KP, boundary fluxes)
   const bool kps_ = true;
-  // implicit_thin_switch = fs | fskn: non-locality sum w |I - S| (M1_VET_NL, C1)
+  // implicit_thin_switch = fs | fskn: non-locality sum w |I - S| (VETRAY_NL, C1)
   const bool nls_ = thsw_c1;
-  // clean_consistency: the rays' face fluxes (M1_VET_F2..): x1 flux where the segment
+  // clean_consistency: the rays' face fluxes (VETRAY_F2..): x1 flux where the segment
   // crosses the face, the transverse foot interpolation as an x2 (x3) flux, so the cell
   // balance of the face fluxes is the exchange inside the cell
   const bool f2s_ = cln_consist;
@@ -2039,7 +2039,7 @@ void RadiationVet::VetShortCharSweep() {
   const bool thermal = fl_on && coupling && !opac_zero;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real bblo = VetBathLo();   // vet_bc_inner
-  const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
+  const Real bbhi = (vet_bc_bath && ibc_x1max == VET_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
   const bool x1src = vet_x1per && vet_x1src;
   const bool spl = vet_seg_split;
@@ -2064,39 +2064,39 @@ void RadiationVet::VetShortCharSweep() {
     const int j = js + q%nj;
     q /= nj;
     const int k = ks + q%nk, m = q/nk;
-    Real chx = fmax(opd_(m,M1_OP_T,k,j,i), 1.0e-300);
+    Real chx = fmax(opd_(m,VET_OP_T,k,j,i), 1.0e-300);
     Real e = fmax(esv_(m,esc_,k,j,i), efl);
     Real s = e;
     if (thermal) {
-      Real tg = iwd_(m,M1_IW_TP,k,j,i);
+      Real tg = iwd_(m,VET_IW_TP,k,j,i);
       Real t2 = tg*tg;
       if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
-        const Real rkp = cvx ? fmin(opd_(m,M1_OP_P,k,j,i), chx) : opd_(m,M1_OP_P,k,j,i);
-        s = VetScatterMix(vsf, rkp, chx, opd_(m,M1_OP_S,k,j,i), ar*t2*t2, e);
+        const Real rkp = cvx ? fmin(opd_(m,VET_OP_P,k,j,i), chx) : opd_(m,VET_OP_P,k,j,i);
+        s = VetScatterMix(vsf, rkp, chx, opd_(m,VET_OP_S,k,j,i), ar*t2*t2, e);
       } else {
-        Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
+        Real eth = fmin(opd_(m,VET_OP_P,k,j,i)/chx, 1.0);
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }
     }
-    vcd_(m,M1_VET_CHX,k,j,i) = chx;
-    vcd_(m,M1_VET_SRC,k,j,i) = s;
-    for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {
+    vcd_(m,VETRAY_CHX,k,j,i) = chx;
+    vcd_(m,VETRAY_SRC,k,j,i) = s;
+    for (int n = VETRAY_J; n < VETRAY_CHI; ++n) {
       vcd_(m,n,k,j,i) = 0.0;
     }
     if (hrs_) {
-      for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
+      for (int n = 0; n < 3; ++n) {vcd_(m,VETRAY_HP1+n,k,j,i) = 0.0;}
     }
     if (kps_) {
-      for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
+      for (int n = 0; n < VETRAY_NKP; ++n) {vcd_(m,VETRAY_KP+n,k,j,i) = 0.0;}
     }
     if (f2s_) {
-      for (int n = 0; n < M1_VET_NFS; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
+      for (int n = 0; n < VETRAY_NFS; ++n) {vcd_(m,VETRAY_F2+n,k,j,i) = 0.0;}
     }
     if (nls_) {
-      vcd_(m,M1_VET_NL,k,j,i) = 0.0;
+      vcd_(m,VETRAY_NL,k,j,i) = 0.0;
       // vacuum: no lagged scattering source, eps = 1
-      const Real eps = thermal ? fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0) : 0.0;
-      vcd_(m,M1_VET_EPS,k,j,i) = !(opd_(m,M1_OP_T,k,j,i) > 0.0) ? 1.0 : eps;
+      const Real eps = thermal ? fmin(opd_(m,VET_OP_P,k,j,i)/chx, 1.0) : 0.0;
+      vcd_(m,VETRAY_EPS,k,j,i) = !(opd_(m,VET_OP_T,k,j,i) > 0.0) ? 1.0 : eps;
     }
   });
 
@@ -2110,8 +2110,8 @@ void RadiationVet::VetShortCharSweep() {
   // intensity of their x1 mirror ray (r +- nray/2), read in a further pass from the
   // boundary layer's plane.  One reflecting end: exact in 2 passes; both (a closed
   // cavity): vet_x1_npass passes, each adding one round trip.
-  const bool mlo = vet_bc_mirror && (ibc_x1min == M1_IBC_REFLECT) && !vet_x1per;
-  const bool mhi = vet_bc_mirror_hi && (ibc_x1max == M1_IBC_REFLECT) && !vet_x1per;
+  const bool mlo = vet_bc_mirror && (ibc_x1min == VET_IBC_REFLECT) && !vet_x1per;
+  const bool mhi = vet_bc_mirror_hi && (ibc_x1max == VET_IBC_REFLECT) && !vet_x1per;
   if ((mlo || mhi) && vet_mbs != nullptr) {
     VetFatal("<rad_vet>/vet_bc_reflect = mirror (the default with a reflecting x1 end) "
              "needs a single MeshBlock on vet_sc (the banded sweep has no mirror); name "
@@ -2145,11 +2145,11 @@ void RadiationVet::VetShortCharSweep() {
   if (adapt && p > 0) {
     par_for("vet_vet_x1zero", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
-      if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
-      if (kps_) {for (int n = 0; n < M1_VET_NKP; ++n) {vc_(m,M1_VET_KP+n,k,j,i) = 0.0;}}
-      if (f2s_) {for (int n = 0; n < M1_VET_NFS; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
-      if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
+      for (int n = VETRAY_J; n < VETRAY_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
+      if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,VETRAY_HP1+n,k,j,i) = 0.0;}}
+      if (kps_) {for (int n = 0; n < VETRAY_NKP; ++n) {vc_(m,VETRAY_KP+n,k,j,i) = 0.0;}}
+      if (f2s_) {for (int n = 0; n < VETRAY_NFS; ++n) {vc_(m,VETRAY_F2+n,k,j,i) = 0.0;}}
+      if (nls_) {vc_(m,VETRAY_NL,k,j,i) = 0.0;}
     });
   }
   for (int l = 0; l < nlaunch; ++l) {
@@ -2167,8 +2167,8 @@ void RadiationVet::VetShortCharSweep() {
       const bool up = (m1 > 0.0);
       const int i = up ? iu : id;
       const Real am1 = fabs(m1);
-      const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
-      const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
+      const Real c0 = vc_(m,VETRAY_CHX,k,j,i);
+      const Real s0 = vc_(m,VETRAY_SRC,k,j,i);
       Real iv;
       const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
       for (int q = 0; q < 5; ++q) {g[q] = 0.0;}
@@ -2177,7 +2177,7 @@ void RadiationVet::VetShortCharSweep() {
         // half a cell from the boundary face; face S linearly extrapolated from the two
         // boundary cells (exact for a deep linear S), linear in tau along the segment
         const int iin = up ? (i + 1) : (i - 1);
-        const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
+        const Real s1 = vc_(m,VETRAY_SRC,k,j,iin);
         const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
         Real ib = up ? 0.0 : bbhi;
         if (x1src) {
@@ -2191,8 +2191,8 @@ void RadiationVet::VetShortCharSweep() {
             Real e = esv_(m,esc_,k,j,i);
             if (bfc) e += 0.5*(s0 - s1);
             e = fmax(e, efl);
-            Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
-                      + iw_(m,M1_IW_F3,k,j,i)*m3;
+            Real fo = iw_(m,VET_IW_F1,k,j,i)*m1 + iw_(m,VET_IW_F2,k,j,i)*m2
+                      + iw_(m,VET_IW_F3,k,j,i)*m3;
             ib = fmax(e + 3.0*fo/cl, 0.0);
           }
           if (bmn_ > 0) {   // boundary beams
@@ -2295,14 +2295,14 @@ void RadiationVet::VetShortCharSweep() {
                   + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
         }
         iup_v += dv;
-        const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
-                        + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
-                        + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
-                        + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
-        const Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
-                        + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
-                        + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
-                        + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+        const Real cu = waa*vc_(m,VETRAY_CHX,ka,ja,iup)
+                        + wab*vc_(m,VETRAY_CHX,ka,jb,iup)
+                        + wba*vc_(m,VETRAY_CHX,kb,ja,iup)
+                        + wbb*vc_(m,VETRAY_CHX,kb,jb,iup);
+        const Real su = waa*vc_(m,VETRAY_SRC,ka,ja,iup)
+                        + wab*vc_(m,VETRAY_SRC,ka,jb,iup)
+                        + wba*vc_(m,VETRAY_SRC,kb,ja,iup)
+                        + wbb*vc_(m,VETRAY_SRC,kb,jb,iup);
         // jump: the corners' S one x1 cell further upwind, its periodic or mirror image
         // beyond an x1 end; none (q = 1) beyond an open one
         int iuu = up ? (i - 2) : (i + 2);
@@ -2313,7 +2313,7 @@ void RadiationVet::VetShortCharSweep() {
         }
         const bool juu = spl && spe == 2 && iuu >= is && iuu <= ie;
         auto s2 = [&](const int kq, const int jq) {
-          return juu ? vc_(m,M1_VET_SRC,kq,jq,iuu) : 0.0;
+          return juu ? vc_(m,VETRAY_SRC,kq,jq,iuu) : 0.0;
         };
         const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
         const Real *suq = juu ? squ : nullptr;
@@ -2321,16 +2321,16 @@ void RadiationVet::VetShortCharSweep() {
         int idn = up ? (i + 1) : (i - 1);
         if (x1per) idn = is + VetWrap(idn - is, nx1);
         const Real sdd = (spl && spe == 2 && idn >= is && idn <= ie)
-                         ? vc_(m,M1_VET_SRC,k,j,idn) : -1.0;
+                         ? vc_(m,VETRAY_SRC,k,j,idn) : -1.0;
         if (vim != 0) {   // vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
           // a corner outside a vacuum face carries I = 0 and the edge cell's chi and S
           const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
                               gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
-          const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
-                              vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
-          const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
-                              vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
+          const Real cq[4] = {vc_(m,VETRAY_CHX,ka,ja,iup), vc_(m,VETRAY_CHX,ka,jb,iup),
+                              vc_(m,VETRAY_CHX,kb,ja,iup), vc_(m,VETRAY_CHX,kb,jb,iup)};
+          const Real sq[4] = {vc_(m,VETRAY_SRC,ka,ja,iup), vc_(m,VETRAY_SRC,ka,jb,iup),
+                              vc_(m,VETRAY_SRC,kb,ja,iup), vc_(m,VETRAY_SRC,kb,jb,iup)};
           iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
                            f2s_ ? &ifc : nullptr, suq, sdd);
         } else if (spl) {
@@ -2375,7 +2375,7 @@ void RadiationVet::VetShortCharSweep() {
           const Real g[5] = {rg_(m,r,k,j), rg_(m,nray + r,k,j), rg_(m,2*nray + r,k,j),
                              rg_(m,3*nray + r,k,j), rg_(m,4*nray + r,k,j)};
           const int i = (ang_(r,0) > 0.0) ? iu : id;
-          a.Add(ang_, r, ip_(m,pw,r,k,j), vc_(m,M1_VET_SRC,k,j,i), g, hrs_, kps_, nls_);
+          a.Add(ang_, r, ip_(m,pw,r,k,j), vc_(m,VETRAY_SRC,k,j,i), g, hrs_, kps_, nls_);
         }
         if (accum) {
           a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
@@ -2389,7 +2389,7 @@ void RadiationVet::VetShortCharSweep() {
           Real g[5];
           const Real iv = rayf(m, k, j, r, g);
           const int i = (ang_(r,0) > 0.0) ? iu : id;
-          a.Add(ang_, r, iv, vc_(m,M1_VET_SRC,k,j,i), g, hrs_, kps_, nls_);
+          a.Add(ang_, r, iv, vc_(m,VETRAY_SRC,k,j,i), g, hrs_, kps_, nls_);
         }
         if (accum) {
           a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
@@ -2462,21 +2462,21 @@ void RadiationVet::VetShortCharSweep() {
   const bool axflux = vet_axis_flux;
   par_for("vet_vet_proj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real jj = vc_(m,M1_VET_J,k,j,i);
+    Real jj = vc_(m,VETRAY_J,k,j,i);
     Real chi = 1.0/3.0, n1 = 1.0, n2 = 0.0, n3 = 0.0;
     if (jj > 0.0) {
       Real ij = 1.0/jj;
       Real a[3][3];
-      a[0][0] = vc_(m,M1_VET_K11,k,j,i)*ij;
-      a[1][1] = vc_(m,M1_VET_K11+1,k,j,i)*ij;
-      a[2][2] = vc_(m,M1_VET_K11+2,k,j,i)*ij;
-      a[0][1] = a[1][0] = vc_(m,M1_VET_K11+3,k,j,i)*ij;
-      a[0][2] = a[2][0] = vc_(m,M1_VET_K11+4,k,j,i)*ij;
-      a[1][2] = a[2][1] = vc_(m,M1_VET_K11+5,k,j,i)*ij;
+      a[0][0] = vc_(m,VETRAY_K11,k,j,i)*ij;
+      a[1][1] = vc_(m,VETRAY_K11+1,k,j,i)*ij;
+      a[2][2] = vc_(m,VETRAY_K11+2,k,j,i)*ij;
+      a[0][1] = a[1][0] = vc_(m,VETRAY_K11+3,k,j,i)*ij;
+      a[0][2] = a[2][0] = vc_(m,VETRAY_K11+4,k,j,i)*ij;
+      a[1][2] = a[2][1] = vc_(m,VETRAY_K11+5,k,j,i)*ij;
       // axis: the formal solution's own flux direction (vet_axis = flux) or the
       // principal axis of D (eigen)
-      Real h1 = vc_(m,M1_VET_H1,k,j,i), h2 = vc_(m,M1_VET_H1+1,k,j,i);
-      Real h3 = vc_(m,M1_VET_H1+2,k,j,i);
+      Real h1 = vc_(m,VETRAY_H1,k,j,i), h2 = vc_(m,VETRAY_H1+1,k,j,i);
+      Real h3 = vc_(m,VETRAY_H1+2,k,j,i);
       Real hm = sqrt(h1*h1 + h2*h2 + h3*h3);
       if (axflux && hm > 1.0e-8*jj) {
         n1 = h1/hm;
@@ -2500,10 +2500,10 @@ void RadiationVet::VetShortCharSweep() {
       }
       chi = fmin(fmax(chi, 1.0/3.0), 1.0);
     }
-    vc_(m,M1_VET_CHI,k,j,i) = chi;
-    vc_(m,M1_VET_N1,k,j,i) = n1;
-    vc_(m,M1_VET_N1+1,k,j,i) = n2;
-    vc_(m,M1_VET_N1+2,k,j,i) = n3;
+    vc_(m,VETRAY_CHI,k,j,i) = chi;
+    vc_(m,VETRAY_N1,k,j,i) = n1;
+    vc_(m,VETRAY_N1+1,k,j,i) = n2;
+    vc_(m,VETRAY_N1+2,k,j,i) = n3;
   });
 
   // (4) vet_tensor = full: the guarded D = K/J the solve reads instead of (chi, n)
@@ -2516,7 +2516,7 @@ void RadiationVet::VetShortCharSweep() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetFullTensor
 //! \brief vet_tensor = full: D_ab = K_ab/J of the last formal solution, realizability
-//! guarded, into vet_cell(M1_VET_D11 .. +5), active cells and ghosts.
+//! guarded, into vet_cell(VETRAY_D11 .. +5), active cells and ghosts.
 //! With w_r > 0 and I_r >= 0 the raw D is symmetric, trace 1 to round-off, eigenvalues
 //! in [0, 1].  The guard makes that exact:
 //!   (1) J <= 0 or non-positive trace: D = delta/3 (counted);
@@ -2524,7 +2524,7 @@ void RadiationVet::VetShortCharSweep() {
 //!   (3) eigenvalues below emin = vet_eig_min: lam -> emin + (lam' - emin)
 //!       (1 - 3 emin)/(sum lam' - 3 emin), lam' = max(lam, emin) (counted).
 //! So D_dd >= emin >= 0: the line rows stay M-matrices.  |D_guarded - D_raw| goes to
-//! M1_VET_GD for the run statistics.
+//! VETRAY_GD for the run statistics.
 
 void RadiationVet::VetFullTensor() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2543,14 +2543,14 @@ void RadiationVet::VetFullTensor() {
 
   par_for("vet_vet_full", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real jj = vc_(m,M1_VET_J,k,j,i);
+    const Real jj = vc_(m,VETRAY_J,k,j,i);
     Real d[6];
     Real raw[6];
     for (int n = 0; n < 6; ++n) {raw[n] = 0.0;}
     Real tr = 0.0;
     if (jj > 0.0) {
       const Real ij = 1.0/jj;
-      for (int n = 0; n < 6; ++n) {raw[n] = vc_(m,M1_VET_K11+n,k,j,i)*ij;}
+      for (int n = 0; n < 6; ++n) {raw[n] = vc_(m,VETRAY_K11+n,k,j,i)*ij;}
       tr = raw[0] + raw[1] + raw[2];
     }
     bool hit = false;
@@ -2595,11 +2595,11 @@ void RadiationVet::VetFullTensor() {
     }
     Real dev = 0.0;
     for (int n = 0; n < 6; ++n) {
-      vc_(m,M1_VET_D11+n,k,j,i) = d[n];
+      vc_(m,VETRAY_D11+n,k,j,i) = d[n];
       dev = fmax(dev, fabs(d[n] - raw[n]));
     }
     // <= -1 marks a cell the guard left alone (trace normalisation only): -1 - dev
-    vc_(m,M1_VET_GD,k,j,i) = hit ? dev : (-1.0 - dev);
+    vc_(m,VETRAY_GD,k,j,i) = hit ? dev : (-1.0 - dev);
   });
 
   // ghosts: periodic in x2 (x3), edge copy in x1; several MeshBlocks: the ordinary
@@ -2612,7 +2612,7 @@ void RadiationVet::VetFullTensor() {
     par_for("vet_vet_full_dsc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int n = 0; n < 6; ++n) {
-        ds_(m,n,k,j,i) = vc_(m,M1_VET_D11+n,k,j,i);
+        ds_(m,n,k,j,i) = vc_(m,VETRAY_D11+n,k,j,i);
       }
     });
     MeshBoundaryValuesCC *pb = st.pbd;
@@ -2630,7 +2630,7 @@ void RadiationVet::VetFullTensor() {
       if (i < is && lb == 0) ii = is;
       if (i > ie && lb == nbx1 - 1) ii = ie;
       for (int n = 0; n < 6; ++n) {
-        vc_(m,M1_VET_D11+n,k,j,i) = ds_(m,n,k,j,ii);
+        vc_(m,VETRAY_D11+n,k,j,i) = ds_(m,n,k,j,ii);
       }
     });
   } else {
@@ -2645,7 +2645,7 @@ void RadiationVet::VetFullTensor() {
       const int kk = thrd ? (x3o ? ((k < ks) ? ks : ((k > ke) ? ke : k))
                                  : (ks + VetWrap(k - ks, nx3))) : k;
       for (int n = 0; n < 6; ++n) {
-        vc_(m,M1_VET_D11+n,k,j,i) = vc_(m,M1_VET_D11+n,kk,jj,ii);
+        vc_(m,VETRAY_D11+n,k,j,i) = vc_(m,VETRAY_D11+n,kk,jj,ii);
       }
     });
   }
@@ -2662,10 +2662,10 @@ void RadiationVet::VetFullTensor() {
     r -= (k - ks)*(nj*ni);
     const int j = js + r/ni;
     const int i = is + r - (j - js)*ni;
-    const Real g = vc_(m,M1_VET_GD,k,j,i);
+    const Real g = vc_(m,VETRAY_GD,k,j,i);
     if (g >= 0.0) {sh += 1.0;}
     sg = fmax(sg, (g >= 0.0) ? g : (-1.0 - g));
-    sd = fmin(sd, vc_(m,M1_VET_D11,k,j,i));
+    sd = fmin(sd, vc_(m,VETRAY_D11,k,j,i));
   }, Kokkos::Sum<Real>(nhit), Kokkos::Max<Real>(gmax), Kokkos::Min<Real>(dmin));
   vet_nguard += nhit;
   vet_ncell += static_cast<Real>(nc);
@@ -2723,7 +2723,7 @@ void RadiationVet::ImplBeamInit(ParameterInput *pin) {
   if (ibm_n <= 0) {ibm_n = 0; return;}
   if (ibm_n > 2) VetFatal("<rad_vet>/implicit_beam_n must be 0, 1 or 2");
   if (!vet_sc) VetFatal("<rad_vet>/implicit_beam_n needs closure = vet_sc");
-  if (ibc_x1min != M1_IBC_MARSHAK)
+  if (ibc_x1min != VET_IBC_MARSHAK)
     VetFatal("<rad_vet>/implicit_beam_n needs implicit_bc_x1min = marshak");
   if (vet_x1per) VetFatal("<rad_vet>/implicit_beam_n is not for a periodic x1 sweep");
   auto &indcs = pmy_pack->pmesh->mb_indcs;

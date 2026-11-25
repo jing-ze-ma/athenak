@@ -966,11 +966,11 @@ void BoxConvProfileDump(Mesh *pm) {
       ls.the_array[6] += ei;
       ls.the_array[7] += v1*(ei + pg);
       if (m1p) {
-        const Real f1r = ru0(m,radvet::M1_F1,k,j,i);
-        ls.the_array[8] += ru0(m,radvet::M1_E,k,j,i);
+        const Real f1r = ru0(m,radvet::VET_F1,k,j,i);
+        ls.the_array[8] += ru0(m,radvet::VET_E,k,j,i);
         ls.the_array[9] += f1r;
         ls.the_array[10] += (d > 0.0)
-                            ? (rop(m,radvet::M1_OP_T,k,j,i)*f1r/(d*clp)) : 0.0;
+                            ? (rop(m,radvet::VET_OP_T,k,j,i)*f1r/(d*clp)) : 0.0;
         ls.the_array[11] += pg;
       }
     }, Kokkos::Sum<array_sum::GlobalSum>(sum));
@@ -1311,7 +1311,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // rt_rad_force or <rad_vet> force_reference = none the radiative force is counted
   // twice (WB reference + full force) and its work once.
   if (wb_phi_eff_ && !(pmbp->pradvet != nullptr
-                       && pmbp->pradvet->force_ref == radvet::M1_FREF_WB_ARAD)) {
+                       && pmbp->pradvet->force_ref == radvet::VET_FREF_WB_ARAD)) {
     std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff = true is only "
               << "energy-consistent with <rad_vet> and <rad_vet>/force_reference = "
               << "wb_arad ("
@@ -1628,7 +1628,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // column arrays, not from u0, which makes it identical on a restart.  The
     // wb_arad_file profile that Phi_eff integrates is built independently (by
     // bench/m1_stage2/ic/build_ic.py) and the two are compared below.
-    if (pm1->force_ref == radvet::M1_FREF_WB_ARAD) {
+    if (pm1->force_ref == radvet::VET_FREF_WB_ARAD) {
       if (!wb_phi_eff_) {
         std::cout << "### FATAL ERROR in box_convection: <rad_vet>/force_reference = "
                   << "wb_arad needs problem/wb_phi_eff = true -- the residual is only "
@@ -2414,10 +2414,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real ef = 1.0 + vpert_r*sin(M_PI*(z - pzlo)/plz)*amp;
         efac4 = ef*ef*ef*ef;
       }
-      ru0(m,radvet::M1_E, k,j,i) = efac4*ColInterp(mce_d, zlo_r, dzf_r, nf_r, z);
-      ru0(m,radvet::M1_F1,k,j,i) = ColInterp(mcf_d, zlo_r, dzf_r, nf_r, z);
-      ru0(m,radvet::M1_F2,k,j,i) = 0.0;
-      ru0(m,radvet::M1_F3,k,j,i) = 0.0;
+      ru0(m,radvet::VET_E, k,j,i) = efac4*ColInterp(mce_d, zlo_r, dzf_r, nf_r, z);
+      ru0(m,radvet::VET_F1,k,j,i) = ColInterp(mcf_d, zlo_r, dzf_r, nf_r, z);
+      ru0(m,radvet::VET_F2,k,j,i) = 0.0;
+      ru0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
     if (global_variable::my_rank == 0) {
       std::printf("box_convection: <rad_vet> initial field READ FROM %s (%zu nodes), "
@@ -2983,10 +2983,10 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
       const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
       array_sum::GlobalSum hvars;
       for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
-      if (i == gpl.d_view(m,2)) hvars.the_array[0] = inc*ru0(m,radvet::M1_F1,k,j,i);
-      if (i == gpl.d_view(m,1)) hvars.the_array[1] = inc*ru0(m,radvet::M1_F1,k,j,i);
-      if (i == gpl.d_view(m,0)) hvars.the_array[2] = inc*ru0(m,radvet::M1_F1,k,j,i);
-      hvars.the_array[4] = dv*(eg + ctc*ru0(m,radvet::M1_E,k,j,i));
+      if (i == gpl.d_view(m,2)) hvars.the_array[0] = inc*ru0(m,radvet::VET_F1,k,j,i);
+      if (i == gpl.d_view(m,1)) hvars.the_array[1] = inc*ru0(m,radvet::VET_F1,k,j,i);
+      if (i == gpl.d_view(m,0)) hvars.the_array[2] = inc*ru0(m,radvet::VET_F1,k,j,i);
+      hvars.the_array[4] = dv*(eg + ctc*ru0(m,radvet::VET_E,k,j,i));
       if (i == gpl.d_view(m,1)) hvars.the_array[6] = inc*u0(m,IM1,k,j,i)*id;
       hvars.the_array[7] = dv*0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                                    + SQR(u0(m,IM3,k,j,i)))*id;
@@ -3002,7 +3002,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
       lmax = (v > lmax) ? v : lmax;
     }, Kokkos::Max<Real>(vmx));
     Real fres = 0.0;
-    if (pm1->force_ref == radvet::M1_FREF_WB_ARAD) {
+    if (pm1->force_ref == radvet::VET_FREF_WB_ARAD) {
       auto aref = pm1->arad_ref;
       const Real g0l = g0_;
       Kokkos::parallel_reduce("boxconv_m1fres",
@@ -3010,8 +3010,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
                                              {nmb1+1,ke+1,je+1,ie+1}),
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
         const Real d = u0(m,IDN,k,j,i);
-        const Real a = (d > 0.0) ? (rop(m,radvet::M1_OP_T,k,j,i)
-                                    *ru0(m,radvet::M1_F1,k,j,i)/(d*clm1)) : 0.0;
+        const Real a = (d > 0.0) ? (rop(m,radvet::VET_OP_T,k,j,i)
+                                    *ru0(m,radvet::VET_F1,k,j,i)/(d*clm1)) : 0.0;
         const Real r = fabs(a - aref(m,k,j,i))/g0l;
         lmax = (r > lmax) ? r : lmax;
       }, Kokkos::Max<Real>(fres));
@@ -3473,24 +3473,24 @@ void BoxConvBC(Mesh *pm) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
       if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real dz1 = (size.d_view(m).x1max - size.d_view(m).x1min)/indcs.nx1;
-        Real rkf = rop(m,radvet::M1_OP_T,k,j,is);
+        Real rkf = rop(m,radvet::VET_OP_T,k,j,is);
         if (!(rkf > 0.0) && have_aref) {
           rkf = u0(m,IDN,k,j,is)*aref(m,k,j,is)*clm1/fin;
         }
         const Real de = 3.0*rkf*dz1*fin/clm1;
-        Real eg = ru0(m,radvet::M1_E,k,j,is) + static_cast<Real>(n + 1)*de;
+        Real eg = ru0(m,radvet::VET_E,k,j,is) + static_cast<Real>(n + 1)*de;
         if (!(eg > eflm1)) eg = eflm1;
-        ru0(m,radvet::M1_E, k,j,is-1-n) = eg;
-        ru0(m,radvet::M1_F1,k,j,is-1-n) = fin;
-        ru0(m,radvet::M1_F2,k,j,is-1-n) = 0.0;
-        ru0(m,radvet::M1_F3,k,j,is-1-n) = 0.0;
+        ru0(m,radvet::VET_E, k,j,is-1-n) = eg;
+        ru0(m,radvet::VET_F1,k,j,is-1-n) = fin;
+        ru0(m,radvet::VET_F2,k,j,is-1-n) = 0.0;
+        ru0(m,radvet::VET_F3,k,j,is-1-n) = 0.0;
       }
       if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
         if (topdark) {
-          ru0(m,radvet::M1_E, k,j,ie+1+n) = eflm1;
-          ru0(m,radvet::M1_F1,k,j,ie+1+n) = 0.0;
-          ru0(m,radvet::M1_F2,k,j,ie+1+n) = 0.0;
-          ru0(m,radvet::M1_F3,k,j,ie+1+n) = 0.0;
+          ru0(m,radvet::VET_E, k,j,ie+1+n) = eflm1;
+          ru0(m,radvet::VET_F1,k,j,ie+1+n) = 0.0;
+          ru0(m,radvet::VET_F2,k,j,ie+1+n) = 0.0;
+          ru0(m,radvet::VET_F3,k,j,ie+1+n) = 0.0;
         } else {
           radvet::M1FillGhost(ru0, m, k, j, ie+1+n, k, j, ie, 1, 0, 1.0, clm1, eflm1);
         }

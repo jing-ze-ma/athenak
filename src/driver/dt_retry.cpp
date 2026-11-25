@@ -959,8 +959,8 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
   for (int q = 0; q < 6; ++q) {*EcReal(pm->ecounter, q) = s.ec[q];}
   auto *pm1 = pm->pmb_pack->pradvet;
   if (pm1 != nullptr) {
-    const Real un1 = HostAt(pm1->pos_cnt_d, radvet::M1_POS_FLR_UN);
-    const Real un0 = s.hpos ? HostAt(s.pos, radvet::M1_POS_FLR_UN) : 0.0;
+    const Real un1 = HostAt(pm1->pos_cnt_d, radvet::VET_POS_FLR_UN);
+    const Real un0 = s.hpos ? HostAt(s.pos, radvet::VET_POS_FLR_UN) : 0.0;
     dun_[why] += static_cast<double>(un1 - un0);
     pm1->pos_un_drop += un1 - un0;   // (the positivity report's discarded field)
     BackView(pm1->pos_cnt_d, s.pos, s.hpos);
@@ -1009,8 +1009,8 @@ void CounterKeep::Cycle(Mesh *pm) {
     using namespace radvet;   // NOLINT(build/namespaces)
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->pos_cnt_d);
     auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.pos);
-    const int q[5] = {M1_POS_GAS, M1_POS_GAS_DE, M1_POS_FLR, M1_POS_FLR_DE,
-                      M1_POS_FLR_MV};
+    const int q[5] = {VET_POS_GAS, VET_POS_GAS_DE, VET_POS_FLR, VET_POS_FLR_DE,
+                      VET_POS_FLR_MV};
     for (int n = 0; n < 5; ++n) {d[n] = h(q[n]) - h0(q[n]);}
   }
   if (pm1 != nullptr && s.hfcp) {

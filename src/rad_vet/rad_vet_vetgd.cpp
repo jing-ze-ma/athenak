@@ -16,7 +16,7 @@
 //! Upwind I, ln chi, ln S are bilinear in (theta, phi) index space; S is linear in tau.
 //! Periodic theta/phi walls: ghost intensities are re-indexed by the local-frame map
 //! n -> M n (nearest set direction). Block boundaries: lagged inflow (block-Jacobi).
-//! Output: the vet_col_lat slots M1_TT_LAT0..5 (D_rr - f_K, D_rtheta, D_rphi, and the
+//! Output: the vet_col_lat slots VET_TT_LAT0..5 (D_rr - f_K, D_rtheta, D_rphi, and the
 //! trace-free tangential anisotropy D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2).
 
 #include <algorithm>
@@ -79,7 +79,7 @@ namespace radvet {
 // <rad_vet>/vet_gd_twin_srw: weight the twin's pattern subtraction per cell by the
 // symref weight w = min(J_twin/J, 1) (VgdSrW); w = 1 cells are bitwise. Parsed in
 // rad_vet.cpp.
-#if !defined(M1_VGD_SWEEP_TU)
+#if !defined(VET_VGD_SWEEP_TU)
 // <rad_vet>/vet_rotate_advance: with vet_rotate_avg = K the angle set of block b does
 // not repeat with period K, so the averaged window advances through SO(3) / the azimuth
 // (parsed in VetRotInit)
@@ -120,11 +120,11 @@ struct VgdIpcIdx {int v[VGD_IPC_NS + 1];};
 // buffer is written by the partner's pack kernel and read by my scatter kernel after
 // k2 has seen the partner's flag (system fences + kernel boundaries order the data)
 #if defined(KOKKOS_ENABLE_HIP)
-#define M1G(x) hip##x
-#define M1G_STREAM(ex) (ex).hip_stream()
+#define VETG(x) hip##x
+#define VETG_STREAM(ex) (ex).hip_stream()
 #elif defined(KOKKOS_ENABLE_CUDA)
-#define M1G(x) cuda##x
-#define M1G_STREAM(ex) (ex).cuda_stream()
+#define VETG(x) cuda##x
+#define VETG_STREAM(ex) (ex).cuda_stream()
 #endif
 
 KOKKOS_INLINE_FUNCTION
@@ -673,7 +673,7 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
   return true;
 }
 } // namespace
-#if !defined(M1_VGD_SWEEP_TU)
+#if !defined(VET_VGD_SWEEP_TU)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdBuildSet
@@ -704,14 +704,14 @@ void RadiationVet::VetGdInit() {
   if (!pm->three_d && (impl_beam_hr || impl_beam_fs)) {
     VgdFatal("2-D axisymmetric: no implicit_flux_beam");
   }
-  if (ibc_x1max != M1_IBC_MARSHAK &&
-      !(ibc_x1max == M1_IBC_REFLECT || ibc_x1max == M1_IBC_OUTFLOW)) {
+  if (ibc_x1max != VET_IBC_MARSHAK &&
+      !(ibc_x1max == VET_IBC_REFLECT || ibc_x1max == VET_IBC_OUTFLOW)) {
     // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
     VgdFatal("outer x1 needs implicit_bc_x1max = marshak (+ vet_col_surface_q), or "
              "reflect with scheme = clean");
   }
-  if (ibc_x2min == M1_IBC_MARSHAK || ibc_x2max == M1_IBC_MARSHAK ||
-      ibc_x3min == M1_IBC_MARSHAK || ibc_x3max == M1_IBC_MARSHAK) {
+  if (ibc_x2min == VET_IBC_MARSHAK || ibc_x2max == VET_IBC_MARSHAK ||
+      ibc_x3min == VET_IBC_MARSHAK || ibc_x3max == VET_IBC_MARSHAK) {
     // the gd sweep has no vacuum transverse face (vet_sc has)
     VgdFatal("implicit_bc_x2*/x3* = marshak is not wired into the vet_gd sweep");
   }
@@ -801,7 +801,7 @@ void RadiationVet::VetGdInit() {
     const LogicalLocation &l = pm->lloc_eachmb[pmy_pack->gids + m];
     vgd_x1lv[m] = l.lx1;
     xf_h(m) = (l.lx1 == 0 ? 1 : 0) + (l.lx1 == vgd_nb1 - 1 ? 2 : 0);
-    if (l.lx1 == vgd_nb1 - 1 && ibc_x1max == M1_IBC_REFLECT) {xf_h(m) += 4;}
+    if (l.lx1 == vgd_nb1 - 1 && ibc_x1max == VET_IBC_REFLECT) {xf_h(m) += 4;}
     xf_h(m) += 8*l.lx1;
     for (int g = 0; g < pm->nmb_total; ++g) {
       const LogicalLocation &o = pm->lloc_eachmb[g];
@@ -981,7 +981,7 @@ void RadiationVet::VetGdInit() {
       }
     }
   }
-  if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
+  if (vgd_n > VET_VGD_NMAX) {VgdFatal("too many directions");}
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
   Kokkos::realloc(vgd_x1b, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
@@ -1135,7 +1135,7 @@ void RadiationVet::VetGdInit() {
   // combinations the fused sweep never covers (VetGdXffOk) keep two sweeps and no
   // second array (the clean ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
-                                          ibc_x1max != M1_IBC_REFLECT)) ||
+                                          ibc_x1max != VET_IBC_REFLECT)) ||
                   (vgd_gband && !vgd_raw) || vgd_nb1 > 1)) {
     vgd_xff = false;
     if (global_variable::my_rank == 0) {
@@ -1458,11 +1458,11 @@ void RadiationVet::VetGdRotStep() {
     vgd_rot_lastblk = b;
     return;
   }
-  if (b != vgd_rot_lastblk && vgd_rot_slope == 3 && time_scheme == M1_TIME_HESDIRK2 &&
+  if (b != vgd_rot_lastblk && vgd_rot_slope == 3 && time_scheme == VET_TIME_HESDIRK2 &&
       Time2Active()) {
     t2_rotcorr = true;
   } else if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && vgd_rot_slope != 3 &&
-      time_scheme == M1_TIME_HESDIRK2 && t2_ok) {
+      time_scheme == VET_TIME_HESDIRK2 && t2_ok) {
     t2_ok = false;
   }
   vgd_rot_lastblk = b;
@@ -4055,7 +4055,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   const int n1 = indcs.nx1, is = indcs.is;
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int lcut = vgd_scut;
-  const bool imir_ = (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
+  const bool imir_ = (ibc_x1min == VET_IBC_REFLECT) && lcut == 0;
   const int wb = w;
   const int js = wb, je = wb + nx2 - 1, ks = wb, ke = wb + nx3 - 1;
   const int jlo = 0, jhi = je + wb - 1, klo = 0, khi = ke + wb - 1;
@@ -4735,8 +4735,9 @@ void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t h
   vgd_ipc_cs = cs;
   vgd_ipc_half = half;
   if (ok) {
-    if (M1G(Malloc)(reinterpret_cast<void **>(&vgd_ipc_rbuf), 2*vgd_ipc_half*sizeof(Real))
-        != M1G(Success)) {ok = 0;}
+    if (VETG(Malloc)(reinterpret_cast<void **>(&vgd_ipc_rbuf),
+                     2*vgd_ipc_half*sizeof(Real))
+        != VETG(Success)) {ok = 0;}
 #if defined(KOKKOS_ENABLE_HIP)
     if (ok && hipExtMallocWithFlags(reinterpret_cast<void **>(&vgd_ipc_sig),
                                     2*VGD_IPC_NS*sizeof(long long),
@@ -4745,13 +4746,13 @@ void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t h
     if (ok && cudaMalloc(reinterpret_cast<void **>(&vgd_ipc_sig),
                          2*VGD_IPC_NS*sizeof(long long)) != cudaSuccess) {ok = 0;}
 #endif
-    if (ok && M1G(Malloc)(reinterpret_cast<void **>(&vgd_ipc_err), sizeof(int))
-        != M1G(Success)) {ok = 0;}
+    if (ok && VETG(Malloc)(reinterpret_cast<void **>(&vgd_ipc_err), sizeof(int))
+        != VETG(Success)) {ok = 0;}
     if (ok) {
-      (void)M1G(Memset)(vgd_ipc_sig, 0, 2*VGD_IPC_NS*sizeof(long long));
-      (void)M1G(Memset)(vgd_ipc_err, 0, sizeof(int));
-      (void)M1G(Memset)(vgd_ipc_rbuf, 0, 2*vgd_ipc_half*sizeof(Real));
-      (void)M1G(DeviceSynchronize)();
+      (void)VETG(Memset)(vgd_ipc_sig, 0, 2*VGD_IPC_NS*sizeof(long long));
+      (void)VETG(Memset)(vgd_ipc_err, 0, sizeof(int));
+      (void)VETG(Memset)(vgd_ipc_rbuf, 0, 2*vgd_ipc_half*sizeof(Real));
+      (void)VETG(DeviceSynchronize)();
     }
   }
   {
@@ -4760,10 +4761,10 @@ void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t h
     ok = g;
   }
   if (ok) {
-    M1G(IpcMemHandle_t) hb, hs;
-    (void)M1G(IpcGetMemHandle)(&hb, vgd_ipc_rbuf);
-    (void)M1G(IpcGetMemHandle)(&hs, vgd_ipc_sig);
-    struct Info {M1G(IpcMemHandle_t) b, s; long long half, cs; int slot;};
+    VETG(IpcMemHandle_t) hb, hs;
+    (void)VETG(IpcGetMemHandle)(&hb, vgd_ipc_rbuf);
+    (void)VETG(IpcGetMemHandle)(&hs, vgd_ipc_sig);
+    struct Info {VETG(IpcMemHandle_t) b, s; long long half, cs; int slot;};
     std::vector<Info> mine(np), theirs(np);
     std::vector<MPI_Request> rq(2*np);
     for (int p = 0; p < np; ++p) {
@@ -4784,10 +4785,10 @@ void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t h
     vgd_ipc_open.assign(2*np, nullptr);
     for (int p = 0; p < np; ++p) {
       void *pb = nullptr, *ps = nullptr;
-      if (M1G(IpcOpenMemHandle)(&pb, theirs[p].b, M1G(IpcMemLazyEnablePeerAccess))
-          != M1G(Success)) {ok = 0;}
-      if (M1G(IpcOpenMemHandle)(&ps, theirs[p].s, M1G(IpcMemLazyEnablePeerAccess))
-          != M1G(Success)) {ok = 0;}
+      if (VETG(IpcOpenMemHandle)(&pb, theirs[p].b, VETG(IpcMemLazyEnablePeerAccess))
+          != VETG(Success)) {ok = 0;}
+      if (VETG(IpcOpenMemHandle)(&ps, theirs[p].s, VETG(IpcMemLazyEnablePeerAccess))
+          != VETG(Success)) {ok = 0;}
       vgd_ipc_open[2*p] = pb;
       vgd_ipc_open[2*p + 1] = ps;
       vgd_ipc_prb.h_view(p) = reinterpret_cast<unsigned long long>(pb);
@@ -4796,7 +4797,7 @@ void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t h
       vgd_ipc_pcs.h_view(p) = theirs[p].cs;
       vgd_ipc_pslot.h_view(p) = theirs[p].slot;
     }
-    (void)M1G(GetLastError)();
+    (void)VETG(GetLastError)();
     vgd_ipc_prb.modify_host(); vgd_ipc_prb.sync_device();
     vgd_ipc_psig.modify_host(); vgd_ipc_psig.sync_device();
     vgd_ipc_phalf.modify_host(); vgd_ipc_phalf.sync_device();
@@ -4827,7 +4828,7 @@ void RadiationVet::VetGdIpcCheck() {
 #if MPI_PARALLEL_ENABLED && (defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP))
   if (vgd_ipc_state != 1) {return;}
   int h = 0;
-  (void)M1G(Memcpy)(&h, vgd_ipc_err, sizeof(int), M1G(MemcpyDeviceToHost));
+  (void)VETG(Memcpy)(&h, vgd_ipc_err, sizeof(int), VETG(MemcpyDeviceToHost));
   if (h != 0) {
     std::cout << "### FATAL ERROR in rad_vet vet_gd_halo_ipc: a halo spin timed out "
                  "(rank "
@@ -4926,7 +4927,7 @@ void RadiationVet::VetGdTopMirror() {
         hm -= dir_(d,3)*mr*top(mp_(m,k,j,d));
       }
     }
-    const Real e0 = iw_(m,M1_IW_EN,k+ks,j+js,ie);
+    const Real e0 = iw_(m,VET_IW_EN,k+ks,j+js,ie);
     for (int d = 0; d < n; ++d) {   // outward ones are not read
       vi_(m,d,k+w,j+w,ie+1) = (hp > 0.0 && hm > 0.0 && !e1) ? hp/hm*top(mp_(m,k,j,d))
                                                             : e0;
@@ -5040,11 +5041,11 @@ void RadiationVet::VetGdX1Pass(const bool up) {
   Kokkos::deep_copy(vgd_x1r, rh);
 }
 
-#endif  // !M1_VGD_SWEEP_TU
+#endif  // !VET_VGD_SWEEP_TU
 
 // VetGdSweep and its shell kernels build in their own TU, rad_vet_vetgd_sweep.cpp (this
-// file with M1_VGD_SWEEP_TU: includes, helpers above and this function only)
-#if defined(M1_VGD_SWEEP_TU)
+// file with VET_VGD_SWEEP_TU: includes, helpers above and this function only)
+#if defined(VET_VGD_SWEEP_TU)
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSweep
 //! \brief one sweep (inward then outward) of every direction
@@ -5086,17 +5087,17 @@ void RadiationVet::VetGdSweep() {
   // the wall kernel (bodym) for mirror, vacuum and extrap theta walls
   const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // vet_bc_diff = face
-  const bool imir = (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
+  const bool imir = (ibc_x1min == VET_IBC_REFLECT) && lcut == 0;
   const bool spl = vet_seg_split;   // vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // vet_interp: 2 corner, 3 auto
   // inner emission at the physical inner face (icut = 0): black sphere of flux F_in
   // (vet_bc_inner, VetBcEmit: emit, or auto at a Marshak face)
-  const bool emi = VetBcEmit() && (lcut == 0) && ibc_x1min != M1_IBC_REFLECT;
+  const bool emi = VetBcEmit() && (lcut == 0) && ibc_x1min != VET_IBC_REFLECT;
   const Real iemit = VetBathLo();
   // top bath (vet_bc_bath, Marshak outer x1, implicit_ebath_x1max != 0): carried by the
   // top shell's inward rays, attenuated from the top face (as vet_sc)
-  const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
+  const bool tbh = vgd_tbath && (ibc_x1max == VET_IBC_MARSHAK) && (iebath_x1max != 0.0);
   const Real itop = tbh ? iebath_x1max : 0.0;
   const Real mt0 = pm->mesh_size.x2min, mtl = pm->mesh_size.x2max - mt0;
   auto cx1v = pmy_pack->pcoord->x1v;
@@ -5211,7 +5212,7 @@ void RadiationVet::VetGdSweep() {
   // a list-only preparation of this set (shell lists, exact halo lists)
   if (vgd_xff_prep) {return;}
   const bool xffs = vgd_xff_now;
-  if (ibc_x1max == M1_IBC_REFLECT) {VetGdTopMirror();}
+  if (ibc_x1max == VET_IBC_REFLECT) {VetGdTopMirror();}
   // vet_gd_band_ring: shells are lent a wide slab while their band is needed (the
   // other set's array as the second one, VetGdRingFlush)
   VetGdRingSweepBegin(xffs);
@@ -5220,37 +5221,37 @@ void RadiationVet::VetGdSweep() {
     const bool inw = (pass == 0);
     if (imir && !inw) {VetGdInnerMirror();}
     auto isc_ = vgd_isc;
-#define M1_VGD_BODY_NAME body
-#define M1_VGD_BODY_MIR 0
+#define VET_VGD_BODY_NAME body
+#define VET_VGD_BODY_MIR 0
 #include "rad_vet_vetgd_body.inc"
-#undef M1_VGD_BODY_NAME
-#undef M1_VGD_BODY_MIR
-#define M1_VGD_BODY_NAME bodym
-#define M1_VGD_BODY_MIR 1
+#undef VET_VGD_BODY_NAME
+#undef VET_VGD_BODY_MIR
+#define VET_VGD_BODY_NAME bodym
+#define VET_VGD_BODY_MIR 1
 #include "rad_vet_vetgd_body.inc"
-#undef M1_VGD_BODY_NAME
-#undef M1_VGD_BODY_MIR
+#undef VET_VGD_BODY_NAME
+#undef VET_VGD_BODY_MIR
 #if defined(KOKKOS_ENABLE_CUDA)
     // CUDA gx-false kernels (rad_vet_vetgd_body.inc): bodyg / bodymg compile in
     // vpa = gx = false (nvcc has no generic device lambda for std::false_type)
-#define M1_VGD_BODY_GX0
-#define M1_VGD_BODY_NAME bodyg
-#define M1_VGD_BODY_MIR 0
+#define VET_VGD_BODY_GX0
+#define VET_VGD_BODY_NAME bodyg
+#define VET_VGD_BODY_MIR 0
 #include "rad_vet_vetgd_body.inc"
-#undef M1_VGD_BODY_NAME
-#undef M1_VGD_BODY_MIR
-#define M1_VGD_BODY_NAME bodymg
-#define M1_VGD_BODY_MIR 1
+#undef VET_VGD_BODY_NAME
+#undef VET_VGD_BODY_MIR
+#define VET_VGD_BODY_NAME bodymg
+#define VET_VGD_BODY_MIR 1
 #include "rad_vet_vetgd_body.inc"
-#undef M1_VGD_BODY_NAME
-#undef M1_VGD_BODY_MIR
-#undef M1_VGD_BODY_GX0
+#undef VET_VGD_BODY_NAME
+#undef VET_VGD_BODY_MIR
+#undef VET_VGD_BODY_GX0
 #endif
     // shell bodies of the fused two-set kernel (run_xff), one per set, with its tables
     // and intensities bound to the body's names. Both come from one lambda expression
     // (one closure type), so the kernel holds one copy of the body and stack frame
 #if defined(KOKKOS_ENABLE_CUDA)
-#define M1_VGD_BODY_GX0
+#define VET_VGD_BODY_GX0
 #endif
     using VgdDirV = decltype(vgd_dir);
     using VgdWallV = decltype(vgd_wall);
@@ -5262,25 +5263,25 @@ void RadiationVet::VetGdSweep() {
     auto mkx0 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
                     const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
                     const VgdIV vi_) {
-#define M1_VGD_BODY_NAME bodyx
-#define M1_VGD_BODY_MIR 0
+#define VET_VGD_BODY_NAME bodyx
+#define VET_VGD_BODY_MIR 0
 #include "rad_vet_vetgd_body.inc"
-#undef M1_VGD_BODY_NAME
-#undef M1_VGD_BODY_MIR
+#undef VET_VGD_BODY_NAME
+#undef VET_VGD_BODY_MIR
       return bodyx;
     };
     auto mkx1 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
                     const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
                     const VgdIV vi_) {
-#define M1_VGD_BODY_NAME bodyx
-#define M1_VGD_BODY_MIR 1
+#define VET_VGD_BODY_NAME bodyx
+#define VET_VGD_BODY_MIR 1
 #include "rad_vet_vetgd_body.inc"
-#undef M1_VGD_BODY_NAME
-#undef M1_VGD_BODY_MIR
+#undef VET_VGD_BODY_NAME
+#undef VET_VGD_BODY_MIR
       return bodyx;
     };
 #if defined(KOKKOS_ENABLE_CUDA)
-#undef M1_VGD_BODY_GX0
+#undef VET_VGD_BODY_GX0
 #endif
     // vet_gd_body_global: this pass's closure copied once to device memory; launches
     // carry only its address (bitwise)
@@ -5392,9 +5393,9 @@ void RadiationVet::VetGdSweep() {
       const VgdBodymT *bq_ = bmp;
 #endif
 #if defined(KOKKOS_ENABLE_CUDA)
-      // launch-bounds variants of the CUDA gx-false kernel (M1_VGD_CUDA_LB; 0 = the
+      // launch-bounds variants of the CUDA gx-false kernel (VET_VGD_CUDA_LB; 0 = the
       // VgdShellPol launch): register allocation and block size only (same bits)
-#define M1_VGD_GF_CU(...)                                                    \
+#define VET_VGD_GF_CU(...)                                                    \
       if (bq_ != nullptr) {                                               \
         Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
           int t = L_(c);                                                  \
@@ -5418,15 +5419,15 @@ void RadiationVet::VetGdSweep() {
           (*bp_)(m, k, j, d, i, l, f_, f_);                               \
         });                                                               \
       }
-      switch (M1_VGD_CUDA_LB) {
-        case 1: M1_VGD_GF_CU(VgdLbPol<128, 4>(vgd_cur, c0, c1)); break;
-        case 2: M1_VGD_GF_CU(VgdLbPol<128, 5>(vgd_cur, c0, c1)); break;
-        case 3: M1_VGD_GF_CU(VgdLbPol<128, 6>(vgd_cur, c0, c1)); break;
-        case 4: M1_VGD_GF_CU(VgdLbPol<256, 2>(vgd_cur, c0, c1)); break;
-        case 5: M1_VGD_GF_CU(VgdLbPol<256, 3>(vgd_cur, c0, c1)); break;
-        default: M1_VGD_GF_CU(VgdShellPol(vgd_cur, c0, c1)); break;
+      switch (VET_VGD_CUDA_LB) {
+        case 1: VET_VGD_GF_CU(VgdLbPol<128, 4>(vgd_cur, c0, c1)); break;
+        case 2: VET_VGD_GF_CU(VgdLbPol<128, 5>(vgd_cur, c0, c1)); break;
+        case 3: VET_VGD_GF_CU(VgdLbPol<128, 6>(vgd_cur, c0, c1)); break;
+        case 4: VET_VGD_GF_CU(VgdLbPol<256, 2>(vgd_cur, c0, c1)); break;
+        case 5: VET_VGD_GF_CU(VgdLbPol<256, 3>(vgd_cur, c0, c1)); break;
+        default: VET_VGD_GF_CU(VgdShellPol(vgd_cur, c0, c1)); break;
       }
-#undef M1_VGD_GF_CU
+#undef VET_VGD_GF_CU
 #else
       if (bq_ != nullptr) {
         Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
@@ -5736,7 +5737,7 @@ void RadiationVet::VetGdMoments() {
       const bool val = (c < ncell);
       if (val) {
         dec(c, m, i, j, k);
-        for (int cc = 0; cc < M1_TT_NLAT; ++cc) {tt_(m,M1_TT_LAT0+cc,k,j,i) = 0.0;}
+        for (int cc = 0; cc < VET_TT_NLAT; ++cc) {tt_(m,VET_TT_LAT0+cc,k,j,i) = 0.0;}
       }
       const bool act = val && (i >= ilo);
       Real st = 0.0, ct = 0.0, sp = 0.0, cp = 0.0;
@@ -5779,18 +5780,18 @@ void RadiationVet::VetGdMoments() {
       }
       if (act && jm > 0.0) {
         const Real fk = tt_(m,0,k,j,i);
-        tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - fk;
-        tt_(m,M1_TT_LAT0+1,k,j,i) = rt/jm;
-        tt_(m,M1_TT_LAT0+2,k,j,i) = rp/jm;
-        tt_(m,M1_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
-        tt_(m,M1_TT_LAT0+4,k,j,i) = tp/jm;
-        tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
+        tt_(m,VET_TT_LAT0,k,j,i) = rr/jm - fk;
+        tt_(m,VET_TT_LAT0+1,k,j,i) = rt/jm;
+        tt_(m,VET_TT_LAT0+2,k,j,i) = rp/jm;
+        tt_(m,VET_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
+        tt_(m,VET_TT_LAT0+4,k,j,i) = tp/jm;
+        tt_(m,VET_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
       }
     });
   } else {
   par_for("vet_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
   KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
-    for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
+    for (int c = 0; c < VET_TT_NLAT; ++c) {tt_(m,VET_TT_LAT0+c,k,j,i) = 0.0;}
     if (i < ilo) {return;}
     const Real th = sth_ ? thn_(m,j+og)
                          : lg_.Th(mbsize, m, j, js);
@@ -5813,12 +5814,12 @@ void RadiationVet::VetGdMoments() {
     }
     if (jm > 0.0) {
       const Real fk = tt_(m,0,k,j,i);
-      tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - fk;
-      tt_(m,M1_TT_LAT0+1,k,j,i) = rt/jm;
-      tt_(m,M1_TT_LAT0+2,k,j,i) = rp/jm;
-      tt_(m,M1_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
-      tt_(m,M1_TT_LAT0+4,k,j,i) = tp/jm;
-      tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
+      tt_(m,VET_TT_LAT0,k,j,i) = rr/jm - fk;
+      tt_(m,VET_TT_LAT0+1,k,j,i) = rt/jm;
+      tt_(m,VET_TT_LAT0+2,k,j,i) = rp/jm;
+      tt_(m,VET_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
+      tt_(m,VET_TT_LAT0+4,k,j,i) = tp/jm;
+      tt_(m,VET_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
     }
   });
   }  // !VgdMomLds
@@ -6561,7 +6562,7 @@ void RadiationVet::VetGdRingFlush() {
 //! (true): join a pending symmetric-reference solve and, before a restore, the table
 //! prefetch. Changes no number (vet_gd_async is refused with dt_retry).
 
-extern int64_t g_vgd_csgen[16];       // rad_vet_vetgd_cs.cpp; M1_VGD_CSCL_MAX
+extern int64_t g_vgd_csgen[16];       // rad_vet_vetgd_cs.cpp; VET_VGD_CSCL_MAX
 extern int64_t g_vgd_csgen_save[16];
 
 void RadiationVet::DtRetryQuiesce(bool restoring) {
@@ -6628,9 +6629,9 @@ template void RadiationVet::VetGdHalo<RadiationVet::VgdRag>(VgdRag &a, const int
     const int i0, const int i1, const int ws, const bool mapd);
 template bool RadiationVet::VetGdHlBegin<RadiationVet::VgdRag>(VgdRag &a, const int nv,
     const int i0, const int ws);
-#endif  // !M1_VGD_SWEEP_TU
+#endif  // !VET_VGD_SWEEP_TU
 } // namespace radvet
 
-#if !defined(M1_VGD_SWEEP_TU)
+#if !defined(VET_VGD_SWEEP_TU)
 #include "rad_vet_vetgd_sph2.inc"
 #endif

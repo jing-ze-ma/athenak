@@ -54,28 +54,28 @@ inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
 }
 
 // vet_gd shell kernel policy: VgdLight with launch bounds on HIP, so the register
-// allocator may use 512/M1_VGD_LB VGPRs instead of spilling (arithmetic unchanged)
-#ifndef M1_VGD_LB
-#define M1_VGD_LB 1
+// allocator may use 512/VET_VGD_LB VGPRs instead of spilling (arithmetic unchanged)
+#ifndef VET_VGD_LB
+#define VET_VGD_LB 1
 #endif
 inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
-#if defined(KOKKOS_ENABLE_HIP) && (M1_VGD_LB > 0)
+#if defined(KOKKOS_ENABLE_HIP) && (VET_VGD_LB > 0)
   return Kokkos::Experimental::require(
-      Kokkos::RangePolicy<Kokkos::LaunchBounds<256, M1_VGD_LB>>(ex, a, b),
+      Kokkos::RangePolicy<Kokkos::LaunchBounds<256, VET_VGD_LB>>(ex, a, b),
       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 #else
   return VgdLight(ex, a, b);
 #endif
 }
 
-// CUDA gx-false shell kernel launch bounds (M1_VGD_CUDA_LB; 0 = plain VgdShellPol,
+// CUDA gx-false shell kernel launch bounds (VET_VGD_CUDA_LB; 0 = plain VgdShellPol,
 // 2 = <128, 5> on A100)
 #if defined(KOKKOS_ENABLE_CUDA)
-#ifndef M1_VGD_CUDA_LB
+#ifndef VET_VGD_CUDA_LB
 #if defined(KOKKOS_ARCH_AMPERE80)
-#define M1_VGD_CUDA_LB 2
+#define VET_VGD_CUDA_LB 2
 #else
-#define M1_VGD_CUDA_LB 0
+#define VET_VGD_CUDA_LB 0
 #endif
 #endif
 template <unsigned T, unsigned B>

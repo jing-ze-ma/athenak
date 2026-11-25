@@ -22,21 +22,21 @@ namespace radvet {
 constexpr char kM1PredRstMagic[8] = {'M', '1', 'P', 'R', 'E', 'D', '0', '1'};
 
 // time_scheme
-constexpr int M1_TIME_BE = 0;        // Lie splitting: Heun hydro, then one BE solve
-constexpr int M1_TIME_HESDIRK2 = 1;  // H-ESDIRK2: one stage solve inside each Heun stage
+constexpr int VET_TIME_BE = 0;        // Lie splitting: Heun hydro, then one BE solve
+constexpr int VET_TIME_HESDIRK2 = 1;  // H-ESDIRK2: one stage solve inside each Heun stage
 // t2_solve: what the next ImplicitSolve does
-constexpr int M1_T2S_NONE = 0;     // plain backward Euler
-constexpr int M1_T2S_BESTORE = 1;  // backward Euler, K1 = (Y - rhs)/dt stored
-constexpr int M1_T2S_STAGE1 = 2;   // stage solve 1 (gamma dt), K2 stored
-constexpr int M1_T2S_STAGE2 = 3;   // stage solve 2 (gamma dt), K1 (FSAL) stored
+constexpr int VET_T2S_NONE = 0;     // plain backward Euler
+constexpr int VET_T2S_BESTORE = 1;  // backward Euler, K1 = (Y - rhs)/dt stored
+constexpr int VET_T2S_STAGE1 = 2;   // stage solve 1 (gamma dt), K2 stored
+constexpr int VET_T2S_STAGE2 = 3;   // stage solve 2 (gamma dt), K1 (FSAL) stored
 // channels of t2k1 / t2k2 / t2inc: E, gas momentum, total energy, face fluxes F0 x1..x3
-constexpr int M1_T2_E = 0;
-constexpr int M1_T2_M1 = 1;
-constexpr int M1_T2_EN = 4;
-constexpr int M1_T2_F1 = 5;
-constexpr int M1_T2_NK = 8;
-// vet_sc: extrapolated components of vet_cell (M1_VET_CHI .. M1_VET_D11+5)
-constexpr int M1_T2_NVET = 10;
+constexpr int VET_T2_E = 0;
+constexpr int VET_T2_M1 = 1;
+constexpr int VET_T2_EN = 4;
+constexpr int VET_T2_F1 = 5;
+constexpr int VET_T2_NK = 8;
+// vet_sc: extrapolated components of vet_cell (VETRAY_CHI .. VETRAY_D11+5)
+constexpr int VET_T2_NVET = 10;
 // hesdirk2 slope: int32 have, int32 nch, Real pred2_dt, dt_prev, vprev; nch slabs
 // (K1, ipred2, vet_prev) behind the predictor slabs
 constexpr char kM1Time2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
@@ -57,7 +57,7 @@ constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
 constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
 // time2_face_fct: face fluxes t2pf1 (FaxRst*)
 constexpr char kM1FaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
-// vet_rotate_avg history: M1_RA_RST_NH int64 words (RotAvgRstHdr), then nslab slabs
+// vet_rotate_avg history: VET_RA_RST_NH int64 words (RotAvgRstHdr), then nslab slabs
 constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 // old files: stage-2 drop slabs (skipped)
 constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
@@ -70,85 +70,85 @@ constexpr int kM1XfdRstNr = 8;   // Real header words
 constexpr char kM1X1eRstMagic[8] = {'M', '1', 'X', '1', 'E', 'R', 'S', '1'};
 
 // implicit_solver (both converge to the same fixed point)
-constexpr int M1_ISOLV_LINE_JACOBI = 0;  // x1 tridiagonal exact, x2/x3 lagged (M-matrix)
-constexpr int M1_ISOLV_BICGSTAB = 1;  // BiCGStab, x1 line solve as right preconditioner
+constexpr int VET_ISOLV_LINE_JACOBI = 0;  // x1 tridiagonal exact, x2/x3 lagged (M-matrix)
+constexpr int VET_ISOLV_BICGSTAB = 1;  // BiCGStab, x1 line solve as right preconditioner
 
 // implicit_offdiag: the off-diagonal Eddington terms sum_{e != d} d_e P_de (lagging them
 // diverges in thin cells, where they scale as (c dt/dx)^2)
-constexpr int M1_OD_LAGGED   = 0;  // previous Picard iterate, on the right-hand side
-constexpr int M1_OD_OPERATOR = 1;  // in the operator (bicgstab; not an M-matrix)
-constexpr int M1_OD_NONE     = 2;  // dropped: P diagonal in the grid frame
+constexpr int VET_OD_LAGGED   = 0;  // previous Picard iterate, on the right-hand side
+constexpr int VET_OD_OPERATOR = 1;  // in the operator (bicgstab; not an M-matrix)
+constexpr int VET_OD_NONE     = 2;  // dropped: P diagonal in the grid frame
 
 // implicit_trans_limit: transverse realizability limiter.  lp adds the lagged opacity
 // |G_f|/(phi_f E_f), phi_f = fmax sqrt(max(1 - f1^2, 0.01)), so |F_f| <= c phi_f E_f
-constexpr int M1_TLIM_NONE = 0;
-constexpr int M1_TLIM_LPR  = 2;  // bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
-constexpr int M1_TLIM_LP   = 1;  // lagged limiter opacity (above)
+constexpr int VET_TLIM_NONE = 0;
+constexpr int VET_TLIM_LPR  = 2;  // bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
+constexpr int VET_TLIM_LP   = 1;  // lagged limiter opacity (above)
 
 // boundary types of the implicit solve, as the total normal flux F_f at the face
-constexpr int M1_IBC_MARSHAK  = 0;  // free surface, F_f = +- c marshak_q E
-constexpr int M1_IBC_FLUX     = 1;  // imposed F_f = implicit_flux_x1min/max
-constexpr int M1_IBC_REFLECT  = 2;  // F_f = 0
-constexpr int M1_IBC_PERIODIC = 3;  // cyclic tridiagonal (Sherman-Morrison)
-constexpr int M1_IBC_EFIX     = 4;  // Dirichlet: boundary cell E frozen at its start
-constexpr int M1_IBC_OUTFLOW  = 5;  // x2: F_f = max(+-F2_cell, 0), lagged
-constexpr int M1_IBC_X2FLUX   = 6;  // x2: F_f = ifx2_lo/hi from the pgen (SetX2FaceFlux)
+constexpr int VET_IBC_MARSHAK  = 0;  // free surface, F_f = +- c marshak_q E
+constexpr int VET_IBC_FLUX     = 1;  // imposed F_f = implicit_flux_x1min/max
+constexpr int VET_IBC_REFLECT  = 2;  // F_f = 0
+constexpr int VET_IBC_PERIODIC = 3;  // cyclic tridiagonal (Sherman-Morrison)
+constexpr int VET_IBC_EFIX     = 4;  // Dirichlet: boundary cell E frozen at its start
+constexpr int VET_IBC_OUTFLOW  = 5;  // x2: F_f = max(+-F2_cell, 0), lagged
+constexpr int VET_IBC_X2FLUX   = 6;  // x2: F_f = ifx2_lo/hi from the pgen (SetX2FaceFlux)
 
 // implicit_flux: spatial form of the implicit face E-flux
-constexpr int M1_IFLUX_CENTRAL = 0;  // face-eliminated central (diffusion) form
-constexpr int M1_IFLUX_BERTHON = 2;  // A_up + alpha F_HLL (Berthon), no F_diff
-constexpr int M1_IFLUX_BLEND   = 3;  // (1 - w_f) central + w_f berthon, w_f lagged
+constexpr int VET_IFLUX_CENTRAL = 0;  // face-eliminated central (diffusion) form
+constexpr int VET_IFLUX_BERTHON = 2;  // A_up + alpha F_HLL (Berthon), no F_diff
+constexpr int VET_IFLUX_BLEND   = 3;  // (1 - w_f) central + w_f berthon, w_f lagged
 
 // implicit_thin_switch: dt-free face weight of the half-range blend (M1ThinFace)
-constexpr int M1_THSW_FS   = 3;  // smoothstep of max(|H|/J, C1/1.5), C1 = <|I-S|>/J
-constexpr int M1_THSW_FSKN = 5;  // max(fs, kn)
-constexpr int M1_THSW_FSI  = 7;  // fs; h+- isotropic where the rays miss E^n (M1ThinHr)
-constexpr int M1_THSW_FSE  = 8;  // max(|H|/J, eps C1/1.5), eps the thermal fraction
-constexpr int M1_THSW_FSQ  = 6;  // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
+constexpr int VET_THSW_FS   = 3;  // smoothstep of max(|H|/J, C1/1.5), C1 = <|I-S|>/J
+constexpr int VET_THSW_FSKN = 5;  // max(fs, kn)
+constexpr int VET_THSW_FSI  = 7;  // fs; h+- isotropic where the rays miss E^n (M1ThinHr)
+constexpr int VET_THSW_FSE  = 8;  // max(|H|/J, eps C1/1.5), eps the thermal fraction
+constexpr int VET_THSW_FSQ  = 6;  // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
 
 // implicit_recon: states of the HLL part
-constexpr int M1_IRECON_DC    = 0;  // piecewise constant
-constexpr int M1_IRECON_PLMDC = 1;  // plm as a lagged deferred correction (rhs)
+constexpr int VET_IRECON_DC    = 0;  // piecewise constant
+constexpr int VET_IRECON_PLMDC = 1;  // plm as a lagged deferred correction (rhs)
 
 // implicit_enthalpy: face value of the enthalpy flux a_d E, a_d = v_d + (v.D)_d.  The
 // matrix carries the donor form; the others add their lagged difference to the rhs.
-constexpr int M1_IENTH_UPWIND  = 0;  // donor cell (first order)
-constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
-constexpr int M1_IENTH_PLM     = 2;  // a_f E_f, E_f the upwind van Leer plm value
-constexpr int M1_IENTH_PLMC    = 3;  // mean of the two plm face values
-constexpr int M1_IENTH_LIN     = 4;  // unlimited upwind linear (Fromm) value
+constexpr int VET_IENTH_UPWIND  = 0;  // donor cell (first order)
+constexpr int VET_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
+constexpr int VET_IENTH_PLM     = 2;  // a_f E_f, E_f the upwind van Leer plm value
+constexpr int VET_IENTH_PLMC    = 3;  // mean of the two plm face values
+constexpr int VET_IENTH_LIN     = 4;  // unlimited upwind linear (Fromm) value
 
 // vet-positivity counters (pos_cnt_d / pos_cnt); energies volume-weighted
-constexpr int M1_POS_GAS    = 1;  // cell-solves where the gas eint limiter fired
-constexpr int M1_POS_GAS_DE = 2;  // energy moved gas <- radiation
-constexpr int M1_POS_FLR    = 3;  // cell-solves where E was raised to e_floor
-constexpr int M1_POS_FLR_DE = 4;  // floor energy taken from the gas
-constexpr int M1_POS_FLR_UN = 5;  // floor energy not covered by the gas (created)
-constexpr int M1_POS_FLRS   = 8;  // residual raise below 1e-6 e_floor
-constexpr int M1_POS_FLR_MV = 9;  // floor energy taken from the column's radiation
-constexpr int M1_POS_N      = 10;
+constexpr int VET_POS_GAS    = 1;  // cell-solves where the gas eint limiter fired
+constexpr int VET_POS_GAS_DE = 2;  // energy moved gas <- radiation
+constexpr int VET_POS_FLR    = 3;  // cell-solves where E was raised to e_floor
+constexpr int VET_POS_FLR_DE = 4;  // floor energy taken from the gas
+constexpr int VET_POS_FLR_UN = 5;  // floor energy not covered by the gas (created)
+constexpr int VET_POS_FLRS   = 8;  // residual raise below 1e-6 e_floor
+constexpr int VET_POS_FLR_MV = 9;  // floor energy taken from the column's radiation
+constexpr int VET_POS_N      = 10;
 
 // implicit work array iw (m,n,k,j,i): per solve, except the start-of-step EN / EGN
-constexpr int M1_IW_EN   = 0;   // E^n
-constexpr int M1_IW_EP   = 1;   // Picard iterate of E'
-constexpr int M1_IW_TP   = 2;   // Picard iterate of T'
-constexpr int M1_IW_WCHI = 4;   // w = P_11/E of the lagged closure (chi in 1-D)
-constexpr int M1_IW_ADV  = 5;   // a = v1 (1 + w), A = a E
-constexpr int M1_IW_V1   = 8;   // x1 gas velocity
-constexpr int M1_IW_S1   = 15;  // Thomas scratch (c')
-constexpr int M1_IW_S2   = 16;  // Thomas solution
-constexpr int M1_IW_F1   = 19;  // cell-centred x1 flux of the iterate
-constexpr int M1_IW_KT   = 21;  // copy of opac(M1_OP_T), for the x1 halo exchange
-constexpr int M1_IW_V2   = 22;  // transverse: x2 gas velocity
-constexpr int M1_IW_V3   = 23;  // x3 gas velocity
-constexpr int M1_IW_N1   = 24;  // lagged flux direction n = F/|F|
-constexpr int M1_IW_N2   = 25;
-constexpr int M1_IW_N3   = 26;
-constexpr int M1_IW_A2   = 27;  // a_2 = v_2 + (v.D)_2
-constexpr int M1_IW_A3   = 28;  // a_3 = v_3 + (v.D)_3
-constexpr int M1_IW_F2   = 32;  // cell-centred x2 flux of the iterate
-constexpr int M1_IW_F3   = 33;  // cell-centred x3 flux
-constexpr int M1_NIW = 34;
+constexpr int VET_IW_EN   = 0;   // E^n
+constexpr int VET_IW_EP   = 1;   // Picard iterate of E'
+constexpr int VET_IW_TP   = 2;   // Picard iterate of T'
+constexpr int VET_IW_WCHI = 4;   // w = P_11/E of the lagged closure (chi in 1-D)
+constexpr int VET_IW_ADV  = 5;   // a = v1 (1 + w), A = a E
+constexpr int VET_IW_V1   = 8;   // x1 gas velocity
+constexpr int VET_IW_S1   = 15;  // Thomas scratch (c')
+constexpr int VET_IW_S2   = 16;  // Thomas solution
+constexpr int VET_IW_F1   = 19;  // cell-centred x1 flux of the iterate
+constexpr int VET_IW_KT   = 21;  // copy of opac(VET_OP_T), for the x1 halo exchange
+constexpr int VET_IW_V2   = 22;  // transverse: x2 gas velocity
+constexpr int VET_IW_V3   = 23;  // x3 gas velocity
+constexpr int VET_IW_N1   = 24;  // lagged flux direction n = F/|F|
+constexpr int VET_IW_N2   = 25;
+constexpr int VET_IW_N3   = 26;
+constexpr int VET_IW_A2   = 27;  // a_2 = v_2 + (v.D)_2
+constexpr int VET_IW_A3   = 28;  // a_3 = v_3 + (v.D)_3
+constexpr int VET_IW_F2   = 32;  // cell-centred x2 flux of the iterate
+constexpr int VET_IW_F3   = 33;  // cell-centred x3 flux
+constexpr int VET_NIW = 34;
 
 KOKKOS_INLINE_FUNCTION
 Real M1EddDiag(const Real chi, const Real nd) {

@@ -74,7 +74,7 @@ Real DualPay(Mesh *pm) {
   auto *pm1 = pm->pmb_pack->pradvet;
   fluid::DualEnergy *pde = DualPayer(pm);
   if (pm1 == nullptr || pde == nullptr) return 0.0;
-  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radvet::M1_E,
+  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radvet::VET_E,
                                pm1->chat/pm1->c_light, pm1->e_floor);
 }
 }  // namespace
@@ -417,7 +417,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
       }
       if (nnr > 0) {
         DvceArray4D<Real> nophi;
-        phm->pmlat->Average(prm->u0, radvet::M1_NVAR, radvet::M1_NVAR, 1, nophi, false);
+        phm->pmlat->Average(prm->u0, radvet::VET_NVAR, radvet::VET_NVAR, 1, nophi, false);
       }
       if (nnu + nnr > 0) refill = true;
     }
@@ -704,7 +704,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // the hesdirk2 wall split (rank 0, fenced; RadiationVet::Time2AutoBeEnd)
       radvet::RadiationVet *pm1w = pmesh->pmb_pack->pradvet;
       const bool t2wall = (pm1w != nullptr) &&
-                          (pm1w->time_scheme == radvet::M1_TIME_HESDIRK2);
+                          (pm1w->time_scheme == radvet::VET_TIME_HESDIRK2);
       auto t2clk = [&]() {
         if (t2wall) {Kokkos::fence();}
         return std::chrono::steady_clock::now();
@@ -846,19 +846,19 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // loop not entered -- when there is no <rad_vet> block.
       if (pm1 != nullptr && m1t2 && !m1t2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
-        pm1->t2_solve = radvet::M1_T2S_NONE;
+        pm1->t2_solve = radvet::VET_T2S_NONE;
         pm1->t2_nstep += 1.0;
         (void) pm1->ApplyClosureLimits(this, 1);
         (void) pm1->NewTimeStep(this, 1);
         pm1->t2_dtprev = pmesh->dt;
       } else if (pmesh->pmb_pack->pradvet != nullptr && !dtr_now) {
         // hesdirk2 without a valid slope: backward Euler, which stores K1
-        const bool m1be2 = (pm1->time_scheme == radvet::M1_TIME_HESDIRK2);
-        pm1->t2_solve = m1be2 ? radvet::M1_T2S_BESTORE : radvet::M1_T2S_NONE;
+        const bool m1be2 = (pm1->time_scheme == radvet::VET_TIME_HESDIRK2);
+        pm1->t2_solve = m1be2 ? radvet::VET_T2S_BESTORE : radvet::VET_T2S_NONE;
         int nsub = pmesh->pmb_pack->pradvet->SetSubsteps(pmesh->dt);
         pm1->CleanBndAcc(0, 0.0, 0.0, 0.0, pmesh->dt);   // (history: boundary energy)
         for (int nst=0; nst<nsub; ++nst) {
-          // nstage is M1_NSTAGE for the explicit scheme and 1 for the implicit one
+          // nstage is VET_NSTAGE for the explicit scheme and 1 for the implicit one
           // (milestone 3a: one backward-Euler solve per hydro step)
           for (int stage=1; stage<=(pmesh->pmb_pack->pradvet->nstage); ++stage) {
             ExecuteTaskList(pmesh, "vet_before_stagen", stage);
@@ -873,7 +873,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
         (void) pmesh->pmb_pack->pradvet->NewTimeStep(this, 1);
         if (m1be2) {
-          pm1->t2_solve = radvet::M1_T2S_NONE;
+          pm1->t2_solve = radvet::VET_T2S_NONE;
           pm1->t2_ok = true;
           pm1->t2_nbe += 1.0;
           pm1->t2_dtprev = pmesh->dt;

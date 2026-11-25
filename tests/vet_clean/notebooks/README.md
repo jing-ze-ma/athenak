@@ -33,9 +33,9 @@ jupyter nbconvert --to notebook --execute --inplace thermal_eq.ipynb
 Settings (environment variables, read by the first cell of each notebook):
 - `ATHENA_EXE`: the binary (default `../../../build_vettest/src/athena`, the one
   `tests/vet_clean/run_tests.sh` builds).
-- `M1_NB_WORKDIR`: where the runs go (default `runs/` next to the notebooks). A test whose
+- `VET_NB_WORKDIR`: where the runs go (default `runs/` next to the notebooks). A test whose
   record `WORKDIR/<test>.json` exists is loaded, not rerun: delete `WORKDIR/<test>*` to rerun.
-- `M1_NB_THREADS`: OpenMP threads per run (default 4).
+- `VET_NB_THREADS`: OpenMP threads per run (default 4).
 
 With 4 threads per run most notebooks take under a minute; `order.ipynb`, `wb.ipynb`
 (the cubed-sphere `wb_cs`), `idort.ipynb` and `radiation.ipynb` take 2-5 min.

@@ -273,7 +273,7 @@ void RadiationVet::RotAvgApply(const int ilo) {
     }
     // weight of each older set: its J over the current one's (jw), so the fields are the
     // normalised moments of the union of the sets (1 without jw or with weight = equal)
-    Real ws[M1_RA_NF], wsum = 1.0;
+    Real ws[VET_RA_NF], wsum = 1.0;
     for (int s = 0; s < nslot; ++s) {
       const int o = s*nf1;
       ws[s] = (d_(m,o+t.nf,kk,jj,ii) > 0.5) ? ((t.jw >= 0) ? d_(m,o+t.jw,kk,jj,ii) : 1.0)
@@ -597,7 +597,7 @@ void RadiationVet::RotAvgEmaApply(const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! Restart record of the averaging state (kM1RaRstMagic), for a bitwise continuation.
-//! Header (int64 x M1_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc,
+//! Header (int64 x VET_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc,
 //! +16 EMA), head, pend, nslot (K-1, or K with the Delta slot when pend = 3), blk,
 //! interior cells per MeshBlock, i0.  The slots' interior values for i >= i0 (first i
 //! valid in any slot, over all ranks) are packed densely into nslab slabs at the end of
@@ -779,7 +779,7 @@ bool RadiationVet::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
   const int64_t ncint = static_cast<int64_t>(indcs.nx1)*indcs.nx2*indcs.nx3;
   const int64_t close = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);
   const bool ok = vra_on && h[0] == 1 && h[2] == vra_k && h[4] == close && h[3] > 0 &&
-                  h[3] < M1_RA_NF && h[9] == ncint && h[5] >= 0 && h[5] < vra_k - 1 &&
+                  h[3] < VET_RA_NF && h[9] == ncint && h[5] >= 0 && h[5] < vra_k - 1 &&
                   (h[6] == 0 || h[6] == 3) && h[7] == ((h[6] == 3) ? vra_k : vra_k - 1) &&
                   h[10] >= 0 && h[10] < indcs.nx1;
   if (!ok) {

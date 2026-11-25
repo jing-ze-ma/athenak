@@ -214,20 +214,20 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
         Real spar = (x1v - px0)*bn1 + (x2v - py0)*bn2;
         Real sper = -(x1v - px0)*bn2 + (x2v - py0)*bn1;
         Real e = be*exp(-SQR(sper/pw) - SQR(spar/pl));
-        u0(m,radvet::M1_E,k,j,i) = efl + e;
-        u0(m,radvet::M1_F1,k,j,i) = bf*cl*e*bn1;
-        u0(m,radvet::M1_F2,k,j,i) = bf*cl*e*bn2;
-        u0(m,radvet::M1_F3,k,j,i) = 0.0;
+        u0(m,radvet::VET_E,k,j,i) = efl + e;
+        u0(m,radvet::VET_F1,k,j,i) = bf*cl*e*bn1;
+        u0(m,radvet::VET_F2,k,j,i) = bf*cl*e*bn2;
+        u0(m,radvet::VET_F3,k,j,i) = 0.0;
       });
       return;
     }
     // vacuum everywhere
     par_for("vet_beam_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      u0(m,radvet::M1_E,k,j,i) = efl;
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = efl;
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("pulse1d") == 0) {
     m1_test_id = 1;
@@ -243,10 +243,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
       Real &x1max = size.d_view(m).x1max;
       Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
       Real e = bg + amp*exp(-SQR((x1v - x0)/wid));
-      u0(m,radvet::M1_E,k,j,i) = e;
-      u0(m,radvet::M1_F1,k,j,i) = cl*e;   // f = 1 exactly: rigid translation at +c
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = e;
+      u0(m,radvet::VET_F1,k,j,i) = cl*e;   // f = 1 exactly: rigid translation at +c
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("thick_pulse") == 0 || test.compare("tophat") == 0) {
     // T3 / T3c.  Static uniform gas; the opacity is whatever <rad_vet> says, and with
@@ -322,10 +322,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
         int ig = static_cast<int>(floor((x1v - mx1min)/dxm));
         e += ((ig % 2) == 0) ? nyq : -nyq;
       }
-      u0(m,radvet::M1_E,k,j,i) = fmax(e, efl);
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = fmax(e, efl);
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("advect_pulse") == 0) {
     // T4.  Krumholz, Klein & McKee (2007) Sect. 4.3 / QUOKKA AP paper (2404.08247)
@@ -374,10 +374,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vx*vx;
-      u0(m,radvet::M1_E,k,j,i) = fmax(e, efl);
-      u0(m,radvet::M1_F1,k,j,i) = ff;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = fmax(e, efl);
+      u0(m,radvet::VET_F1,k,j,i) = ff;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("advect_uniform") == 0) {
     // T4b (QUOKKA AP paper Sect. 5.5).  Uniform medium moving at v, initialised at the
@@ -424,10 +424,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d0*tg/gm1 + 0.5*d0*vx*vx;
       if (mhdu) uh(m,IEN,k,j,i) += eb;
-      u0(m,radvet::M1_E,k,j,i) = erad;
-      u0(m,radvet::M1_F1,k,j,i) = frad;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = erad;
+      u0(m,radvet::VET_F1,k,j,i) = frad;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("marshak") == 0) {
     // T6.  Non-equilibrium Marshak wave: a cold, static, uniform slab of constant
@@ -447,10 +447,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     M1SetUniformGas(pmbp, dgas, dgas*tini/gm1);
     par_for("vet_marshak_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      u0(m,radvet::M1_E,k,j,i) = e_ini;
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = e_ini;
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("hot_blob") == 0) {
     // (TEST ONLY, preconditioner orientation study): an optically thick hot
@@ -493,10 +493,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*t/gm1;
-      u0(m,radvet::M1_E,k,j,i) = fmax(ar*t*t*t*t, efl);
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = fmax(ar*t*t*t*t, efl);
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("equil") == 0) {
     // T5.  Uniform single zone: nothing has a gradient, so the transport is exactly
@@ -518,10 +518,10 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     }
     par_for("vet_equil_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      u0(m,radvet::M1_E,k,j,i) = erad;
-      u0(m,radvet::M1_F1,k,j,i) = 0.0;
-      u0(m,radvet::M1_F2,k,j,i) = 0.0;
-      u0(m,radvet::M1_F3,k,j,i) = 0.0;
+      u0(m,radvet::VET_E,k,j,i) = erad;
+      u0(m,radvet::VET_F1,k,j,i) = 0.0;
+      u0(m,radvet::VET_F2,k,j,i) = 0.0;
+      u0(m,radvet::VET_F3,k,j,i) = 0.0;
     });
   } else {
     // milestone 1d (shadow, radshock): src/pgen/tests/rad_vet_tests2.cpp, which also
