@@ -1994,33 +1994,37 @@ void RadiationVet::CleanGdFaceSums() {
     q[0] = 0.0;
     for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
   };
-  // sp with gl: both lateral faces and the r face in one pass over the directions
-  // (cln_gd_fs), each sum in the same order as the separate kernels
-  const bool fs = gl && x.sph && !x.cub && !axi;
+  // with gl: a cell's low lateral faces and low r face in one pass over the directions
+  // (cln_gd_fs), each sum in the same order as the separate kernels; what few faces add
+  // (r boundaries, cubed-sphere high faces, seams) in kernels of their own
+  const bool fs = gl && !axi;
+  // a lateral face of cell (k,j,i): the low (up 0), or cubed sphere the MeshBlock's high
+  // one (CLN_FH of its last cell)
+  auto latf = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
+                                   const int dir, const int up) {
+    const CleanArgs &x = *px;
+    const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
+    Real q[4], sc[4] = {0.0}, a[3], e[3][3];
+    face(dir, m, kf, jf, i, a, e);
+    const bool bd = bnd(dir, m, kf, jf, i);
+    const Real ar = x.area[dir](m,kf,jf,i);
+    const CleanRow ro = gl ? gi.At(m, kf, jf, i) : CleanRow{nullptr, 0};
+    const CleanRow ru = (gl && !bd) ? gi.At(m, kf - (dir == 2), jf - (dir == 1), i)
+                                    : CleanRow{nullptr, 0};
+    for (int d = 0; d < n; ++d) {
+      addc(d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), sc);
+    }
+    proj(e, ar, sc, q);
+    if (!bd && !up) {seam2(dir, m, kf, jf, i, a, e, ar, q);}
+    const int nf = up ? CLN_FH + 4*(dir - 1) : ((dir == 1) ? CLN_F2 : CLN_F3);
+    for (int c = 0; c < 4; ++c) cs(m,nf+c,k,j,i) = q[c];
+  };
   for (int dir = 1; dir < 3 && !fs; ++dir) {
-    const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     if (!x.sph && dir >= x.nf) continue;
     CleanForK("cln_gd_lat", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px;
-      // cubed sphere: also the MeshBlock's high face (CLN_FH of its last cell)
-      const bool hi = x.cub && ((dir == 1) ? j == je : k == ke);
-      for (int up = 0; up <= (hi ? 1 : 0); ++up) {
-        const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
-        Real q[4], sc[4] = {0.0}, a[3], e[3][3];
-        face(dir, m, kf, jf, i, a, e);
-        const bool bd = bnd(dir, m, kf, jf, i);
-        const Real ar = x.area[dir](m,kf,jf,i);
-        const CleanRow ro = gl ? gi.At(m, kf, jf, i) : CleanRow{nullptr, 0};
-        const CleanRow ru = (gl && !bd) ? gi.At(m, kf - (dir == 2), jf - (dir == 1), i)
-                                        : CleanRow{nullptr, 0};
-        for (int d = 0; d < n; ++d) {
-          addc(d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), sc);
-        }
-        proj(e, ar, sc, q);
-        if (!bd && !up) {seam2(dir, m, kf, jf, i, a, e, ar, q);}
-        for (int c = 0; c < 4; ++c) cs(m,(up ? CLN_FH + 4*(dir - 1) : nf)+c,k,j,i) = q[c];
-      }
+      latf(m, k, j, i, dir, 0);
+      if (px->cub && ((dir == 1) ? j == je : k == ke)) latf(m, k, j, i, dir, 1);
     });
   }
   if (!fs) CleanGhostFill(cln_s, CLN_F2, 4);
@@ -2070,62 +2074,80 @@ void RadiationVet::CleanGdFaceSums() {
   auto qb_ = vgd_x1b;
   auto qr_ = vgd_x1r;
   const int nj = je - js + 1, nkj = (ke - ks + 1)*nj;
-  // rr: the rays' r face fluxes, all faces at once (the columns only read them)
+  // the rays' r face fluxes rf, all faces at once (the columns only read them); cubed
+  // sphere: above the lowest face, no march there
+  const bool rf_on = rr || x.cub;
+  const int nk = ke - ks + 1, i1 = x.cub ? 1 : 0;
   DvceArray5D<Real> rf = ScratchView<DvceArray5D<Real>>("cln_gd_rf",
-                       rr ? nmb1 + 1 : 1, 4, rr ? ke - ks + 1 : 1, rr ? nj : 1,
-                       rr ? ie - is + 2 : 1);
+                       rf_on ? nmb1 + 1 : 1, 4, rf_on ? nk : 1, rf_on ? nj : 1,
+                       rf_on ? ie - is + 2 : 1);
   Kokkos::deep_copy(DevExeSpace(), rf, 0.0);
   if (fs) {
-    // (cells is..ie: low lateral faces as cln_gd_lat; faces is..ie+1: the r face as
-    // cln_gd_rf, a boundary one by rflux)
-    CleanForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie + 1,
+    CleanForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
-      const bool cl = (i <= ie), rb = CleanBoundaryFace(x, 0, m, k, j, i);
-      Real a1[3], a2[3], a0[3], e[3][3], q[4];
+      const bool rb = (i == is);
+      Real a1[3], a2[3], a0[3] = {0.0}, e[3][3], q[4];
       Real s1[4] = {0.0}, s2[4] = {0.0}, s0[4] = {0.0};
-      const bool b1 = !cl || bnd(1, m, k, j, i), b2 = !cl || bnd(2, m, k, j, i);
+      const bool b1 = bnd(1, m, k, j, i), b2 = bnd(2, m, k, j, i);
       const CleanRow ro = gi.At(m, k, j, i);
       const CleanRow u1 = b1 ? CleanRow{nullptr, 0} : gi.At(m, k, j - 1, i);
       const CleanRow u2 = b2 ? CleanRow{nullptr, 0} : gi.At(m, k - 1, j, i);
-      const CleanRow rl = gi.At(m, k, j, i - 1);
-      if (cl) {
-        CleanFaceVector(x, x3f, 1, m, k, j, i, a1);
-        CleanFaceVector(x, x3f, 2, m, k, j, i, a2);
-      }
+      const CleanRow rl = rb ? CleanRow{nullptr, 0} : gi.At(m, k, j, i - 1);
+      CleanFaceVector(x, x3f, 1, m, k, j, i, a1);
+      CleanFaceVector(x, x3f, 2, m, k, j, i, a2);
       if (!rb) CleanFaceVector(x, x3f, 0, m, k, j, i, a0);
       for (int d = 0; d < n; ++d) {
-        if (cl) {
-          addc(d, b1 ? 0.0 : lat(1, m, k, j, i, d, a1, ro, u1), s1);
-          addc(d, b2 ? 0.0 : lat(2, m, k, j, i, d, a2, ro, u2), s2);
-        }
+        addc(d, b1 ? 0.0 : lat(1, m, k, j, i, d, a1, ro, u1), s1);
+        addc(d, b2 ? 0.0 : lat(2, m, k, j, i, d, a2, ro, u2), s2);
         if (!rb) {
           const Real f = dir_(d,0)*a0[0] + dir_(d,1)*a0[1] + dir_(d,2)*a0[2];
           addc(d, f*((f > 0.0) ? rl[d] : ro[d]), s0);
         }
       }
-      if (cl) {
-        face(1, m, k, j, i, a1, e);
-        proj(e, x.area[1](m,k,j,i), s1, q);
-        if (!b1) {seam2(1, m, k, j, i, a1, e, x.area[1](m,k,j,i), q);}
-        for (int c = 0; c < 4; ++c) cs(m,CLN_F2+c,k,j,i) = q[c];
-        face(2, m, k, j, i, a2, e);
-        proj(e, x.area[2](m,k,j,i), s2, q);
-        if (!b2) {seam2(2, m, k, j, i, a2, e, x.area[2](m,k,j,i), q);}
-        for (int c = 0; c < 4; ++c) cs(m,CLN_F3+c,k,j,i) = q[c];
-      }
-      if (rb) {
-        rflux(m, k, j, i, q);
-      } else {
-        face(0, m, k, j, i, a0, e);
-        proj(e, 1.0, s0, q);
-      }
+      face(1, m, k, j, i, a1, e);
+      proj(e, x.area[1](m,k,j,i), s1, q);
+      for (int c = 0; c < 4; ++c) cs(m,CLN_F2+c,k,j,i) = q[c];
+      face(2, m, k, j, i, a2, e);
+      proj(e, x.area[2](m,k,j,i), s2, q);
+      for (int c = 0; c < 4; ++c) cs(m,CLN_F3+c,k,j,i) = q[c];
+      if (rb) return;
+      face(0, m, k, j, i, a0, e);
+      proj(e, 1.0, s0, q);
       for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
     });
+    for (int dir = 1; dir < 3; ++dir) {
+      const bool kp = (dir == 2), sm = kp ? wsx : wst;   // (a seam's sums, both sides)
+      for (int up = 0; up < 2; ++up) {
+        if (up ? !x.cub : !sm) continue;
+        par_for("cln_gd_lats", DevExeSpace(), 0, nmb1, 0, (kp ? nj : nk) - 1, is, ie,
+        KOKKOS_LAMBDA(const int m, const int t, const int i) {
+          const int k = kp ? (up ? ke : ks) : ks + t, j = kp ? js + t : (up ? je : js);
+          if (up) {
+            latf(m, k, j, i, dir, 1);
+          } else if (!bnd(dir, m, k, j, i)) {
+            const CleanArgs &x = *px;
+            const int nf = kp ? CLN_F3 : CLN_F2;
+            Real a[3], e[3][3], q[4];
+            for (int c = 0; c < 4; ++c) q[c] = cs(m,nf+c,k,j,i);
+            face(dir, m, k, j, i, a, e);
+            seam2(dir, m, k, j, i, a, e, x.area[dir](m,k,j,i), q);
+            for (int c = 0; c < 4; ++c) cs(m,nf+c,k,j,i) = q[c];
+          }
+        });
+      }
+    }
     CleanGhostFill(cln_s, CLN_F2, 4);
     CleanGhostFill(cln_s, CLN_F3, 4);
-  } else if (rr) {
-    CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, is, ie + 1,
+    par_for("cln_gd_rb", DevExeSpace(), 0, nmb1, i1, 1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int b, const int k, const int j) {
+      const int i = b ? ie + 1 : is;
+      Real q[4];
+      rflux(m, k, j, i, q);
+      for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
+    });
+  } else if (rf_on) {
+    CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, is + i1, ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
       rflux(m, k, j, i, q);
@@ -2199,7 +2221,7 @@ void RadiationVet::CleanGdFaceSums() {
       for (int i = is; i <= ie && !cel; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
         if (x.cub) {   // (no curvature terms: Cartesian momentum)
-          rflux(m, k, j, i + 1, q);
+          for (int c = 0; c < 4; ++c) q[c] = rf(m,c,k-ks,j-js,i+1-is);
           continue;
         }
         Real g[2] = {0.0, 0.0}, qi = q[2];
