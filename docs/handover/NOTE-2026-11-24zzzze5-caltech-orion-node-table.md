@@ -28,3 +28,9 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 19:10 01-17: s_F_t9q_b1 -> s_F_t9q_t1
 - 11-24 19:10 02-03: b_latwb2 hx_HR -> b_latwb2
 - 11-24 19:10 02-09: hx_HR -> seam
+- 11-24 19:12 02-03: b_latwb2 -> b_latwb2 suiterb0 suiterb1 suiterb2 suiterb3
+- 11-24 19:12 02-09: seam -> rbo_rel8
+- 11-24 19:13 02-03: b_latwb2 suiterb0 suiterb1 suiterb2 suiterb3 -> suiterb0 suiterb1 suiterb2 suiterb3
+- 11-24 19:13 02-09: rbo_rel8 -> rbo_rel8b
+- 11-24 19:15 01-17: s_F_t9q_t1 -> s_F_t9q_b2
+- 11-24 19:15 02-09: rbo_rel8b -> cs_L2
