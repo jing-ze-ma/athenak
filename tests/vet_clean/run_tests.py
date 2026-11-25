@@ -328,6 +328,43 @@ def restart_pair(c, deck, n, nr, over=None):
     return dict(files=nf, maxdiff=mx)
 
 
+def t_restart_fixes(c):
+    """a restart file without a key that corrects the scheme takes the new default, with a
+    NOTE (recipe::Fix), and the old one when it is named; per key (cs clean_cs_lat_wb, cs
+    fofc_flag_exchange, merge_lat_mom, time2_gtime_slope / _pos): a run with the old value,
+    its restart file, the key's line removed from it.  named: that file restarted with the
+    old value against the file as written: bitwise (maxdiff); fixed: without naming it: the
+    NOTE, no CLEAN WARNING, a different run; stored: the file as written prints the NOTE on
+    the stored old value."""
+    sp = {'mesh/nx3': 16, 'mesh/nghost': 3}
+    cases = (('lat_wb', 'shell_cs.athinput', {}, {'rad_vet/clean_cs_lat_wb': 'false'}),
+             ('fofc', 'fofc_cs.athinput', {'meshblock/nx2': 8, 'meshblock/nx3': 8},
+              {'hydro/fofc_flag_exchange': 'false'}),
+             ('merge', 'merge_sp.athinput', {}, {'hydro/merge_lat_mom': 'rigid'}),
+             ('gtime', 'shell_sp.athinput', sp, {'rad_vet/time2_gtime_slope': 'false',
+                                                 'rad_vet/time2_gtime_pos': 'false'}))
+    out = {'warnings': 0, 'notes': 0, 'stored': 0}
+    for tag, deck, o, old in cases:
+        w = dict(o, **dict(old, **{'output9/file_type': 'rst', 'output9/dcycle': 4,
+                                   'time/nlim': 4}))
+        d = c.run(deck, tag, w)
+        rst = os.path.abspath(sorted(vett.glob_rst(d))[-1])
+        new = rst[:-4] + '_nokey.rst'
+        vett.strip_rst(rst, new, set(old))
+        go = {'time/nlim': 8, 'output9/dcycle': 100000}
+        a = c.run(deck, tag + '_old', go, restart=rst)
+        b = c.run(deck, tag + '_named', dict(go, **old), restart=new)
+        f = c.run(deck, tag + '_fixed', go, restart=new)
+        out['maxdiff_' + tag] = vett.compare_dirs(a, b, last_only=True)[1]
+        out['moved_' + tag] = vett.compare_dirs(a, f, last_only=True)[1]
+        la, lf = (open(os.path.join(x, 'run.log')).read() for x in (a, f))
+        out['warnings'] += vett.warnings(lf)
+        out['notes'] += sum('/%s = ' % k.split('/')[1] in lf and 'the fix applies' in lf
+                            for k in old)
+        out['stored'] += la.count('is the old behaviour')
+    return out
+
+
 def t_restart_sp(c):
     return restart_pair(c, 'shell_sp.athinput', 16, 8)
 
@@ -1306,6 +1343,7 @@ TESTS = [  # name, function, in --quick
     ('mpi_ranks', t_mpi_ranks, False),
     ('floor_dt', t_floor_dt, False),
     ('merge_lat', t_merge_lat, False),
+    ('restart_fixes', t_restart_fixes, False),
     ('restart_sp', t_restart_sp, True),
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),

@@ -623,8 +623,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
+    if (use_fofc && ppack->pmesh->use_cubed_sphere && ppack->pmesh->nmb_total > 6) {
+      recipe::OldStored(pin, "hydro", "fofc_flag_exchange", "false", "true");
+    }
     if (use_fofc && ppack->pmesh->use_cubed_sphere && ppack->pmesh->nmb_total > 6 &&
-        pin->GetOrAddBoolean("hydro", "fofc_flag_exchange", recipe::NewDefaults(pin))) {
+        pin->GetOrAddBoolean("hydro", "fofc_flag_exchange",
+            (global_variable::restart_run || recipe::NewDefaults(pin)) &&
+            recipe::Fix(pin, "hydro", "fofc_flag_exchange", "true", "false"))) {
       pbval_fofc = new MeshBoundaryValuesCC(ppack, pin, false);
       pbval_fofc->SetVectorPairs(1, {});   // (the flag is a scalar)
       pbval_fofc->InitializeBuffers(1);

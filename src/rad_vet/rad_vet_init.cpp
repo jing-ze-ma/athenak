@@ -216,27 +216,11 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (none | step)");
   }
   }
-  // implicit_pos_gas, implicit_pos_floor: true on a fresh run; off on a restart unless
-  // named
-  {const bool rst = global_variable::restart_run;
-  bool old_kept = false;
-  auto pbool = [&](const char *key, bool &v) {
-    if (pin->DoesParameterExist("rad_vet",key)) {
-      v = pin->GetBoolean("rad_vet",key);
-    } else if (rst) {
-      old_kept = true;
-    } else {
-      v = pin->GetOrAddBoolean("rad_vet",key,true);
-    }
-  };
-  pbool("implicit_pos_gas", impl_pos_gas);
-  pbool("implicit_pos_floor", impl_pos_floor);
-  if (old_kept && global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> restart input lacks implicit_pos_gas / implicit_pos_floor: "
-              << "keeping the old default (off) for those; name them to switch"
-              << std::endl;
-  }
-  }
+  // implicit_pos_gas, implicit_pos_floor (default true)
+  impl_pos_gas = pin->GetOrAddBoolean("rad_vet","implicit_pos_gas",
+      recipe::Fix(pin, "rad_vet", "implicit_pos_gas", "true", "false"));
+  impl_pos_floor = pin->GetOrAddBoolean("rad_vet","implicit_pos_floor",
+      recipe::Fix(pin, "rad_vet", "implicit_pos_floor", "true", "false"));
   if (pin->DoesParameterExist("rad_vet","implicit_pos_gas_frac")) {
     impl_pos_gas_frac = pin->GetReal("rad_vet","implicit_pos_gas_frac");
   }
@@ -369,17 +353,14 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
                  "taken "
               << "from the radiation of the same column (no energy created)" << std::endl;
   }
-  const bool cnw = !global_variable::restart_run;
-  if (cnw || pin->DoesParameterExist("rad_vet","implicit_pos_gas_cons")) {
-    impl_pos_gas_cons = pin->GetOrAddBoolean("rad_vet","implicit_pos_gas_cons",true);
-  }
-  if (cnw || pin->DoesParameterExist("rad_vet","implicit_pos_floor_gas_keep")) {
-    impl_pos_flr_gk = pin->GetOrAddReal("rad_vet","implicit_pos_floor_gas_keep",1.0);
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk
-                << ": the E floor's raise leaves the gas at least that share of its eint"
-                << std::endl;
-    }
+  impl_pos_gas_cons = pin->GetOrAddBoolean("rad_vet","implicit_pos_gas_cons",
+      recipe::Fix(pin, "rad_vet", "implicit_pos_gas_cons", "true", "false"));
+  impl_pos_flr_gk = pin->GetOrAddReal("rad_vet","implicit_pos_floor_gas_keep",
+      recipe::Fix(pin, "rad_vet", "implicit_pos_floor_gas_keep", "1", "-1") ? 1.0 : -1.0);
+  if (global_variable::my_rank == 0 && impl_pos_flr_gk > 0.0) {
+    std::cout << "<rad_vet> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk
+              << ": the E floor's raise leaves the gas at least that share of its eint"
+              << std::endl;
   }
   if (cs_vtx_mono && global_variable::my_rank == 0) {
     std::cout << "<rad_vet> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n
@@ -520,10 +501,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_vet","zalesak_halo_skip");
   }
-  if (!global_variable::restart_run ||
-      pin->DoesParameterExist("rad_vet","zalesak_active")) {
-    zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",true);
-  }
+  zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",
+      recipe::Fix(pin, "rad_vet", "zalesak_active", "true", "false"));
   MemArenaInit(pin, nmb, M1_NIW, ncells3, ncells2, ncells1);
   if (impl_ctrelax > 0.0) {
     if (!trans_on || !clag_step) {

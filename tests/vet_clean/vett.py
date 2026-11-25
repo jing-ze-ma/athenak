@@ -196,6 +196,22 @@ def glob_rst(d):
     return sorted(glob.glob(os.path.join(d, '**', '*.rst'), recursive=True))
 
 
+def strip_rst(src, dst, keys):
+    """Copy restart file src to dst without the keys 'block/key' of its stored input (a file
+    written before these keys)."""
+    b = open(src, 'rb').read()
+    i = b.index(b'<par_end>')
+    out, blk = [], None
+    for ln in b[:i].decode('latin1').splitlines(True):
+        m = re.match(r'\s*<(\w+)>', ln)
+        blk = m.group(1) if m else blk
+        k = ln.split('=')[0].strip()
+        if '%s/%s' % (blk, k) in keys and not m:
+            continue
+        out.append(ln)
+    open(dst, 'wb').write(''.join(out).encode('latin1') + b[i:])
+
+
 def _bin_diff(f, g):
     """(max |x - y|, max over variables of max |x - y| / max |x|) of two dumps."""
     x, y = read_bin(f), read_bin(g)

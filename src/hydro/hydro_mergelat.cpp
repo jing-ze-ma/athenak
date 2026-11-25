@@ -269,13 +269,14 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
   if (pin->DoesParameterExist("hydro", "merge_lat_check")) {
     check = pin->GetBoolean("hydro", "merge_lat_check");
   }
-  std::string mom = "rigid";
-  if (pin->DoesParameterExist("hydro", "merge_lat_mom")) {
-    mom = pin->GetString("hydro", "merge_lat_mom");
-  } else if (recipe::NewDefaults(pin)) {
-    mom = pin->GetOrAddString("hydro", "merge_lat_mom", "radial");
+  if (!pin->DoesParameterExist("hydro", "merge_lat_mom") && recipe::NewDefaults(pin)) {
     recipe::Log("<hydro>/merge_lat_mom = radial (default on a fresh start)");
   }
+  const bool rd = (global_variable::restart_run || recipe::NewDefaults(pin)) &&
+                  recipe::Fix(pin, "hydro", "merge_lat_mom", "radial", "rigid");
+  const std::string mom = pin->GetOrAddString("hydro", "merge_lat_mom",
+                                              rd ? "radial" : "rigid");
+  recipe::OldStored(pin, "hydro", "merge_lat_mom", "rigid", "radial");
   radial = (mom == "radial");
   if (!radial && mom != "rigid") MlatFatal("merge_lat_mom = radial | rigid");
   if (radial) {
