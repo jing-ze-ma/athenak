@@ -168,3 +168,8 @@ H0h needed (L_top diff 0.9-2 %): no
 
 ## CORRECTION to the section above: the c2 branch IS on GitHub, as caltech-c2-d4ae795a4
 - The NOTE / my first grep used the short name 'caltech-c2-d4ae795' (9 characters missing: the ref is caltech-c2-d4ae795a4, sha d4ae795a48f0a8a761bd56c850959145d6d94922). My statement 'not on GitHub' was wrong; it is being built on 01-15 now.
+
+## c2 d4ae795a4 withdrawn (your 24zzzza7), 11-24 16:40
+- Build step 7333036.104 (b_c2) cancelled by id while compiling; the build script was stopped first (recorded PID), so there was no copy to wt_orion1121/bin, no gate and no run. **No c2 binary exists** (no src/athena in build_c2, nothing named c2_d4ae* in bin), so there is nothing to remove from a binary list. An earlier step 7333036.103 was my failed start with the wrong ref (exit 3, nothing compiled).
+- The directory wt_orion1121/c2 is kept (source tree plus partial objects), marked WITHDRAWN_DO_NOT_RUN.txt; hg_gate_1124/build_c2.sh is renamed .WITHDRAWN. Nothing deleted. I check the next branch name against ls-remote (prefix match) before saying anything is missing.
+- The c1 stars were not touched: bsg c1500, m35mms c1650, M35ZAMS c3630, all running, CW 0, no alerts.
