@@ -1,0 +1,14 @@
+c1: per-cycle residual c1000-5000 median 3.23e+31 max 3.00e+32
+   first cycle with |residual| > 1000 x that median: 6050 (n such cycles 4867)
+   c5000-6000: sum 3.515e+34, max |step| 6.886e+32 at c5998, steps > 1000 x median 0
+   c6000-6500: sum 4.155e+38, max |step| 3.389e+37 at c6468, steps > 1000 x median 444
+   c6500-7000: sum -1.664e+39, max |step| 3.266e+37 at c6562, steps > 1000 x median 490
+   c7000-7500: sum -1.136e+38, max |step| 2.817e+36 at c7016, steps > 1000 x median 413
+   c7500-8000: sum 6.339e+35, max |step| 3.742e+35 at c7998, steps > 1000 x median 4
+   c8000-8500: sum -3.247e+38, max |step| 5.877e+37 at c8495, steps > 1000 x median 354
+   c8500-9000: sum 6.267e+39, max |step| 2.019e+38 at c8734, steps > 1000 x median 500
+T2: per-cycle residual c1000-5000 median 2.99e+31 max 3.90e+32
+   first cycle with |residual| > 1000 x that median: 6061 (n such cycles 836)
+   c5000-6000: sum 3.327e+34, max |step| 1.107e+33 at c5982, steps > 1000 x median 0
+   c6000-6500: sum 5.569e+38, max |step| 2.542e+37 at c6483, steps > 1000 x median 434
+   c6500-7000: sum -1.714e+39, max |step| 2.610e+37 at c6519, steps > 1000 x median 402

@@ -1,0 +1,30 @@
+FILE prod_c1_1124/bsg/bin/bsg3d.hydro_w.00037.bin t 1.59845e+06 cycle 9601
+  wedge M all 2.9012e+31; r < 2.435e12 2.8626e+31; 2.435-3.826e12 3.8684e+29; 3.826-5.566e12 9.0820e+25 (wedge, theta 60-120, phi 0-60 deg, not scaled)
+  L_z net (sum rho r sin(theta) v_phi dV) all -1.3663e+42, gross (sum of |.|) 1.5365e+48
+  L_z net (sum rho r sin(theta) v_phi dV) m1 -4.9228e+45, gross (sum of |.|) 6.7265e+47
+  L_z net (sum rho r sin(theta) v_phi dV) f1 5.0654e+45, gross (sum of |.|) 8.6348e+47
+  L_z net (sum rho r sin(theta) v_phi dV) m2 -1.4399e+44, gross (sum of |.|) 4.0575e+44
+  max relative spread of rho inside a merged group over the dump: 0.00e+00 (post-merge state if ~0)
+  groups inner: total 786432; Erot > 0.5 Eth: 0; Erot > Eth: 0; code test Erot > 0.5 (Eth + Erot + Eres): 0; all cells same velocity to float32 (zero rotation): 0; singular J: 0
+  groups outer: total 1310720; Erot > 0.5 Eth: 930; Erot > Eth: 0; code test Erot > 0.5 (Eth + Erot + Eres): 0; all cells same velocity to float32 (zero rotation): 1; singular J: 0
+    Erot > 0.5 Eth set: r 3.8372e+12-4.4025e+12 cm, rho 6.183e-14-9.856e-11, e_int density 1.475e-01-3.935e+02, Erot/Eth max 0.998
+FILE prod_rc4v_1124/bsg/bin/bsg3d.hydro_w.00027.bin t 1.14834e+06 cycle 6902
+  wedge M all 2.9012e+31; r < 2.435e12 2.8613e+31; 2.435-3.826e12 3.9842e+29; 3.826-5.566e12 1.4096e+27 (wedge, theta 60-120, phi 0-60 deg, not scaled)
+  L_z net (sum rho r sin(theta) v_phi dV) all -7.3031e+39, gross (sum of |.|) 1.3301e+48
+  L_z net (sum rho r sin(theta) v_phi dV) m1 1.9966e+45, gross (sum of |.|) 3.9507e+47
+  L_z net (sum rho r sin(theta) v_phi dV) f1 -2.1433e+45, gross (sum of |.|) 9.3102e+47
+  L_z net (sum rho r sin(theta) v_phi dV) m2 1.4669e+44, gross (sum of |.|) 4.0459e+45
+  max relative spread of rho inside a merged group over the dump: 0.00e+00 (post-merge state if ~0)
+  groups inner: total 786432; Erot > 0.5 Eth: 0; Erot > Eth: 0; code test Erot > 0.5 (Eth + Erot + Eres): 0; all cells same velocity to float32 (zero rotation): 0; singular J: 0
+  groups outer: total 1310720; Erot > 0.5 Eth: 5811; Erot > Eth: 0; code test Erot > 0.5 (Eth + Erot + Eres): 0; all cells same velocity to float32 (zero rotation): 3; singular J: 0
+    Erot > 0.5 Eth set: r 4.0981e+12-4.4242e+12 cm, rho 7.580e-14-5.721e-11, e_int density 1.858e-01-1.164e+02, Erot/Eth max 0.999
+FILE prod_rc3_1124/bsg/bin/bsg3d.hydro_w.00114.bin t 4.92480e+06 cycle 55547
+  wedge M all 2.9012e+31; r < 2.435e12 2.8628e+31; 2.435-3.826e12 3.8395e+29; 3.826-5.566e12 2.7082e+24 (wedge, theta 60-120, phi 0-60 deg, not scaled)
+  L_z net (sum rho r sin(theta) v_phi dV) all 4.0384e+42, gross (sum of |.|) 2.0953e+48
+  L_z net (sum rho r sin(theta) v_phi dV) m1 2.0436e+46, gross (sum of |.|) 1.1140e+48
+  L_z net (sum rho r sin(theta) v_phi dV) f1 -2.0431e+46, gross (sum of |.|) 9.8124e+47
+  L_z net (sum rho r sin(theta) v_phi dV) m2 -8.9306e+41, gross (sum of |.|) 6.4565e+42
+  max relative spread of rho inside a merged group over the dump: 0.00e+00 (post-merge state if ~0)
+  groups inner: total 786432; Erot > 0.5 Eth: 0; Erot > Eth: 0; code test Erot > 0.5 (Eth + Erot + Eres): 0; all cells same velocity to float32 (zero rotation): 0; singular J: 0
+  groups outer: total 1310720; Erot > 0.5 Eth: 103; Erot > Eth: 0; code test Erot > 0.5 (Eth + Erot + Eres): 0; all cells same velocity to float32 (zero rotation): 0; singular J: 0
+    Erot > 0.5 Eth set: r 3.8372e+12-3.9459e+12 cm, rho 9.986e-14-5.964e-12, e_int density 2.183e-01-1.224e+01, Erot/Eth max 0.950
