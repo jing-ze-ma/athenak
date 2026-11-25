@@ -718,33 +718,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
                "corner)");
     }
   }
-  // vet_source = relaxed | relaxed_esc | gas: the VET source of a lagged build
-  {
-    // default relaxed_esc under recipe::NewDefaults, else gas; vet_col_source alone is
-    // inert on vet_sc and keeps gas
-    if (!pin->DoesParameterExist("rad_vet", "vet_source")) {
-      const bool alias = pin->DoesParameterExist("rad_vet", "vet_col_source");
-      const bool nd = recipe::NewDefaults(pin) && !alias;
-      pin->GetOrAddString("rad_vet", "vet_source", nd ? "relaxed_esc" : "gas");
-      recipe::Log(std::string("<rad_vet>/vet_source = ") + (nd ? "relaxed_esc (default)"
-          : (alias ? "gas (the input names only vet_col_source, inert on vet_sc: the old "
-                     "vet_sc default; name vet_source to choose)"
-          : "gas (restart input has no key: the old vet_sc default)")));
-    }
-    const std::string vs = pin->GetString("rad_vet", "vet_source");
-    if (vs.compare("relaxed") == 0) {
-      vcol_srelax = true;
-    } else if (vs.compare("relaxed_esc") == 0) {
-      // relaxed with the cell's photon escape
-      vcol_srelax = true;
-      vcol_sesc = true;
-    } else if (vs.compare("gas") == 0) {
-      vcol_srelax = false;
-    } else {
-      VetFatal("<rad_vet>/vet_source = '" + vs +
-               "' is not a choice (relaxed | relaxed_esc | gas)");
-    }
-  }
   // vet_bc_inner / vet_bc_reflect (VetBcInit); vet_bc_bath: an x1 end with
   // implicit_bc = marshak gives its entering rays the bath implicit_ebath
   VetBcInit(pin, false);

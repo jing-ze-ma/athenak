@@ -51,26 +51,11 @@ void VcolFatal(const std::string &msg) {
 void RadiationVet::VetColInit() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
-  auto &mindcs = pm->mesh_indcs;
   if (!trans_on) {VcolFatal("needs <rad_vet>/transport = implicit on a MULTI-D mesh");}
   if (pm->multilevel) {VcolFatal("SMR/AMR is not supported");}
-  // vet_gd builds no columns: any x1 decomposition
-  if (mindcs.nx1 != indcs.nx1 && !vgd_on) {
-    VcolFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)");
-  }
   if (ibc_x1min == VET_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
-  // cubed sphere: x1 = r on every panel, one block spans the column; the tensor is
-  // uniaxial about r_hat.  The flux axis needs the skewed panel basis: refused.
-  if (pm->use_cubed_sphere && vcol_axis_flux) {
-    VcolFatal("vet_col_axis = flux is not supported on the cubed sphere");
-  }
   if (indcs.nx1 < 2) {VcolFatal("needs at least 2 cells along x1");}
-  if (vcol_nc < 1 || vcol_np < 1 || vcol_nmu < 1 || vcol_every < 1) {
-    VcolFatal("vet_col_ncore, vet_col_nsub, vet_col_nmu, vet_col_every must be >= 1");
-  }
   vcol_sph = sph_geom;
-  // vet_col_reflect_top: sp with a reflecting outer x1 only
-  vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == VET_IBC_REFLECT);
   vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
   const int ie = indcs.ie;
   if (vcol_sph) {
@@ -94,7 +79,7 @@ void RadiationVet::VetColInit() {
     }
   }
   tau_ready = true;
-  if (vlat_on) {VetLatInit();}
+  VetLatInit();
 }
 
 //----------------------------------------------------------------------------------------
@@ -102,89 +87,85 @@ void RadiationVet::VetColInit() {
 //! \brief one cost line at the end of the run (rank 0)
 
 void RadiationVet::VetColReport() {
-  if (global_variable::my_rank != 0) return;
-  if (vlat_on) {
-    std::cout << "<rad_vet> vet_col_lat: " << vlat_ncall << " builds checked; lateral "
-              << "reads clamped to the ghost band (rank 0, all sweeps): " << vlat_nclamp
+  if (global_variable::my_rank != 0 || !vgd_on) return;
+  std::cout << "<rad_vet> vet_gd: " << vlat_ncall << " builds checked; lateral "
+            << "reads clamped to the ghost band (rank 0, all sweeps): " << vlat_nclamp
+            << std::endl;
+  std::cout << "<rad_vet> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
+            << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
+            << vgd_thalo << ", of which MPI wait " << vgd_tmpi
+            << "), tables (rotation) " << vgd_ttab
+            << "; in-solve rebuilds " << vgd_nrb << " ("
+            << vgd_trb << " s)" << std::endl;
+  std::cout << "<rad_vet> vet_gd halo (rank 0): exchanges " << vgd_nexch
+            << ", bytes sent "
+            << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)
+            << " per exchange), post " << vgd_tpost << " s, partners "
+            << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
+            << "sweeps) "
+            << vgd_nclamp_all << std::endl;
+  if (vgd_csg || vgd_gbc) {   // cs or sp global band
+    std::cout << "<rad_vet> vet_gd " << (vgd_csg ? "cs" : "global")
+              << " band (rank 0): " << ((vgd_cscomp || vgd_gbc) ? "compact" : "dense")
+              << ", intensity values sent "
+              << vgd_csvsent << " of dense " << vgd_csvdense << " ("
+              << ((vgd_csvdense > 0.0) ? vgd_csvsent/vgd_csvdense : 0.0)
+              << "); list builds " << vgd_csnbuild << " (" << vgd_cstbuild << " s)"
               << std::endl;
-    if (vgd_on) {
-      std::cout << "<rad_vet> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
-                << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
-                << vgd_thalo << ", of which MPI wait " << vgd_tmpi
-                << "), tables (rotation) " << vgd_ttab
-                << "; in-solve rebuilds " << vgd_nrb << " ("
-                << vgd_trb << " s)" << std::endl;
-      std::cout << "<rad_vet> vet_gd halo (rank 0): exchanges " << vgd_nexch
-                << ", bytes sent "
-                << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)
-                << " per exchange), post " << vgd_tpost << " s, partners "
-                << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
-                << "sweeps) "
-                << vgd_nclamp_all << std::endl;
-      if (vgd_csg || vgd_gbc) {   // cs or sp global band
-        std::cout << "<rad_vet> vet_gd " << (vgd_csg ? "cs" : "global")
-                  << " band (rank 0): " << ((vgd_cscomp || vgd_gbc) ? "compact" : "dense")
-                  << ", intensity values sent "
-                  << vgd_csvsent << " of dense " << vgd_csvdense << " ("
-                  << ((vgd_csvdense > 0.0) ? vgd_csvsent/vgd_csvdense : 0.0)
-                  << "); list builds " << vgd_csnbuild << " (" << vgd_cstbuild << " s)"
-                  << std::endl;
+  }
+  if (vgd_csg && vgd_cscomp) {   // where the list builds go
+    std::cout << "<rad_vet> cs list builds (rank 0 s): mask kernel "
+              << vgd_cstb_k << ", download+check " << vgd_cstb_d << ", mark exchange "
+              << vgd_cstb_m << ", host lists " << vgd_cstb_h << ", upload "
+              << vgd_cstb_u << "; mask stride " << vgd_csper << " (padded)"
+              << std::endl;
+  }
+  {
+    // ragged band: accesses outside a shell's slab (must be 0)
+    Real no = 0.0;
+    if (vgd_i.oos.extent(0) > 0) {
+      auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i.oos);
+      no = h(0);
+    }
+    std::cout << "<rad_vet> vet_gd ragged band (rank 0): out-of-slab accesses "
+              << no << std::endl;
+    if (vgd_ring) {
+      std::cout << "<rad_vet> vet_gd_band_ring (rank 0): sweeps " << vgd_rg_nk
+                << ", dense band saves " << vgd_rg_ndense << ", save store "
+                << vgd_rg_store.extent(0)*sizeof(Real)/1.0e9 << " GB" << std::endl;
+    }
+    if (vgd_xff) {
+      double oos2 = 0.0;
+      if (vgd_i_xb.oos.extent(0) > 0) {
+        auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i_xb.oos);
+        oos2 = h(0);
       }
-      if (vgd_csg && vgd_cscomp) {   // where the list builds go
-        std::cout << "<rad_vet> cs list builds (rank 0 s): mask kernel "
-                  << vgd_cstb_k << ", download+check " << vgd_cstb_d << ", mark exchange "
-                  << vgd_cstb_m << ", host lists " << vgd_cstb_h << ", upload "
-                  << vgd_cstb_u << "; mask stride " << vgd_csper << " (padded)"
-                  << std::endl;
-      }
-      {
-        // ragged band: accesses outside a shell's slab (must be 0)
-        Real no = 0.0;
-        if (vgd_i.oos.extent(0) > 0) {
-          auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i.oos);
-          no = h(0);
-        }
-        std::cout << "<rad_vet> vet_gd ragged band (rank 0): out-of-slab accesses "
-                  << no << std::endl;
-        if (vgd_ring) {
-          std::cout << "<rad_vet> vet_gd_band_ring (rank 0): sweeps " << vgd_rg_nk
-                    << ", dense band saves " << vgd_rg_ndense << ", save store "
-                    << vgd_rg_store.extent(0)*sizeof(Real)/1.0e9 << " GB" << std::endl;
-        }
-        if (vgd_xff) {
-          double oos2 = 0.0;
-          if (vgd_i_xb.oos.extent(0) > 0) {
-            auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i_xb.oos);
-            oos2 = h(0);
-          }
-          std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse (rank 0): fused builds "
-                    << vgd_xff_n << ", two-sweep fallbacks " << vgd_xff_nfb
-                    << ", merged exchanges " << vgd_xff_nmsg << ", out-of-slab accesses "
-                    << "(other set) " << oos2 << std::endl;
-        }
-      }
-      if (vgd_hcomp > 0) {
-        std::cout << "<rad_vet> (rank 0) vet_gd halo lists "
-                  << vgd_hl_nmade << " made, " << vgd_hl_bytes/1048576.0 << " MB of "
-                  << vgd_hl_cap/1048576.0 << " (key " << vgd_hl_mb
-                  << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
-                  << vgd_hl_ndense << std::endl;
-      }
-      if (vgd_hx_on) {
-        std::cout << "<rad_vet> (rank 0) vet_gd_halo_exact lists made "
-                  << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
-                  << " (marked reads outside the masks' region " << vgd_hx_nout
-                  << "), read ghosts with an unsent source " << vgd_hx_nun
-                  << "; received values per list: exact/mask "
-                  << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
-                  << std::endl;
-      }
-      std::cout << "<rad_vet> (rank 0) exact-list batches " << vgd_hxb_ngroup
-                << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
-                << vgd_hxb_nrealloc << "); table prefetch 1"
-                << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
+      std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse (rank 0): fused builds "
+                << vgd_xff_n << ", two-sweep fallbacks " << vgd_xff_nfb
+                << ", merged exchanges " << vgd_xff_nmsg << ", out-of-slab accesses "
+                << "(other set) " << oos2 << std::endl;
     }
   }
+  if (vgd_hcomp > 0) {
+    std::cout << "<rad_vet> (rank 0) vet_gd halo lists "
+              << vgd_hl_nmade << " made, " << vgd_hl_bytes/1048576.0 << " MB of "
+              << vgd_hl_cap/1048576.0 << " (key " << vgd_hl_mb
+              << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
+              << vgd_hl_ndense << std::endl;
+  }
+  if (vgd_hx_on) {
+    std::cout << "<rad_vet> (rank 0) vet_gd_halo_exact lists made "
+              << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
+              << " (marked reads outside the masks' region " << vgd_hx_nout
+              << "), read ghosts with an unsent source " << vgd_hx_nun
+              << "; received values per list: exact/mask "
+              << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
+              << std::endl;
+  }
+  std::cout << "<rad_vet> (rank 0) exact-list batches " << vgd_hxb_ngroup
+            << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
+            << vgd_hxb_nrealloc << "); table prefetch 1"
+            << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
 }
 
 //----------------------------------------------------------------------------------------
@@ -193,7 +174,7 @@ void RadiationVet::VetColReport() {
 namespace {
 void VlatFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_vet>/vet_col_lat: " << msg << std::endl;
+            << "<rad_vet>/vet_gd: " << msg << std::endl;
   std::exit(EXIT_FAILURE);
 }
 
@@ -205,38 +186,21 @@ void VlatFatal(const std::string &msg) {
 
 void RadiationVet::VetLatInit() {
   Mesh *pm = pmy_pack->pmesh;
-  // the cubed sphere runs vet_gd's own sweep; the vet_col_lat SC correction is wedge-only
-  if (pm->use_cubed_sphere && !vgd_on) {
-    VlatFatal("the cubed sphere: only through vet_gd; the vet_col_lat SC "
-              "correction is wedge-only");
-  }
   if (!sph_geom) {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
   }
-  // vet_gd takes a stretched theta and the full sphere through its node table;
-  // vet_col_lat refuses both
-  if (vgd_on && !pm->use_cubed_sphere) {
+  // a stretched theta and the full sphere take the node table
+  if (!pm->use_cubed_sphere) {
     vgd_pol = pm->use_polar_boundary;
     vgd_sth = pm->use_grid_stretch_theta || vgd_pol;
-  }
-  if (pm->use_polar_boundary && !vgd_sth) {
-    VlatFatal(std::string(vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)") +
-              " on the FULL sphere (mesh/use_polar_boundary) is not "
-              "implemented: use closure = vet_col without vet_gd / vet_col_lat");
   }
   // the SC upwind interpolation is bilinear in lateral INDEX space: exact only for
   // uniform lateral spacing (radial stretch is fine).  Refuse a theta stretch, the
   // Athena++ ratio keys, and any non-uniform built xx2f / xx3f (cs panel coordinates
   // are uniform by construction).
   {
-    const std::string who = vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)";
-    if (pm->use_grid_stretch_theta && !vgd_sth) {
-      VlatFatal(who + " needs a theta-UNIFORM mesh: mesh/use_grid_stretch_theta = true "
-                "(the SC upwind interpolation is bilinear in (theta, phi) index space; "
-                "only radial stretches are supported)");
-    }
     if (!vlat_rat_keys.empty()) {
-      VlatFatal(who + " needs a laterally UNIFORM mesh; this input sets" + vlat_rat_keys +
+      VlatFatal("needs a laterally UNIFORM mesh; this input sets" + vlat_rat_keys +
                 " (Athena++ ratio keys: AthenaK does not read them, its theta/phi grid "
                 "stays uniform -- remove them, or set 1)");
     }
@@ -265,13 +229,12 @@ void RadiationVet::VetLatInit() {
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%s cell widths range %.17g .. %.17g",
                       (a == 0) ? "x2 (theta)" : "x3 (phi)", dmin[a], dmax[a]);
-        VlatFatal(who + " needs a laterally UNIFORM mesh; the built grid has " + buf +
+        VlatFatal(std::string("needs a laterally UNIFORM mesh; the built grid has ") + buf +
                   " (the SC upwind interpolation is bilinear in (theta, phi) index "
                   "space; only radial stretches are supported)");
       }
     }
   }
-  if (vcol_axis_flux) {VlatFatal("needs vet_col_axis = radial");}
   auto &indcs = pm->mb_indcs;
   if (indcs.nx1 < 3) {VlatFatal("needs at least 3 cells along x1");}
   const int nmb = pmy_pack->nmb_thispack;
@@ -288,12 +251,7 @@ void RadiationVet::VetLatInit() {
   pbval_vs->SetVectorPairs(2, {});
   // follow <mesh>/cs_seam_blockend as pbval_u does
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
-  if (vgd_on) {VetGdInit(); return;}
-  // without vet_gd no sweep runs
-  if (global_variable::my_rank == 0) {
-    std::cout << "### NOTE: <rad_vet>/vet_col_lat = true has no effect without vet_gd"
-              << std::endl;
-  }
+  VetGdInit();
 }
 
 //----------------------------------------------------------------------------------------

@@ -1361,8 +1361,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   tau_ready = false;
   vet_col = false;
   vcol_sph = false;
-  vcol_axis_flux = false;
-  vcol_nc = vcol_np = vcol_nmu = vcol_every = 0;
   vcol_sq = false;
   vcol_qmin = vcol_qmax = 0.0;
   {std::string cl = pin->GetOrAddString("rad_vet","closure","m1");
@@ -1408,27 +1406,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (rad_vet_vetcol.cpp)
     eddington = false;
     vet_col = true;
-    vcol_nc = pin->GetOrAddInteger("rad_vet","vet_col_ncore",8);
-    vcol_np = pin->GetOrAddInteger("rad_vet","vet_col_nsub",1);
-    vcol_nmu = pin->GetOrAddInteger("rad_vet","vet_col_nmu",4);
-    // vet_every (alias vet_col_every)
-    vcol_every = pin->GetOrAddInteger("rad_vet",
-                                      VetKeyName(pin, "vet_every", {"vet_col_every"}), 1);
-    // vet_col_fk_min: lower clamp of f_K (restart files without it: 1/3)
-    vcol_fkmin = pin->GetOrAddReal("rad_vet","vet_col_fk_min",
-                                   global_variable::restart_run ? (1.0/3.0) : 0.0);
-    if (!(vcol_fkmin >= 0.0 && vcol_fkmin <= 1.0/3.0 + 1.0e-12)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/vet_col_fk_min must be in [0, 1/3]"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // vet_col_reflect_top (sp): with implicit_bc_x1max = reflect the formal solution
-    // mirrors the outgoing intensity at the top face (rad_vet_vetcol.cpp)
-    if (sph_geom) {
-      vcol_rtop = pin->GetOrAddBoolean("rad_vet","vet_col_reflect_top",
-                                       !global_variable::restart_run);
-    }
     // vet_col_surface_face (sp): acts with vet_col_surface_q and implicit_marshak_face =
     // linear (rad_vet.hpp)
     if (sph_geom) {
@@ -1440,32 +1417,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                    !global_variable::restart_run);
     vcol_qmin = pin->GetOrAddReal("rad_vet","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_vet","vet_col_surface_qmax",1.0);
-    {
-      // vet_source (alias vet_col_source), read by vet_sc too: relaxed_esc under the new
-      // default set (recipe::NewDefaults), else relaxed
-      const std::string vk = VetKeyName(pin, "vet_source", {"vet_col_source"});
-      if (!pin->DoesParameterExist("rad_vet", vk)) {
-        const bool nd = recipe::NewDefaults(pin);
-        pin->GetOrAddString("rad_vet", vk, nd ? "relaxed_esc" : "relaxed");
-        recipe::Log(std::string("<rad_vet>/vet_source = ") + (nd ? "relaxed_esc (default)"
-            : ("relaxed (restart input has no key: the old default)")));
-      }
-      std::string vs = pin->GetString("rad_vet", vk);
-    if (vs.compare("relaxed") == 0) {
-      vcol_srelax = true;
-    } else if (vs.compare("relaxed_esc") == 0) {
-      // relaxed with the cell's photon escape
-      vcol_srelax = true;
-      vcol_sesc = true;
-    } else if (vs.compare("gas") == 0) {
-      vcol_srelax = false;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/vet_col_source = '" << vs << "' not implemented "
-        << "(relaxed | relaxed_esc | gas)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    }
     if (pin->DoesParameterExist("rad_vet","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_vet","vet_source_noesrc");
     }
@@ -1514,29 +1465,15 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    std::string ax = pin->GetOrAddString("rad_vet","vet_col_axis","radial");
-    if (ax.compare("flux") == 0) {
-      vcol_axis_flux = true;
-    } else if (ax.compare("radial") != 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/vet_col_axis = '" << ax << "' not implemented "
-        << "(radial | flux)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // vet_col_lat (rad_vet_vetcol.cpp): every key read only when named
-    if (pin->DoesParameterExist("rad_vet","vet_col_lat")) {
-      vlat_on = pin->GetBoolean("rad_vet","vet_col_lat");
-    }
     // Athena++ x2rat / x3rat (not AthenaK keys) noted for VetLatInit
     for (const char *rk : {"x2rat", "x3rat"}) {
       if (pin->DoesParameterExist("mesh", rk) && pin->GetReal("mesh", rk) != 1.0) {
         vlat_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);
       }
     }
-    // vet_gd (rad_vet_vetgd.cpp): rides on the vet_col_lat interface
+    // vet_gd (rad_vet_vetgd.cpp)
     if (pin->DoesParameterExist("rad_vet","vet_gd")) {
       vgd_on = pin->GetBoolean("rad_vet","vet_gd");
-      if (vgd_on) {vlat_on = true;}
     }
     // default of a fresh start on spherical polar: a fixed set (vet_gd_rotate_dt = 0)
     if (vgd_on && ppack->pmesh->use_spherical_polar && !global_variable::restart_run &&
@@ -1819,41 +1756,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_vet","vet_gd_halo_ipc");
     }
-    if (vgd_on) vgd_replace = pin->GetOrAddBoolean("rad_vet","vet_gd_replace",
-        fix("vet_gd_replace", "true", "false"));
-    // vet_gd_tangential: full tensor by default
-    if (vgd_on) vgd_tan = pin->GetOrAddBoolean("rad_vet","vet_gd_tangential",vgd_tan);
-    if (vlat_on) {
-      // vet_col_lat_cut_thin (VetLatCsFinish)
+    // vet_col_lat_cut_thin (CleanRayCut)
+    if (vgd_on) {
       vlat_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
                                         global_variable::restart_run ? 0.0 : 1.0);
-      {
-        std::string so = pin->GetOrAddString("rad_vet","vet_col_lat_offdiag","operator");
-        if (so.compare("none") == 0 || so.compare("false") == 0) {
-          vlat_odm = 0;
-        } else if (so.compare("lagged") == 0 || so.compare("true") == 0) {
-          vlat_odm = 1;
-        } else if (so.compare("operator") == 0) {
-          vlat_odm = 2;
-        } else {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_vet>/vet_col_lat_offdiag = '" << so
-                    << "' (none | lagged | operator)" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-      }
-      // vet_col_lat_posfix = drop | lag (rad_vet.hpp vlat_posfix_lag)
-      if (pin->DoesParameterExist("rad_vet","vet_col_lat_posfix")) {
-        std::string sp = pin->GetString("rad_vet","vet_col_lat_posfix");
-        if (sp.compare("lag") == 0) {
-          vlat_posfix_lag = true;
-        } else if (sp.compare("drop") != 0) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_vet>/vet_col_lat_posfix = '" << sp
-                    << "' (drop | lag)" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-      }
     }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

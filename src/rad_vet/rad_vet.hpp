@@ -806,17 +806,8 @@ class RadiationVet {
   void Time2Restore(Driver *pdrive);
 
   bool t2_inprobe = false;      // inside a helper solve (Time2RotCorrect)
-  // closure = vet_col under hesdirk2, time2_vet_col: lag (D^n) | predict (one build at
-  // U^n + dt K1) | rebuild (predict for stage 1, a build at Y1 for stage 2) | extrap
-  // (diagnostic: D^n + r (D^n - D^{n-1}), not in the restart)
-  int t2_vcmode = 0;
-  // cs_vertex_mono (cubed sphere): two-point lateral transport near the 8 cube vertices.
-  // Lateral faces with a cell within cs_vertex_mono_n of a vertex take the two-point
-  // gradient (no skew cross term), seam faces the foot values (no midpoint quadratic),
-  // and D_r,lat = 0 within cs_vertex_mono_n + 1. Conservative per face, local.
+  bool t2_x2old = false;        // a restart's time2_vet (time2_vet_col) = extrap2
   Real impl_pred_tcap = 2.0;   // implicit_predictor_tcap
-  bool cs_vtx_mono = false;    // default on for cs geometry
-  int cs_vtx_n = 1;
   // implicit_pos_floor_cons (needs implicit_pos_floor): the E floor creates no energy.
   // The raise is paid by the cell's gas above its floor, then by the radiation above
   // e_floor of the same radial column, nearest cells first (donor slopes and
@@ -833,11 +824,6 @@ class RadiationVet {
   DvceArray4D<Real> pgc_def;      // (m,k,j,i) uncovered gas raise x volume
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) uncovered floor energy of the cell
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
-  // time2_vet_col_source = state: the predict/rebuild build takes its VET source from the
-  // predicted state itself (vet_col_source = gas); relaxed (default)
-  bool t2_vcsrc = false;
-  bool t2_vcsbl = false;       // time2_vet_col_source = blend
-  void Time2VetSourceInit(ParameterInput *pin, const bool act, const bool col);
   // time2_pred_cap: predicted P = U^n + theta dt K1 with theta = min(1, cap/r), r the
   // relative change of E and eint (0 = off)
   Real t2_pcap = 0.0;
@@ -1502,16 +1488,6 @@ class RadiationVet {
   bool vet_col{};              // closure = vet_col (default false)
   bool tau_ready{};            // VetColInit has run
   bool vcol_sph{};             // spherical rays (sp) or plane-parallel (Cartesian)
-  bool vcol_axis_flux{};       // vet_col_axis = flux: n = the M1 cell flux direction
-  int vcol_nc{}, vcol_np{}, vcol_nmu{}, vcol_every{};
-  // vet_col_fk_min: lower bound of f_K = K/J, 1/3 or 0 (D = diag(f, (1-f)/2, (1-f)/2)
-  // stays realizable for 0 <= f <= 1)
-  Real vcol_fkmin = 1.0/3.0;
-  // vet_source = relaxed | relaxed_esc | gas (alias vet_col_source): checked and echoed
-  // only (the clean rays take the state's own source)
-  bool vcol_srelax = true;
-  bool vcol_sesc = false;
-  Real vcol_sx0 = 1.0;         // time2_vet_col_source_x0 (blend)
   // vet_scatter: electron scattering, the opacity split (otab.scat, opac VET_OP_S) and
   // VetScatterMix; vscat_form 1 ma (Jiang 2021 eq. 6), 2 absorption
   bool vscat = false;
@@ -1519,9 +1495,6 @@ class RadiationVet {
   // vet_scatter_j: false current (J = E^n / iterate, absorption form only), true
   // relaxed (J = E*, the end-of-step pair of B*)
   bool vscat_jrel = false;
-  // vet_col with a reflecting outer x1: a second sweep with I_in = b/(1 - a) per ray
-  // (b the vacuum-top outgoing intensity, a the round-trip transmission)
-  bool vcol_rtop = false;
   // vet_col_surface_face (sp, with vet_col_surface_q and implicit_marshak_face = linear):
   // outer face flux c H(face) (E/J)_face with E, J extrapolated linearly in r^2 (second
   // order). vcol_jca, vcol_jcb: top-face weights (VetSphMarshakCoef), vcol_jcap the
@@ -1536,13 +1509,9 @@ class RadiationVet {
   void VetColReport();
 
   // ---- the source (ln chi, ln S) of the vet_gd rays (rad_vet_vetcol.cpp)
-  bool vlat_on = false;        // vet_col_lat
   // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetLatInit
-  // refuses them under vet_col_lat / vet_gd
+  // refuses them
   std::string vlat_rat_keys;
-  // vet_col_lat_offdiag (no effect)
-  int vlat_odm = 2;
-  bool vlat_posfix_lag = false;   // vet_col_lat_posfix (no effect)
   int vlat_icut = 0;           // first shell of the sweep (CleanRayCut)
   Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
                                // this (0 off)
@@ -1557,16 +1526,10 @@ class RadiationVet {
                       MeshBoundaryValuesCC *pb);
 
   // ---- vet_gd (rad_vet_vetgd.cpp): Eddington tensor from an SC sweep along globally
-  // fixed (Cartesian) HEALPix directions, through the vet_col_lat interface (sets
-  // vlat_on); sp wedge / cubed sphere
+  // fixed (Cartesian) HEALPix directions; sp wedge / cubed sphere
   bool vgd_on = false;         // vet_gd
   // HEALPix nside of a set that names none (12 nside^2 directions)
   static constexpr int vgd_nside = 3;
-  // vet_gd_tangential: sp the lagged VetSphTan term; cs Q in LAT4, LAT5 about the cell
-  // tangent frame (VetCsQab)
-  bool vgd_tan = true;
-  bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
-                               // first gd shell, q from the gd top cell)
   int vgd_n = 0;
   int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
   double vgd_zper = 0.5*M_PI;  // z-rotation period of the set (VetGdInit)
@@ -1595,10 +1558,8 @@ class RadiationVet {
   void VetGdRotStep();
   // vet_gd_rotate_slope = correct: a correction solve (Time2RotCorrect) of size
   // dt_c = vet_gd_rotate_slope_frac x dt from U^n with the new set turns K1 into
-  // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n); vet_gd_rotate_slope_reuse: the
-  // stage-1 solve keeps that closure build
+  // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n)
   bool t2_rotcorr = false;
-  bool vgd_rot_creuse = true;
   Real vgd_rot_cfrac = 0.0;
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);

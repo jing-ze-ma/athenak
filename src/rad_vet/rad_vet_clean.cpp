@@ -382,10 +382,9 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"time/dt_retry_t2_be", nullptr}, {"time/dt_retry_max", ""},
     {"rad_vet/time2_accept_fallback", ""}, {"rad_vet/time2_posfix*", ""},
     {"rad_vet/time2_inc_kecap", ""}, {"rad_vet/time2_pred_cap", ""},
-    // implicit solve's position limiters, Zalesak round cap, vet_col lateral posfix and
-    // x2 vet fields: none
+    // implicit solve's position limiters, Zalesak round cap and x2 vet fields: none
     {"rad_vet/time2_adm_poslim", ""}, {"rad_vet/time2_dtr_poslim", ""},
-    {"rad_vet/zalesak_cap_rounds", ""}, {"rad_vet/vet_col_lat_posfix", ""},
+    {"rad_vet/zalesak_cap_rounds", ""},
     {"rad_vet/time2_vet_x2_fields", ""},
     // cell-layout keys: removed
     {"rad_vet/clean_alpha", "x"}, {"rad_vet/clean_recon", "x"},
@@ -437,6 +436,18 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_gd_hr_split", "=none"}, {"rad_vet/vet_gd_hr_split_*", ""},
     {"rad_vet/vet_gd_hr_latfit", "=-1"}, {"rad_vet/vet_gd_hr_latfit_*", ""},
     {"rad_vet/sp_face_sync", "!"}, {"rad_vet/sp_face_sync_relax", ""},
+    // the column formal solution (vet_col without vet_gd), its lateral correction and
+    // the relaxed source of lagged builds: no effect; only the values the rays had
+    {"rad_vet/vet_col_ncore", ""}, {"rad_vet/vet_col_nsub", ""},
+    {"rad_vet/vet_col_nmu", ""}, {"rad_vet/vet_col_fk_min", ""},
+    {"rad_vet/vet_col_reflect_top", ""}, {"rad_vet/vet_col_axis", "=radial"},
+    {"rad_vet/vet_col_lat", ""}, {"rad_vet/vet_col_lat_offdiag", ""},
+    {"rad_vet/vet_col_lat_posfix", ""}, {"rad_vet/vet_every", "=1"},
+    {"rad_vet/vet_col_every", "=1"}, {"rad_vet/vet_source", ""},
+    {"rad_vet/vet_col_source", ""}, {"rad_vet/vet_gd_replace", ""},
+    {"rad_vet/vet_gd_tangential", ""}, {"rad_vet/vet_gd_rotate_slope_reuse", ""},
+    {"rad_vet/time2_vet_source*", ""}, {"rad_vet/time2_vet_col_source*", ""},
+    {"rad_vet/cs_vertex_mono*", ""},
     // old solver's diagnostics and vet_col build keys: no effect
     {"rad_vet/report_newton_fb", ""}, {"rad_vet/dbg_t2_admiss", ""},
     {"rad_vet/dbg_opac_part", ""}, {"rad_vet/doppler_vel_dbg", ""},

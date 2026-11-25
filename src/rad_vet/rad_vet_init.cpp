@@ -334,16 +334,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_predictor_order must be 1 or 2");
   }
   }
-  // cs_vertex_mono: two-point lateral faces near the 8 cube vertices (cs_vertex_mono_n)
-  cs_vtx_mono = pin->GetOrAddBoolean("rad_vet","cs_vertex_mono",true) && cs_geom;
   impl_pred_tcap = 1.1;
   impl_pred_tcap = pin->GetOrAddReal("rad_vet","implicit_predictor_tcap",impl_pred_tcap);
-  if (pin->DoesParameterExist("rad_vet","cs_vertex_mono_n")) {
-    cs_vtx_n = pin->GetInteger("rad_vet","cs_vertex_mono_n");
-    if (cs_vtx_n < 0) {
-      ImplFatal("<rad_vet>/cs_vertex_mono_n must be >= 0");
-    }
-  }
   // E floor raise: implicit_pos_floor_cons takes the uncovered part from the column's
   // radiation; implicit_pos_gas_cons / implicit_pos_floor_gas_keep bound the gas share
   impl_pos_flr_cons =
@@ -361,11 +353,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     std::cout << "<rad_vet> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk
               << ": the E floor's raise leaves the gas at least that share of its eint"
               << std::endl;
-  }
-  if (cs_vtx_mono && global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n
-              << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
-              << "D_r,lat = 0 within " << cs_vtx_n + 1 << ")" << std::endl;
   }
   // implicit_gas_src: gas source of the coupled solve (conservative2: csk1 in restart)
   {
