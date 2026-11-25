@@ -204,3 +204,5 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 23:53 02-03: hgn_chk4 -> IDLE
 - 11-24 23:55 02-03: IDLE -> hgn_HGN
 - 11-24 23:55 02-09: IDLE -> hgn_HGN
+- 11-24 23:59 02-03: hgn_HGN -> hgn_HGO
+- 11-24 23:59 02-09: hgn_HGN -> hgn_HGO
