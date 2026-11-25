@@ -1063,9 +1063,13 @@ void RadiationVet::CleanRingMoments() {
   }
   const int64_t pl = cln_fvblk[ord[ns - 1]] - (b - nk + 1);
   const int ol = (cln_ring != 1) ? -1 : ((pl == nr) ? 0 : ((pl == nk) ? 1 : -1));
-  // (aliases cln_csy where it fits: rewritten before every read, dead across a build)
+  // (over the extrap history's free set, cln_mc while it holds none, or cln_csy off the
+  // arena, where they fit: rewritten before every read, dead across a build)
   const int nrl = ((ol < 0) ? 2 : 1)*nf;
-  if (cln_csy.span() >= static_cast<std::size_t>(nmb)*nrl*c3*c2*c1) {
+  const std::size_t nrs = static_cast<std::size_t>(nmb)*nrl*c3*c2*c1;
+  if (CleanExtrapSx() && !cln_have_c && cln_mc.span() >= nrs) {
+    cln_rl = DvceArray5D<Real>(cln_mc.data(), nmb, nrl, c3, c2, c1);
+  } else if (cln_csy.span() >= nrs && !MemArenaIn(cln_csy.data())) {
     cln_rl = DvceArray5D<Real>(cln_csy.data(), nmb, nrl, c3, c2, c1);
   } else if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != nrl) {
     Kokkos::realloc(cln_rl, nmb, nrl, c3, c2, c1);
