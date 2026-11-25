@@ -2701,9 +2701,13 @@ void RadiationVet::CleanStagBracket() {
       }
       // clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
       // tilted into the face half ranges in proportion to their sizes (the shrinking one
-      // at most to 0), per J of the donor (at least clean_ray_min E_old), g+ in [0, 1],
-      // g- in [-1, 0]: the thin share w c (g+ E_L + g- E_R) is within [-c E_R, c E_L],
-      // realisable by construction, no DG.  A flux the cap cuts is carried by a higher E.
+      // at most to 0), per J of the donor, g+ in [0, 1], g- in [-1, 0]: the thin share
+      // w c (g+ E_L + g- E_R) is within [-c E_R, c E_L], realisable by construction, no
+      // DG.  A flux the cap cuts is carried by a higher E.  Where the rays hold less than
+      // clean_ray_min E_old (a ray hole: the cell closure is the one without rays) the
+      // missing share of J takes the realisable half ranges, so g+- tend to them as J -> 0
+      // and the hole's E streams away (with hp/(clean_ray_min E_old) alone g -> 0: its
+      // flux would not depend on its E, and E, F keep changing pass by pass).
       if (thf) {
         const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
         const Real dd = fy - (hl + hr), fr = hl + hr + dd, s = hl - hr;
@@ -2713,8 +2717,9 @@ void RadiationVet::CleanStagBracket() {
         const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
         const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-        const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0),
-                   gm = fmax(hm/fmax(jr, rmn*er), -1.0);
+        const Real dl = fmax(jl, rmn*el), dr = fmax(jr, rmn*er);
+        const Real gp = fmin((hp + (dl - jl)*x.fc[dir](m,CLF_HP,k,j,i))/dl, 1.0),
+                   gm = fmax((hm + (dr - jr)*x.fc[dir](m,CLF_HM,k,j,i))/dr, -1.0);
         if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = gp;
         if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = gm;
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
