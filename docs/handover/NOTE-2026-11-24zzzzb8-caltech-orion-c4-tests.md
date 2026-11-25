@@ -52,3 +52,7 @@
 - bsg: 2026-11-24 17:48:37 rc=0 (srun) ended: Terminating on cycle limit wall=130 s CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
 - m35zams: 2026-11-24 17:49:40 rc=0 (srun) ended: Terminating on cycle limit wall=63 s CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
 - m35mms: 2026-11-24 17:51:39 rc=0 (srun) ended: Terminating on cycle limit wall=119 s CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+
+## Wording correction (caltech): c4 vs c1 preflights of bsg, M35ZAMS, m35mms
+
+Identical PRINTED hst values in all 101 rows (cycles 0-100) for each star; CW / FATAL / inf / DT_RETRY 0. No field, dump or restart comparison was made, so this is not a statement of bitwise identity of the states, and it says nothing beyond cycle 100. Any "bitwise c1" or "the cure does nothing on these stars" from me is withdrawn in favour of this sentence.
