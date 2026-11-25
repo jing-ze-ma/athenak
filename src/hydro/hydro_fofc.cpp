@@ -818,6 +818,46 @@ Real DflSpec(const int q, const DvceArray5D<Real> &u, const DvceArray5D<Real> &w
 }  // namespace
 
 //----------------------------------------------------------------------------------------
+//! \fn void Hydro::DfloorFluxInit
+//! \brief the limiter's arrays and exchanges (first use)
+
+void Hydro::DfloorFluxInit() {
+  auto *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng, nmb = pmy_pack->nmb_thispack;
+  const bool md = pm->multi_d, td = pm->three_d, cs = pm->use_cubed_sphere;
+  const int n1 = indcs.nx1 + 2*ng, n2 = md ? indcs.nx2 + 2*ng : 1;
+  const int n3 = td ? indcs.nx3 + 2*ng : 1;
+  if (dfl_th.extent_int(0) == nmb) return;
+  if (pm->multilevel || nhydro != 5) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << "<hydro>/"
+              << "dfloor_flux_limit: uniform mesh, adiabatic hydro only" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::realloc(dfl_th, nmb, 1, n3, n2, n1);
+  Kokkos::realloc(dfl_thc, nmb, 1, 1, 1, 1);
+  pbval_dfl->InitializeBuffers(1);
+  if (cs) {   // the panel-seam faces (bits: x2 lo / hi, x3 lo / hi)
+    pbval_dfs->InitializeBuffers(5);
+    pdfl_fs = new DvceFaceFld5D<Real>("dfl_fs", nmb, 5, n3, n2, n1);
+    Kokkos::realloc(pdfl_fs->x1f, nmb, 5, 1, 1, 1);
+    Kokkos::realloc(dfl_sm, nmb);
+    auto hm = Kokkos::create_mirror_view(dfl_sm);
+    const int nb_[4] = {8, 12, 24, 28};
+    for (int m = 0; m < nmb; ++m) {
+      hm(m) = 0;
+      for (int q = 0; q < 4; ++q) {
+        const auto nb = pmy_pack->pmb->nghbr.h_view(m, nb_[q]);
+        if (nb.gid >= 0 && nb.panel != pmy_pack->pmb->mb_panel.h_view(m)) {
+          hm(m) |= (1 << q);
+        }
+      }
+    }
+    Kokkos::deep_copy(dfl_sm, hm);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void Hydro::DfloorFluxLimit
 //! \brief <hydro>/dfloor_flux_limit: the stage's outflows of every cell are scaled so
 //! that the RK update cannot take rho below dfloor (inflows ignored, so the bound holds
@@ -834,39 +874,10 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
   auto *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke, ng = indcs.ng;
+  const int ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmy_pack->nmb_thispack;
   const bool md = pm->multi_d, td = pm->three_d, cs = pm->use_cubed_sphere;
-  const int n1 = indcs.nx1 + 2*ng, n2 = md ? indcs.nx2 + 2*ng : 1;
-  const int n3 = td ? indcs.nx3 + 2*ng : 1;
-  if (dfl_th.extent_int(0) != nmb) {
-    if (pm->multilevel || nhydro != 5) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << "<hydro>/"
-                << "dfloor_flux_limit: uniform mesh, adiabatic hydro only" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    Kokkos::realloc(dfl_th, nmb, 1, n3, n2, n1);
-    Kokkos::realloc(dfl_thc, nmb, 1, 1, 1, 1);
-    pbval_dfl->InitializeBuffers(1);
-    if (cs) {   // the panel-seam faces (bits: x2 lo / hi, x3 lo / hi)
-      pbval_dfs->InitializeBuffers(5);
-      pdfl_fs = new DvceFaceFld5D<Real>("dfl_fs", nmb, 5, n3, n2, n1);
-      Kokkos::realloc(pdfl_fs->x1f, nmb, 5, 1, 1, 1);
-      Kokkos::realloc(dfl_sm, nmb);
-      auto hm = Kokkos::create_mirror_view(dfl_sm);
-      const int nb_[4] = {8, 12, 24, 28};
-      for (int m = 0; m < nmb; ++m) {
-        hm(m) = 0;
-        for (int q = 0; q < 4; ++q) {
-          const auto nb = pmy_pack->pmb->nghbr.h_view(m, nb_[q]);
-          if (nb.gid >= 0 && nb.panel != pmy_pack->pmb->mb_panel.h_view(m)) {
-            hm(m) |= (1 << q);
-          }
-        }
-      }
-      Kokkos::deep_copy(dfl_sm, hm);
-    }
-  }
+  DfloorFluxInit();
   const Real g0 = pdrive->gam0[stage-1], g1 = pdrive->gam1[stage-1];
   const Real bdt = pdrive->beta[stage-1]*pm->dt;
   const Real dfl = peos->eos_data.dfloor;
