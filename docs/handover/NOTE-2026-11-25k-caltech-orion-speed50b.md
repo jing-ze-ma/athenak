@@ -45,3 +45,18 @@ Traceback (most recent call last):
     f = glob.glob(S + a + '/*.user.hst'); g = glob.glob(S + a + '/*.hydro.hst'); H[a] = [[l for l in open(x) if l.strip() and l[0] != '#'] for x in (f + g)]
 NameError: name 'H' is not defined
 srun: error: hpc-sm-02-03: task 0: Exited with exit code 1
+
+## m35mms, 7b4141e1b against 6d20f1337 (ABBA, 60 cycles, 02-16, own keys rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=4 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5; ndiag=1 so that every cycle is timed)
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+| BASE1 | 58 | 1.0673 | 1.0636 | 1.025/1.141 | 12.007/12.007 | 61.3 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=94 s CW 0 FATAL 0 |
+| NEW1 | 58 | 1.0684 | 1.0617 | 1.027/1.146 | 12.007/12.007 | 61.3 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=99 s CW 0 FATAL 0 |
+| NEW2 | 58 | 1.0671 | 1.0600 | 1.027/1.146 | 12.007/12.007 | 61.3 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=97 s CW 0 FATAL 0 |
+| BASE2 | 58 | 1.0670 | 1.0599 | 1.028/1.140 | 12.007/12.007 | 61.3 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=98 s CW 0 FATAL 0 |
+- base (both arms) mean 1.0672 median 1.0612; new mean 1.0677 median 1.0616; new / base mean 1.0005, median 1.0003; base arms 1.0673 vs 1.0670, new arms 1.0684 vs 1.0671 (mean)
+- NEW1 user.hst against BASE1: 60 / 60 rows, printed-bitwise
+- NEW1 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
+- NEW2 user.hst against BASE1: 60 / 60 rows, printed-bitwise
+- NEW2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
+- BASE2 user.hst against BASE1: 60 / 60 rows, printed-bitwise
+- BASE2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
