@@ -95,3 +95,5 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 20:33 01-17: IDLE -> mltp_p1
 - 11-24 20:35 01-17: mltp_p1 -> mltp_p100
 - 11-24 20:41 01-17: mltp_p100 -> IDLE
+- 11-24 20:43 02-03: jw_MG2 -> b_relesuite jw_MG2
+- 11-24 20:43 02-09: jw_NM2 -> b_rele jw_NM2
