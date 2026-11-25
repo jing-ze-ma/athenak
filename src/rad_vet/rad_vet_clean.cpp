@@ -2613,7 +2613,10 @@ int RadiationVet::CleanStagRealizable() {
 //! the shrinking one at most to 0.  Linear in E with upwind signs, so the M-matrix holds
 //! for any E.  g+- are not capped at 1 (a beam edge's face flux can exceed c J_donor).
 //! Cubed sphere: a MeshBlock's high x2, x3 faces take the rays' flux from its last cell
-//! (CLN_FH).  clean_stag_rayratio: J -> E in Phi and the half ranges, F_ray ->
+//! (CLN_FH).  clean_stag_thinf takes the flux of the cells' half ranges there (the face
+//! sum with fixed sets): the two MeshBlocks of a face mix or extrapolate its sum with
+//! their own cells' weights, and the write-back's face tie would move the difference
+//! into one side's E.  clean_stag_rayratio: J -> E in Phi and the half ranges, F_ray ->
 //! (F_ray/J_d) E_d of the upwind donor d (no bracket where J_d <= e_floor).
 
 void RadiationVet::CleanStagBracket() {
@@ -2627,6 +2630,7 @@ void RadiationVet::CleanStagBracket() {
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf;
   const bool hct = cln_hctau;
+  const bool lat = thf && pmy_pack->pmesh->use_cubed_sphere;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
@@ -2684,6 +2688,9 @@ void RadiationVet::CleanStagBracket() {
       // smooth or opaque regions the interpolation; a convex blend, single-valued per
       // face.
       Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
+      if (lat && dir > 0) {
+        fy = x.fc[dir](m,CLF_HP,k,j,i)*jl + x.fc[dir](m,CLF_HM,k,j,i)*jr;
+      }
       if (hct && (dir == 0 || !(x.sph || x.cub))) {
         const int il = i - di;
         auto hc = [&](const int kk, const int jj, const int ii) {
