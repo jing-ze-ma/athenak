@@ -50,8 +50,9 @@ one normal component per face. The face flux of a stage is a blend of
 **Time integration.** IMEX. The hydrodynamics is AthenaK's explicit Heun (`rk2`) integrator,
 unchanged. Radiation transport and the gas-radiation exchange are implicit, with Alexander's
 two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); each stage sees the gas at the
-same time as the explicit part, so the IMEX scheme is second order where the gas-radiation
-exchange is not stiff (see "Order of accuracy" in section 2). Backward Euler is the
+same time as the explicit part, and the hydro's stage-2 flux state takes the exchange with
+the slope of the last step and of this stage (`time2_gtime_slope`), so the IMEX scheme is
+second order also where the exchange is stiff. Backward Euler is the
 fallback (first step, or a step whose stage failed). The radiation does not limit the
 stability of the step; with `<hydro>/rad_signal_speed_diff = true` (production) it enters the
 hydro time step only where it is trapped: the radiation part of the signal speed is weighted by
@@ -99,7 +100,7 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 | linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
-| order | successive orders of the finest pair: 1.8 (time ladder of deck D), 1.9-2.2 (grid + time ladder of a linear wave); first order in time where the gas-radiation exchange is stiff |
+| order | successive orders of the finest pair: 1.8 (time ladder of deck D), 1.9-2.2 (grid + time ladder of a linear wave); 2 also where the gas-radiation exchange is stiff (`order_stiff`) |
 | radiation-acoustic waves | phase speed and damping right in every trapping regime |
 | diffusion limit | the right diffusion coefficient at any cell optical depth (asymptotic preserving) |
 | moving media | radiation advected with the gas; comoving diffusion Galilean invariant |
@@ -258,13 +259,15 @@ The face terms are second order in space by design. What the tests measure:
   1.79, 2.19 (E) and 1.50, 1.94 (v); the finest pair differs by 4.49e-3 (E) and 1.11e-2 (v).
 
 The exchange is not stiff in either deck. Where it is stiff, the production tableau
-(`time2_tableau = sdirk2`) is first order in time: on a radiation-acoustic wave (64 cells,
-dt halved) the successive orders of E are 1.08, 1.04 at x = 100 and fall 1.51, 1.34, 1.20 at
-x = 1 and at x = 10 (`time2_tableau = hesdirk2`: 2.0 in all three). These are from a study on
-this release, not a suite test.
+(`time2_tableau = sdirk2`) is second order with `time2_gtime_slope` (the default on a fresh
+run; `order_stiff`, a trapped radiation-acoustic wave) and first order without it: on a
+radiation-acoustic wave (64 cells, dt halved) the successive orders of E without it are 1.08,
+1.04 at x = 100 and fall 1.51, 1.34, 1.20 at x = 1 and at x = 10 (`time2_tableau = hesdirk2`:
+2.0 in all three; from a study on this release, not a suite test).
 
 Test: `order_time` (order of the finest pair >= 1.7), `order_space` (linear
-radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7).
+radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7), `order_stiff` (trapped
+radiation-acoustic wave, time step halved, finest pair >= 1.7).
 
 ### Radiation-acoustic waves in every trapping regime
 

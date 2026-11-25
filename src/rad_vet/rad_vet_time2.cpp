@@ -140,15 +140,22 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
         std::cout << "<rad_vet> time2_tableau = sdirk2: no explicit K1, Heun hydro"
                   << (t2_gtm ? "" : ", time2_gtime_mom = false") << std::endl;
       }
-      // time2_gtime_slope (read only when named): Time2GasTime's slope-limited exchange
-      if (pin->DoesParameterExist("rad_vet", "time2_gtime_slope")) {
-        t2_gts = pin->GetBoolean("rad_vet", "time2_gtime_slope");
-        if (t2_gts && !t2_gtm) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_vet>/time2_gtime_slope needs time2_gtime_mom = "
-                    << "true" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
+      // time2_gtime_slope: Time2GasTime's slope-limited exchange.  Default true on a
+      // fresh run (with time2_gtime_mom), false on a restart whose file lacks the key
+      const bool nm = pin->DoesParameterExist("rad_vet", "time2_gtime_slope");
+      t2_gts = pin->GetOrAddBoolean("rad_vet", "time2_gtime_slope",
+                                    t2_gtm && !global_variable::restart_run);
+      if (t2_gts && !t2_gtm) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_vet>/time2_gtime_slope needs time2_gtime_mom = "
+                  << "true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_vet> time2_gtime_slope = " << (t2_gts ? "true" : "false")
+                  << (nm ? "" : (global_variable::restart_run ?
+                                 " (not in the restart file)" : " (default)"))
+                  << std::endl;
       }
     }
     if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {  // no mhd path
