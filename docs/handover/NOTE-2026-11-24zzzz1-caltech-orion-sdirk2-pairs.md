@@ -269,3 +269,11 @@ max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36
 - **FAIL: floor_pay on 9.917e+32 > 1.2 x off 3.280e+32** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S5Goff: 2026-11-24 16:17:21 rc=0 wall=964 s CW 0 FATAL 0 inf 0 DT_RETRY 0 | S5Gon: 2026-11-24 16:17:13 rc=0 wall=956 s CW 0 FATAL 0 inf 0 DT_RETRY 0
 - ef<=0 per 50 cycles (post-cap) off/on: 0 ; 0 ; 
+
+## S5G matched-time and floor_pay remarks (sdorder3)
+- S5G on vs off at matched time (300 rows): L_top rel end 5.126e-05 max 1.790e-04
+- S5G on vs off at matched time (300 rows): L_bot rel end -1.293e-06 max 1.258e-05
+- S5G on vs off at matched time (300 rows): KE_int rel end -3.390e-05 max 3.390e-05
+- model time advanced: off 9848.7 s on 11190.8 s
+- **S5G FAIL: floor_pay on 9.9e32 vs off 3.28e32 (ratio 3.02, limit 1.2)**; the only failed rule. The payment sits in the first 100 cycles of each arm (the arms diverge early): off 2.04e32 (c0-50) + 1.24e32 (c50-100); on 5.8e26 + 9.92e32. After cycle 100 the on arm pays 1e25-2e25 per 50 cycles, 40-400x less than off (4-9e26). One cell event carries the on arm's payment; whether the rule should count it is yours. S3G passes (0.96); S5F passed on sdorder2 (1.5e-5).
+- dt mean on / off = 37.35 / 32.88 (+13.6 %), so the last-common-row L_top of -6.3e-3 compares different model times; the matched-time numbers are above.
