@@ -60,7 +60,7 @@ fast-relaxation thermal equilibrium is `thermal_eq`). L1 is sum |q - q_exact| / 
 
 | test | deck | what | criterion |
 |---|---|---|---|
-| `idort_beams` | `idort_beams` | two beams, 4 cells wide, crossing in vacuum at +-45 deg (256 x 64, x2 periodic, ring of 4 rays): E vs the exact straight beams (cell averages); `lum_top` the energy of the row 3 cells below x1max vs exact; `flux_err` the x1 energy flux (`vet_phi1`) through every row vs the injected flux | L1 and `lum_top` within 5 % of 0.2015 and 1.204 (regression references, see below); `flux_err` <= 1e-5 |
+| `idort_beams` | `idort_beams` | two beams, 4 cells wide, crossing in vacuum at +-45 deg (256 x 64, x2 periodic, ring of 4 rays): E vs the exact straight beams (cell averages); `lum_top` the energy of the row 3 cells below x1max vs exact; `flux_err` the x1 energy flux (`vet_phi1`) through every row vs the injected flux | L1 and `lum_top` within 5 % of 0.1772 and 1.193 (regression references, see below); `flux_err` <= 1e-5 |
 | `idort_beams_mb` | `idort_beams` | the beams on 4 MeshBlocks vs 1: along x2 in tile mode (`layout_tile = 16`), along x1 in block mode | tile x2: identical; block x1: largest difference <= 1e-8 |
 | `idort_shadow`, `idort_shadow_gl` | `idort_shadow*` | two beams at +-15 deg past an opaque ellipse (128 x 64; ring of 12 rays, or the general 8 x 32 set with the beams snapped to its rays): E vs the exact attenuated beams | L1 within 5 % of 0.0138 and 0.0126 |
 | `idort_cylinder` | `idort_cylinder` | homogeneous emitting cylinder (rho kappa = 10, a T^4 = 1) in vacuum, 128 x 128: E inside and outside, the energy flux Phi_x (`vet_phi1`, `F_out`) and the face momentum F_x (`vet_f1`, `FH_out`) outside along y = 0 vs the exact transport solution (`ref/idort_cylinder_exact.npz`) | each L1 within 5 % of 5.3e-4, 0.011, 0.0116, 0.203 |
@@ -72,12 +72,12 @@ fast-relaxation thermal equilibrium is `thermal_eq`). L1 is sum |q - q_exact| / 
 (`ref/idort_cylinder_exact.npz`, x > 0 on the 128-cell grid) is the transport integral over 64
 Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
 - **Beams.** The 4-cell beams stay straight, at their angle and 0.8 cells wider at half maximum
-  than the exact ones, but carry 1.20 x the exact energy (`lum_top`): the cap of the streaming
+  than the exact ones, but carry 1.19 x the exact energy (`lum_top`): the cap of the streaming
   share at the beam edges. They cross and go on: the field differs from the sum of the two
   single-beam fields by more than 0.05 E_b only in 48 of the 256 rows, around the crossings
   (1.6 % of the energy; the largest E is 1.13 x the exact). The excess falls as the beam
-  widens: 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells (L1 0.78, 0.39, 0.20, 0.11). Both are
-  regression references. The energy flux through every row equals the injected flux to 6e-8
+  widens: 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells (L1 0.78, 0.39, 0.20, 0.11; before the
+  ray-hole fix of the thin share). Both are regression references. The energy flux through every row equals the injected flux to 6e-8
   (`flux_err`).
 - **Cylinder flux.** E outside the cylinder is within 1.1 % of exact transport and the
   energy flux Phi (`F_out`, `vet_phi1`, the flux the method paper measures) within 1.2 %
