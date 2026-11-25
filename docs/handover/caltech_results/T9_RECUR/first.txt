@@ -1,0 +1,7 @@
+run | first t with L_top/L_in > 1.1 / > 2.0 (t > 1e5 s) | first t dt < 48.4 (t > 1e5) | max L_top/L_in (t > 1e5) at t | max KE_int at t | last t  [runs starting at t < 1e5 and reaching 4e5]
+prod_fresh_1121b/t9l62 | 3.2404e+05 / 3.9967e+05 | 4.4643e+05 | 2.7184 at 4.5361e+05 | 1.7896e+44 at 4.9320e+05 | 1.6740e+06
+prod_ia9_1123/t9l62 | 3.2184e+05 / 3.9521e+05 | 4.4493e+05 | 2.7234 at 4.5248e+05 | 1.7395e+44 at 4.7582e+05 | 4.7582e+05
+prod_ia11_1123/t9l62 | 3.2162e+05 / 3.9493e+05 | 4.4451e+05 | 2.7243 at 4.5246e+05 | 1.8079e+44 at 4.8453e+05 | 4.8511e+05
+prod_rc3_1124/t9l62 | 3.2162e+05 / 3.9493e+05 | 4.7147e+05 | 2.7241 at 4.5242e+05 | 1.7985e+44 at 4.9400e+05 | 6.7073e+05
+
+old-scheme / clean long run prod_fresh_1121b: which chunk wrote the surviving rows is not marked in the hst; chunks.txt is copied
