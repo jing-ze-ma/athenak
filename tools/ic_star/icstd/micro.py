@@ -1,7 +1,7 @@
 """Microphysics of the standard IC column (tools/ic_star).
 
 Numerically IDENTICAL (same expressions, same operation order) to the AG Car builders:
-  * TableEOS  = make_ic_mlt_star_ge.TableEOS (Viper lbv_1008/agcar/geos/scripts; the code's
+  * TableEOS  = make_ic_mlt_star_ge.TableEOS (the code's
     gas-only general-EOS table dump, bicubic RectBivariateSpline of log10 e/rho and log10 p/rho,
     (log T, log rho) CLAMPED to the dumped grid, clamp counter);
   * read_ross = the star_vet table reader + the pgen's star_opac_logd_min extension

@@ -1,8 +1,7 @@
 """Deck block (athinput fragment) for one standard IC, tools/ic_star.
 
 Emits every star/IC key and the IC-chain/background keys of the AG Car E1 standard
-(/raven/ptmp/jinma/overlap_1015/decks/e1_prod_rol2u.athinput md5 552f8769).  Keys NOT emitted
-(they are the run's, not the star's): the radial grid (nx1, f_stretch_*), the <rad_vet> solver
+deck.  Keys NOT emitted (they are the run's, not the star's): the radial grid (nx1, f_stretch_*), the <rad_vet> solver
 set, outputs, tlim (long-tlim rule), vet_gd_rotate_dt (~20 dt).  Paste the blocks into a copy of
 the E1 deck (each key replaces the deck's line of the same name in the same block).
 """

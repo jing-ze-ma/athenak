@@ -18,10 +18,12 @@ star spec (YAML/JSON) --make_star_ic.py--> tables (cached by composition hash; h
 ```bash
 cd tools/ic_star
 export OPENBLAS_NUM_THREADS=1        # login nodes: OpenBLAS thread limit
-PY=/u/jinma/miniconda3/envs/magritte/bin/python3      # numpy 1.23, scipy 1.10, PyYAML, mpl
-$PY make_star_ic.py specs/bsg.yaml --out /raven/ptmp/jinma/ic_star_runs/bsg
-bash regress/run_regress.sh          # AG Car A deep70 (global) + hg145 ic2 reproduction
+python3 make_star_ic.py specs/bsg.yaml --out out/bsg     # numpy, scipy, PyYAML, matplotlib
 ```
+
+Paths in the specs are placeholders: `DATA/<file>` is a file you supply, `ic_star_cache/` the
+table cache (`config.cache`), `athena_star` / `athena` the binaries (`seam.binary`, a CPU build
+with `-D PROBLEM=star_vet`; `config.eos_binary`, a CPU build without it).
 
 A run takes 10-30 min on a loaded login node (LSODA with a Python right-hand side). In mode
 global, the MLT++ gate and the branch scan add several coarse columns; skip the scan with
@@ -66,7 +68,7 @@ wall):
 - rows on a log grid dln r 2e-4 with x1min as an exact row; atmosphere rows every 2e-4 R_ph;
   floor rows every 50 x that.
 
-Validation on 14p5M (regress/RESULTS.md sect. 5): even with MESA's gated MLT++, global mode
+Validation on 14p5M: even with MESA's gated MLT++, global mode
 does not reproduce a super-Eddington MESA envelope. The inward integration sits on a separatrix
 between an inflated branch and a dense adiabat (2.8x MESA's m_env at alpha 2; the branch flips
 with alpha, MLT++ and even the ODE tolerance). Use mode mesa whenever a MESA model exists.
@@ -83,8 +85,7 @@ with alpha, MLT++ and even the ODE tolerance). Use mode mesa whenever a MESA mod
 
 ### 2a. MLT and MLT++: MESA r15140, from the source
 
-The source is MESAHub/mesa tag `0.0.15140` (= r15140). Copies are in
-`/raven/ptmp/jinma/ic_star_cache/raw/mesa_src`, with md5s:
+The source is MESAHub/mesa tag `0.0.15140` (= r15140). Files used, with md5s:
 mlt_info.f90 95da7347, mlt_get_results.f90 3cfae1d9, controls.defaults ada07997,
 star_utils.f90 e999399f.
 
@@ -180,7 +181,7 @@ The standard now removes it:
      radiation carries the whole flux by the Hopf join at tau 3, as it does in the RE atmosphere.
 2. **Code-consistent atmosphere** (`seam: {deck, binary, tol_cells 0.1, maxit 8}`): the column
    is passed through the code's OWN startup solve:
-   - the binary is the CPU build of the production commit, /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db;
+   - the binary is the CPU build of the production commit (`seam.binary`);
    - it runs 0 cycles on the run deck with lateral 4x4, star_ic_equil and ic_rad off (they come
      after the dump), and star_ic_rad_dump;
    - the dumped column (sph1d E, RE T, HSE rho; F_r and F_MLT kept), with the taper re-applied,
@@ -198,7 +199,7 @@ The standard now removes it:
      and R_ph is chosen so that T is continuous there too (rho then follows from the EOS). The
      continuity residuals dlnP, dlnT and dln rho are reported. If no root exists within 1 %, the
      smallest |dlnT| is used (reported).
-4. **Results** (regress/RESULTS.md sect. 6):
+4. **Results**:
    - **BSG:**
      - seam fixed point in 2 passes, R_ph 51.57 Rsun;
      - the run's startup reproduces it to 0.12-0.14 cell;
@@ -221,9 +222,8 @@ The standard now removes it:
 
 ### 2c. The code's startup solve for a super-Eddington photosphere (14p5M): diagnosis
 
-**Status 10-17: solved without a code change by `startup.re_zone: hopf` (sect. 2d,
-RESULTS sect. 9).** Options A-C below are kept for the record; A was tried (RESULTS 8b/8c,
-branch ic-gammacap-1016) and does not converge.
+**Solved without a code change by `startup.re_zone: hopf` (sect. 2d).** Options A-C below are
+kept for the record; A was tried and does not converge.
 
 
 **What fails.** star_vet.cpp ~813-1125 runs an outer Picard loop of two steps:
@@ -273,7 +273,7 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
 3. Gate (a) 14p5M on 704 and 1408, band 0.99-1.1 R_ph: |<v_r>| < 1 km/s, drho < 10 %, no growth.
 4. AG Car B startup with the option on vs off (documented change).
 
-### 2d. MESA-anchored startup: `startup.re_zone: hopf` (10-17; RESULTS sect. 9)
+### 2d. MESA-anchored startup: `startup.re_zone: hopf`
 
 **Why the startup failed (10-17 diagnosis).**
 - The startup re-solves radiative equilibrium (RE) with the column's FROZEN F_r(r) for tau_R < 30
@@ -284,7 +284,7 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
   - a cool, collapsed one: lower T, kappa 10x lower, tau lower;
   - a hot, inflated one.
   The column, i.e. MESA's structure, sits between them and is unstable under this iteration.
-- This holds with OUR kappa and also with MESA's kappa (diagnostic table, RESULTS 9):
+- This holds with OUR kappa and also with MESA's kappa:
   - with the column's own scaffold and no taper: 400 outer iterations, inflated, +25 cells;
   - with MESA's kappa: converged, but on the collapsed branch (-14 cells, rho x 0.01 at R_ph).
   The taper of 2b (F_MLT -> 0 by tau 3, where MESA still has F_MLT/F 0.2-0.9) made it worse.
@@ -314,7 +314,7 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
   (+0.043 cell) = 114.38 Rsun;
 - HSE 5.8e-7, no Gamma clamp;
 - CPU = A100 startup (R_ph identical, dump 3e-10); gate (a') FAILS: the run restructures the cliff
-  top within 0.25 d, also with MESA-like kappa and at 4x radial resolution (RESULTS sect. 9e).
+  top within 0.25 d, also with MESA-like kappa and at 4x radial resolution.
 
 ## 3. Step by step for a new star
 
@@ -332,12 +332,9 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
    - mode checks (mesa: m_env/R_ph/T_ph/CZs vs MESA, F_rad > F rows; global: physicality
      flags and the branch scan).
    Do NOT patch the method per star: one method for all.
-4. Paste `deck_<name>.athinput` into a copy of the current production deck (E1:
-   /raven/ptmp/jinma/overlap_1015/decks/e1_prod_rol2u.athinput). Add the grid fit, tlim (long-tlim
+4. Paste `deck_<name>.athinput` into a copy of the current production deck. Add the grid fit, tlim (long-tlim
    rule), vet_gd_rotate_dt (~20 dt) and the seed amplitude/k band.
 5. Run the background checklist on the full-size deck before any production submit.
-6. Run the atmosphere gate (a') (sect. 8a): the gate run on the deck grid and on its
-   2x-atmosphere grid, then `regress/gate_aprime.py DECK_RUN PAIR_RUN`.
 
 ## 4. Spec reference (`icstd/spec.py` DEFAULTS)
 
@@ -357,11 +354,11 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
 | ramp | start_turnovers, time_turnovers | 2, 10 |
 | startup | re_zone | 'deck' (the deck's star_ic_rad_taua/taub, E1 30/3000); 'hopf': RE only at tau_R < tauj (sect. 2d) |
 | | allow_outside_tables, report_radii_rsun | reproduction/validation only; extra MESA comparison radii |
-| config | cache, eos_binary | /raven/ptmp/jinma/ic_star_cache, bubbles_1012 athena_cpu_m4 |
+| config | cache, eos_binary | `ic_star_cache`, `athena` |
 
 ## 5. Tables: one recipe, any composition (`icstd/tables.py`)
 
-- **Opacity = the E1 ext2 recipe** (Viper lbv_1008/agcar/tables_ext/scripts/build_ext.py fergR):
+- **Opacity = the E1 ext2 recipe** (`icstd/tables.py`):
   - TOPS/ATOMIC (high T) + Ferguson+2005 GS98 Rosseland and Planck (low T), linear in X and
     in log Z between the bracketing tables;
   - blended over log T 4.0-4.2, with the Saha-es + power-law low-rho extension;
@@ -372,7 +369,7 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
   - TOPS raw: `opacity.tops_hi/lo` copied into `<cache>/raw/tops/<hash>_{hi,lo}.dat`, or
     fetched (planck_tools/fetch_tops.py: hi 0.0005-1 keV x 1e-14..1 (71), lo 1e-21..1e-14
     (36)). **LANL was down on 10-15.** Without 'lo', the extension starts at log rho -14.
-  - Ferguson raw: `<cache>/raw/ferguson05/{ross,planck}` (from Viper bench/vet_opac).
+  - Ferguson raw: `<cache>/raw/ferguson05/{ross,planck}`.
   - Checks:
     - X 0.36 Z 0.02 rebuilt = E1 rosseland_ext2 b28e97c5 and planck_ext2 dc482452, every
       value (E1's planck_ext2orion 493f9d01 differs in 4462/91357 values, the Orion low-rho
@@ -446,51 +443,9 @@ super-Eddington layers, x1max > 5 R_ph). These are flags only.
     star_bc_outer outflow, star_sponge_rate, star_sponge_r0, star_sponge_mode radial, star_sponge_dmax,
     star_seed_rlo/rhi, star_grid_dump.
 
-## 8. Regression and validation
-
-`regress/RESULTS.md` holds the numbers of 10-15/16 and `regress/run_regress.sh` the commands:
-- AG Car A deep70 (global, agcar_legacy) vs /raven/ptmp/jinma/agcmodel_1012/ic/ic_agcar_A_ge_deep70.txt;
-- hg145 ic2 (global, scheme mltpp_inward, allow_outside_tables) vs its ic2 file;
-- mode mesa on 14p5M and the BSG: self-consistency against MESA (m_env, R_ph, T_ph, CZs);
-- global-mode validation on 14p5M (gated MLT++) against its MESA model.
-
-## 8a. Atmosphere gate (a') (ADOPTED by the USER 2026-10-17; `regress/gate_aprime.py`)
-
-Gate (a') replaces the absolute atmosphere thresholds of gate (a) (`regress/gate_atm.py`:
-0.99-1.1 R_ph |<v_r>| < 1 km/s, |drho| < 10 %), which no resolution of the BSG new setup can pass
-(its photosphere carries a converged, bounded, self-excited acoustic resonance; bsgres-1017,
-/raven/ptmp/jinma/bsgres_1017/NOTE.md). Runs: seed 0, 16x16 lateral, >= 8 d, 0.05-d hydro_w +
-m1 dumps, on the deck grid AND on its 2x-atmosphere grid. All items must pass:
-
-| item | criterion |
-|---|---|
-| 1 resolution | >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid: min of H_rho/dr, H_rho = -dr/dln<rho> of the t = 0 startup atmosphere, floor-plateau cells (rho < 1.5 x min) excluded |
-| 2 convergence | the SAME floor rule on both runs (column floor = min rho of star_ic_file, startup plateau within 1 %, dfloor and star_sponge_dmax identical), and deck vs 2x-atmosphere grid, saturated t >= 4 d, band 0.99-1.1 R_ph: band mean rms <v_r> within 15 %, time-rms profile L2 diff <= 10 % (L2 over 0.99-1.1 R_ph, pair profile interpolated to the deck radii, \|\|p_d - p_p\|\|/\|\|p_p\|\|), dominant period (FFT, median of the 5 top-rms radii) within 10 % |
-| 3 bounded | no growth (last-third max <= 1.5 x middle-third max) and saturated band rms <= c_s,iso(R_ph) |
-| 4 star unaffected | 0.5-0.9 R_ph max \|<v_r>\| < 1 km/s over the whole run; 0.9-0.99 R_ph < 3 km/s on the SATURATED state t >= 4 d (the growth-phase max is printed for information); R_ph(tau_R 2/3) within +-2 % of t = 0 at every dump; L_top/L_in within +-5 % for t >= 2 d; \|dM/M\| < 1e-6; Mdot_top < 1e-8 Msun/yr |
-| 5 robustness | summary NON-CONVERGED = 0, no FATAL/DIVERGED/NaN, rc 0, dt_min >= 0.25 dt_median (hst dt WITHOUT the startup row and the final step truncated to tlim; dt_retry retries reported) |
-
-The three readings in items 2 and 4-5 (0.9-0.99 R_ph on the saturated state, the dt rows, the L2
-band) were confirmed by the USER on 2026-10-17.
-
-**Floor.** The standard floor rule is kept: column floor decade(4e-6 rho_ph) (1e-15 for the BSG),
-dfloor 1e-4 x, star_sponge_dmax 2 x the column floor. The oscillation AMPLITUDE depends on the floor
-level, because the floor plateau sets the top of the oscillating layer (the oscillation fills the
-hydrostatic atmosphere below the plateau and dies 0.02-0.03 R_ph into it): BSG g480 band rms
-9.2 / 6.0 / 3.3 km/s for floors 1e-16 / 1e-15 / 1e-14, while the period changes by <= 3 % and the
-star below the photosphere is unchanged (RESULTS sect. 9). (a') comparisons are therefore valid only
-with the same floor rule on both runs; gate_aprime.py FAILs item 2 otherwise.
-
-Items 3-5 are checked on both runs. BSG production must use a g480-class grid (the P grid,
-~1 cell per H_rho, fails items 1 and 2); g480 itself has 4.24 cells per H_rho with the seam-fixed IC,
-so the candidate BSG production grid is the refined r496 (plateau dr 0.0319 Rsun, 4.46 cells;
-/raven/ptmp/jinma/bsgres_1017/decks/bsgres_r496.athinput, pair r808). Results: regress/RESULTS.md sect. 9.
-
 ## Files
 
 - `make_star_ic.py`: the driver.
-- `regress/gate_aprime.py`: the adopted atmosphere gate (a') (sect. 8a); `regress/gate_atm.py`:
-  the old gate (a) table (diagnostic).
 - `icstd/`:
   - `micro.py`: EOS, opacity, MLT (KW and Cox), the MESA gate rule;
   - `column.py`: mode global, the gate solve;

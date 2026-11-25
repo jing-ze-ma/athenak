@@ -53,7 +53,7 @@ DEFAULTS = {
     # code-consistent atmosphere through the code's own sph1d (needs seam.deck = the run deck)
     'taper': {'enable': True, 'tau_lo': 3.0, 'tau_hi': 30.0},
     'seam': {'enable': True, 'deck': None,
-             'binary': '/raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db',
+             'binary': 'athena_star',   # a CPU build with -D PROBLEM=star_vet
              'tol_cells': 0.1, 'maxit': 8, 'omp': 36, 'timeout': 7200,
              'launcher': ['bash', '-lc', 'module purge >/dev/null 2>&1; '
                           'module load gcc/13 openmpi/5.0; exec "$0" "$@"']},
@@ -70,8 +70,8 @@ DEFAULTS = {
 }
 
 CFG = {
-    'cache': '/raven/ptmp/jinma/ic_star_cache',
-    'eos_binary': '/raven/ptmp/jinma/bubbles_1012/bin/athena_cpu_m4',
+    'cache': 'ic_star_cache',     # relative to the working directory
+    'eos_binary': 'athena',       # a CPU build (built-in problem generators)
 }
 
 
@@ -97,6 +97,12 @@ def load(fn):
         s = yaml.safe_load(txt)
     s = _merge(DEFAULTS, s)
     s['_cfg'] = _merge(CFG, s.get('config', {}))
+    # (the binaries run in their own directory: relative paths are the caller's)
+    for d, keys in ((s['_cfg'], ('cache', 'eos_binary')), (s['seam'], ('binary', 'deck')),
+                    (s['eos'], ('binary', 'dump')), (s['opacity'], ('rosseland', 'planck'))):
+        for k in keys:
+            if d.get(k):
+                d[k] = os.path.abspath(d[k])
     s['_file'] = os.path.abspath(fn)
     return s
 

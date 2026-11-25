@@ -1,6 +1,6 @@
 """The standard IC column (the AG Car method), tools/ic_star.
 
-ONE set of equations (make_ic_agcar_ge.py, Viper lbv_1008/agcar/geos/scripts, = AG Car A/B and
+ONE set of equations (make_ic_agcar_ge.py, = AG Car A/B and
 the E1 production IC ic_agcar_A_ge_deep70.txt):
   * R_ph (tau_R = 2/3) given, or sqrt(L/(4 pi sigma Teff^4)); T(tau) grey Hopf (Mihalas fit);
   * ABOVE R_ph: isothermal atmosphere at T_ph = T_Hopf(2/3), gravity only, rho_R SHOT so that
@@ -225,7 +225,7 @@ def deep_continue(st, col, c):
 
 # --------------------------------------------------------------------------- compatibility
 def column_mltpp_inward(st, c):
-    """make_ic_agcar_mltpp.py --mode inward (Raven icB2-1011 reconstruction), bit for bit."""
+    """make_ic_agcar_mltpp.py --mode inward, bit for bit."""
     LUM, RSTAR = st.LUM, st.RSTAR
     eos = st.eos
     DRN = c['dlnr']*RSTAR

@@ -31,7 +31,7 @@ import bin_convert                                    # noqa: E402
 import dumps                                          # noqa: E402
 import eoslib                                         # noqa: E402
 
-ROOT = os.environ.get('SOLEOS_ROOT', '/orion/u/jinma/ATHENAK/soleos')
+ROOT = os.environ.get('SOLEOS_ROOT', 'soleos')
 GRID = os.path.join(ROOT, 'tools', 'eos_grid.bin')
 STYLE = os.environ.get('MPLSTYLE',
                        os.path.join(_HERE, os.pardir, os.pardir, 'run', 'mesa2.mplstyle'))

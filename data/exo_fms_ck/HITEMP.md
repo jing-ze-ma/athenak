@@ -17,8 +17,7 @@ byte-identically):
   before. g-monotonicity restored by a running max (161 entries 1x, 183 10x);
 * rows <= 6100 K: verbatim tokens (checked).
 
-Slope continuity (node-to-node jump of the table's d ln k/d ln T, all p, b, g;
-`/viper/ptmp2/jinma/hitemp2_0925/slopes2.py`):
+Slope continuity (node-to-node jump of the table's d ln k/d ln T, all p, b, g):
 
 | table | at 6100 K | 6125-7100 K | > 7100 K | upstream 4000-5900 K |
 | --- | --- | --- | --- | --- |
@@ -28,12 +27,10 @@ Slope continuity (node-to-node jump of the table's d ln k/d ln T, all p, b, g;
 Max |d ln k/d ln T| in the window drops from 720/649 to 309/281 (1x/10x); what is left
 is the H bf continuum switching on at p < 1e-3 bar, where it exceeds the upstream line k
 by ~1e9 (the upstream 4000-6100 K maximum is 40). Composition columns: slope jump at
-6100 K 1.1 -> 2e-4. kappa_R/kappa_P: plots and numbers in
-`/viper/ptmp2/jinma/hitemp2_0925/` (kappa_RP_hiT_vs_hiT2.png, kmeans.out).
+6100 K 1.1 -> 2e-4.
 
 The 10x tables (WASP-121b, KELT-20b) are built with `CK_DATA=<dir with the upstream 10x
-files>` and `FASTCHEM_INPUT` = Asplund 2009 with the metals +1 dex
-(`/viper/ptmp2/jinma/wasp121_0925/ckdata10`, `met10/fc_in`).
+files>` and `FASTCHEM_INPUT` = Asplund 2009 with the metals +1 dex.
 
 # First version (`_hiT`, 2026-09-25)
 

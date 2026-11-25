@@ -37,7 +37,7 @@ import bin_convert                                    # noqa: E402
 import dumps                                          # noqa: E402
 import eoslib                                         # noqa: E402
 
-ROOT = os.environ.get('SOLEOS_ROOT', '/orion/u/jinma/ATHENAK/soleos')
+ROOT = os.environ.get('SOLEOS_ROOT', 'soleos')
 GRID = os.path.join(ROOT, 'tools', 'eos_grid.bin')
 PLOTS = os.path.join(ROOT, 'plots')
 GRAV = 2.74e4          # |g|, cm/s^2 (constant, as in the pgen)
