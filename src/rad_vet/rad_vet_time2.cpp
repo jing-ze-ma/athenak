@@ -264,20 +264,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_vet", "time2_dbg_fail");
   }
-  // time2_reject: be (backward-Euler redo) | retry (needs <time>/dt_retry = true; without
-  // it the step falls back to backward Euler)
-  t2_reject = 0;
-  if (pin->DoesParameterExist("rad_vet", "time2_reject")) {
-    const std::string tr = pin->GetString("rad_vet", "time2_reject");
-    if (tr == "retry") {
-      t2_reject = 1;
-    } else if (tr != "be") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/time2_reject = '" << tr << "' is not a choice "
-                << "(be | retry)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
 
   // time2_k1_stiff = s: in cells with relaxation rate k dt > s the exchange part of K1
   // moves to E (Time2FormStage)
@@ -1734,8 +1720,8 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
 //! \fn bool RadiationVet::Time2AutoBeBegin
 //! \brief time2_auto_be: called by the Driver at the cycle start (after VetGdRotStep).
 //! A skip step is put in the state the stage fallback leaves (Time2Restore): no valid
-//! slope (Heun hydro, then the BESTORE solve), cold predictor, the dt_retry arm of a
-//! time2_reject redo.  A retried cycle calls it again with the same state.
+//! slope (Heun hydro, then the BESTORE solve), cold predictor.  A retried cycle calls it
+//! again with the same state.
 
 bool RadiationVet::Time2AutoBeBegin() {
   t2_abe_now = false;
@@ -1751,8 +1737,6 @@ bool RadiationVet::Time2AutoBeBegin() {
   t2_solve = VET_T2S_NONE;
   pred_ok = false;
   pred2_ok = false;
-  // as the redo of a rejected stage under time2_reject = retry (arms dt_retry_t2_be)
-  if (t2_reject == 1 && dtr_on) {dtr_t2hit = true;}
   return true;
 }
 

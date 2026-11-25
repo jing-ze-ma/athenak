@@ -145,10 +145,9 @@ from a file written before these keys must name both on the command line.
 | `rad_vet/time2_auto_be` | After a step whose stages fell back to backward Euler, the next 1, 2, 4, ... N steps take backward Euler at once (0 = off). | 16 | all: `16` | `rad_vet/rad_vet_time2.cpp` (`Time2Init`) |
 | `rad_vet/clean_init` | `steady`: before step 1 the radiation is relaxed to the scheme's steady solution in the given gas; `given`: start from the given field. | `given` (star_vet: `steady`) | all: `steady` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/clean_init_dtfac`, `clean_init_tol`, `clean_init_n` | Pseudo time step (in units of the first dt), tolerance and pass limit of the steady start. | 1e6, 1e-8, 40 or 50 (problem dependent) | all: `1.0e6`, not named, not named | `rad_vet/rad_vet.cpp` (constructor) |
-| `time/dt_retry` | A cycle whose implicit solve fails (not converged, non-finite, rejected stage, unpaid floor energy) is undone and taken again with a smaller dt. Bitwise: a retry restores the full cycle. | true | all: `true` | `driver/dt_retry.cpp` (`DtRetry`) |
-| `time/dt_retry_fac`, `dt_retry_fac_t2` | dt factor of a retry; of a retry caused by a rejected stage. | 0.5; = `dt_retry_fac` | all: `0.5`, `0.9` | `driver/dt_retry.cpp` (`DtRetry`) |
-| `time/dt_retry_grow`, `dt_retry_ngood` | After a cut, dt grows back by this factor per good cycle, starting after this many good cycles. | 1.25, 10 | all: `1.1`, `20` | `driver/dt_retry.cpp` (`DtRetry`) |
-| `time/dt_retry_t2_be` | After this many stage-rejection cuts in one cycle, a rejected stage is redone with backward Euler (0 = at once, < 0 = never). | 0 | all: `0` | `driver/dt_retry.cpp` (`DtRetry`) |
+| `time/dt_retry` | A cycle whose implicit solve fails (not converged, non-finite, unpaid floor energy) is undone and taken again with a smaller dt. Bitwise: a retry restores the full cycle. | true | all: `true` | `driver/dt_retry.cpp` (`DtRetry`) |
+| `time/dt_retry_fac` | dt factor of a retry. | 0.5 | all: `0.5` | `driver/dt_retry.cpp` (`DtRetry`) |
+| `time/dt_retry_grow`, `dt_retry_ngood` | After a cut, dt grows back by this factor per good cycle, starting after this many good cycles. | 1.1, 20 | all: `1.1`, `20` | `driver/dt_retry.cpp` (`DtRetry`) |
 | `time/dt_retry_force_cycle`, `dt_retry_force_fac` | Testing: force one retry at this cycle with this factor (the `dt_retry` test). | off | not named | `driver/dt_retry.cpp` (`DtRetry`) |
 | `rad_vet/clean_dbg_inf` | Testing: the first stage-1 write-back of this cycle gives one cell a non-finite E iterate. `implicit_pos_floor` never raises a non-finite E; the stage is rejected and redone (the `inf_reject` test). | off | not named | `rad_vet/rad_vet.cpp` (constructor) |
 

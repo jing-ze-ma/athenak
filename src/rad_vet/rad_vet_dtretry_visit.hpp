@@ -15,8 +15,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("dtr_fail", dtr_fail);
   v.value("dtr_why", dtr_why);
   v.value("dtr_resid", dtr_resid);
-  v.value("dtr_t2be", dtr_t2be);
-  v.value("dtr_t2hit", dtr_t2hit);
   v.value("c_light", c_light);
   v.value("chat_over_c", chat_over_c);
   v.value("chat", chat);
@@ -237,7 +235,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("t2_solve", t2_solve);
   v.value("t2_fail", t2_fail);
   v.value("t2_dbg_fail", t2_dbg_fail);
-  v.value("t2_reject", t2_reject);
   v.value("t2_k1stiff", t2_k1stiff);
   v.value("t2_k1stiff_n", t2_k1stiff_n);
   v.value("ebnd_on", ebnd_on);

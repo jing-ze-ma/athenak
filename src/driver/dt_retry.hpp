@@ -178,18 +178,7 @@ class DtRetry {
   int force_cycle_ = -1; // debug: raise a failure at this cycle (once)
   Real force_fac_ = 0.5;
   bool force_redo_ = false;   // debug: the forced retry is redone as a failed step
-  int t2_be_ = 0;          // <time>/dt_retry_t2_be (time2_reject cuts per
-                           // cycle before the backward-Euler redo; < 0 = never)
-  int nt2cut_ = 0;         // time2_reject cuts of the current cycle
-  std::int64_t nt2be_ = 0;         // cycles that took the backward-Euler redo
-  bool t2streak_ = false;  // the last cycle took it (the next one is armed)
-  // this cycle already went to the backward-Euler redo (t2fb): the
-  // restore of a later failed attempt must not disarm it (it resets dtr_t2be)
-  bool t2be_cyc_ = false;
-  Real dt0_ = 0.0, cap0_ = -1.0;  // the cycle's dt and cap at Save
   Real fix_ = -1.0;        // <time>/dt_fixed (> 0): the cap never grows above it
-  int ngood0_ = 0;
-  Real t2_fac_ = -1.0;     // <time>/dt_retry_fac_t2 (reason time2_reject; < 0 = fac_)
   bool forced_done_ = false;
   std::vector<std::string> extra_views_;
   std::set<std::string> sel_;
