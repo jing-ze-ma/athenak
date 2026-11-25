@@ -5,3 +5,8 @@
 - R0 nothing; R1 rad_vet/vet_gd_gl_nmu=0 + vet_gd_ls=10 (the code FATALs if both sets are named; the product set is switched off); R2 hydro/wb_rmax=6.363e11 (0.9 x 0.74 x R_ph,IC 9.554e11; below x1min 6.746e11, so no well-balanced face in the domain); R3 time/cfl_number=0.15; R4 rad_vet/clean_stag_upwind_central=false clean_stag_central=false; R5 hydro/fofc=false fofc_retest=false, and if it FATALs at once, R5b hydro/reconstruct=dc (donor cell).
 - R1's fallback (the same angles rotated by 5 deg) has no key I can find without a source change; if R1 is refused it is skipped.
 - R0 started 13:06 (step 7333073.149 on 02-17, verified in squeue).
+
+## R0 (control) ended 13:39:14
+- rc=0 at t = 4.5e5 s, 8253 rows, wall 2191 s (0.265 s/cycle), CW 0, FATAL 0, inf 0, DT_RETRY 0; dt median 12.125 s, minimum 0.279 s in the first cycle only (the restart file's cut last step of M35C), 6 rows below 11.5 s; 41 hydro_w dumps (00050 to 00090, every 2400 s from 3.5e5 to 4.5e5).
+- Dumps: /resnick/groups/carnegie_poc/jingze/m35ring_1126/R0/bin/, hst m35mms.user.hst. The band numbers come from a0dc2503.
+- R2 (wb_rmax) started on 02-17 at 13:39; R1 (ls 10) is at t 4.3e5 s on 02-16, no FATAL at restart.
