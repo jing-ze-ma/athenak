@@ -19,3 +19,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 02-09: rel-b builds (CPU steps, until about 19:08; nothing timed); HR with 02-03; then rel-b old-rst check (3 short runs); then cs arm L2 (about 5 min); after that free (kept for the t9 MLT wedge unless you say otherwise).
 - 01-17: SPEED24 F (12 arms, since 18:52, about 2-6 min each; t9l62 arms longest), two nsys profiles, G (2 arms), H (4 arms); then the SDO_MOM arm (momentum counter), last.
 - Page agent: no CPU step now (it told the coordinator it is idle). One GPU arm per node; gates of builds use 1 GPU of the build node for a minute.
+- 11-24 19:02 01-17: s_F_m35_t2 -> s_F_zam_b1
+- 11-24 19:03 01-17: s_F_zam_b1 -> s_F_zam_b2
+- 11-24 19:04 01-17: s_F_zam_b2 -> s_F_zam_t2
+- 11-24 19:05 01-17: s_F_zam_t2 -> s_F_t9q_b1
