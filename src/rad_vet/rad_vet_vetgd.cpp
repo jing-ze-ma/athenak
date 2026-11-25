@@ -680,7 +680,7 @@ void RadiationVet::VgdBuildSet(std::vector<double> &d) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdInit
-//! \brief direction table, intensity array, exchange object, wall maps (from VetRaySetup)
+//! \brief direction table, intensity array, exchange object, wall maps (from VetRayInit)
 
 void RadiationVet::VetGdInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -693,7 +693,7 @@ void RadiationVet::VetGdInit() {
   if (ibc_x1max != VET_IBC_MARSHAK &&
       !(ibc_x1max == VET_IBC_REFLECT || ibc_x1max == VET_IBC_OUTFLOW)) {
     // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
-    VgdFatal("outer x1 needs implicit_bc_x1max = marshak (+ vet_col_surface_q), or "
+    VgdFatal("outer x1 needs implicit_bc_x1max = marshak or "
              "reflect with scheme = clean");
   }
   if (ibc_x2min == VET_IBC_MARSHAK || ibc_x2max == VET_IBC_MARSHAK ||

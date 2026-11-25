@@ -537,10 +537,6 @@ class RadiationVet {
   DvceArray3D<Real> ibm_f;
   DvceArray4D<Real> ibm_s;   // beams' stress column c sum w Omega_b mu1 I (clean)
   void ImplBeamInit(ParameterInput *pin);
-  // implicit_marshak_face = linear (spherical-polar wedge): the Marshak face E from
-  // r^2 E of the two end cells (VetSphMarshakCoef); cell (default): the end cell's E.
-  // The outer face keeps cell under vet_col_surface_q.
-  bool impl_mface_lin = false;
   DvceArray4D<Real> f0x1;       // face-normal comoving x1 flux (m,k,j,i), restart state
   DvceArray5D<Real> iw;         // per-cell work array of the solve, VET_NIW components
   Real impl_nstep{}, impl_itsum{}, impl_itmax{};  // Picard counters
@@ -651,7 +647,6 @@ class RadiationVet {
   // implicit_hr_excess = iso (vet_gd): the part of E^n above the formal-solution J takes
   // the isotropic half-range shape (+-1/4) (VetHrExcess)
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
-  bool hr_q = false;            // per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
   // with implicit_thin_switch = fs* or implicit_thin_corr vgd_hr has VET_VGD_HRNX
   // components: + C1, eps, J
@@ -1489,7 +1484,6 @@ class RadiationVet {
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
 
   bool vray_ready{};            // VetRayInit has run
-  bool vcol_sph{};             // spherical rays (sp) or plane-parallel (Cartesian)
   // vet_scatter: electron scattering, the opacity split (otab.scat, opac VET_OP_S) and
   // VetScatterMix; vscat_form 1 ma (Jiang 2021 eq. 6), 2 absorption
   bool vscat = false;
@@ -1497,21 +1491,11 @@ class RadiationVet {
   // vet_scatter_j: false current (J = E^n / iterate, absorption form only), true
   // relaxed (J = E*, the end-of-step pair of B*)
   bool vscat_jrel = false;
-  // vet_col_surface_face (sp, with vet_col_surface_q and implicit_marshak_face = linear):
-  // outer face flux c H(face) (E/J)_face with E, J extrapolated linearly in r^2 (second
-  // order). vcol_jca, vcol_jcb: top-face weights (VetSphMarshakCoef), vcol_jcap the
-  // limiter's 2 (r_c/r_f)^2
-  bool vcol_sqf = false;
-  Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
-  // vet_col_surface_q: outer-x1 Marshak q = H(top face)/J(top cell) per column
-  bool vcol_sq{};
-  Real vcol_qmin{}, vcol_qmax{};
-  DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
-  void VetRayInit();           // checks, vcol_q (first call)
+  void VetRayInit();           // checks, buffers, the direction set (first call)
   void VetRayReport();
 
   // ---- the source (ln chi, ln S) of the vet_gd rays (rad_vet_vetray.cpp)
-  // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetRaySetup
+  // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetRayInit
   // refuses them
   std::string vray_rat_keys;
   int vray_icut = 0;           // first shell of the sweep (CleanRayCut)
@@ -1522,7 +1506,6 @@ class RadiationVet {
   DvceArray5D<Real> vray_cs_c;
   DvceArray1D<Real> vray_cnt;  // (1): lateral reads clamped to the ghost band
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vray_cs
-  void VetRaySetup();
   void VetRaySource();   // ln chi, ln S of a vet_gd build
   void VetRayExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);

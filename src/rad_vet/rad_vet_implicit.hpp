@@ -162,12 +162,5 @@ void VetCsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
   }
 }
 
-KOKKOS_INLINE_FUNCTION
-void VetSphMarshakCoef(const Real rc, const Real rn, const Real rf, Real &ca, Real &cb) {
-  const Real al = (rf - rc)/(rc - rn);
-  ca = (1.0 + al)*SQR(rc/rf);
-  cb = al*SQR(rn/rf);
-}
-
 } // namespace radvet
 #endif // RAD_VET_RAD_VET_IMPLICIT_HPP_

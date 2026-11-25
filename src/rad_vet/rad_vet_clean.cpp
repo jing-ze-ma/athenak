@@ -365,9 +365,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_predictor", nullptr}, {"rad_vet/implicit_predictor_tcap", nullptr},
     {"rad_vet/implicit_resid_fatal", nullptr},
     // ImplicitInit members the clean steps use: enthalpy flux, conservative gas source,
-    // Marshak face, predictor order, hold
+    // predictor order, hold
     {"rad_vet/implicit_enthalpy", nullptr}, {"rad_vet/implicit_gas_src", nullptr},
-    {"rad_vet/implicit_marshak_face", nullptr},
     {"rad_vet/implicit_predictor_order", nullptr},
     {"rad_vet/implicit_hold", nullptr},
     {"rad_vet/implicit_pos_gas*", nullptr}, {"rad_vet/implicit_pos_floor", nullptr},
@@ -441,6 +440,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_col_ncore", ""}, {"rad_vet/vet_col_nsub", ""},
     {"rad_vet/vet_col_nmu", ""}, {"rad_vet/vet_col_fk_min", ""},
     {"rad_vet/vet_col_reflect_top", ""}, {"rad_vet/vet_col_axis", "=radial"},
+    {"rad_vet/vet_col_surface_*", ""},
     {"rad_vet/vet_col_lat", ""}, {"rad_vet/vet_col_lat_offdiag", ""},
     {"rad_vet/vet_col_lat_posfix", ""}, {"rad_vet/vet_every", "=1"},
     {"rad_vet/vet_col_every", "=1"}, {"rad_vet/vet_source", ""},
