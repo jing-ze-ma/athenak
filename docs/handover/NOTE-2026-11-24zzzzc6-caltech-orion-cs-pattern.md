@@ -244,3 +244,10 @@ Columns of the imprint table (m4, m8, sym_rms, rms_all; printed digits), over al
 - m4(200-400) c600: Bp 1.391e-04, L 2.511e-06
 - factor Bp / L = 55.396 (needs >= 3); L_top/L_in -6.020e-06, KE_int -1.543e-01 relative to Bp (needs |.| <= 0.01); clean run and end on cycle limit: True
 - **FAIL**
+
+## L: restart check, fresh 60 vs 30 + rst + 30 (the deck + one rst output block in the test copy, dt 1e30; -r restart with only time/nlim = 60 named)
+- L60: 2026-11-24 18:36:02 rc=0 (srun) ended: Terminating on cycle limit CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- L30: 2026-11-24 18:38:56 rc=0 (srun) ended: Terminating on cycle limit CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- L30b: 2026-11-24 18:39:39 rc=0 (srun) ended: Terminating on cycle limit CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- user.hst: L60 61 rows, L30 31 rows, L30b 30 rows; rows of L30 not printed-identical to L60 at the same t: 0 (first t -); L30b: 0 (first t -) -> BITWISE (printed)
+- hydro.hst: L60 61 rows, L30 31 rows, L30b 30 rows; rows of L30 not printed-identical to L60 at the same t: 0 (first t -); L30b: 0 (first t -) -> BITWISE (printed)
