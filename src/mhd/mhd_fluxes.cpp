@@ -388,6 +388,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,
                                     wder_, dl, dr);
+      } else if (wb_all_) {
+        hydro::WbAllPLMDer(member, 1, m, k, j, il-1, iu, wder_, wbq0_, wbw_, dl, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
         WbPiecewiseLinearDerX1(member, eos_, wb_option_,
             m, k, j, il-1, iu, w0_, wder_,
