@@ -152,8 +152,9 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       recipe::OldStored(pin, "rad_vet", "time2_gtime_slope", "false", "true");
       if (t2_gts && !t2_gtm) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/time2_gtime_slope needs time2_gtime_mom = "
-                  << "true" << std::endl;
+                  << std::endl << "<rad_vet>/time2_gtime_slope = true needs "
+                  << "time2_gtime_mom = true (a restart file may store false): name "
+                  << "time2_gtime_mom=true, or time2_gtime_slope=false" << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (global_variable::my_rank == 0) {

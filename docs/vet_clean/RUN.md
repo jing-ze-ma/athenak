@@ -89,9 +89,19 @@ Restarts are bitwise: N cycles straight and N/2 + restart + N/2 give identical o
 `restart_*` tests check this). The restart file holds every piece of solver state that
 carries from step to step (the stage slopes, the ray-closure history, the ledgers).
 
-Some keys have one default for a fresh run and another for a restart of a file that does
-not name them, so that old runs continue unchanged. The start-up log echoes such
-defaults with the reason, e.g. "(default with vet_gd on a fresh start)".
+A key the restart file does not hold takes the fresh default when it corrects the scheme
+(the clean-scheme keys, `time2_*`, `merge_lat_mom`, `fofc_flag_exchange`, `clean_cs_lat_wb`
+...), with a `### NOTE: ... the fix applies`; naming the old value keeps the old behaviour. A
+few keys (the angular set and its rotation and averaging, the closure history, the problem
+set-up) keep the restart default; the start-up log echoes it with the reason.
+
+**Restarting a file of an older scheme.** Files written before a key existed store neither it
+nor the keys it goes with, so the run changes at the restart: the NOTEs list what applies and
+how to keep the old value. A stored value always wins, also an old one that a newer key needs
+differently; the run then stops with a FATAL that names both keys and what to name. Do not
+restart such a file with nothing named: name every key of the production deck (the list of
+[KEYS.md](KEYS.md), "Keys that must always be named"), read the NOTEs and check the start of
+the log before you let it run on.
 
 ### Time step and retries
 
