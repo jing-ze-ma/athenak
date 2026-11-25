@@ -139,8 +139,8 @@ DvceArray1D<Real> star_phig_, star_gmr_;
 // (mlt_ramp_start/_time, weight w) that luminosity is kept as a BASE HEATING layer: the
 // deposit is w (-div A F_MLT) + (1 - w) (-div A F_b), F_b(r) = F_MLT(r_in) (r_in/r)^2
 // max(0, 1 - (r - r_in)/star_base_heat) on the x1 faces, so A F_b = L_MLT(r_in) at the
-// wall face and 0 above r_in + star_base_heat.  Frozen closure only.  (Injecting it as M1
-// face flux instead puts a radiation force of ~Gamma_F ~ 100 g on the wall cells.)
+// wall face and 0 above r_in + star_base_heat.  Frozen closure only.  (Injecting it as
+// VET face flux instead puts a radiation force of ~Gamma_F ~ 100 g on the wall cells.)
 Real star_bheat_ = 0.0;
 DvceArray1D<Real> star_fb_;
 Real star_sp_rate_ = 0.0, star_sp_r0_ = 0.0, star_rtop_ = 1.0;
@@ -230,7 +230,7 @@ Real star_esc_ = 0.0, star_esrmx_ = 0.0;
 // closure.  The applied subgrid flux F_sub (x1 faces) relaxes toward
 // s(r) max(0, L - L_rad - L_conv,res)/A over problem/mlt_relax_time, updated every
 // cycle at its START (before any stage), from
-// shell sums over all ranks: L_rad = sum A F_0 (the M1 comoving face flux), L_conv,res =
+// shell sums over all ranks: L_rad = sum A F_0 (the VET comoving face flux), L_conv,res =
 // the FLUCTUATION flux A (<v_r'(e+p)_gas'> + (4/3) <v_r'E'>) of the cell shells averaged
 // to the face.  s = clamp(fmlt_IC/problem/mlt_closure_taper, 0, 1): the FeCZ of the IC
 // (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  star_fsub_ and the
@@ -649,7 +649,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     star_pm_ = (hg == "pointmass");
   }
   if (star_pm_) {
-    // plain (not well-balanced) hydro with the full M1 force
+    // plain (not well-balanced) hydro with the full VET force
     if (wbdyn || !etg) {
       StarFatal("problem/star_gravity = pointmass needs <hydro>/etotgrav = true and "
                 "wellbalance_dynamic = false", __LINE__);
@@ -2494,7 +2494,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // bitwise the old code): a FRESH start whose state is a remapped restart of another
   // run (tools: remap_e1w.py).  The file carries the parent's time, its pgen restart
   // block (Picard window + the star_ic_equil a_ref trailer, applied below exactly as a
-  // restart applies them) and u0, the M1 u0 and f0x1 of this mesh including ghosts.
+  // restart applies them) and u0, the VET u0 and f0x1 of this mesh including ghosts.
   // <time>/start_time must equal the parent's time (bitwise; the generated deck sets it)
   // so that w_mlt(t), the vet_gd rotation clock (physical) and the outputs continue.  No
   // ic_rad, no star_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
@@ -2748,7 +2748,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "(the IC's F_MLT is its start profile and its FeCZ mask)", __LINE__);
     }
     if (pvet->f0x1.extent_int(0) <= 0) {
-      StarFatal("problem/mlt_closure = adaptive needs the implicit M1 face flux f0x1",
+      StarFatal("problem/mlt_closure = adaptive needs the implicit VET face flux f0x1",
                 __LINE__);
     }
     star_ad_tau_ = pin->GetOrAddReal("problem","mlt_relax_time",1500.0);
@@ -3660,7 +3660,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
   auto wbq0 = ph->wbq0;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
-  // the adaptive closure: once per cycle, at its first stage (before any M1 solve of
+  // the adaptive closure: once per cycle, at its first stage (before any VET solve of
   // the cycle); it re-applies w(t) itself
   // the closure is skipped once the ramp has ended (w(t) = 0 AND w = 0 already applied
   // to esrc): F_sub then enters nothing (esrc = w F_sub deposit, history slot 21 =
@@ -3995,7 +3995,7 @@ Real StarZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
 //! \fn void StarBC()
 //! \brief x1 ghosts carrying the scaled initial profile (rho and eint scaled by the ratio
 //! of the adjacent active cell to its own initial value), the radial velocity mirrored
-//! (wall) or, at the outer edge where it points outward, copied (outflow).  M1 ghosts by
+//! (wall) or, at the outer edge where it points outward, copied (outflow).  VET ghosts by
 //! VetFillGhost (the implicit solve imposes its own face BCs).
 
 void StarBC(Mesh *pm) {
@@ -4182,7 +4182,7 @@ void StarBC(Mesh *pm) {
         // LAST ACTIVE cell a = ie (box_convection bc_mode_top 4, ported): with the WB
         // pair's effective potential Phi_eff (gravity minus the reference radiation force
         // a_ref of the column, what the x1 well-balanced stencil walks along) plus the
-        // RESIDUAL radiation force the M1 module applies on top of it,
+        // RESIDUAL radiation force the VET module applies on top of it,
         //   a_rad = opac_T F_1/(c rho) of cell a  (the code's own force; the reference
         //           a_ref when the opacity is not yet filled, i.e. on the first step),
         //           F_1 per star_bc_hse_flux: face (default) = 0.5 (f0x1(ie) +
@@ -5601,7 +5601,7 @@ void StarIcEquil(Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void StarRemapLoad()
-//! \brief problem/star_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
+//! \brief problem/star_ic_remap_file: hydro u0 (5), VET u0 (4) and f0x1 of
 //! every MeshBlock of this rank, ghosts included, from the file's global arrays
 //! [nx3+2ng][nx2+2ng][nx1+2ng(+1)] (header checked by the caller; uniform mesh only)
 
@@ -5659,7 +5659,7 @@ void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
   Kokkos::deep_copy(pvet->u0, ur);
   if (hf0) Kokkos::deep_copy(pvet->f0x1, uf);
   if (global_variable::my_rank == 0) {
-    std::cout << "star_vet: star_ic_remap_file: u0, M1 u0" << (hf0 ? ", f0x1" : "")
+    std::cout << "star_vet: star_ic_remap_file: u0, VET u0" << (hf0 ? ", f0x1" : "")
               << " loaded (" << pmbp->nmb_thispack << " MeshBlock(s) on rank 0); "
               << "no ic_rad, no star_ic_equil, no seed" << std::endl;
   }

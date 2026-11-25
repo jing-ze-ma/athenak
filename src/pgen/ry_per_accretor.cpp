@@ -58,7 +58,7 @@
 //! adiabatic (ideal gas) every one of these sites runs its original code verbatim.
 //!
 //! RADIATION (<rad_vet> present; stage S3 of docs/dev/accretor_rhd_design.md; needs
-//! inner = envelope, thermo = general, env_ic = column).  Implicit grey M1 (closure
+//! inner = envelope, thermo = general, env_ic = column).  Implicit grey VET (closure
 //! vet_col: vet_gd cannot run on the 4-cell theta band) with the run's Rosseland + Planck
 //! tables (problem/env_opac_table, env_planck_table; the S0 column must be built from the
 //! same Rosseland table and the same EOS).  The column's radiation force enters as a
@@ -81,7 +81,7 @@
 //! PHYSICAL AMBIENT (problem/env_amb_mode = radeq; default hot = the hot hydrostatic
 //! ambient above).  The gas between the stars is tenuous gas at
 //! radiative equilibrium: absorption ON (no opac_abs_rho_max), no T relaxation
-//! (env_t_relax = 0; the M1 coupling itself sets T_gas = T_rad), held by the density
+//! (env_t_relax = 0; the VET coupling itself sets T_gas = T_rad), held by the density
 //! floor rho_amb (= hydro/dfloor; it cannot be hydrostatic at ~2e4 K over the domain).
 //! IC: the column's atmosphere ends where its density falls to rho_amb; above, rho_amb at
 //! T_col (the radiation IC's own T, so gas and radiation start in equilibrium).  The
@@ -92,7 +92,7 @@
 //!
 //! STREAM RADIATION (problem/stream_rad = true; default false: dark window).  The
 //! optically thick stream enters with its radiation in equilibrium with its gas: in the
-//! window the M1 ghosts hold E = a T_s^4 and the lab-frame flux of optically thick
+//! window the VET ghosts hold E = a T_s^4 and the lab-frame flux of optically thick
 //! advection F = (4/3) E v (env_t_stream, the stream velocity), and since the implicit x1
 //! solve uses a FACE-FLUX boundary (the ghosts are not read), the outer face of the
 //! window columns gets the same state as an INFLOW face
@@ -141,7 +141,7 @@
 //!    of Mwal, Jwal: identically 0 with the closed free-slip wall).  Radiation is not
 //!    touched, unless problem/donor_irr = true: then the lobe also holds E = a T_d^4,
 //!    F = 0 (T_d = problem/donor_teff, default 26200 K), a black-body surface whose light
-//!    enters the grid by the M1 transport (booked in Ebnd as radiation in).
+//!    enters the grid by the VET transport (booked in Ebnd as radiation in).
 //!
 //! HISTORY (problem/user_hist = true), all in code units, the plain sums over ranks:
 //!   Mdom, Jdom           mass and INERTIAL z angular momentum about the accretor axis,
@@ -302,8 +302,8 @@ constexpr int kNaccR = 13;
 Real acc0_[kNaccR] = {0.0}, acc1_[kNaccR] = {0.0};
 Real hist_prev_[kNaccR] = {0.0};
 Real hist_tprev_ = -1.0;
-// booking fix: the radiation the stage resets put into the M1 state (nozzle
-// stream light zs[3], donor_irr / sector light zs[6]) as a PLAIN sum.  The M1 u0 is not
+// booking fix: the radiation the stage resets put into the VET state (nozzle
+// stream light zs[3], donor_irr / sector light zs[6]) as a PLAIN sum.  The VET u0 is not
 // RK-combined, so the RK-weighted booking in register 10 kept only half of the stage-1
 // increment.  History only.
 Real erinj_ = 0.0;
@@ -390,7 +390,7 @@ Real sz_ = 0.0;                // sigma_z of the nozzle (Rsun)
 // reflect) | outflow | hse (mesh ix2/ox2_bc = user: ghosts by the isothermal hydrostatic
 // walk in theta in the true Phi at the edge cell's T; outflow: v_theta a diode (outflow
 // only), v_r, v_phi copied; hse: a closed wall, v from the mirror cell with v_theta
-// flipped; M1 ghosts reflecting, dark only with <rad_vet>/implicit_bc_x2min /max =
+// flipped; VET ghosts reflecting, dark only with <rad_vet>/implicit_bc_x2min /max =
 // marshak; the mass, Lz and energy through the theta faces join Mout, Jout and the hydro
 // energy out), and problem/theta_sponge_deg / theta_sponge_tau (a velocity sponge in a
 // layer next to each theta wall, linear ramp, outside the envelope, KE removed from E);
@@ -494,13 +494,13 @@ std::vector<Real> spr_cpsi_, spr_clt_, spr_clr_, spr_crq_;   // the env_ic_file 
 DvceArray4D<Real> spr_aref_;
 // (history only): rbk_ = the radiation leaving through r_out (comoving face flux
 // f0x1 + the bath's advective part ibadv_x1max + the theta-wall leak) is booked in Ebnd
-// (register 10, a plain sum) by the M1 post hook from the face flux of the solve just
+// (register 10, a plain sum) by the VET post hook from the face flux of the solve just
 // taken, with the weight that solve's slope has in the step (backward Euler: dt; hesdirk2
 // stage 1: the K1 part (w0 a21 + c31) dt from the stage-start faces and the K2 part
 // (w0 g + c32) dt; stage 2: g dt), instead of the previous cycle's f0x1 read in the hydro
 // stages (one cycle late: the 2e4 start-up gap of the static runs).  (The held-cell
 // resets under hesdirk2 are still booked per stage in full: an open booking gap of the
-// hold with hesdirk2, not of backward Euler.)  Off (old booking) without the M1 coupling
+// hold with hesdirk2, not of backward Euler.)  Off (old booking) without the VET coupling
 // hook. they are now booked with their weight in
 // the step.  The radiation is not RK-combined by the hydro, but under hesdirk2
 // Time2FormStage(2) makes the stage-2 start w1 u1 + w0 u0, where u1 (copied after the
@@ -514,8 +514,8 @@ Real t2s1_[2] = {0.0, 0.0};
 Real t2nf_ = -1.0;
 // problem/sink_kick_book (default true; history only): the audit
 // (<rad_vet>/dbg_energy_audit) found that the kinetic energy
-// RyPerVetPost removes from the sink cells is NOT all unpaid work: the M1 write-back pays
-// the kick's work from E, and only where that drives E below e_floor does the
+// RyPerVetPost removes from the sink cells is NOT all unpaid work: the VET write-back
+// pays the kick's work from E, and only where that drives E below e_floor does the
 // implicit_pos_floor raise create the energy (VET_POS_FLR_UN).  With the key, every
 // backward-Euler solve books Emsk += eke - (the solve's FLR_UN increment, all cells): the
 // paid part of the removal is booked as removed and the floor creation as added.
@@ -567,7 +567,8 @@ std::string trc_file_;  // NOLINT(runtime/string)
 // rho), R = r sin(theta) (r in the 2-D band), the Jdom of user.hst.  Every stage is cut
 // into the segments between the measurements of J (local sums, no MPI): [stage start ->
 // RyPerSrcEnv entry] the hydro TRANSPORT (RK update incl. the coordinate source and
-// <hydro>/am_transport), [entry -> exit] the pgen SOURCES, [exit -> the M1 post hook] the
+// <hydro>/am_transport), [entry -> exit] the pgen SOURCES, [exit -> the VET post hook]
+// the
 // radiation coupling and what runs with it.  The transport is the RK combination g0 J(u0)
 // + g1 J(u1) moved by the update. 0 Jgrv  torque of the explicit phi gravity, bdt sum dV
 // R rho g_phi (the tidal/Roche torque of the companion + the CM-centred centrifugal term
@@ -582,7 +583,7 @@ std::string trc_file_;  // NOLINT(runtime/string)
 //   5 Jspf  the rest of the pgen sources: sponges, radeq floor, donor mask / back sink
 //           (the nozzle's own L_z is Jin)
 //   6 Jm1   the radiation coupling (radiation force), sink_zero_v, the c2p floors after
-//           the sources (measured at the M1 post hook and at the next step start)
+//           the sources (measured at the VET post hook and at the next step start)
 // Closure: Jdom - Jdom0 = (Jin - Jin0) - (Jout - Jout0) + sum Jgrv..Jm1 (round-off).
 // problem/lz_budget = false (read only when named): off.
 bool lz_ = false;
@@ -1860,7 +1861,7 @@ void RyPerLzTorque(MeshBlockPack *pmbp, Real &tg, Real &tc, Real &frin, Real &ft
   }, Kokkos::Sum<Real>(frin), Kokkos::Sum<Real>(fthw));
 }
 
-//! the L_z segment ending at the M1 post hook (radiation coupling etc.)
+//! the L_z segment ending at the VET post hook (radiation coupling etc.)
 void RyPerLzMark(MeshBlockPack *pmbp) {
   if (!lz_ || !(jlok_ > 0.0)) return;
   const Real jn = RyPerJsum(pmbp, pmbp->phydro->u0);
@@ -1877,13 +1878,13 @@ void RyPerLzMark(MeshBlockPack *pmbp) {
 //! centrifugal term); no explicit centrifugal work is added (double-count guard).
 //----------------------------------------------------------------------------------------
 //! The sink cells (the donor lobe and the back-sink sector)
-//! are reset to floor gas AT REST after the other sources of every stage, but the M1
+//! are reset to floor gas AT REST after the other sources of every stage, but the VET
 //! implicit coupling that follows gives that 1e-8 floor gas the radiation momentum of the
 //! light it holds (v_r 2e5-1e6 km/s in the first back-sink row behind the
 //! nozzle, in every output and in Emsk).  This hook (RadiationVet::HydroConToPrim, after
 //! the coupling, before the fluid refresh) zeroes their momentum again (the kinetic
 //! energy it removes is the coupling's unpaid work and is not booked, see the end of the
-//! function).  The hydro dt is unchanged (computed before the M1 stage, and these cells
+//! function).  The hydro dt is unchanged (computed before the VET stage, and these cells
 //! never set it).  Active only while a sink can hold light or follow the stream
 //! (donor_irr on, or the back sink with the stream on).
 //! (problem/theta_wall_closed): the hse theta walls exactly closed.  Called by
@@ -1916,7 +1917,7 @@ void RyPerWallFlux(Mesh *pm) {
   });
 }
 
-//! problem/floor_m1_vcap (read only when named, default false): after the M1
+//! problem/floor_m1_vcap (read only when named, default false): after the VET
 //! coupling, floor-class gas (rho < env_sponge_rho rho_amb, the floor sponge's density
 //! class) keeps |v| <= env_v_floor_max (rotating frame; the cs metric norm); the kinetic
 //! energy above the cap is removed (not booked, as in the sink cells).  The floor sponge
@@ -2025,7 +2026,7 @@ void RyPerVetPost(Mesh *pm) {
     }
   }
   // (HSTRST): NOT booked in Emsk any more.  The kinetic energy removed here is
-  // the work the M1 coupling just did on the sink's floor gas, which the radiation field
+  // the work the VET coupling just did on the sink's floor gas, which the radiation field
   // never paid (an energy-budget diagnostic run, acctrc/runs/ebudd: per cycle the
   // unbooked gain dEtot - (Ebnd + Erel) + Emsk equalled this eke to 2%, with and without
   // donor_irr), so creation and removal cancel and neither belongs in the budget; Emsk
@@ -2216,7 +2217,7 @@ void RyPerHoldBook(Mesh *pm) {
   hold_bk_ += s;
 }
 
-//! the M1 post hook of the envelope with rbk_ (booking, then as before)
+//! the VET post hook of the envelope with rbk_ (booking, then as before)
 void RyPerVetPostRb(Mesh *pm) {
   RyPerHoldBook(pm);
   RyPerRadBook(pm);
@@ -2224,7 +2225,7 @@ void RyPerVetPostRb(Mesh *pm) {
   if (lz_) RyPerLzMark(pm->pmb_pack);
 }
 
-//! the M1 post hook of the envelope (RyPerVetPost, then the L_z mark)
+//! the VET post hook of the envelope (RyPerVetPost, then the L_z mark)
 void RyPerVetPostLz(Mesh *pm) {
   RyPerVetPost(pm);
   RyPerLzMark(pm->pmb_pack);
@@ -2899,7 +2900,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           }
         } else if (mirr) {
           // donor_irr: the lobe is a black body (isotropic, comoving F = 0); its light
-          // leaves through the mask surface by the M1 transport.  donor_gdark > 0: the
+          // leaves through the mask surface by the VET transport.  donor_gdark > 0: the
           // local T of the von Zeipel surface along the ray from the donor centre
           Real eh = med;
           if (gdk) {
@@ -3097,7 +3098,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
-      if (rbk_ && n == 10) continue;   // a plain sum (the M1 post hook)
+      if (rbk_ && n == 10) continue;   // a plain sum (the VET post hook)
       acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
     }
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
@@ -4760,7 +4761,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     if (amb_radeq_) {
       if (env_tro_ != 0.0) {
         fatal5("env_amb_mode = radeq needs problem/env_t_relax = 0 (the floor gas "
-               "reaches radiative equilibrium through the M1 coupling, no T relaxation)");
+               "reaches radiative equilibrium through the VET coupling, no T relaxation)");
       }
       if (pmbp->pradvet->otab.amask_rho > 0.0) {
         fatal5("env_amb_mode = radeq needs absorption ON: remove "
@@ -5497,7 +5498,7 @@ void RySpinSet(MeshBlockPack *pmbp, const Real s) {
 //! per-column outer bath (<rad_vet> iebath_hi_col_on: env_amb_mode = radeq or stream_rad)
 //! the block also holds the module's ibadv_x1max (the previous solve's advective
 //! radiation flux through r_out, read by the first hydro stages of the next cycle into
-//! Ebnd, register 10; not M1 state and not in the rst otherwise): int32 hdr[3] = nk*nj
+//! Ebnd, register 10; not VET state and not in the rst otherwise): int32 hdr[3] = nk*nj
 //! per MeshBlock, then nmb_total x nk*nj Reals in global MeshBlock order (restored by
 //! gid, so also onto other rank counts). Without it the restarted Ebnd is offset by the
 //! first cycle's advective term.  Restart: * same nranks: every register restored exactly
@@ -6743,7 +6744,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (user_hist) user_hist_func = RyPerHistEnv;
     if (msk_ || flvc_) user_vetpost_func = RyPerVetPost;
     if (lz_) user_vetpost_func = RyPerVetPostLz;   // (RyPerVetPost + the L_z mark)
-    // rbk_ (see there): wherever the M1 post hook runs after every solve
+    // rbk_ (see there): wherever the VET post hook runs after every solve
     {
       auto *pvet = pmbp->pradvet;
       rbk_ = rad_ && pvet != nullptr && pvet->coupling && pvet->gas_feedback &&
@@ -6752,7 +6753,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               !pin->GetBoolean("problem", "rad_book_lag"));
       if (rbk_) user_vetpost_func = RyPerVetPostRb;
       if (rbk_ && global_variable::my_rank == 0) {
-        std::printf("ry_per_accretor: Ebnd radiation out booked per M1 solve "
+        std::printf("ry_per_accretor: Ebnd radiation out booked per VET solve "
                     "(problem/rad_book_lag = true: the old one-cycle-late "
                     "booking)\n");
       }

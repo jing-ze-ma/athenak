@@ -3575,7 +3575,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
           // clean_rst_mshare, the first solution after a restart from an old scheme's
           // file: the memory G + d at the fixed point of Phi^H = theta (G + d) + B of
-          // this E, the M1 share's steady flux B/(1 - theta) (above c E of its donor:
+          // this E, the VET share's steady flux B/(1 - theta) (above c E of its donor:
           // counted), so the restart has no relaxation transient
           if (rms && th < 1.0) {
             const Real ms = (fc(m,CLF_N,k,j,i) - th*fc(m,CLF_G,k,j,i))/(1.0 - th);
@@ -3636,7 +3636,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
     const Real n = CleanReduce(h(0), false);
     if (global_variable::my_rank == 0) {
       std::printf(
-          "<rad_vet> clean_rst_mshare RESTART CONVERSION (one time): the M1 share's "
+          "<rad_vet> clean_rst_mshare RESTART CONVERSION (one time): the VET share's "
           "memory at its steady flux (faces above c E of the donor: %.0f)\n", n);
     }
   }

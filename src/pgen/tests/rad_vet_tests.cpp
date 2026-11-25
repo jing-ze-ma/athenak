@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_tests.cpp
-//! \brief test problems for the grey photon M1 module, selected by <problem>/vet_test.
+//! \brief test problems for the grey photon VET module, selected by <problem>/vet_test.
 //!
 //!   beam    (design sect. 8, T1): 2-D unit box, no opacity, at the vacuum floor; with
 //!           beam_packet a free-streaming Gaussian packet travelling at beam_angle.
@@ -71,7 +71,7 @@ Real vet_beam_f = 1.0 - 1.0e-6;
 int  vet_test_id = 0;   // 0 = beam, 1 = pulse1d, 2 = thick_pulse
 // m1-mhd2: a UNIFORM field problem/vet_b0_1..3 under <mhd> (force free, div B = 0), so
 // that the uniform-gas tests (equil, marshak, thick_pulse/tophat, advect_uniform) run the
-// |B|^2/2 bookkeeping of every M1 temperature; 0 under <hydro> (never read)
+// |B|^2/2 bookkeeping of every VET temperature; 0 under <hydro> (never read)
 Real vet_emag = 0.0;
 } // namespace
 
@@ -79,7 +79,7 @@ namespace {
 //----------------------------------------------------------------------------------------
 //! \fn VetSetUniformGas
 //! \brief fill hydro's conserved u0 with a gas at rest of density d and internal energy
-//! density e.  The M1 tests never evolve a velocity, so the conserved state is just
+//! density e.  The VET tests never evolve a velocity, so the conserved state is just
 //! (d, 0, 0, 0, e); it is written directly rather than through PrimToCons so that the
 //! ghost zones are filled too (the opacity kernel reads them).
 

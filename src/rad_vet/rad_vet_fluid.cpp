@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_fluid.cpp
-//! \brief fluid side of the M1 module: ghost exchange and inversion after a write of
+//! \brief fluid side of the VET module: ghost exchange and inversion after a write of
 //! the conserved fluid, near-floor gas cap, |B|^2/2, the opacity task and RSLA check.
 
 #include <cstdlib>
@@ -389,7 +389,7 @@ void RadiationVet::EmagBuild(bool un) {
 //! \brief fill opac = rho*kappa (four channels) from the gas state of the stage
 
 TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
-  // first gas reader of both M1 chains: refresh |B|^2/2 of the stage's field
+  // first gas reader of both VET chains: refresh |B|^2/2 of the stage's field
   if (fl_mhd && !emag_hold) EmagBuild(false);
   if (opac_zero) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;

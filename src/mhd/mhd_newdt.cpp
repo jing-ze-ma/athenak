@@ -87,7 +87,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   const bool multi_d_ = pmy_pack->pmesh->multi_d;
   const bool three_d_ = pmy_pack->pmesh->three_d;
 
-  // RADIATION SIGNAL SPEED (<mhd>/rad_signal_speed; default on with an implicit M1
+  // RADIATION SIGNAL SPEED (<mhd>/rad_signal_speed; default on with an implicit VET
   // transport, see mhd.cpp).  The MHD form of <hydro>/rad_signal_speed (hydro_newdt.cpp,
   // where the closure diagonal, the equilibrium sound speed and the optical-depth taper
   // are derived).  In the strong-coupling (equilibrium-diffusion) limit gas + radiation

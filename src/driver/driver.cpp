@@ -430,7 +430,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   radiation::Radiation *prad = pmesh->pmb_pack->prad;
   z4c::Z4c *pz4c = pmesh->pmb_pack->pz4c;
   if (time_evolution != TimeEvolution::tstatic) {
-    // <hydro|mhd>/rad_signal_speed: the M1 inputs of the signal speed (restored, or opac
+    // <hydro|mhd>/rad_signal_speed: the VET inputs of the signal speed (restored, or opac
     // of the initial state) before the first dt; see RadiationVet::RssPrime
     if (((phydro != nullptr && phydro->rad_signal_speed) ||
          (pmhd != nullptr && pmhd->rad_signal_speed)) &&
@@ -840,7 +840,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (prs->rkg_strang) {rkg_step(2, 0.5);} else {rkg_step(0, 1.0);}
       }
 
-      // Operator-split, sub-cycled grey M1 radiation transport (design sect. 5).
+      // Operator-split, sub-cycled grey VET radiation transport (design sect. 5).
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_vet> block.

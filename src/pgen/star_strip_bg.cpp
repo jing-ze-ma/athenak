@@ -26,7 +26,7 @@
 //! T_amb) -- a NEW profile (no old gas above i_c is kept or
 //!                                averaged), only so that P has no jump at r_c
 //! Replaced cells: v = 0, T = T_amb = max(tfloor, (E/a_rad)^(1/4)) of the restart's own
-//! M1 E (radiative equilibrium with the star's light; E and F are kept as they are),
+//! VET E (radiative equilibrium with the star's light; E and F are kept as they are),
 //! e = e(rho, T) from the EOS, IEN = e + rho Phi (etotgrav), passive scalars 0, am spin
 //! 0; the general-EOS restart caches (wtemp, wder p/Gamma_1, eint_rst) of those cells are
 //! set to the new state so the first (frozen) ConToPrim is consistent and the kept
@@ -251,7 +251,7 @@ void StarStripBackground(ParameterInput *pin, Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 //! a ONE-SHOT restart-time tiny
-//! relative perturbation of the M1 radiation energy E of every active cell,
+//! relative perturbation of the VET radiation energy E of every active cell,
 //!   E -> E (1 + amp (2 h - 1)),  h = hash(gid, k, j, i) in [0, 1) (layout-independent),
 //! to move the trajectory off a deterministic stall.  Keys (<problem>):
 //!   rst_pert_erad (absent = nothing, bitwise)  the relative amplitude amp (>= 0)
@@ -295,7 +295,7 @@ void StarRestartPerturb(ParameterInput *pin, Mesh *pm) {
   });
   Kokkos::fence();
   if (global_variable::my_rank == 0) {
-    std::cout << "rst_pert: M1 E of every active cell perturbed by relative " << amp
+    std::cout << "rst_pert: VET E of every active cell perturbed by relative " << amp
               << " (hash noise) at t = " << pm->time << std::endl;
   }
 }
@@ -312,7 +312,7 @@ void StarRestartPerturb(ParameterInput *pin, Mesh *pm) {
 //! it).  Per cell (ghosts included): u0(IEN) += e_new(rho, T) - e_old, with e_old the
 //! file's internal energy (the eint_rst cache when the file carried it, else u0(IEN)
 //! - KE - rho Phi with the cubed-sphere covariant KE); KE, rho Phi, rho, momenta and the
-//! M1 radiation (E, F) are untouched.  The derived cache (p, Gamma_1) is re-evaluated
+//! VET radiation (E, F) are untouched.  The derived cache (p, Gamma_1) is re-evaluated
 //! with the new table at (rho, e_new, T) and eint_rst set to e_new, so the frozen first
 //! ConToPrim of the restart (Hydro::c2p_freeze_derived) carries the NEW table's state.
 //! The total internal-energy change over the active cells (= the total-energy change,
@@ -440,7 +440,7 @@ void StarEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   if (global_variable::my_rank == 0) {
     std::printf("eos_reinit_from_t: APPLIED at t = %.10e, cycle %d "
                 "(e from the restart (rho, T) with this run's EOS table; T, rho, "
-                "momenta, M1 E/F kept; e_old from %s)\n", pm->time, pm->ncycle,
+                "momenta, VET E/F kept; e_old from %s)\n", pm->time, pm->ncycle,
                 hei ? "the restart's eint cache" : "the conserved state");
     std::printf("eos_reinit_from_t: active cells %.0f (skipped %.0f); int E_int dV old "
                 "%.10e new %.10e erg; dE_total = dE_int = %.10e erg (%.4e of E_int "

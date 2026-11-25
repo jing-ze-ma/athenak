@@ -183,7 +183,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
   }
   if ((ivar>=155) && (ivar<160) && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-       << "Output of M1 radiation moments requested in <output> block '"
+       << "Output of VET radiation moments requested in <output> block '"
        << out_params.block_name << "' but no RadiationVet object has been constructed."
        << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -204,7 +204,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
   }
   if (ivar==161 && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-       << "Output of the M1 Eddington tensor requested in <output> block '"
+       << "Output of the VET Eddington tensor requested in <output> block '"
        << out_params.block_name << "' but no RadiationVet object has been constructed."
        << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -248,14 +248,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
   }
   if (ivar==163 && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-       << "Output of the M1 formal-solution moments requested in <output> block '"
+       << "Output of the VET formal-solution moments requested in <output> block '"
        << out_params.block_name << "' but no RadiationVet object has been constructed."
        << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if (ivar==162 && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-       << "Output of the M1 face fluxes requested in <output> block '"
+       << "Output of the VET face fluxes requested in <output> block '"
        << out_params.block_name << "' but no RadiationVet object has been constructed."
        << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -718,7 +718,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 8;
     }
 
-    // grey M1 radiation moments
+    // grey VET radiation moments
     if (variable.compare("vet_e") == 0 || variable.compare("vet") == 0) {
       outvars.emplace_back("vet_e",radvet::VET_E,&(pm->pmb_pack->pradvet->u0));
     }
@@ -748,7 +748,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // the M1 closure's Eddington factor f_K (= chi along the closure axis) and the
     // diagonal of the Eddington tensor D = P/E in the coordinate basis (D_11 = D_rr on
     // the spherical-polar wedge), so that P_rad,aa = D_aa E is exact in post-processing.
-    // Derived (derived_variables.cpp); not part of variable = m1.
+    // Derived (derived_variables.cpp); not part of variable = vet.
     if (variable.compare("vet_vsc") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("vet_vj",0,&(derived_var));
@@ -763,10 +763,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // the run's implicit_thin_switch (fb for hj and none, max(fb, eps C1/1.5) for fse,
     // ...;
     // the face weight is that of the larger g of its two cells), vet_tj = J.  -1 where no
-    // formal solution (below the vet_gd cut).  Derived; not part of m1.
+    // formal solution (below the vet_gd cut).  Derived; not part of vet.
     // P2: the vet_gd half-range ratios (vgd_hr) the halfrange face flux uses:
     // vet_ghp1/ghm1 = H+_r/J, H-_r/J, then theta, phi.  hp < 0 flags no formal solution.
-    // Derived; not part of m1.
+    // Derived; not part of vet.
     if (variable.compare("vet_gdhr") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("vet_ghp1",0,&(derived_var));
@@ -818,7 +818,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // that face.  The cell flux vet_f1 is a DERIVED state (face mean + advective term,
     // then limited to |F| <= c E) and is not the transported flux.  Zero where the
     // array does not exist (explicit transport; x2/x3 on a 1-D column).  Derived; not
-    // part of variable = m1.
+    // part of variable = vet.
     if (variable.compare("vet_face") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("vet_fx1",0,&(derived_var));
@@ -832,7 +832,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // the moments of the vet_gd formal solution of the LAST build (closure = vet_col with
     // vet_gd): vet_jfs = sum_d w_d I_d (E units, compare vet_e) and vet_hfs = sum_d w_d
     // (n_d . r_hat) I_d (= F_r/c, compare vet_f1/c).  Zero where vet_gd is off or below
-    // its first shell.  Diagnostic (GATE2); derived, not part of m1.
+    // its first shell.  Diagnostic (GATE2); derived, not part of vet.
     // vet_sfs, vet_cfs: the source S and extinction chi the sweep used.
     if (variable.compare("vet_gw") == 0) {   // diagnostic
       out_params.contains_derived = true;

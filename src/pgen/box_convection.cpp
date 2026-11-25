@@ -372,7 +372,7 @@ Real ColInterp(const DvceArray1D<Real> &c, const Real zlo, const Real dzf,
   const Real f = t - static_cast<Real>(ii);
   return c(ii)*(1.0 - f) + c(ii+1)*f;
 }
-// ---- THE GREY M1 MODULE INSIDE THE BOX (milestone 2a, docs/dev/rad_vet_design.md).
+// ---- THE GREY VET MODULE INSIDE THE BOX (milestone 2a, docs/dev/rad_vet_design.md).
 // Everything here is inert unless a <rad_vet> block exists, in which case the two-stream,
 // rt_rad_force and wb_arad_force are all refused: the module owns the radiation.
 bool vet_on_ = false;             // <rad_vet> exists on this pack
@@ -1280,7 +1280,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // ---- problem/wb_phi_eff: THE WELL-BALANCED SCHEME AGAINST AN EFFECTIVE GRAVITY.
   // A radiative acceleration a_rad(z) that is applied by an OPERATOR-SPLIT source
-  // (today the grey two-stream's rt_rad_force, tomorrow the M1 module) supports part of
+  // (today the grey two-stream's rt_rad_force, tomorrow the VET module) supports part of
   // the weight of the column, so the stratification the code integrates is hydrostatic
   // under g_eff = g - a_rad and NOT under g.  The well-balanced pair -- the background
   // the x1 reconstruction subtracts and re-adds, and the gravity source, which IS that
@@ -1306,7 +1306,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the gas -rho g + rho a_ref in IM1 but NO energy: the work rho a_ref v1 must come
   // from the radiation module, and the module must then apply only the RESIDUAL force.
   // Only <rad_vet> with force_reference = wb_arad does both (work mode split: the WB
-  // source adds it, BoxConvSrcs fws; full: the M1 coupling's work term keeps the full
+  // source adds it, BoxConvSrcs fws; full: the VET coupling's work term keeps the full
   // force).  Every other combination is wrong: wb_phi_eff alone or with wb_arad_force
   // (BoxConvARadForce is a no-op then) never pays the work; with the two-stream's
   // rt_rad_force or <rad_vet> force_reference = none the radiative force is counted
@@ -1528,7 +1528,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // --- THE GREY M1 MODULE (<rad_vet>), milestone 2a.  docs/dev/rad_vet_design.md.
+  // --- THE GREY VET MODULE (<rad_vet>), milestone 2a.  docs/dev/rad_vet_design.md.
   // The module replaces the whole two-stream + radiative
   // conduction + rt_rad_force stack, so those are refused outright rather than left to
   // interact; <hydro>/eos_radiation is already refused by the module itself.
@@ -1686,7 +1686,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     // (e) the horizontally averaged x1 profile dump.  Its setup lives inside the
-    // two-stream branch below, which never runs here, so it is repeated: the M1 record
+    // two-stream branch below, which never runs here, so it is repeated: the VET record
     // carries three extra rows (E, F1, a_rad) and is otherwise the same file.
     prof_dt_ = pin->GetOrAddReal("problem", "rt_profile_dt", 0.0);
     {
@@ -2219,7 +2219,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // m1-mhd: the <mhd> mode covers the M1 box (gravity + WB + Phi_eff + the x1 walls);
+  // m1-mhd: the <mhd> mode covers the VET box (gravity + WB + Phi_eff + the x1 walls);
   // m1-mhd2: and the grey two-stream (two_stream_rt.hpp is fluid-generic; the box's
   // weight rebuild and ADI sub-step go through the MHD inversion / Conduction) and the
   // split a_rad force (FluidRef; MHD::RTStrangSplit has the hydro semantics)
@@ -2333,7 +2333,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   });
 
-  // --- THE M1 RADIATION INITIAL STATE.  A three-column file `z E F`
+  // --- THE VET RADIATION INITIAL STATE.  A three-column file `z E F`
   // (problem/vet_ic_file) covering the mesh plus its ghosts; E is interpolated in log (it
   // spans two decades
   // over the box) and F linearly, since it is very nearly constant and may not be.  The

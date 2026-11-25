@@ -104,21 +104,21 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   // the physics checks in the BaseTypeOutput constructor test index RANGES.
   "hydro_fofc", "mhd_fofc",
 
-  // grey M1 radiation, <rad_vet> (155-159)
+  // grey VET radiation, <rad_vet> (155-159)
   "vet_e", "vet_f1", "vet_f2", "vet_f3", "vet",
 
   // self-gravity potential (160)
   "grav_phi",
 
-  // grey M1 radiation: the closure's Eddington factor and tensor diagonal (161)
+  // grey VET radiation: the closure's Eddington factor and tensor diagonal (161)
   "vet_vet",
   "vet_comov",
 
-  // grey M1 radiation: the TRANSPORTED face-normal comoving fluxes of the implicit
+  // grey VET radiation: the TRANSPORTED face-normal comoving fluxes of the implicit
   // solve (f0x1/f0x2/f0x3), the flux whose face sums are the luminosities (162)
   "vet_face",
 
-  // grey M1 radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
+  // grey VET radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
   "vet_fs",
   "vet_gw",
 
@@ -337,7 +337,7 @@ class BaseTypeOutput {
   // <rad_vet> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
   // radvet::kVetCtrRstMagic.
   HostArray5D<Real> outarray_vetc;
-  // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationVet::RssSlot);
+  // <hydro>/rad_signal_speed: the VET inputs of the signal speed (RadiationVet::RssSlot);
   // empty unless the signal speed is on.  radvet::kVetRssRstMagic.
   HostArray5D<Real> outarray_vets;
   // <rad_vet>/vet_rotate_avg: the averaging history, densely packed

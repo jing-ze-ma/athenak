@@ -547,7 +547,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // to compare against. Mirror of <hydro>/wb_rmax.
     wb_rmax = pin->GetOrAddReal("mhd","wb_rmax",0.0);
     // radiation-modified CFL signal speed (mhd_newdt.cpp), the MHD form of
-    // <hydro>/rad_signal_speed with the same default: on with an IMPLICIT M1 transport
+    // <hydro>/rad_signal_speed with the same default: on with an IMPLICIT VET transport
     // (<rad_vet>/transport = implicit | implicit_x1), off otherwise. Read only when
     // named, so the parameter dump of a run without the key is unchanged.
     if (pin->DoesBlockExist("rad_vet") &&

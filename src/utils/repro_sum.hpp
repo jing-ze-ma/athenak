@@ -121,7 +121,7 @@ struct ReproSum {
   }
 };
 
-//! N sums and one max (the shape of the M1 Krylov reductions)
+//! N sums and one max (the shape of the VET Krylov reductions)
 template <int N>
 struct ReproVal {
   ReproSum s[N];

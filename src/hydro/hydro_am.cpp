@@ -494,7 +494,7 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
   auto sp1_ = am_spin1;
   auto sps_ = am_spins;
   // the radiation's L (F / (c chat)) of the cell is part of L_abs: the frame terms book
-  // its rotation on the gas (the M1 equations carry no frame terms); u0 F covariant on
+  // its rotation on the gas (the VET equations carry no frame terms); u0 F covariant on
   // the cs panel basis (raised with cos_cell), orthonormal on sp
   // (only when the radiation exchanges momentum with this gas: coupling + gas_feedback)
   const bool hrad = amc && (pmy_pack->pradvet != nullptr) &&

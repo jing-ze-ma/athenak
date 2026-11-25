@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_tests2.cpp
-//! \brief the milestone-1d test problems of the grey M1 module, dispatched from
+//! \brief the milestone-1d test problems of the grey VET module, dispatched from
 //! rad_vet_tests.cpp when <problem>/vet_test names none of the 1a-1c tests.  Kept in a
 //! separate file so that the 1a-1c generators are untouched.
 //!

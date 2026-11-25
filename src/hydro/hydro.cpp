@@ -445,7 +445,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     pravg = new hydro::RingAvg(ppack, pin);
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp). DEFAULT: on with an
-  // IMPLICIT M1 transport (<rad_vet>/transport = implicit | implicit_x1, any closure),
+  // IMPLICIT VET transport (<rad_vet>/transport = implicit | implicit_x1, any closure),
   // whose time step has no light-speed limit; off without <rad_vet> and with the explicit
   // transport (dt already set by the light speed). Read only when named, so the
   // parameter dump of a run without the key is unchanged.

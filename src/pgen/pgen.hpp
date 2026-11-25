@@ -143,7 +143,7 @@ class ProblemGenerator {
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
   // Called once per stage by RadiationVet::HydroConToPrim
-  // right AFTER the M1 implicit coupling wrote the gas u0 and BEFORE the fluid refresh
+  // right AFTER the VET implicit coupling wrote the gas u0 and BEFORE the fluid refresh
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).
   UserCycleFnPtr user_vetpost_func=nullptr;

@@ -145,7 +145,7 @@
             ak = -1;
             bk = kl + ku;
           }
-          // cs_perm_pairs: the tangential pairs are face-normal components (implicit M1
+          // cs_perm_pairs: the tangential pairs are face-normal components (implicit VET
           // work array), transformed with cubed_sphere::TransformFieldToDstNormals
           if (cperm_ && vec_) {
             cs_xform = false;

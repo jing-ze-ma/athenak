@@ -591,7 +591,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_rot_ring_fill_rst: at a restart from a file without the clean state the ring
     // fill takes the older sets' offsets swept at the restart state (CleanRingMoments)
     cln_rfrst = pin->GetOrAddBoolean("rad_vet","clean_rot_ring_fill_rst",true);
-    // clean_rst_mshare: at such a restart the M1 share's memory starts at the first
+    // clean_rst_mshare: at such a restart the VET share's memory starts at the first
     // solution's steady flux (CleanStagFSolve)
     cln_rmsh = pin->GetOrAddBoolean("rad_vet","clean_rst_mshare",true);
     // clean_source_convex: the rays' vet_scatter source with kappa_P/chi capped at 1,
@@ -880,7 +880,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         << "eddington | m1 | minerbo | kershaw), a spherical-polar wedge or the full "
         << "sphere and (closure eddington only) the cubed sphere; this input sets:"
         << why << "." << std::endl
-        << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it."
+        << "The VET kernels would run with Cartesian uniform-dx arithmetic on it."
         << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -1874,7 +1874,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   }
 
-  // the M1 face states read two cells beyond the face
+  // the VET face states read two cells beyond the face
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   if (indcs.ng < 2) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

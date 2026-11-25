@@ -866,7 +866,7 @@ class RadiationVet {
   Real impl_ctrelax{};
   bool ctr_init{};
   DvceArray5D<Real> ctr_mem;
-  // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last M1
+  // <hydro>/rad_signal_speed reads opac(VET_OP_T) and the closure tensor of the last VET
   // step: they travel in the restart (kVetRssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
   //! closure tensor the signal speed reads: 0 E/3, 1 VetChi(F/cE), 2 tau_ten,
@@ -1258,7 +1258,7 @@ class RadiationVet {
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   bool cln_rfrst = false;       // clean_rot_ring_fill_rst: full window at an old restart
   bool cln_rfdone = false;      // its fill taken
-  bool cln_rmsh = false;        // clean_rst_mshare: M1 share memory at an old restart
+  bool cln_rmsh = false;        // clean_rst_mshare: VET share memory at an old restart
   bool cln_rmdone = false;      // its start taken
   bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
   void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);

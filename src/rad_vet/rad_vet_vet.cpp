@@ -4,8 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vet.cpp
-//! \brief closure = vet_sc: variable Eddington tensor for the multi-D implicit M1 solve
-//! from a grey short-characteristics formal solution on the Cartesian M1 grid.
+//! \brief closure = vet_sc: variable Eddington tensor for the multi-D implicit VET solve
+//! from a grey short-characteristics formal solution on the Cartesian VET grid.
 //!
 //! Solved per build at the lagged state:
 //!     mu . grad I = chi (S - I),   chi = rho (kappa_F + kappa_s)  (opac VET_OP_T),
