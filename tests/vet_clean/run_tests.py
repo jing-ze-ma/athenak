@@ -896,6 +896,15 @@ def t_floor_pay(c):
     e = hst_col(u, 'Eg') + hst_col(u, 'Er')
     out['ekin_floor_dE'] = rel_drift(e)
     out['ekin_floor_dM'] = rel_drift(hst_col(os.path.join(d, 'sp.hydro.hst'), 'mass'))
+    # Cartesian, periodic: the ghost's phi_hat (the L_z part floor_from_ekin keeps) is its
+    # owner's across the wrap: mass exact
+    d = c.run('wave_cart.athinput', 'ekin_cart', dict(g, **{
+        'mesh/nx1': 32, 'meshblock/nx1': 32, 'mesh/nx2': 8, 'meshblock/nx2': 8,
+        'mesh/x2max': 0.25, 'time/nlim': 30, 'time/tlim': 1e9, 'hydro/tfloor': 1.0001,
+        'hydro/floor_from_ekin': 'true', 'rad_vet/vet_x1_npass': 60,
+        'mesh/layout_invariant_mode': 'block', 'output9/file_type': 'hst',
+        'output9/dt': 1e-12, 'output9/data_format': '%24.16e'}))
+    out['ekin_cart_dM'] = rel_drift(hst_col(os.path.join(d, 'rw.hydro.hst'), 'mass'))
     d = c.run('shell_sp.athinput', 'ekin', dict(g, **{
         'time/nlim': 16, 'hydro/floor_from_ekin': 'true', 'hydro/vceil': 1.2e-2}))
     out.update({'ekin_' + k: v for k, v in am_budget(d, 'sp').items() if k != 'dLz_gr'})
