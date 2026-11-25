@@ -14,3 +14,5 @@
 - NEW2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
 - BASE2 user.hst against BASE1: 26 / 26 rows, printed-bitwise
 - BASE2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
+
+08:01 PST: all test steps of ours have ended (squeue on holders 7333072 / 7333073 / 7333035 / 7333036: only production p_t9l62, p_t9mlt, p_m35mms, p_m35zams); nothing had to be cancelled at 08:00; 02-03, 02-09 and 02-16 idle without an order; production untouched.
