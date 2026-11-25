@@ -268,6 +268,7 @@ def t_merge_lat(c):
          'hydro/merge_lat_mom': 'radial', 'time/nlim': 16, 'problem/gas_rot': 2e-2}
     out.update({'rad_' + k: v for k, v in
                 am_budget(c.run('shell_sp.athinput', 'rad', o), 'sp').items()})
+    c.dir = os.path.join(c.dir, 'rad_rst')
     out['rad_restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 8, o)['maxdiff']
     return out
 
