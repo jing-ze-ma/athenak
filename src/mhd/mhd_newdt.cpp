@@ -25,7 +25,6 @@
 #include "srcterms/srcterms.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_clean.hpp"
-#include "rad_vet/rad_vet_closure.hpp"
 
 namespace mhd {
 
@@ -105,9 +104,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   const bool rss_ = rad_signal_speed;
   DvceArray5D<Real> erad_, kopc_, vcel_;
   radvet::CleanGeo gn_;
-  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 3 vet_sc, 4 vet full, 5 clean
-  int rss_kind = 0;
-  Real rss_cl = 1.0;
+  int rss_mode = 0;          // 0 isotropic E/3, 4 vet_sc, 5 clean
   if (rss_) {
     auto *prm = pmy_pack->pradvet;
     if (prm == nullptr) {
@@ -118,11 +115,9 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
     }
     erad_ = prm->u0;
     kopc_ = prm->opac;
-    rss_cl = prm->c_light;
-    rss_kind = prm->chi_kind;
     // the same selection decides what a restart file carries (RadiationVet::RssPrime)
     rss_mode = prm->RssMode();
-    if (rss_mode >= 3) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
+    if (rss_mode >= 4) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
     if (rss_mode == 5) gn_ = prm->cln_gn;   // (cubed sphere: D Cartesian)
   }
 
@@ -270,28 +265,6 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
                                          radvet::CLG_E + 3*(a - 1), m, k, j, i) :
                         vcel_(m,d0+a,k,j,i);
               }
-            }
-          } else if (rss_mode >= 1) {
-            Real chi, n1, n2, n3;
-            if (rss_mode == 3) {
-              chi = vcel_(m,radvet::VETRAY_CHI,k,j,i);
-              n1 = vcel_(m,radvet::VETRAY_N1,k,j,i);
-              n2 = vcel_(m,radvet::VETRAY_N1+1,k,j,i);
-              n3 = vcel_(m,radvet::VETRAY_N1+2,k,j,i);
-            } else {
-              const Real f1 = erad_(m,radvet::VET_F1,k,j,i);
-              const Real f2 = erad_(m,radvet::VET_F2,k,j,i);
-              const Real f3 = erad_(m,radvet::VET_F3,k,j,i);
-              const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
-              const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-              chi = (er > 0.0) ? radvet::VetChi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
-              n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
-            }
-            if (chi > 0.0) {   // (vet_cell is zero before its first build: keep 1/3)
-              const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
-              dd[0] = dg + an*n1*n1;
-              dd[1] = dg + an*n2*n2;
-              dd[2] = dg + an*n3*n3;
             }
           }
           // the gas sound speed squared of the fast speeds above

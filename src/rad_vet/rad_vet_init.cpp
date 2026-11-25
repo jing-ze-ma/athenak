@@ -135,34 +135,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_offdiag = '" + sod
               + "' is not a choice (auto | lagged | operator | none)");
   }
-  // implicit_closure_lag: step (multi-D fresh run) | pass.  With step, chi(f) closures
-  // relax thin cells by implicit_closure_thin_relax (memory ctr_mem is in the restart);
-  // fixed-tensor closures never relax
-  const bool md_full = pmy_pack->pmesh->multi_d;
-  bool clag_step = false;
-  {std::string sc = pin->GetOrAddString("rad_vet","implicit_closure_lag",
-      (md_full && !global_variable::restart_run) ? "step" : "pass");
-  if (sc.compare("step") == 0) {
-    clag_step = true;
-  } else if (sc.compare("pass") != 0) {
-    ImplFatal("<rad_vet>/implicit_closure_lag = '" + sc
-              + "' is not a choice (pass | step)");
-  }
-  }
-  impl_ctrelax = 0.0;
-  ctr_init = false;
-  {const bool chif = !(eddington || vet_sc || vet_col);
-  if (chif && md_full && clag_step) {
-    impl_ctrelax = pin->GetOrAddReal("rad_vet","implicit_closure_thin_relax",
-                                     global_variable::restart_run ? 0.0 : 1.5);
-  } else if (pin->DoesParameterExist("rad_vet","implicit_closure_thin_relax")) {
-    impl_ctrelax = pin->GetReal("rad_vet","implicit_closure_thin_relax");
-    if (!chif) {impl_ctrelax = 0.0;}
-  }
-  if (impl_ctrelax < 0.0) {
-    ImplFatal("<rad_vet>/implicit_closure_thin_relax must be >= 0");
-  }
-  }
   // implicit_trans_limit: transverse realizability limiter
   {std::string st = pin->GetOrAddString("rad_vet","implicit_trans_limit","none");
   if (st.compare("none") == 0) {
@@ -177,7 +149,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   }
   dbg_etally = pin->GetOrAddBoolean("rad_vet","dbg_energy_tally",false);
-  const bool fixcl = eddington || vet_sc || vet_col;
   impl_onep = 0;
   for (int t = 0; t < 3; ++t) {
     onep_qa[t] = -1.0;
@@ -206,7 +177,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   // implicit_predictor: step | none (the predictor state is in the restart)
   {std::string pr = pin->GetOrAddString("rad_vet","implicit_predictor",
-                                        fixcl ? "step" : "none");
+                                        "step");
   if (pr.compare("none") == 0) {
     impl_pred = false;
   } else if (pr.compare("step") == 0) {
@@ -229,8 +200,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
   // implicit_marshak_face: cell | linear (Marshak face value; spherical wedge only)
   if (sph_geom || pin->DoesParameterExist("rad_vet","implicit_marshak_face")) {
-    const bool mfdef = !global_variable::restart_run &&
-                       (eddington || vet_sc || vet_col);
+    const bool mfdef = !global_variable::restart_run;
     const std::string smf = sph_geom ?
         pin->GetOrAddString("rad_vet","implicit_marshak_face",
                             mfdef ? "linear" : "cell") :
@@ -257,7 +227,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
   // implicit_enthalpy: reconstruction of the face enthalpy flux a_f E_f
-  const bool enth_up = global_variable::restart_run || !fixcl;
+  const bool enth_up = global_variable::restart_run;
   const std::string sen = pin->GetOrAddString("rad_vet","implicit_enthalpy",
                                               enth_up ? "upwind" : "plm");
   if (sen.compare("upwind") == 0) {
@@ -327,7 +297,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     const std::string tsn = pin->GetString("rad_vet","time_scheme");
     ts_ok = (tsn.compare("be") == 0) || (tsn.compare("hesdirk2") == 0);
   }
-  const bool ldef = ts_ok && fixcl && !global_variable::restart_run;
+  const bool ldef = ts_ok && !global_variable::restart_run;
   impl_pord = pin->GetOrAddInteger("rad_vet","implicit_predictor_order",
                                    (ldef && impl_pred) ? 2 : 1);
   if (impl_pord != 1 && impl_pord != 2) {
@@ -491,13 +461,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",
       recipe::Fix(pin, "rad_vet", "zalesak_active", "true", "false"));
   MemArenaInit(pin, nmb, VET_NIW, ncells3, ncells2, ncells1);
-  if (impl_ctrelax > 0.0) {
-    if (!trans_on || !clag_step) {
-      ImplFatal("<rad_vet>/implicit_closure_thin_relax needs transport = implicit on a "
-                "multi-D mesh and implicit_closure_lag = step");
-    }
-    Kokkos::realloc(ctr_mem, nmb, 4, ncells3, ncells2, ncells1);
-  }
   Kokkos::deep_copy(iw, 0.0);
   if (trans_on) {
     Kokkos::realloc(f0x2, nmb, ncells3, ncells2+1, ncells1);

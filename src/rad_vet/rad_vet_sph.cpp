@@ -10,11 +10,6 @@
 //! The geometry lives in the implicit kernels: the E row takes dt A_f/V_i per face and
 //! each face equation the centre-to-centre distance dxface (dr, r dtheta, r sin dphi).
 //! F is stored in physical orthonormal components (r, theta, phi), as the momentum.
-//! chi(f) closures (sph_q, P = p I + q n n): the radial face takes the integrating factor
-//! D_rr -> (1-chi)/2 + (3 chi-1)/2 n_r^2 (r_c/r_f)^2 (keeps the M-matrix, r^2 E = const
-//! is the exact discrete free-streaming state) and each face equation the lagged
-//! curvature of (div P)_d (VetSphCurv); off-diagonal terms only under
-//! implicit_offdiag = lagged.
 
 #include <cmath>
 #include <cstdio>
@@ -37,7 +32,7 @@ namespace radvet {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::SphericalS1Check
 //! \brief fatal on any option the sp / cs implicit operator does not support; sets
-//! impl_offdiag and sph_q
+//! impl_offdiag
 
 
 void RadiationVet::SphericalS1Check(ParameterInput *pin) {
@@ -67,18 +62,15 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
       std::string s = pin->GetString("rad_vet","implicit_offdiag");
       // `operator` (19-point stencil, od cache, uniform-dx VetOffDiv) is not converted
       bool ok = (s.compare("auto") == 0 || s.compare("none") == 0 ||
-                 (!eddington && s.compare("lagged") == 0));
+                 s.compare("lagged") == 0);
       if (!ok) {
         why += " implicit_offdiag = " + s + ";";
       }
     }
   }
-  // cubed sphere: closure = eddington | vet_col (radial axis), no lagged off-diagonal
+  // cubed sphere: no lagged off-diagonal
   if (cs_geom) {
     std::string wcs;
-    if ((!eddington && !vet_col) || vet_sc) {
-      wcs += " closure != eddington | vet_col;";
-    }
     if (pin->DoesParameterExist("rad_vet","implicit_offdiag") &&
         pin->GetString("rad_vet","implicit_offdiag").compare("lagged") == 0) {
       wcs += " implicit_offdiag = lagged;";
@@ -96,7 +88,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_vet> on the cubed sphere supports only "
-        << "transport = implicit, closure = eddington | vet_col (radial axis), "
+        << "transport = implicit, closure = vet_col | none, "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
         << "= bicgstab, implicit_precond = rbgs_fwd | mg (and the spherical-polar "
         << "list below); this input has:"
@@ -124,30 +116,21 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> on a spherical-polar mesh supports "
-      << "only transport = implicit, closure = eddington | m1 | minerbo | kershaw | "
-      << "vet_col, "
-      << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
+      << "only transport = implicit, closure = vet_col | none, "
+      << "implicit_offdiag = auto | none | lagged, "
       << "time_scheme = be | hesdirk2, one MeshBlock "
       << "along x1, no SMR, implicit_flux = central | berthon | blend, "
       << "implicit_recon = dc, implicit_trans_limit = none; this input has:" << why
       << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // Eddington: the tensor is diagonal, the off-diagonal terms are identically zero
-  impl_offdiag = VET_OD_NONE;
-  od_now = VET_OD_NONE;
-  // chi(f) closure: curvature of the diagonal components always on; off-diagonal terms
-  // dropped (default, M-matrix) or lagged.  Lagged terms have no fixed point in thin
-  // regions at c dt >> dx, hence `none` by default.
-  sph_q = !eddington;
-  if (sph_q) {
+  {
     std::string s = pin->GetOrAddString("rad_vet","implicit_offdiag","auto");
     impl_offdiag = (s.compare("lagged") == 0) ? VET_OD_LAGGED : VET_OD_NONE;
     od_now = impl_offdiag;
   }
   if (global_variable::my_rank == 0 && cs_geom) {
-    std::cout << "<rad_vet>: cubed sphere (" << (vet_col ? "vet_col, radial "
-              "axis" : "eddington") << "; covariant cell F and gas coupling; skewed "
+    std::cout << "<rad_vet>: cubed sphere (covariant cell F and gas coupling; skewed "
               << "transverse faces with the lagged cross term, mirror-pair seam faces "
               << "without the resample; implicit with areas/volumes/face distances from "
               << "Coordinates"
@@ -159,9 +142,6 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
                                            "zero area] " : "wedge ")
               << (pm->use_grid_stretch_theta ? "[stretched theta] " : "")
               << "("
-              << (sph_q ? "chi(f) closure, radial integrating factor, "
-                          "lagged curvature, offdiag " : "")
-              << (sph_q ? ((impl_offdiag == VET_OD_NONE) ? "none; " : "lagged; ") : "")
               << "implicit with areas/volumes/face distances from Coordinates"
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
                   " (stretched radial grid)" : "") << std::endl;
