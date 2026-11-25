@@ -264,9 +264,8 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   CleanFor("cln_raymom", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
-    for (int n = 0; n < CLN_N; ++n) {   // (0: a slot the staggered layout lacks)
-      dst(m,n,k,j,i) = (n >= cs.extent_int(1)) ? 0.0 :
-                       ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*cs(m,n,k,j,i);
+    for (int n = 0; n < cs.extent_int(1); ++n) {
+      dst(m,n,k,j,i) = ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*cs(m,n,k,j,i);
     }
   });
   cln_havec = false;
@@ -381,7 +380,7 @@ void RadiationVet::CleanClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   cln_nguard = 0;
-  const bool sx = (cln_extrap == 3 && t2_tab != 0);   // (stage-1 moments before t^n+1)
+  const bool sx = CleanExtrapSx();   // (stage-1 moments before t^n+1)
   // (stage 2 of sx: the line through two stage-1 sets, the last not from backward
   // Euler, a restart or a ring jump)
   const bool usec = sx && t2_solve == VET_T2S_STAGE2 && cln_have_c && !cln_cand_be &&
@@ -390,7 +389,7 @@ void RadiationVet::CleanClosureExtrap() {
 
   // a new step: the end of the last step (sx: its stage-1 time) becomes t^n
   if (cln_have_c && (cln_tm == time || (sx && cln_tm < time))) {
-    std::swap(cln_mp, cln_mn);
+    if (!sx) std::swap(cln_mp, cln_mn);   // (sx: two sets, the line never reads t^{n-1})
     std::swap(cln_mn, cln_mc);
     cln_tp = cln_tn;
     cln_tn = cln_tm;
@@ -414,7 +413,7 @@ void RadiationVet::CleanClosureExtrap() {
   const bool use1 = (cln_extrap == 2) && (t2_solve == VET_T2S_STAGE2) && cln_have_1 &&
                     (cln_t1 > cln_tn);
   const bool line = stage && (use1 || usec || (cln_have_p && !sx));
-  auto ma = (use1 || usec) ? cln_mn : cln_mp;
+  auto ma = (use1 || usec || sx) ? cln_mn : cln_mp;
   auto mb = use1 ? cln_m1 : (usec ? cln_mc : cln_mn);
   const Real tb = use1 ? cln_t1 : (usec ? cln_tm : cln_tn);
   const Real ta = (use1 || usec) ? cln_tn : cln_tp;
@@ -428,6 +427,7 @@ void RadiationVet::CleanClosureExtrap() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
   auto cs = cln_s;
+  const int ns = cs.extent_int(1);
   auto valid = cln_v;
   CleanArgs x = CleanMakeArgs();
   int nguard = 0;
@@ -446,7 +446,7 @@ void RadiationVet::CleanClosureExtrap() {
     const Real wc = wx/(1.0 + z);
     Real q[CLN_N];
     for (int n = 0; n < CLN_N; ++n) {
-      q[n] = mb(m,n,k,j,i) + wc*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
+      q[n] = (n >= ns) ? 0.0 : mb(m,n,k,j,i) + wc*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
     }
     // the extrapolated moments must be those of a non-negative intensity
     const bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0 &&
@@ -454,7 +454,7 @@ void RadiationVet::CleanClosureExtrap() {
     if (!ok) {
       if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
       // (cubed sphere: face sums, held on both sides, stay extrapolated alike)
-      for (int n = 0; n < CLN_N; ++n) {
+      for (int n = 0; n < ns; ++n) {
         if (!x.cub || CleanCellMoment(n)) q[n] = mn(m,n,k,j,i);
       }
     }
@@ -1264,8 +1264,8 @@ void RadiationVet::CleanRingMoments() {
   const bool ring = cln_rok;
   const bool nxt = ring && cln_rlast && slot[nk] >= 0;
   if (nxt && cln_rnew.extent_int(0) != nmb) {   // (the layout of cln_mc it becomes)
-    Kokkos::realloc(cln_rnew, nmb, CLN_N, cln_s.extent_int(2), cln_s.extent_int(3),
-                    cln_s.extent_int(4));
+    Kokkos::realloc(cln_rnew, nmb, cln_s.extent_int(1), cln_s.extent_int(2),
+                    cln_s.extent_int(3), cln_s.extent_int(4));
   }
   auto rw = cln_rnew;
   auto iw_ = iw;
@@ -1317,7 +1317,7 @@ void RadiationVet::CleanRingMoments() {
         if (CleanCellMoment(n)) q[n] = 0.0;
       }
     }
-    for (int n = 0; n < CLN_N; ++n) rw(m,n,k,j,i) = q[n];
+    for (int n = 0; n < cs.extent_int(1); ++n) rw(m,n,k,j,i) = q[n];
   }, Kokkos::Sum<int>(nguard));
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);

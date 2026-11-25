@@ -1552,8 +1552,14 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   if (cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
     for (int n = 0; n < nq && have; ++n) {
-      put(c + n, 1, cln_mn, CleanRstSlot(n));
-      put(c + nq + n, 1, cln_mc, CleanRstSlot(n));
+      const int s = CleanRstSlot(n);
+      if (s >= cln_mn.extent_int(1)) {   // (a slot this mesh lacks: 0)
+        one(c + n, 0.0);
+        one(c + nq + n, 0.0);
+        continue;
+      }
+      put(c + n, 1, cln_mn, s);
+      put(c + nq + n, 1, cln_mc, s);
     }
     auto a_ = a;
     const int cq = c + 2*nq - w0;
@@ -1702,11 +1708,12 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   if (cln_extrap > 0) {
     if (ch < 2*nq) {
       auto &mx = (ch < nq) ? cln_mn : cln_mc;
+      const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
+      const int s = CleanRstSlot(ch%nq);
       if (mx.extent_int(0) != nmb) {
-        Kokkos::realloc(mx, nmb, CLN_N, w.extent_int(1), w.extent_int(2),
-                        w.extent_int(3));
+        Kokkos::realloc(mx, nmb, ns, w.extent_int(1), w.extent_int(2), w.extent_int(3));
       }
-      DeepCopyAcross(Kokkos::subview(mx, mb, CleanRstSlot(ch%nq), AL, AL, AL), w);
+      if (s < ns) DeepCopyAcross(Kokkos::subview(mx, mb, s, AL, AL, AL), w);
       return;
     }
     if (ch == 2*nq) {
