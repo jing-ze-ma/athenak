@@ -551,9 +551,10 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   });
   if (which != 3) return;
   const bool dpay = ph->dual.pay;
-  if (ps) {ph->dual.pay = false;}
+  if (ps) {ph->dual.pay = ph->dual.book = false;}
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
   ph->dual.pay = dpay;
+  ph->dual.book = true;
   // u0 back to U* + d, in the ghosts the neighbour's (exchanged; the flux state at the
   // physical boundaries): a ghost is then its neighbour's cell bitwise, so the stage-2
   // dfloor_flux_limit takes the same donor state on both sides of a MeshBlock face (the

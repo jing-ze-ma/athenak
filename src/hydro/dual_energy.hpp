@@ -48,6 +48,13 @@
 //!  floor_audit_worst = true (needs floor_audit): with each report, every rank prints
 //!    its active cell of the largest (E_after - E_before) x vol of the inversion, with
 //!    the cell's state before and after.  Diagnostic only.
+//!  Momentum ledger (hydro with floor_from_ekin, or vceil with the bookkeeping above on):
+//!    the momentum the accepted step's inversions took from the active cells, each with
+//!    its end-of-step (RK) weight, by cause: ekin (floor_from_ekin), vceil, other (a
+//!    density floor, or both with a raised E).  Components (r, theta, phi), Cartesian
+//!    (x, y, z); one CLEAN FLOORMOM line per step in which any fired: cells, signed sums
+//!    and sums of |dp| x vol.  Exact sums (repro_sum.hpp): any MeshBlock layout and rank
+//!    count.  Per step and per job, as floor_pay's counts (not in the restart file).
 //!  fofc_retest = true (hydro): FOFC re-tests every flagged trial cell with the
 //!    metric-correct internal energy (and the dual selection) and unflags those no floor
 //!    would touch (the cubed-sphere ConsToPrim test uses an ORTHONORMAL kinetic energy).
@@ -57,6 +64,7 @@
 #include "athena.hpp"
 #include "parameter_input.hpp"
 #include "eos/eos.hpp"
+#include "utils/repro_sum.hpp"
 
 class MeshBlockPack;
 
@@ -87,6 +95,8 @@ struct DualEnergy {
   bool armed = false;   // a hydro update evolved the slots since the last Post
   bool valid = false;   // the slots hold a resynced state
   bool init = false;    // arrays allocated
+  bool led = false;     // the momentum ledger
+  bool book = true;     // false: a conversion whose state is put back (Time2GasTime)
   Real eta = 1.0e-3;
   Real wst = 1.0;       // end-of-step weight of a change made after the current stage
   int report = 0;       // <blk>/floor_audit
@@ -99,6 +109,17 @@ struct DualEnergy {
   DvceArray4D<Real> phi;    // <hydro>/etotgrav: the potential, rho*Phi of a floor's mass
   Real hc[DC_NCNT] = {};    // this rank's cumulative counters
   Real hck[DC_NCNT] = {};   // hc at the step's start (Mark; Discard puts it back)
+  // the ledger [ekin, vceil, other][cells, dp_1-3, |dp_1-3|]: step, its start, the job
+  static constexpr int nlq = 7;
+  repro::ReproSum lsum[3*nlq], lsk[3*nlq];
+  Real ltot[3*nlq] = {};
+
+  DualEnergy() {
+    for (int q = 0; q < 3*nlq; ++q) {
+      lsum[q].Init();
+      lsk[q].Init();
+    }
+  }
 
   // read the keys; `nfluid` = nhydro or nmhd, `du_off` = tracers.DuOff()
   void Read(ParameterInput *pin, const std::string &block, const EOS_Data &eos,
@@ -111,15 +132,21 @@ struct DualEnergy {
             DvceArray5D<Real> &wder, DvceArray4D<Real> &wtemp, const EOS_Data &eos);
   void Report(MeshBlockPack *pp);
   void Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0, const DvceArray5D<Real> &w0);
+  void Book(MeshBlockPack *pp, const DvceArray5D<Real> &u0, const EOS_Data &eos);
+  // the step's line (and zero) / the job's totals
+  void LedgerLine(const std::string &when);
+  void LedgerTotal();
   // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment and counts go
   // (Mark, at the step's start before the checkpoint, reports first: a report closes the
   // steps before, and a retried attempt, which does not mark, reports nothing again)
   void Mark(MeshBlockPack *pp) {
     Report(pp);
     for (int n = 0; n < DC_NCNT; ++n) hck[n] = hc[n];
+    for (int q = 0; q < 3*nlq; ++q) lsk[q] = lsum[q];
   }
   void Discard() {
     for (int n = 0; n < DC_NCNT; ++n) hc[n] = hck[n];
+    for (int q = 0; q < 3*nlq; ++q) lsum[q] = lsk[q];
     if (pay && init) Kokkos::deep_copy(payv, 0.0);
   }
 };

@@ -846,6 +846,101 @@ def t_floor_pay(c):
     return out
 
 
+def floormom(d):
+    """the CLEAN FLOORMOM lines of run dir d: {cycle (-1: initial): (text, summed dp)}"""
+    out = {}
+    for n, t in re.findall(r'CLEAN FLOORMOM (?:cycle )?(\w+):(.*)',
+                           open(os.path.join(d, 'run.log')).read()):
+        dp = [[float(x) for x in m] for m in re.findall(r' dp (\S+) (\S+) (\S+)', t)]
+        out[-1 if n == 'initial' else int(n)] = (t, np.sum(dp, axis=0))
+    return out
+
+
+def t_floor_momentum(c):
+    """the momentum ledger of the inversions' floors (CLEAN FLOORMOM) against the momentum
+    the gas lost.  box_*: a periodic 8^3 Cartesian box of sound waves (amplitude 0.2,
+    radiation and opacity negligible: without floors P is round-off), 8 cycles: per cycle
+    |P(n+1) - P(n) - ledger| / sum |p_gas|.  ekin: floor_from_ekin and a temperature floor
+    on waves along z (phi_hat of the kept L_z is not periodic, so not along x, y); both:
+    with vceil too; vceil: without floor_from_ekin, along the diagonal.  box_min: the
+    smallest of the arms' largest removed momentum per cycle.  exch_ratio: ekin with the
+    radiation's energy exchange (arad, kappa = 1: P is not round-off), its largest residual
+    over that of the same run without floors (a flux state's floors, put back, not booked).  sp_init, cs_init: the rotating
+    expanding shells at t = 0, with and without vceil = 0.5: the ledger's p_r against the
+    dumps'.  restart (8 + 8), forced dt_retry and 1 vs 2 MeshBlocks: the same lines"""
+    g = {'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+         'units/time_cgs': 1.0}
+    n, out = 8, {}
+    o = dict(g, **{'mesh/nghost': 3, 'mesh/nx1': n, 'mesh/nx2': n, 'mesh/nx3': n,
+                   'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n,
+                   'mesh/x3max': 1.0, 'mesh/layout_tile': n, 'time/tlim': 1e30,
+                   'time/nlim': 8, 'problem/radwave_eig': 'false',
+                   'problem/radwave_amp': 0.2, 'rad_vet/arad': 1e-12,
+                   'hydro/floor_pay': 'none', 'output1/variable': 'hydro_u',
+                   'output1/dcycle': 1, 'output2/dcycle': 1000000})
+    o.update({'rad_vet/kappa_' + s: 1e-12 for s in 'pef'})
+    ek, vc = {'hydro/floor_from_ekin': 'true', 'hydro/tfloor': 0.95}, {'hydro/vceil': 0.1}
+    rm = []
+    hot = {'rad_vet/arad': 1.0, 'rad_vet/kappa_p': 1.0, 'rad_vet/kappa_e': 1.0}
+    for t, w, k in (('ekin', 'x3', ek), ('both', 'x3', dict(ek, **vc)),
+                    ('vceil', 'xyz', dict(vc, **{'hydro/floor_audit': 1})),
+                    ('exch0', 'x3', hot), ('exch', 'x3', dict(ek, **hot))):
+        d = c.run('wave_cart.athinput', t, dict(o, **dict(k, **{'problem/radwave_dir': w})))
+        P, L = {}, floormom(d)
+        for f in vett.bins(d, 'hydro_u'):
+            H = vett.read_bin(f)
+            m = np.array([H['mom%d' % q] for q in (1, 2, 3)]).reshape(3, -1)
+            P[H['cycle']] = m.sum(1)/n**3
+            s0 = np.abs(m).sum()/n**3
+        out['box_' + t] = [float(np.abs(P[q+1] - P[q] - L.get(q, (0, 0))[1]).max()/s0)
+                           for q in sorted(P)[:-1]]
+        rm.append(max([float(np.abs(v[1]).max()) for q, v in L.items() if q >= 0] or [0]))
+    out['box_min'] = min(rm[:3])
+    out['exch_ratio'] = max(out.pop('box_exch'))/max(out.pop('box_exch0'))
+    o = dict(g, **{'hydro/floor_from_ekin': 'true', 'output2/variable': 'hydro_u',
+                   'time/nlim': 1, 'problem/gas_rho': 1.0, 'problem/gas_temp': 0.5,
+                   'problem/e_out': 1.0, 'problem/r0': 2.0, 'problem/width': 0.3,
+                   'problem/gas_rot': 0.3, 'problem/gas_vr': 0.2, 'problem/rho_lat_amp': 0.0,
+                   'problem/lat_amp': 0.0, 'mesh/x1max': 3.0})
+    for m, deck in (('sp', 'shell_sp.athinput'), ('cs', 'shell_cs.athinput')):
+        p = []
+        for v in (0.0, 0.5):
+            d = c.run(deck, '%s_%g' % (m, v), dict(o, **{'hydro/vceil': v}))
+            s = 0.0
+            for e, a in vett.read_blocks(vett.bins(d, 'hydro_u')[0]):
+                q = [np.linspace(e[2*b], e[2*b+1], a['mom1'].shape[2-b] + 1) for b in range(3)]
+                if m == 'sp':
+                    om = np.diff(q[2])[:, None]*-np.diff(np.cos(q[1]))[None, :]
+                else:
+                    X, Y = np.meshgrid(np.tan(0.25*np.pi*q[1]), np.tan(0.25*np.pi*q[2]))
+                    om = np.diff(np.diff(np.arctan2(X*Y, np.sqrt(1 + X*X + Y*Y)), axis=0),
+                                 axis=1)
+                s += (a['mom1']*om[:, :, None]*np.diff(q[0]**3)/3).sum()
+            p.append(s)
+        out[m + '_init'] = float(abs(p[1] - p[0] - floormom(d)[-1][1][0])/abs(p[0]))
+    o = dict(LZ_KEYS, **{'hydro/tfloor': 1.00001e-4})
+    same = lambda a, b: int(len(a) > 0 and a == b)
+    restart_pair(c, 'shell_sp.athinput', 16, 8, o)
+    a, b = [{k: v[0] for k, v in floormom(os.path.join(c.dir, t)).items() if k >= 8}
+            for t in ('straight', 'restarted')]
+    out['restart'] = same(a, b)
+    q = dict(o, **{'time/nlim': 16, 'time/dt_retry': 'true'})
+    a, b = [{k: v[0] for k, v in floormom(c.run('shell_sp.athinput', t, r)).items()}
+            for t, r in (('r_straight', q),
+                         ('r_retry1', dict(q, **{'time/dt_retry_force_cycle': 4,
+                                                 'time/dt_retry_force_fac': 1.0})))]
+    out['retry'] = same(a, b)
+    q = dict(o, **{'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
+                   'meshblock/nx2': 16, 'meshblock/nx3': 16,
+                   'rad_vet/vet_gd_theta_wall': 'mirror'})
+    a, b = [{k: v[0] for k, v in floormom(c.run('shell_sp.athinput', t, r)).items()}
+            for t, r in (('mb1', q), ('mb1x2', dict(q, **{'meshblock/nx3': 8})))]
+    out['layout'] = same(a, b)
+    out['warnings'] = sum(vett.warnings(open(os.path.join(c.dir, t, 'run.log')).read())
+                          for t in os.listdir(c.dir))
+    return out
+
+
 # the velocity ceiling in the metric: floor_from_ekin keeps u_phi (L_z), cuts the rest
 
 CS_FRAME = {0: ((0, 1, 0), (0, 0, 1), (1, 0, 0)), 1: ((-1, 0, 0), (0, 0, 1), (0, 1, 0)),
@@ -1365,6 +1460,7 @@ TESTS = [  # name, function, in --quick
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
     ('floor_pay', t_floor_pay, True),
+    ('floor_momentum', t_floor_momentum, True),
     ('ceiling_metric', t_ceiling_metric, True),
     ('inf_reject', t_inf_reject, False),
     ('star_smoke', t_star_smoke, False),

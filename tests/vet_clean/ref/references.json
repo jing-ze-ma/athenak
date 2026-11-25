@@ -294,6 +294,26 @@
    "warnings": 0
   }
  },
+ "floor_momentum": {
+  "_about": "the momentum ledger of the inversions' floors (CLEAN FLOORMOM): box_* per cycle |P(n+1) - P(n) - ledger| / sum |p_gas| in a periodic box whose momentum is otherwise round-off; sp_init, cs_init the t = 0 inversion's p_r on the shells; exch_ratio the residual with the energy exchange over the one without floors (48 where the put-back flux state is booked); restart, retry, layout: 1 = the same lines",
+  "max": {
+   "box_ekin": 1e-12,
+   "box_both": 1e-12,
+   "box_vceil": 1e-12,
+   "exch_ratio": 3.0,
+   "sp_init": 1e-12,
+   "cs_init": 1e-12
+  },
+  "min": {
+   "box_min": 1e-06
+  },
+  "equal": {
+   "restart": 1,
+   "retry": 1,
+   "layout": 1,
+   "warnings": 0
+  }
+ },
  "ceiling_metric": {
   "_about": "floor_from_ekin + vceil 0.5 vs no ceiling at t = 0, cell by cell (cs: metric |v| of the contravariant v^a): v_phi kept, |V| = max(vceil, |v_phi|) where capped, theta part 0, the rest scaled in [0, 1]",
   "max": {
