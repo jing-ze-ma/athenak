@@ -158,3 +158,49 @@ idle by gap size   (ms/cyc, n/cyc): <10us 18.5 (7007)  10-100us 44.1 (2409)  0.1
 - G_m35_on memory: hpc-sm-01-17 3, 1239
 - F_zam_t1 memory: hpc-sm-01-17 3, 0
 - G_zam_on memory: hpc-sm-01-17 3, 185
+
+## G: pcr_factor (11-24 19:37)
+- F_m35_b1: 2026-11-24 18:54:45 rc=0 (srun) ended: Terminating on cycle limit wall=137 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_m35_b2: 2026-11-24 18:59:15 rc=0 (srun) ended: Terminating on cycle limit wall=136 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_m35_t1: 2026-11-24 18:56:58 rc=0 (srun) ended: Terminating on cycle limit wall=131 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_m35_t2: 2026-11-24 19:01:31 rc=0 (srun) ended: Terminating on cycle limit wall=135 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_t9q_b1: 2026-11-24 19:10:19 rc=0 (srun) ended: Terminating on cycle limit wall=320 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_t9q_b2: 2026-11-24 19:21:06 rc=0 (srun) ended: Terminating on cycle limit wall=333 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_t9q_t1: 2026-11-24 19:15:32 rc=0 (srun) ended: Terminating on cycle limit wall=297 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_t9q_t2: 2026-11-24 19:26:20 rc=0 (srun) ended: Terminating on cycle limit wall=313 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_zam_b1: 2026-11-24 19:02:21 rc=0 (srun) ended: Terminating on cycle limit wall=50 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_zam_b2: 2026-11-24 19:04:09 rc=0 (srun) ended: Terminating on cycle limit wall=56 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_zam_t1: 2026-11-24 19:03:10 rc=0 (srun) ended: Terminating on cycle limit wall=48 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- F_zam_t2: 2026-11-24 19:04:58 rc=0 (srun) ended: Terminating on cycle limit wall=48 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- G_m35_on: 2026-11-24 19:36:25 rc=0 (srun) ended: Terminating on cycle limit wall=134 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- G_zam_on: 2026-11-24 19:37:19 rc=0 (srun) ended: Terminating on cycle limit wall=54 s CW 0 FATAL 0 inf 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+
+| arm | rows | s/cyc (last two elapsed prints) | loop s | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | CW/FATAL/inf/DT_RETRY | floor_pay sum | L_top/L_in end | mem max GB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| F_m35_b1 | 100 | 1.0957 (c7000-7050) | 111.1 | 12.01/12.01/12.01 | 36.97, 5.180 | 18.24, 4.020 | 0/0/0/0 | 8.74e+25 | 0.988138 | see mem.log |
+| F_m35_b2 | 100 | 1.0974 (c7000-7050) | 111.1 | 12.01/12.01/12.01 | 36.97, 5.180 | 18.24, 4.020 | 0/0/0/0 | 8.74e+25 | 0.988138 | see mem.log |
+| F_m35_t1 | 100 | 1.0381 (c7000-7050) | 105.2 | 12.01/12.01/12.01 | 36.97, 5.180 | 18.24, 4.020 | 0/0/0/0 | 8.74e+25 | 0.988138 | see mem.log |
+| F_m35_t2 | 100 | 1.0383 (c7000-7050) | 105.2 | 12.01/12.01/12.01 | 36.97, 5.180 | 18.24, 4.020 | 0/0/0/0 | 8.74e+25 | 0.988138 | see mem.log |
+| F_t9q_b1 | 100 | 2.5821 (c2600-2650) | 255.6 | 96.84/96.84/96.84 | 5.43, 2.900 | 9.15, 2.510 | 0/0/0/0 | 4.65e+27 | 1.015120 | see mem.log |
+| F_t9q_b2 | 100 | 2.5874 (c2600-2650) | 256.2 | 96.84/96.84/96.84 | 5.43, 2.900 | 9.15, 2.510 | 0/0/0/0 | 4.65e+27 | 1.015120 | see mem.log |
+| F_t9q_t1 | 100 | 2.2406 (c2600-2650) | 221.5 | 96.84/96.84/96.84 | 5.43, 2.900 | 9.15, 2.510 | 0/0/0/0 | 4.65e+27 | 1.015120 | see mem.log |
+| F_t9q_t2 | 100 | 2.2409 (c2600-2650) | 221.7 | 96.84/96.84/96.84 | 5.43, 2.900 | 9.15, 2.510 | 0/0/0/0 | 4.65e+27 | 1.015120 | see mem.log |
+| F_zam_b1 | 100 | 0.2951 (c22240-22250) | 33.0 | 3.481/3.481/3.481 | 18.96, 2.000 | 16.63, 2.240 | 0/0/0/0 | 0.00e+00 | 1.000146 | see mem.log |
+| F_zam_b2 | 100 | 0.2953 (c22240-22250) | 32.9 | 3.481/3.481/3.481 | 18.96, 2.000 | 16.63, 2.240 | 0/0/0/0 | 0.00e+00 | 1.000146 | see mem.log |
+| F_zam_t1 | 100 | 0.2856 (c22240-22250) | 32.2 | 3.481/3.481/3.481 | 18.96, 2.000 | 16.63, 2.240 | 0/0/0/0 | 0.00e+00 | 1.000146 | see mem.log |
+| F_zam_t2 | 100 | 0.2876 (c22240-22250) | 32.3 | 3.481/3.481/3.481 | 18.96, 2.000 | 16.63, 2.240 | 0/0/0/0 | 0.00e+00 | 1.000146 | see mem.log |
+| G_m35_on | 100 | 1.0220 (c7000-7050) | 103.5 | 12.01/12.01/12.01 | 36.97, 5.180 | 18.24, 4.020 | 0/0/0/0 | 8.74e+25 | 0.988138 | see mem.log |
+| G_zam_on | 100 | 0.2855 (c22240-22250) | 32.3 | 3.481/3.481/3.481 | 18.96, 2.000 | 16.63, 2.240 | 0/0/0/0 | 0.00e+00 | 1.000146 | see mem.log |
+
+History identity (printed digits; user and hydro):
+- F_m35_b1 vs F_m35_b2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_m35_b1 vs F_m35_t1: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_m35_b2 vs F_m35_t2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_m35_t1 vs G_m35_on: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_zam_b1 vs F_zam_b2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_zam_b1 vs F_zam_t1: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_zam_b2 vs F_zam_t2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_zam_t1 vs G_zam_on: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_t9q_b1 vs F_t9q_b2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_t9q_b1 vs F_t9q_t1: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+- F_t9q_b2 vs F_t9q_t2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
