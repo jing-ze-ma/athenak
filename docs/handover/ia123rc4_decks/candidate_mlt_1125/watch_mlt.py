@@ -6,7 +6,8 @@ import sys, re, os, glob, numpy as np
 R = sys.argv[1]; log = sorted(glob.glob(R + '/run.log*') or glob.glob(R + '/log.*'), key=os.path.getmtime); hst = glob.glob(R + '/*.user.hst')
 alert = []; cnt = {}
 for f in log:
-    t = open(f, errors='replace').read()
+    # the launcher's summary lines ('... CW 0 FATAL 0 inf 0 ...') are counts, not events
+    t = ''.join(l for l in open(f, errors='replace') if not re.search(r'CW \d+ FATAL \d+', l))
     for k, p in (('CW', r'CLEAN WARN'), ('FATAL', r'FATAL'), ('DT_RETRY', r'DT_RETRY (?!on)'), ('NaN', r'(?<![A-Za-z])-?nan(?![A-Za-z])'), ('inf', r'(?<![A-Za-z_])-?inf(?![A-Za-z])')):
         cnt[k] = cnt.get(k, 0) + len(re.findall(p, t))
     m = re.findall(r'backward-Euler steps=([0-9.eE+-]+)', t); cnt['BE'] = float(m[-1]) if m else 0
