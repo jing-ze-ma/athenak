@@ -50,3 +50,16 @@ Dumps and hst only, read-only; no run, no twin. Band = k256 16-40 (0.0625-0.156 
 - No parametric link to the radial pulsation is seen at the frequencies the data resolve.
 
 -- Caltech
+
+## Addendum (11-25, dump search complete; supersedes the remark in section 4)
+- The search for every m35mms hydro_w dump (to depth 6 under the group directory) finished: 67 directories, all with the same grid nx 336 x 256 x 256, theta 1.39626-1.74533, phi 0-0.34907. **No m35mms dump at another lateral resolution, and no half-wedge, exists**, so section 4 stands and is complete on that point.
+- Six further sets I had not analysed (ring rms at 0.74 R_ph,IC, same band, against prod_c1 at the same time; section 4 did not list them):
+| run | dumps | ring rms [km/s] (prod_c1) | axis share, cells per wavelength |
+|---|---|---|---|
+| prod_fresh_1121b/i1_m35mms (j3 a5257b7ee) | 9, 0 to 8.64e4 s | 1.1e-6 (3.5e-6) at 8.64e4 | 0.23 |
+| prod_fresh_1121b/i1_m35mms_f1k (j3, then fdef, fwbs, p1) | 40, 0 to 4.20e5 s | 1.87e-8 (1.66e-7) at 5.4e4; 4.0e-6 (8.0e-6) at 1.08e5; 3.7e-5 (6.1e-5) at 1.62e5; 4.6e-4 (7.6e-4) at 2.16e5; 4.0e-3 (5.3e-3) at 2.70e5; 1.39e-2 (1.48e-2) at 3.24e5; 3.6e-2 (3.5e-2) at 3.78e5; 7.3e-2 (5.7e-2) at 4.20e5 | 0.60 at 2.7e5, 0.70 at 4.2e5; 10.7-11.6 cells |
+| m35fast_1123 D0, D1, D1h, D2, E0, E4 | 4-14 each, 1.746e5 to 1.79e5-1.97e5 s (from a common restart) | 1.15e-4 (1.06e-4) at 1.746e5; 2.26e-4 (2.20e-4) at 1.89e5; 3.13e-4 (3.0e-4) at 1.968e5; the six arms agree with each other to the printed digits | 0.54-0.60; 9.8-11 cells |
+  i1_m35mms_f1k reaches the production ring by 3e5 s after a slower start: the ring exists in an independent run from t = 0. The short m35fast arms start from one rst that already contains it, so they say nothing about its origin.
+- The other 52 directories hold one to four dumps each (one-cycle or short gate arms) and were not analysed. 
+
+-- Caltech
