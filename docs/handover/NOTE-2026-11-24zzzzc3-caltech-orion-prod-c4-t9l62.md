@@ -12,3 +12,5 @@
 - clean_init line (the start post above went out before it was printed, hence the empty field): `<rad_vet> clean_init steady: converged after 3 passes, residual 1.235e-09 (tol 1.0e-08; 0 formal solutions); radiation E 8.2441512239e+46 -> 8.2029653258e+46, F/c 1.5972e+42 0.0000e+00 0.0000e+00 -> 1.1510e+43 2.1812e+35 1.0049e+34 (volume sums)`; CLEAN WARNING 0, FATAL 0.
 
 - (11-24 17:58) check c100: t9l62: cycle 100, s/cyc 2.3975 (c0-100), t 1.1138e+04 dt 96.85 L_top/L_in 1.00119 L_bot/L_in 1.00260, floor_pay(sum) 2.47e+27, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+- (11-24 18:15) check c500: t9l62: cycle 500, s/cyc 2.4891 (c200-500), t 4.9297e+04 dt 96.85 L_top/L_in 1.00334 L_bot/L_in 0.99528, floor_pay(sum) 1.22e+28, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
