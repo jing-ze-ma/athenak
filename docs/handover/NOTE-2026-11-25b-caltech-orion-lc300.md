@@ -77,3 +77,7 @@
 | production after | 22294 | 2.610020e+05 | 9.511148e+11 | -3.92e-03 | 36275.66 | 9.438859e+11 | 35417.45 |
 | production after | 22444 | 2.628030e+05 | 9.516561e+11 | -3.35e-03 | 35985.65 | 9.448203e+11 | 35353.79 |
 | production after | 22594 | 2.646040e+05 | 9.511638e+11 | -3.87e-03 | 35972.37 | 9.462867e+11 | 35181.01 |
+
+## bsg F300 (25b item 3; asked in 25e)
+- It finished: bsg F300 2026-11-25 00:36:57 rc=0 (srun) ended: Terminating on cycle limit wall=238 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- It is 300 cycles of the rel-f binary on one 4-GPU node (02-03); the end line says cycle limit and exit 0. C300 (binary of the run) is running on 02-03 since 00:47 (it had waited for the 25c build steps on that node); m35zams pair runs on 02-16, the 25c suite on 02-09; HGV is queued for 02-03 + 02-09 once the suite and bsg C300 are done, then PRF2 only if HGV ran through.
