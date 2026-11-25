@@ -158,3 +158,7 @@ max |rel| over the run: L_top 4.638e-04 L_mid 1.607e-03 L_int 1.395e-03 L_bot 8.
 
 **PASS** (zzzr rules; H1 vs old O30 not tested here: needs O30.hst)
 H0h needed (L_top diff 0.9-2 %): no
+
+## H0G / H1G remarks
+- Dump-free clean stage time (rank 0): H0G 180.8 s, H1G 180.3 s for 51 cycles (ratio 0.997). Nodes 01-17 + 02-09 (the b_suite CPU step had ended before H0G started). floor_audit paid cumulative at cycle 51: H0G 4.036e31, H1G 1.414e29.
+- **floor_pay H1G/H0G = 0.0035** (rule <= 1.2): PASS, the only rule H1F failed. SDO lines are not available on this binary (SDO_PRINT removed), so ef<=0 and the ratio are not measured.
