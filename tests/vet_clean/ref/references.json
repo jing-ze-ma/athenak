@@ -502,6 +502,14 @@
    "warnings": 0
   }
  },
+ "star_cs_ring": {
+  "equal": {
+   "maxdiff_r3": 0.0,
+   "warnings": 0,
+   "arena": 1,
+   "fused": 1
+  }
+ },
  "star_smoke": {
   "_about": "largest |x - x_ref| / max|x_ref| of the history columns STAR_COLS over 20 cycles against ref/star_smoke.user.hst / .hydro.hst (CPU). The run is bitwise identical on 1, 4 and 16 OpenMP threads (0 difference). Bound 2e-4: changes at the solver tolerance (clean_pc_sweep = rb, implicit clean_conv_max doubled, MeshBlock splits at tile 4) move these columns by at most 5.1e-5; a physical change moves the history: merge_lat_mom = rigid 0.21, time2_gtime_slope = false 5.3e-3 (clean_face_hctau = false 1.7e-3, cfl_number 0.29 instead of 0.3 3.9e-2: on 1e84c765d)",
   "max": {

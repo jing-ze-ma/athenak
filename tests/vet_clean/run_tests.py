@@ -1615,6 +1615,43 @@ def t_star_smoke(c):
     return out
 
 
+def t_star_cs_ring(c):
+    """the production RSG deck (inputs/stars/star3d_cs: cubed sphere, live ring, fused
+    two-set sweeps, general EOS, well-balanced x1, fofc) on 274 x 16 x 16 cells a panel,
+    without its start-up relaxation: 2 cycles on 6 ranks and a restart to 3 on 6 and 3
+    ranks: bitwise (maxdiff_r3).  The solver's and the hydro's scratch lies over the rays'
+    intensities there (mem_arena), in another place for another number of blocks per rank:
+    an entry read before its stage has written it shows up as a difference."""
+    deck = os.path.abspath(os.path.join(HERE, '..', '..', 'inputs', 'stars',
+                                        'star3d_cs.athinput'))
+    o = {'mesh/nx1': 274, 'meshblock/nx1': 274, 'mesh/f_stretch_r_head_nin': 296,
+         'mesh/f_stretch_r_head_ij': 55, 'mesh/nx2': 16, 'mesh/nx3': 16, 'meshblock/nx2': 16,
+         'meshblock/nx3': 16,
+         'rad_vet/vet_gd_allow_clamp': 'true', 'problem/star_ic_equil': 'false',
+         'time/nlim': 2, 'output2/dcycle': 3, 'output3/dcycle': 3, 'output9/file_type': 'rst',
+         'output9/dcycle': 2}
+    exe, c.exe = c.exe, c.star
+    try:
+        for tag in ('leg', 'r6', 'r3'):
+            os.makedirs(os.path.join(c.dir, tag), exist_ok=True)
+            os.symlink(STAR_DATA, os.path.join(c.dir, tag, 'star3d_data'))
+        d = c.run(deck, 'leg', o, ranks=6)
+        rst = os.path.abspath(sorted(vett.glob_rst(d))[-1])
+        r = {n: c.run('', 'r%d' % n, {'time/nlim': 3}, restart=rst, ranks=n)
+             for n in (6, 3)}
+        for x in (d, *r.values()):   # (large)
+            for p in vett.glob_rst(x):
+                os.remove(p)
+    finally:
+        c.exe = exe
+    log = [open(os.path.join(x, 'run.log')).read() for x in (d, r[6], r[3])]
+    return dict(maxdiff_r3=vett.compare_dirs(r[6], r[3], last_only=True)[1],
+                warnings=sum(vett.warnings(x) for x in log),
+                arena=min(x.count('of solver and hydro scratch over') for x in log),
+                fused=int(all(float(re.search(r'fused builds (\S+),', x).group(1)) > 0
+                              for x in log)))
+
+
 def t_mlt_time(c):
     """problem/mlt_src_time: the time order of the MLT source under sdirk2.  The BSG column
     with F_MLT/F = 0.1 up to the inner wall: the deposit summed over the mesh is w(t)
@@ -1714,6 +1751,7 @@ TESTS = [  # name, function, in --quick
     ('ceiling_metric', t_ceiling_metric, True),
     ('inf_reject', t_inf_reject, False),
     ('star_smoke', t_star_smoke, False),
+    ('star_cs_ring', t_star_cs_ring, False),
     ('wb_star', t_wb_star, False),
     ('mlt_time', t_mlt_time, False),
     ('idort_beams', t_idort_beams, False),
@@ -1796,7 +1834,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
-                   '(star_smoke, wb_star; without it they are skipped)')
+                   '(star_smoke, star_cs_ring, wb_star; without it they are skipped)')
     p.add_argument('--quick', action='store_true', help='the short subset (23 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
@@ -1812,15 +1850,16 @@ def main():
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]
     if not a.star_exe:
-        for n in ('star_smoke', 'wb_star', 'mlt_time'):
+        for n in ('star_smoke', 'star_cs_ring', 'wb_star', 'mlt_time'):
             if any(t[0] == n for t in sel):
                 print('SKIP %-16s        needs --star-exe (a binary built with '
                       '-D PROBLEM=star_vet)' % n)
-        sel = [t for t in sel if t[0] not in ('star_smoke', 'wb_star', 'mlt_time')]
-    if any(t[0] == 'mpi_ranks' for t in sel) and not has_mpi(a):
-        print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' %
-              'mpi_ranks')
-        sel = [t for t in sel if t[0] != 'mpi_ranks']
+        sel = [t for t in sel if t[0] not in
+               ('star_smoke', 'star_cs_ring', 'wb_star', 'mlt_time')]
+    for n in ('mpi_ranks', 'star_cs_ring'):
+        if any(t[0] == n for t in sel) and not has_mpi(a):
+            print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' % n)
+            sel = [t for t in sel if t[0] != n]
     print('clean VET test suite: %d tests, %s, %d at a time x %d threads, binary %s' % (
         len(sel), 'quick' if a.quick else 'full', a.jobs, a.threads, a.exe))
     t0, rows = time.time(), []
