@@ -65,10 +65,8 @@ bool AmModule::DefaultOn(MeshBlockPack *ppack, ParameterInput *pin,
     return false;
   }
   if (!recipe::NewDefaults(pin)) {
-    recipe::Log(key + " = false (" + (recipe::GetMode(pin) == recipe::Mode::none
-                ? std::string("recipe none: the old default")
-                : std::string("restart input has no key: the old default kept; set it "
-                              "true or <job>/recipe = prod1019 to switch")) + ")");
+    recipe::Log(key + " = false (restart input has no key: the old default kept; set it "
+                "true to switch)");
     return false;
   }
   pin->GetOrAddBoolean(b, "am_transport", true);

@@ -8,8 +8,8 @@
 //! \file dt_retry.hpp
 //! \brief reject a failed cycle and take it again with a smaller dt.
 //!
-//! <time>/dt_retry (DEFAULT true; <job>/recipe = none keeps it off on a restart whose
-//! input lacks the key): at the top of every cycle the Driver checkpoints the evolving
+//! <time>/dt_retry (DEFAULT true): at the top of every cycle the
+//! Driver checkpoints the evolving
 //! state of the Hydro and the RadiationVet modules (DtRetry::Save).  A cycle in which a
 //! module raises a failure (RadiationVet::dtr_fail: a Picard solve that ends DIVERGED, or
 //! NON-CONVERGED outside a hesdirk2 stage, whose own redo is the backward-Euler step) is

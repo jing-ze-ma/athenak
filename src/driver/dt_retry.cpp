@@ -421,16 +421,12 @@ void PgenStageClear() {
 
 //----------------------------------------------------------------------------------------
 DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
-  const bool fresh = !global_variable::restart_run;
   if (pin->DoesParameterExist("time", "dt_retry")) {
     on = pin->GetBoolean("time", "dt_retry");
   } else {
-    // DEFAULT true, also on a restart whose input lacks the key; <job>/recipe = none
-    // keeps the rule fresh on, restart off
-    const bool nd = recipe::GetMode(pin) != recipe::Mode::none;
-    on = pin->GetOrAddBoolean("time", "dt_retry", fresh || nd);
-    recipe::Log(std::string("<time>/dt_retry = ") + (on ? "true" : "false") +
-                (on ? " (default)" : " (recipe none, restart: the old default)"));
+    // DEFAULT true, also on a restart whose input lacks the key
+    on = pin->GetOrAddBoolean("time", "dt_retry", true);
+    recipe::Log("<time>/dt_retry = true (default)");
   }
   if (!on) return;
   // the wiring covers Hydro or MHD + RadiationVet (the implicit scheme);

@@ -233,7 +233,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min) on dhj:
   //   FRESH start (recipe::NewDefaults): 0 = the low-Mach fix on the radial faces too,
   //     hydro AND MHD, = the global default.
-  //   RESTART whose input lacks the key (or <job>/recipe = none): 1, the old dhj-only
+  //   RESTART whose input lacks the key: 1, the old dhj-only
   //     default (the full HLLC/HLLD velocity-jump term on x1 faces), so running
   //     chains are unchanged.
   // An input (or restart) that names the key keeps its value; GetOrAdd records the
@@ -243,8 +243,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     MeshBlockPack *plm = pmy_mesh_->pmb_pack;
     const bool nd = recipe::NewDefaults(pin);
     const Real xd = nd ? 0.0 : 1.0;
-    const std::string why = nd ? " (default on a fresh start)" : (recipe::GetMode(pin) ==
-        recipe::Mode::none ? " (recipe none: the old dhj default)" : " (restart input "
+    const std::string why = nd ? " (default on a fresh start)" : (" (restart input "
         "has no key: the old dhj default)");
     if (plm->phydro != nullptr) {
       if (!pin->DoesParameterExist("hydro", "lhllc_x1_phi_min")) {
@@ -324,7 +323,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // restart whose input lacks the key keeps the old hse
     if (!pin->DoesParameterExist("problem","top_bc")) {
       recipe::Log(recipe::NewDefaults(pin) ? "problem/top_bc = outflow1 (default)"
-                  : "problem/top_bc = hse (old default: restart input or recipe none)");
+                  : "problem/top_bc = hse (old default: restart input)");
     }
     const std::string tb = pin->GetOrAddString("problem","top_bc",
                                                recipe::NewDefaults(pin) ? "outflow1"
@@ -537,7 +536,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool nd = recipe::NewDefaults(pin);
     pin->GetOrAddInteger("problem","ck_impl_maxit", nd ? 16 : 24);
     recipe::Log(nd ? "problem/ck_impl_maxit = 16 (default with ck_implicit)"
-                   : "problem/ck_impl_maxit = 24 (restart input or recipe none: the old "
+                   : "problem/ck_impl_maxit = 24 (restart input: the old "
                      "default)");
   }
   two_stream_rt::ck_impl_maxit = pin->GetOrAddInteger("problem","ck_impl_maxit",24);
@@ -953,7 +952,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (GetOrAdd): ck_impl_once = true (C2: the ck RT once per cycle, operator split after
   // the RK stages), ck_impl_jreuse = 0.2 (C2 adaptive chord), ck_impl_pred = true (C2
   //   predictor), ck_impl_every = 4 (E4 cadence; only with ck_impl_once on).
-  // Otherwise (restart input without the key, recipe none, another ck configuration) the
+  // Otherwise (restart input without the key, another ck configuration) the
   // old default (false / 0 / false / 1) is recorded as before.  An explicit key wins.
   // ck_impl_xstep is NOT defaulted (see below).
   {
@@ -965,8 +964,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         !two_stream_rt::ck_impl_warm && !two_stream_rt::rt_rad_force;
     const bool c2def = nd && c2ok;
     const std::string why = c2def ? " (default with the fused T4 ck_implicit)" :
-        (!nd ? (recipe::GetMode(pin) == recipe::Mode::none ? " (recipe none: the old "
-        "default)" : " (restart input has no key: the old default)") : "");
+        (!nd ? " (restart input has no key: the old default)" : "");
     const bool logit = two_stream_rt::ck_implicit && (c2def || !nd);
     if (!once_named) {
       two_stream_rt::ck_impl_once = pin->GetOrAddBoolean("problem","ck_impl_once",c2def);
@@ -1163,7 +1161,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         recipe::Log("problem/ck_pcut_bar = none: ck everywhere (default with rt_ck and <"
                     + fb + ">/isotropic_conduction = none: route B)");
       } else {
-        recipe::Log("problem/ck_pcut_bar = 10 (restart input or recipe none: the old "
+        recipe::Log("problem/ck_pcut_bar = 10 (restart input: the old "
                     "default)");
       }
     }

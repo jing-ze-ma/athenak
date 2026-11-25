@@ -11,7 +11,7 @@
 //! and accretor production deck:
 //!   <fluid>/wellbalance_dynamic = true, <fluid>/wb_x1 = true, <fluid>/wb_option =
 //! polytropic on the cubed sphere or the spherical-polar mesh.  Rules as every recipe
-//! default: only when recipe::NewDefaults(pin) (fresh start, or <job>/recipe = prod1019);
+//! default: only when recipe::NewDefaults(pin) (fresh start);
 //! a named key always wins (wellbalance_dynamic named false: nothing is added); the value
 //! is recorded (GetOrAdd) so the run's restarts carry it; each decision is logged in the
 //! start-up defaults block.  A restart whose input lacks a key keeps the old default

@@ -148,7 +148,6 @@ Mesh::Mesh(ParameterInput *pin) :
       recipe::Log("<mesh>/cs_seam_fc_nolimit = true (default on a fresh cs MHD start)");
     } else {
       recipe::Log("<mesh>/cs_seam_fc_nolimit = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
           "restart input has no key") + ": the old default, key not added)");
     }
   }
@@ -159,7 +158,6 @@ Mesh::Mesh(ParameterInput *pin) :
   // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
   // from the GLOBAL cell index (<mesh>/sp_phi_global follows it unless named). Default
   // true on a fresh start and on a restart whose input lacks the key (recorded);
-  // <job>/recipe = none keeps false = the block-ordered paths.
   // <mesh>/layout_invariant_mode = block (default) | exact:
   // block = every sum per MeshBlock in a fixed order, only the per-MeshBlock partials
   // summed exactly (repro::block_mode; +~0 % cost); exact = every cell term deposited
@@ -171,13 +169,12 @@ Mesh::Mesh(ParameterInput *pin) :
     const bool rml = global_variable::restart_run &&
         pin->DoesParameterExist("mesh_refinement", "refinement") &&
         pin->GetString("mesh_refinement", "refinement") != "none";
-    if (recipe::GetMode(pin) != recipe::Mode::none && !rml) {
+    if (!rml) {
       pin->GetOrAddBoolean("mesh", "layout_invariant", true);
       recipe::Log("<mesh>/layout_invariant = true (default; fresh, restart)");
     } else {
-      recipe::Log(std::string("<mesh>/layout_invariant = false (") +
-                  (rml ? "restart of an SMR/AMR mesh" : "recipe none") +
-                  ": the old block-ordered sums, key not added)");
+      recipe::Log("<mesh>/layout_invariant = false (restart of an SMR/AMR mesh: the old "
+                  "block-ordered sums, key not added)");
     }
   }
   layout_invariant = pin->DoesParameterExist("mesh", "layout_invariant") &&
@@ -220,7 +217,6 @@ Mesh::Mesh(ParameterInput *pin) :
                   "(default on a fresh resistive cs MHD start)");
     } else {
       recipe::Log("<mesh>/cs_seam_fc_order = 2 (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
           "restart input has no key") + ": the old default)");
     }
   }
@@ -244,14 +240,12 @@ Mesh::Mesh(ParameterInput *pin) :
   if (use_cubed_sphere) {
     if (pin->DoesParameterExist("mesh", "cs_vertex_3cell")) {
       cs_vertex_3cell = pin->GetBoolean("mesh", "cs_vertex_3cell");
-    } else if (recipe::GetMode(pin) != recipe::Mode::none &&
-               !global_variable::restart_run) {
+    } else if (!global_variable::restart_run) {
       cs_vertex_3cell = pin->GetOrAddBoolean("mesh", "cs_vertex_3cell", true);
       recipe::Log("<mesh>/cs_vertex_3cell = true "
                   "(default on a fresh cubed-sphere start)");
     } else {
       recipe::Log("<mesh>/cs_vertex_3cell = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
           "restart input has no key") + ": the old corner-block reads, key not added)");
     }
   }

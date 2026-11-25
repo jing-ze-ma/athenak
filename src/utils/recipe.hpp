@@ -6,17 +6,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file recipe.hpp
-//! \brief the default set of a run and <job>/recipe.
+//! \brief the default set of a run.
 //!
-//! The recipe defaults (<hydro|mhd>/am_transport where supported,
-//! <hydro|mhd>/etotgrav where supported, <rad_vet>/implicit_solver = bicgstab,
-//! <rad_vet>/implicit_resid_fatal = 1e-2, problem/theta_wall_closed with theta_bc = hse;
-//! <time>/dt_retry = true was already the fresh default) apply when NewDefaults():
-//!   <job>/recipe not named    : a FRESH run (a restart whose input lacks a key keeps
-//! that key's OLD default and says so: running chains unchanged)
-//!   <job>/recipe = prod1019   : fresh AND restart (a preset: the same values; explicit
-//!                               keys in the deck / on the command line still win)
-//!   <job>/recipe = none       : never: every key takes its plain default exactly
+//! A FRESH run takes the new defaults; a restart whose input lacks a key keeps that key's
+//! OLD default and says so (running chains unchanged).  An explicit key always wins.
 //! Every key a default decides is logged (Log) and printed in ONE block at start-up
 //! (PrintLog, rank 0, after the problem generator).
 
@@ -25,9 +18,8 @@
 class ParameterInput;
 
 namespace recipe {
-enum class Mode {standard, prod1019, none};
-Mode GetMode(ParameterInput *pin);        // validates <job>/recipe (read without adding)
-bool NewDefaults(ParameterInput *pin);    // see above
+bool NewDefaults(ParameterInput *pin);    // a fresh run (see above)
+void CheckRemoved(ParameterInput *pin);   // FATAL if <job>/recipe is named
 void Log(const std::string &line);        // one defaulted key (or why it stayed off)
 bool Fix(ParameterInput *pin, const std::string &block, const std::string &key,
          const std::string &value, const std::string &old);

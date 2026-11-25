@@ -123,7 +123,6 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
                       "start)");
         } else {
           recipe::Log("<mesh>/sp_phi_global = false (" + std::string(
-              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
               "restart input has no key") + ": the old default)");
         }
       }

@@ -9,7 +9,7 @@
 //! recipe::PgenEarlyDefaults(pin) once, after the input and the command line are read and
 //! before the Mesh is built; only this pgen's build links this file (other builds link
 //! pgen/early_defaults_none.cpp).  Rules as every recipe default: applied only when
-//! recipe::NewDefaults(pin) (fresh start, or <job>/recipe = prod1019); a key that is
+//! recipe::NewDefaults(pin) (fresh start); a key that is
 //! named (deck, command line, restart input) always wins; the value is recorded
 //! (GetOrAdd) so the run's restarts carry it; each decision is logged in the start-up
 //! defaults block. A restart whose input lacks a key keeps the old default (nothing is
