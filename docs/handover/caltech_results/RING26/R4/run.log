@@ -1,0 +1,2 @@
+2026-11-25 14:16:36 start R4 node hpc-sm-02-17 keys: rad_vet/clean_stag_upwind_central=false rad_vet/clean_stag_central=false common: time/tlim=4.5e5 output2/dt=2400 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30
+2026-11-25 14:53:28 rc=0 ended: Terminating on time limit wall=2212 s CW 0 FATAL 0 inf 0 DT_RETRY 0
