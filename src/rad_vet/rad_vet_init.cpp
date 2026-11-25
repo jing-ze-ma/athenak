@@ -99,7 +99,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   trans_on = false;
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_vet","implicit_cfl",-1.0);
-  dbg_etally = pin->GetOrAddBoolean("rad_vet","dbg_energy_tally",false);
   impl_onep = 0;
   for (int t = 0; t < 3; ++t) {
     onep_qa[t] = -1.0;
@@ -167,23 +166,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_vet>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
-  }
-  // doppler_face: donor | central x1 enthalpy flux (read only when named)
-  if (pin->DoesParameterExist("rad_vet","doppler_face")) {
-    const std::string df = pin->GetString("rad_vet","doppler_face");
-    if (df == "central") {
-      dop_face = 1;
-    } else if (df != "donor") {
-      ImplFatal("<rad_vet>/doppler_face must be donor | central");
-    }
-    if (dop_face == 1) {
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> doppler_face = central: x1 enthalpy flux "
-                  << "a E = v (1 + chi) E as the face mean 0.5 (a_L E_L + a_R E_R) "
-                     "(Athena++ "
-                  << "DO near-central face), no donor / plm correction" << std::endl;
-      }
-    }
   }
   {  // implicit_hold: inert unless a pgen marks hold_m
     impl_hold = pin->GetOrAddBoolean("rad_vet","implicit_hold",true);
@@ -643,7 +625,7 @@ void RadiationVet::MemArenaBind() {
   if (CleanExtrapSx()) bind(cln_csy);   // (else CleanRingMoments' scratch)
   for (auto &a : cln_mg) bind(a);
   // (the closure built once per stage: no pass keeps the faces' coefficients over one)
-  if (!cln_closit && !(cln_fwbst && t2_tab == 0)) {
+  if (!cln_closit) {
     for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) bind(f->o);
   }
   // (the write-back's: their first use makes them, here already over the arena)

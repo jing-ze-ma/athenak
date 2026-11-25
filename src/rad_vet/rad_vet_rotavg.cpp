@@ -313,19 +313,6 @@ void RadiationVet::RotAvgApply(const int ilo) {
 //!   r' = (1 - a) r/R + a,   e' = (1 - a) (r_jw/R_jw) (e - D)/r'_jw.
 //! Init: the equal mix of the current and the previous set (as K = 2).
 
-namespace {
-// EMA weight of a block boundary at radius rr: a = max(1/N, 1 - exp(-dtb/tau)),
-// tau = tau0 and/or lc r/c (local light crossing)
-KOKKOS_INLINE_FUNCTION
-Real RaEmaA(const Real a0, const Real dtb, const Real tau0, const Real lc, const Real rr,
-            const Real cl) {
-  Real a = a0;
-  if (tau0 > 0.0) a = fmax(a, 1.0 - exp(-dtb/tau0));
-  if (lc > 0.0) a = fmax(a, 1.0 - exp(-dtb*cl/(lc*fmax(rr, 1.0e-30))));
-  return fmin(a, 1.0);
-}
-}  // namespace
-
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgEmaInit
 //! \brief EMA init on the first build (equal mix of two sets) and the aux slot
@@ -339,7 +326,6 @@ void RadiationVet::RotAvgEmaInit(const int ilo) {
   auto d_ = vra_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
   const Tab t = vra_tab;
-  const bool dema = vra_ema_dema;
   par_for("vet_ra_ema_init", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
@@ -373,11 +359,6 @@ void RadiationVet::RotAvgEmaInit(const int ilo) {
       if (RaGet(a, t, f, ie, m, k, j, i, jr, g)) d_(m,o1+f,kk,jj,ii) = g;
     }
     d_(m,o1+t.nf,kk,jj,ii) = -1.0;
-    // dema: the second EMA starts equal to the first (2 e1 - e2 = e1)
-    if (dema) {
-      const int o2 = 2*(t.nf + 1);
-      for (int f = 0; f <= t.nf; ++f) {d_(m,o2+f,kk,jj,ii) = d_(m,f,kk,jj,ii);}
-    }
   });
   vra_pend = 0;
 }
@@ -450,48 +431,6 @@ void RadiationVet::RotAvgEmaShift(const int ds) {
   const Tab t = vra_tab;
   const int od = ds*(t.nf + 1);
   const Real a0 = 1.0/vra_ema_n;
-  const Real tau0 = vra_ema_tau, lc = vra_ema_lc, cl = c_light;
-  // block length: the rotation clock, else the block's cycles x dt
-  Mesh *pm = pmy_pack->pmesh;
-  const Real dtb = (vgd_rot_dt > 0.0) ? vgd_rot_dt
-                                      : static_cast<Real>(std::max(vgd_rot, 1))*pm->dt;
-  auto &size = pmy_pack->pmb->mb_size;
-  const int nx1 = indcs.nx1;
-  // vet_rotate_avg_ema_diag = M > 0: every M-th boundary print the change weights of the
-  // cells with a history (mean, fraction > 1/N, fraction >= 0.5)
-  vra_ema_nsh += 1;
-  if (vra_ema_diag > 0 && vra_ema_nsh % vra_ema_diag == 0) {
-    const int nkji = (ke-ks+1)*(je-js+1)*(ie-is+1);
-    const int nji = (je-js+1)*(ie-is+1), ni = ie-is+1;
-    Real sn = 0.0, sa = 0.0, s1 = 0.0, s2 = 0.0;
-    Kokkos::parallel_reduce("vet_ra_ema_diag",
-    Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*nkji),
-    KOKKOS_LAMBDA(const int idx, Real &rn, Real &ra, Real &r1, Real &r2) {
-      const int m = idx/nkji;
-      const int kk = (idx - m*nkji)/nji;
-      const int jj = (idx - m*nkji - kk*nji)/ni;
-      const int ii = idx - m*nkji - kk*nji - jj*ni;
-      if (!(d_(m,od+t.nf,kk,jj,ii) > 0.5) || !(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
-      const Real ach = fmax(d_(m,(t.nf+1)+t.nf,kk,jj,ii), 0.0);
-      rn += 1.0;
-      ra += ach;
-      if (ach > a0) r1 += 1.0;
-      if (ach >= 0.5) r2 += 1.0;
-    }, Kokkos::Sum<Real>(sn), Kokkos::Sum<Real>(sa), Kokkos::Sum<Real>(s1),
-       Kokkos::Sum<Real>(s2));
-    Real v[4] = {sn, sa, s1, s2};
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-    if (global_variable::my_rank == 0) {
-      const Real n = fmax(v[0], 1.0);
-      std::printf("<rad_vet> ema_diag cycle %d: cells %.0f, mean a_ch %.4e, "
-                  "f(a_ch > 1/N) %.4f, f(a_ch >= 0.5) %.4f\n", pm->ncycle, v[0],
-                  v[1]/n, v[2]/n, v[3]/n);
-    }
-  }
-  const bool dema = vra_ema_dema;
-  const int o2 = 2*(t.nf + 1);
   par_for("vet_ra_ema_shift", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
@@ -500,57 +439,31 @@ void RadiationVet::RotAvgEmaShift(const int ds) {
     if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
       for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
       d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;   // count 1: current set alone
-      if (dema) {
-        for (int f = 0; f <= t.nf; ++f) {d_(m,o2+f,kk,jj,ii) = d_(m,f,kk,jj,ii);}
-      }
       return;
-    }
-    Real rr = 1.0;
-    if (lc > 0.0) {   // cell radius (x1 = r on sp and cs)
-      const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
-      rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
     }
     const Real ach = d_(m,(t.nf+1)+t.nf,kk,jj,ii);   // change weight (aux slot)
     // warm-up: with n sets seen the weight is >= 1/(n+1) (plain mean until n = N)
     const Real nset = d_(m,t.nf,kk,jj,ii);
-    const Real aw = fmax(fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0)),
-                         1.0/(nset + 1.0));
+    const Real aw = fmax(fmax(fmin(a0, 1.0), fmin(ach, 1.0)), 1.0/(nset + 1.0));
     Real fac = 1.0 - aw;
     if (t.jw >= 0) {
       const Real r0 = d_(m,t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
       const Real r1 = (1.0 - aw)*r0/R + aw;
       fac = (1.0 - aw)*(r0/R)/r1;
     }
-    // dema: second EMA of the new first one, same frame and J weights:
-    //   r2' = (1 - aw) r2/R + aw r1',  e2' = fac2 (e2 - D) + w1 e1'
-    Real fac2 = 1.0 - aw, w1 = aw;
-    if (dema && t.jw >= 0) {
-      const Real r2 = d_(m,o2+t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
-      const Real r0 = d_(m,t.jw,kk,jj,ii);
-      const Real r1n = (1.0 - aw)*r0/R + aw;
-      const Real r2n = (1.0 - aw)*r2/R + aw*r1n;
-      fac2 = (1.0 - aw)*(r2/R)/r2n;
-      w1 = aw*r1n/r2n;
-    }
     for (int f = 0; f < t.nf; ++f) {
       const Real x = d_(m,od+f,kk,jj,ii);
       const Real y = d_(m,f,kk,jj,ii);
       const Real y1 = (t.kind[f] == 2) ? ((1.0 - aw)*y/x + aw) : fac*(y - x);
       d_(m,f,kk,jj,ii) = y1;
-      if (dema) {
-        const Real y2 = d_(m,o2+f,kk,jj,ii);
-        d_(m,o2+f,kk,jj,ii) = (t.kind[f] == 2) ? ((1.0 - aw)*y2/x + aw*y1)
-                                                : fac2*(y2 - x) + w1*y1;
-      }
     }
     d_(m,t.nf,kk,jj,ii) = (aw >= 1.0) ? 1.0 : fmin(nset + 1.0, 1.0e9);
-    if (dema) {d_(m,o2+t.nf,kk,jj,ii) = d_(m,t.nf,kk,jj,ii);}
   });
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgEmaApply
-//! \brief registered fields := current set + EMA offset (dema: 2 e1 - e2)
+//! \brief registered fields := current set + EMA offset
 
 void RadiationVet::RotAvgEmaApply(const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -560,22 +473,13 @@ void RadiationVet::RotAvgEmaApply(const int ilo) {
   auto d_ = vra_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
   const Tab t = vra_tab;
-  const bool dema = vra_ema_dema;
-  const int o2 = 2*(t.nf + 1);
   par_for("vet_ra_ema_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (!RaValid(a, t, ilo, m, k, j, i)) return;
     const int kk = k - ks, jj = j - js, ii = i - is;
     if (!(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
     const Real jr = RaJ(a, t, m, k, j, i);
-    // dema: lag-corrected offset 2 e1 - e2 (ratios 2 r1 - r2 in [r1/4, 4 r1])
-    auto off = [&](const int f) -> Real {
-      const Real e1 = d_(m,f,kk,jj,ii);
-      if (!dema) return e1;
-      const Real e2 = d_(m,o2+f,kk,jj,ii);
-      if (t.kind[f] == 2) return fmin(fmax(2.0*e1 - e2, 0.25*e1), 4.0*e1);
-      return 2.0*e1 - e2;
-    };
+    auto off = [&](const int f) -> Real {return d_(m,f,kk,jj,ii);};
     const Real ju = (t.jf >= 0) ? jr*off(t.jf) : jr;
     for (int f = 0; f < t.nf; ++f) {
       Real g;

@@ -167,8 +167,8 @@ Notes on the results of this release:
   solve). It is round-off (2e-16) by construction: the ledger books what the step does not
   conserve, so `dLz` checks the bookkeeping, not the conservation. The conservation error
   is the ledger's growth, `dLz_gr` (gas + radiation alone): 6e-7 on `shell_sp`, from the
-  face-flux cone cut `clean_stag_fcone` (with `clean_stag_fcone_gas = true` and
-  `clean_stag_fwb_ring = 1`, 1.6e-15 with no ledger; without the cut 2e-15). On the cubed
+  face-flux cone cut `clean_stag_fcone` (without the cut 2e-15 with `clean_stag_fwb_ring =
+  1`). On the cubed
   sphere the ledger stays at round-off; there `dLz_gr` (6e-5) is not a conservation measure,
   because the history's `Lrz` is the cell vector u0 F while the scheme's radiation momentum
   is its face momenta (`CleanLzTotal`; ~0.6 % of the radiation's L_z apart).
@@ -192,8 +192,7 @@ Notes on the results of this release:
   time-error tolerance, so the mirror symmetry holds only to that tolerance; the turning-set arm
   of `wedge_sym` therefore names them false, so it tests the mirror pairing under a `--keys` run.
 - **Linear momentum.** The scheme does not conserve linear momentum (gas + radiation) in
-  general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone` with
-  `clean_stag_fcone_gas = false`), the well-balancing residual (`clean_stag_fwb`) and the
+  general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone`), the well-balancing residual (`clean_stag_fwb`) and the
   floor velocity rules (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling) change it
   and are not booked. Where none of them acts the momentum exchange is exact; at amplitude
   1e-3 in `momentum_box` none acts and dP is round-off (below 1e-16).

@@ -701,9 +701,6 @@ class RadiationVet {
   int t2_solve{};               // what the next ImplicitSolve does (VET_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // debug time2_dbg_fail: fail stage 1 at this cycle
-  // time2_k1_stiff = s: move the exchange part of K1 in cells with k dt > s (0 = off)
-  Real t2_k1stiff = 0.0;
-  Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank)
   void Time2Stash();
   // Ebnd (diagnostic, ebnd_on set by a pgen): radiation energy put in through the
   // physical x1 faces (inner minus outer) over the accepted steps. A hesdirk2 step
@@ -839,9 +836,6 @@ class RadiationVet {
   DvceArray5D<Real> rss_stage;   // (nmb, nch, k, j, i) read from the restart file
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
 
-  // doppler_face = donor | central: central takes the x1 enthalpy flux a E,
-  // a = v (1 + chi), as the face mean 0.5 (a_L E_L + a_R E_R) (Athena++ reproduction)
-  int dop_face = 0;
   // implicit_vimp_ewf: the lagged face enthalpy work E_f (1 + D_f) dv_f is taken as
   // (1 + D_f)(E_L dv_L + E_R dv_R)/2, each kick with its own cell's E
   bool vimp_now{};              // on for this step (the positivity fallback drops it)
@@ -963,9 +957,6 @@ class RadiationVet {
   ParameterInput *pin_cs_ = nullptr;
   //! print the timers and positivity totals of the implicit transport
   void ImplicitReport();
-  // dbg_energy_tally (output only): rank 0 prints the global sums of gas energy, E, the
-  // reference-work accumulator and esrc at the start and end of every be solve (ETALLY)
-  bool dbg_etally = false;
   // dbg_energy_audit (output only): per solve, the change of gas energy + (c/chat) E
   // between the marks of EAuditMark, by cell class (rest, floor gas, reset), with the
   // boundary fluxes; rank 0 prints EAUDIT at mark 5 (mark 6: a discarded attempt)
@@ -1165,7 +1156,6 @@ class RadiationVet {
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   bool cln_c1b = false;         // clean_clos1_budget
-  bool cln_vset = false;        // clean_vel_settled
   bool cln_bmn = false;         // clean_bud_maxnorm
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_wbfct = false;       // clean_wb_fct
@@ -1199,7 +1189,6 @@ class RadiationVet {
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
-  bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   bool cln_rfrst = false;       // clean_rot_ring_fill_rst: full window at an old restart
   bool cln_rfdone = false;      // its fill taken
@@ -1215,7 +1204,6 @@ class RadiationVet {
   int cln_xqs = -1;   // (3 slots: qL >= 0, qR <= 0, the lagged explicit flux; CLF_XC: C(E_k),
                     //  C's last change)
   bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
-  bool cln_colf = false;    // (clean_stag_colflux: column moves in the stored Phi)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
   bool cln_lzt = false;     // clean_cs_lz_tel
@@ -1228,17 +1216,12 @@ class RadiationVet {
   std::array<CleanRingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
-  bool cln_fcgas = false;   // clean_stag_fcone_gas
   bool cln_fclz = false;    // clean_stag_fcone_lz
   bool cln_fcemx = false;   // clean_stag_fcone_emax
   bool cln_lzsp = false;    // clean_lz_spin
   DvceArray5D<Real> cln_fcx;   // (clean_lz_spin: fcone's cut withheld, by face)
   DvceArray2D<Real> cln_cx[2];   // (clean_lz_spin, Cartesian: the cell centres x, y)
-  bool cln_fwbst = false;   // clean_stag_fwb_stage
-  bool cln_fwbpj[3] = {false, false, false};   // fwb_line, -, _ring (fwb_cart: all)
-  int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
-  bool cln_fwbok = false;
-  bool cln_fwbt2 = false;   // clean_stag_fwb_t2
+  bool cln_fwbring = false;   // clean_stag_fwb_ring
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)
@@ -1250,7 +1233,6 @@ class RadiationVet {
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
   Real CleanLzTotal();   // gas + radiation + ledger L_z
-  bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // clean_xt_exact: 0 off, 1 cons, 2 x2
   int cln_gnsw = 0, cln_gnswmin = 20;   // clean_gas_newton_switch, _min
   Real cln_stfac = 0.5;   // clean_stall_fac
@@ -1479,8 +1461,6 @@ class RadiationVet {
   // b = floor((t + dt/2 - t0)/dt_rot) (t0 = vet_gd_rotate_t0); vet_gd_rotate_align: steps
   // land on block boundaries (VetGdAlignDt)
   Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
-  // vet_gd_rotate_stretch: VetGdAlignDt may lengthen dt by <= this
-  Real vgd_rot_stretch = 0.0;
   // vet_gd_rotate_dt = auto: vgd_rot_auto_fac x the first dt, recorded in pin_rot_
   bool vgd_rot_auto = false;
   // the unnamed default resolves from the uncapped first CFL dt (Mesh::dt_uncapped)
@@ -1524,10 +1504,9 @@ class RadiationVet {
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
   // vet_rotate_avg_ema = N: the K-window mean replaced by an exponential moving average
   // over the rotated sets, weight a = 1/N per block, in the same offset form (one slot
-  // e = avg - g_b(now), r = Jbar/J_b, + an aux slot; vra_k = 3). _tau > 0 (physical time)
-  // or _lc > 0 (x the light-crossing time r/c): a = max(1/N, 1 - exp(-dt_blk/tau)).
+  // e = avg - g_b(now), r = Jbar/J_b, + an aux slot; vra_k = 3)
   bool vra_ema = false;
-  Real vra_ema_n = 0.0, vra_ema_tau = 0.0, vra_ema_lc = 0.0;
+  Real vra_ema_n = 0.0;
   void RotAvgEmaInit(const int ilo);
   void RotAvgEmaShift(const int ds);
   void RotAvgEmaChange(const int ilo);
@@ -1537,11 +1516,6 @@ class RadiationVet {
   // vet_rotate_avg_ema_wb (clean ring): a = a_ch alone (no 1/N floor, no 1/(n + 1)
   // count): a static state keeps its closure
   bool vra_ema_wb = false;
-  int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
-  // vet_rotate_avg_ema_dema: double EMA, slot 2 the EMA of the EMA (e2); the closure uses
-  // 2 e1 - e2 (ratios 2 r1 - r2 in [r1/4, 4 r1]); vra_k = 4 (slot 3 the Delta)
-  bool vra_ema_dema = false;
-  int64_t vra_ema_nsh = 0;     // boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
   // vet_gd_rotate_xfade (needs vet_gd_rotate_dt > 0): clean ring live, the closure
   // cross-faded from the current to the next set over each block (CleanFvSets); both

@@ -197,9 +197,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     t2_dbg_fail = pin->GetInteger("rad_vet", "time2_dbg_fail");
   }
 
-  // time2_k1_stiff = s: in cells with relaxation rate k dt > s the exchange part of K1
-  // moves to E (Time2FormStage)
-  t2_k1stiff = pin->GetOrAddReal("rad_vet", "time2_k1_stiff", 0.0);
   // time2_face_fct: Zalesak limiter of the stage increment (Time2FaceFct); on for a fresh
   // run.  The clean solve stores the energy flux Phi that moved E (CleanWriteBack)
   t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct",
@@ -438,57 +435,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     }
     c1 = t2_a21*dt;
     c2 = 0.0;
-    // time2_k1_stiff: where k dt > s (k as in Time2GasTime) the exchange part of K1 moves
-    // from the gas energy to E (ch/cl weighted, total energy kept), so the L-stable
-    // stages alone take the stiff exchange; K1_EN keeps the kinetic-energy change
-    if (t2_k1stiff > 0.0) {
-      FluidRef fls = FluidRef::Get(pmy_pack);
-      if (fls.on) {
-        auto &id = pmy_pack->pmesh->mb_indcs;
-        const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
-        const int nmbr = pmy_pack->nmb_thispack - 1;
-        auto ug = fls.u0;
-        auto eos = fls.eos;
-        const bool etg = fls.use_etotgrav;
-        auto phc = etg ? fls.phicc0 : DvceArray4D<Real>();
-        const bool emh = fls.mhd;
-        auto emg = emag0;
-        auto op_ = opac;
-        auto k1s_ = t2k1;
-        const bool csk = cs_geom;
-        auto ccl = pmy_pack->pcoord->cos_cell;
-        const Real cl = c_light, ch = chat, ar = arad, sth = t2_k1stiff, dtl = dt;
-        const Real ca = c1;
-        Real ns = 0.0;
-        Kokkos::parallel_reduce("vet_t2_k1stiff", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-            DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
-          const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
-          const Real m1 = ug(m,IM1,k,j,i), m2 = ug(m,IM2,k,j,i), m3 = ug(m,IM3,k,j,i);
-          const Real cc = csk ? ccl(m,k,j) : 0.0;
-          const Real ek0 = CsKeMom(m1, m2, m3, cc)*idd;
-          Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
-          if (emh) egr += emg(m,k,j,i);
-          const Real eg = ug(m,IEN,k,j,i) - ek0 - egr;
-          if (!(eg > 0.0)) return;
-          const Real tk = eos.Temperature(dd, eg);
-          if (!(tk > 0.0)) return;
-          const Real rkp = op_(m,VET_OP_P,k,j,i), rke = op_(m,VET_OP_E,k,j,i);
-          const Real rate = ch*rke + 4.0*cl*rkp*ar*tk*tk*tk*tk/eg;
-          if (!(rate*dtl > sth)) return;
-          const Real n1 = m1 + ca*k1s_(m,VET_T2_M1,k,j,i);
-          const Real n2 = m2 + ca*k1s_(m,VET_T2_M1+1,k,j,i);
-          const Real n3 = m3 + ca*k1s_(m,VET_T2_M1+2,k,j,i);
-          const Real ek1 = CsKeMom(n1, n2, n3, cc)*idd;
-          const Real kw = (ca != 0.0) ? (ek1 - ek0)/ca : 0.0;
-          const Real dex = k1s_(m,VET_T2_EN,k,j,i) - kw;
-          k1s_(m,VET_T2_EN,k,j,i) = kw;
-          k1s_(m,VET_T2_E,k,j,i) += (ch/cl)*dex;
-          sum += 1.0;
-        }, Kokkos::Sum<Real>(ns));
-        t2_k1stiff_n += ns;
-      }
-    }
   } else {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
     int n3 = static_cast<int>(u0.extent(2)), n2 = static_cast<int>(u0.extent(3));
@@ -1675,9 +1621,6 @@ void RadiationVet::Time2Report() {
             << ": stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
-  if (t2_k1stiff > 0.0) {
-    std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
-  }
   if (t2_ffct) {  // global sums
     std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
               << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="

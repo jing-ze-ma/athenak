@@ -15,7 +15,9 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -79,24 +81,27 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   };
   {
     CleanPreflight(pin);
-    // rst_version, recorded: a restart file without it is of an older code and must name
-    // the solver, the layout and (sphere) the rays it ran, the only ones left, and with
-    // time_scheme = be the be step
+    // rst_version, recorded: a restart file without it is of an older code, whose value of
+    // a key it does not hold is not the only one left; name it to continue with that
     if (!nw && !pin->DoesParameterExist("rad_vet","rst_version")) {
-      for (const char *k : {"scheme", "clean_layout", "clean_rays", "be_legacy"}) {
-        if (pin->DoesParameterExist("rad_vet", k)) continue;
-        const std::string s(k);
-        if (s == "clean_rays" && !((pmy_pack->pmesh->use_spherical_polar ||
-            pmy_pack->pmesh->use_cubed_sphere) && VetCurvedRays(pin))) continue;
-        if (s == "be_legacy" && pin->DoesParameterExist("rad_vet", "time_scheme") &&
-            pin->GetString("rad_vet", "time_scheme") != "be") continue;
+      auto has = [&](const char *k) {return pin->DoesParameterExist("rad_vet", k);};
+      const bool crv = (pmy_pack->pmesh->use_spherical_polar ||
+                        pmy_pack->pmesh->use_cubed_sphere) && VetCurvedRays(pin);
+      const bool rot = has("vet_gd_rotate_dt") &&
+                       (pin->GetString("rad_vet","vet_gd_rotate_dt") == "auto" ||
+                        pin->GetReal("rad_vet","vet_gd_rotate_dt") > 0.0);
+      const bool be = !has("time_scheme") ||
+                      pin->GetString("rad_vet","time_scheme") == "be";
+      const std::vector<std::tuple<const char*, const char*, bool>> old = {
+          {"scheme", "clean", true}, {"clean_layout", "staggered", true},
+          {"clean_rays", "sc", crv}, {"be_legacy", "false", be},
+          {"vet_gd_rotate_stretch", "0.02", rot}};
+      for (const auto &[k, v, need] : old) {
+        if (!need || has(k)) continue;
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_vet>: the restart file does not hold " << k << ": it ran "
-          << "the removed " << (s == "scheme" ? "old solver" : s == "clean_layout" ?
-          "cell layout" : s == "clean_rays" ? "FV rays" : "be step") << "; name " << k
-          << "=" << (s == "scheme" ? "clean" : s == "clean_layout" ? "staggered" :
-          s == "clean_rays" ? "sc" : "false")
-          << " to continue with the present one (inputs/stars/restart_old_files.txt)"
+          << std::endl << "<rad_vet>: the restart file does not hold " << k << " and is of "
+          << "an older code, which ran another value; the code runs " << v << " (name "
+          << k << "=" << v << " to continue so; inputs/stars/restart_old_files.txt)"
           << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -353,49 +358,25 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fwb_stage: fwb's residual s of the stage-old state, once per stage;
-    // off: of each solve's E (thin-row F = the rays' flux factor times E)
-    cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_stage",false);
-    // clean_stag_fwb_t2: fwb_stage's s of the stage-time state E_old + h K (second order
-    // in time)
-    cln_fwbt2 = pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_t2",cln_fwbst &&
-                                     fix("clean_stag_fwb_t2", "true", "false"));
-    if (cln_fwbt2 && cln_fwb && !cln_fwbst) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_t2 needs "
-                << "clean_stag_fwb_stage" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    cln_fwbt2 = cln_fwbt2 && cln_fwbst;
-    // clean_stag_fwb_line / _ring: fwb's s of the x1 faces less its line mean, of the phi
-    // faces (3-D sp, periodic x3) less its ring mean: no net radial force on a line, no
-    // torque on a ring (CleanStagFwbProject)
-    cln_fwbpj[0] = cln_fwb && stag("clean_stag_fwb_line", false);
+    // clean_stag_fwb_ring: fwb's s of the phi faces (3-D sp, periodic x3) less its ring
+    // mean: no torque on a ring (CleanStagFwbProject)
     const bool ring_ok = pmy_pack->pmesh->use_spherical_polar &&
         pmy_pack->pmesh->three_d &&
         !pmy_pack->pmesh->multilevel &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
-    cln_fwbpj[2] = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_ring",
+    cln_fwbring = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_ring",
         ring_ok && fix("clean_stag_fwb_ring", "true", "false"));
-    if ((cln_fwbpj[0] || cln_fwbpj[2]) && pmy_pack->pmesh->multilevel) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_line, _ring need a uniform "
-                << "mesh" << std::endl;
+    if (cln_fwbring && pmy_pack->pmesh->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_ring needs a uniform mesh"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (cln_fwbpj[2] && !(pmy_pack->pmesh->use_spherical_polar &&
+    if (cln_fwbring && !(pmy_pack->pmesh->use_spherical_polar &&
         pmy_pack->pmesh->three_d &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic)) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_ring needs 3-D spherical "
                 << "polar with a periodic x3" << std::endl;
       std::exit(EXIT_FAILURE);
-    }
-    // clean_stag_fwb_cart (read only when named, default false): on a uniform Cartesian
-    // mesh fwb's s of the faces of every direction less its line mean, as fwb_line's x1
-    // faces: linear momentum exact without a ledger; no-op on curvilinear meshes
-    if (cln_fwb && pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart") &&
-        pin->GetBoolean("rad_vet", "clean_stag_fwb_cart") &&
-        !pmy_pack->pmesh->multilevel && !pmy_pack->pmesh->use_spherical_polar &&
-        !pmy_pack->pmesh->use_cubed_sphere) {
-      cln_fwbpj[0] = cln_fwbpj[1] = cln_fwbpj[2] = true;
     }
     // clean_stag_fcone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
@@ -407,9 +388,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "solve" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fcone_gas: the gas takes the momentum fcone cuts at the face (momentum
-    // and L_z exact; E pays the kinetic energy)
-    cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
     // clean_stag_fcone_lz (read only when named, default off): fcone takes a cell's
     // excess from its faces without L_z lever arm first (CleanLzFamily: spherical polar
     // x1, x2; cubed sphere x1; Cartesian x3), cut and counted as now; a face with an arm
@@ -450,7 +428,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // its implicit exchange (CleanOldVector)
     cln_eicry = pin->GetOrAddBoolean("rad_vet","clean_stag_eicarry",
                                      fix("clean_stag_eicarry", "true", "false"));
-    cln_colf = stag("clean_stag_colflux", false);
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
     // radiation's (CleanLzBook)
@@ -511,13 +488,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->SetReal("rad_vet", key, 0.0);
       }
     }
-    // clean_xt_cons: first iterate's gas T with G = 1 - beta^2/2, then T from the pass's
-    // gas row; clean_xt_norm: the local exchange with E responding,
-    // e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
-    cln_xtcons = stag("clean_xt_cons", false);
-    // clean_xt_exact = cons | off | x2: one A' per cell and pass (CleanRightHandSide);
+    // clean_xt_exact = cons | off | x2: the first iterate's gas T with G = 1 - beta^2/2,
+    // then T from the pass's gas row; one A' per cell and pass (CleanRightHandSide);
     // cons: the work by which the row and the gas kinetic energy differ goes to E whole;
-    // x2: also every T root from the local 2x2 of the E and gas rows
+    // x2: also every T root from the local 2x2 of the E and gas rows, the first iterate's
+    // too, e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
     {
       const std::string xe = pin->GetOrAddString("rad_vet","clean_xt_exact",
           fix("clean_xt_exact", "cons", "off") ? "cons" : "off");
@@ -527,7 +502,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
-      if (cln_xte > 0) cln_xtcons = true;
     }
     if (cln_ucp && cln_xte != 1) {   // CLW_PD: the work's q
       std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central = true needs "
@@ -536,10 +510,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "clean_xt_exact=cons, or clean_stag_central=false" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    cln_xtnorm = stag("clean_xt_norm", false) || cln_xte == 2;
-    // clean_stag_rayratio: the bracket reads the rays only as ratios times the state's E
-    cln_rayratio = pin->GetOrAddBoolean("rad_vet","clean_stag_rayratio",false) &&
-                   cln_gflux;
     // clean_ring_jmin: a ring J ratio J_s/J_b only where both J >= clean_ray_min E
     // (elsewhere the offset is invalid)
     cln_ringjmin = pin->GetOrAddBoolean("rad_vet","clean_ring_jmin",true);
@@ -574,10 +544,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // its budget)
     cln_c1b = pin->GetOrAddBoolean("rad_vet","clean_clos1_budget",
                                    fix("clean_clos1_budget", "true", "false"));
-    // clean_vel_settled (default false: every pass): the velocity update (its F solve)
-    // only in a pass that can end the solve, one whose E change settled; the others leave
-    // v, F to the next pass (the same fixed point)
-    cln_vset = pin->GetOrAddBoolean("rad_vet","clean_vel_settled",false);
     // clean_bud_maxnorm (default; false: the L2 norm): the budget passes' linear test and
     // Eisenstat-Walker |r0| in the max norm over the cells, the norm of the pass's own
     // test (CleanNewtonUpdate)
@@ -2254,31 +2220,14 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
     // (default of a fresh vet_gd run)
     recipe::Old(pin, "rad_vet", "vet_rotate_avg_ema_wb", "false");
     vra_ema_wb = pin->GetOrAddBoolean("rad_vet","vet_rotate_avg_ema_wb",nw && vgd_on);
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_dema")) {
-      vra_ema_dema = pin->GetBoolean("rad_vet","vet_rotate_avg_ema_dema");
-      if (vra_ema_dema) {vra_k = 4;}   // slot 2 = e2, slot 3 the Delta
-    }
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_diag")) {
-      vra_ema_diag = pin->GetInteger("rad_vet","vet_rotate_avg_ema_diag");
-    }
     vra_on = true;
     if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_weight")) {
       vra_eq = (pin->GetString("rad_vet","vet_rotate_avg_weight").compare("equal") == 0);
     }
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_tau")) {
-      vra_ema_tau = pin->GetReal("rad_vet","vet_rotate_avg_ema_tau");
-    }
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_lc")) {
-      vra_ema_lc = pin->GetReal("rad_vet","vet_rotate_avg_ema_lc");
-    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_rotate_avg_ema = " << vra_ema_n << ": "
                 << "the closure is an exponential moving average over the rotated sets "
-                << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
-                + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
-                ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
-                << "; change test eps " << vra_ema_eps
-                << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2" : "")
+                << "(a = 1/N per block; change test eps " << vra_ema_eps << ")"
                 << "; vet_rotate_avg is not used"
                 << std::endl;
     }
