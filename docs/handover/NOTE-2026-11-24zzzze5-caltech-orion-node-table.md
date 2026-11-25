@@ -47,3 +47,12 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 19:30 02-09: nm_LZB0 -> hx_HRL
 - 11-24 19:31 01-17: pa_PRFT_t9q -> p_PRFT_m35
 - 11-24 19:32 01-17: p_PRFT_m35 -> pa_PRFT_m35
+- 11-24 19:35 01-17: pa_PRFT_m35 -> s_G_m35_on
+- 11-24 19:35 02-03: hx_HRL -> IDLE
+- 11-24 19:35 02-09: hx_HRL -> IDLE
+- 11-24 19:36 01-17: s_G_m35_on -> s_G_zam_on
+- 11-24 19:36 02-03: IDLE -> hx_HR150
+- 11-24 19:36 02-09: IDLE -> b_cmp hx_HR150
+- 11-24 19:37 01-17: s_G_zam_on -> IDLE
+- 11-24 19:37 02-09: b_cmp hx_HR150 -> hx_HR150
+- 11-24 19:38 02-03: hx_HR150 -> b_c4speed hx_HR150
