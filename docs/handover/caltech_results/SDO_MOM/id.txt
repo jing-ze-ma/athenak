@@ -1,0 +1,4 @@
+- SDOMOM total lines 71, sum lines 421
+- cause ekin: 350 lines, cells 9669613; max |dE| 0.000e+00 (nonzero in 0 lines); max |dLz| 0.000e+00 (nonzero in 0 lines); max |dKE - deint| 9.938e+19, max |dKE - deint| / |deint| 3.207e-03; max |deint| 1.845e+38
+- cause other: 27 lines, cells 71; max |dE| 5.161e+19 (nonzero in 27 lines); max |dLz| 0.000e+00 (nonzero in 0 lines); max |dKE - deint| 4.313e+12, max |dKE - deint| / |deint| 3.192e-02; max |deint| 9.044e+35
+- cause vceil: 44 lines, cells 67; max |dE| 1.032e+20 (nonzero in 16 lines); max |dLz| 0.000e+00 (nonzero in 0 lines); max |dKE - deint| 0.000e+00, max |dKE - deint| / |deint| 0.000e+00; max |deint| 6.476e+39
