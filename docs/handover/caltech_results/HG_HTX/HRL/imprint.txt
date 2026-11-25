@@ -1,0 +1,10 @@
+m4/hr.hydro_w.bin cycle 794835 t = 765.053 d
+  r bin [Rsun]   max m4      max m8      max sym_rms  max rms_all
+     0-100    5.008e-01  7.446e-01  8.168e-01  2.031e+00
+   100-200    8.843e+00  7.288e+00  3.435e+00  8.443e+00
+   200-400    4.913e-02  3.351e-02  2.273e+00  5.941e+00
+m4/hrl.hydro_w.bin cycle 794835 t = 765.053 d
+  r bin [Rsun]   max m4      max m8      max sym_rms  max rms_all
+     0-100    5.008e-01  7.446e-01  8.168e-01  2.031e+00
+   100-200    8.843e+00  7.288e+00  3.435e+00  8.443e+00
+   200-400    4.913e-02  3.351e-02  2.273e+00  5.941e+00

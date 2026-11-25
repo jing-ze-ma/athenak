@@ -1,0 +1,8 @@
+- HR: rows 51, dt min/max 90.000/90.000, {'e_floor': 31, 'pos_gas': 1461395, 'floor_pay': 3.9094600000000005e+31, 'CW': 0, 'FATAL': 0, 'BE': 0.0, 'fb': 0.0, 'RT': 0}
+- HRL: rows 51, dt min/max 90.000/90.000, {'e_floor': 34, 'pos_gas': 1445313, 'floor_pay': 3.9077050000000015e+31, 'CW': 0, 'FATAL': 0, 'BE': 0.0, 'fb': 0.0, 'RT': 0}
+- HRL vs HR at matched time (relative): | +5 | +10 | +20 | +51 | max
+  - L_top | 2.477e-06 | 2.381e-04 | 4.846e-04 | 7.318e-04 | max 9.234e-04
+  - L_mid | 4.258e-04 | 4.869e-04 | 3.778e-04 | 6.795e-04 | max 1.704e-03
+  - L_int | 4.348e-04 | 5.906e-04 | 1.378e-04 | 8.221e-04 | max 1.334e-03
+  - KE_int | 1.719e-07 | 3.452e-07 | 6.934e-07 | 1.798e-06 | max 1.798e-06
+- **PASS** (rule of 24zzzze7; BE here is the count of the whole run including any first step, HR has 0)
