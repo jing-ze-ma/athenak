@@ -12,3 +12,12 @@
 | L1 | 99 | 1.517e+31 | 5.089e+31 | -7.885e+32 | -52.0 | 1.296e+34 | -1.375e+34 | 2.21e-04 / 2.80e-09 | 169.376/169.389/169.398 | 0/0/0 |
 - LZB0e: M_tot change -1.801440e+16, int M_hflx dt 8.315485e+12, sum -1.801e+16; Etot change -1.767824e+40, int E_hflx dt 1.376481e+31 (hydro part only, not the radiative L_top - L_bot), sum -1.768e+40
 - L1: M_tot change 1.801440e+16, int M_hflx dt 8.286448e+12, sum 1.802e+16; Etot change -1.767819e+40, int E_hflx dt -5.669693e+27 (hydro part only, not the radiative L_top - L_bot), sum -1.768e+40
+
+## L2: hydro/floor_from_ekin=false (21:47)
+- 2026-11-24 21:47:53 rc=0 (srun) ended: Terminating on cycle limit wall=94 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+| arm | cycles | r RMS | r max | r sum | sum/RMS | dLz_tot | int Lz_hflx dt | max rel L_top / KE vs LZB0e (equal t) | dt min/mean/max | CW/FATAL/DT_RETRY |
+|---|---|---|---|---|---|---|---|---|---|---|
+| LZB0e | 99 | 3.053e+33 | 8.472e+33 | 1.319e+35 | 43.2 | -2.863e+37 | 2.876e+37 | 0.00e+00 / 0.00e+00 | 169.376/169.389/169.398 | 0/0/0 |
+| L2 | 99 | 3.053e+33 | 8.472e+33 | 1.319e+35 | 43.2 | -2.863e+37 | 2.876e+37 | 0.00e+00 / 0.00e+00 | 169.376/169.389/169.398 | 0/0/0 |
+- LZB0e: M_tot change -1.801440e+16, int M_hflx dt 8.315485e+12, sum -1.801e+16; Etot change -1.767824e+40, int E_hflx dt 1.376481e+31 (hydro part only, not the radiative L_top - L_bot), sum -1.768e+40
+- L2: M_tot change -1.801440e+16, int M_hflx dt 8.315485e+12, sum -1.801e+16; Etot change -1.767824e+40, int E_hflx dt 1.376481e+31 (hydro part only, not the radiative L_top - L_bot), sum -1.768e+40
