@@ -552,9 +552,9 @@ void RadiationVet::CleanInit() {
   if (cln_phic.extent_int(0) != nmb) {
     Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);
   }
+  Kokkos::realloc(cln_v, nmb, 3, n3, n2, n1);
   // staggered on the cubed sphere: cell terms and faces of CleanStagFSolve
-  const bool stcs = pmy_pack->pmesh->use_cubed_sphere;
-  Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
+  if (pmy_pack->pmesh->use_cubed_sphere) Kokkos::realloc(cln_vf, nmb, 18, n3, n2, n1);
   // mem_arena: the shared slots follow cln_w.o (CleanWoBind), unless the closure is built
   // inside the solve (clean_closure = iterate | extrap*)
   cln_w.s = DvceArray5D<Real>();
@@ -2825,7 +2825,7 @@ void RadiationVet::CleanDtrD(const bool save) {
 //! \brief the F solve's lines on every mesh (CleanStagFSolve): the cell terms t of cell
 //! (k,j,i) at its face (kf,jf,iff) normal to dir (al, lagged pressure p, w, h+, h-, area
 //! pressure pa) and the F of the line's faces.  Spherical polar, Cartesian: t in
-//! CLW_L + 3 dir, F of each cell's low face in CLW_Y + dir (CLW_S).  Cubed sphere: cln_v
+//! CLW_L + 3 dir, F of each cell's low face in CLW_Y + dir (CLW_S).  Cubed sphere: cln_vf
 //! in the owner's axes (an x2 line may continue as an x3 line across a seam, so a cell
 //! keeps both faces of each family; family q: terms 3 q + 0..2, 15 + q, F 9 + 2 q + hi)
 
@@ -3078,7 +3078,7 @@ static void CleanFsjt(DvceArray3D<Real> &v, const int nmb, const int nl, const i
   v = DvceArray3D<Real>("cln_fsjt", nmb, nl, 26*nk);
 }
 
-// the F slots 9 + 2 q + hi of cln_v the ghosts of a face of family q take
+// the F slots 9 + 2 q + hi of cln_vf the ghosts of a face of family q take
 // (CleanGSeg::fm): its own family's; f0 = 2: without the x1 family's
 static std::array<uint32_t, 4> CleanFMask(const int f0) {
   return (f0 > 0) ? std::array<uint32_t, 4>{0, 3, 014, 0}
@@ -3134,7 +3134,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = true;
   auto op = opac;
-  const CleanFLine ln{cln_v, x.cub};
+  const CleanFLine ln{cln_vf, x.cub};
   const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
   const bool rms = cln_rmsh && cln_rstold && !cln_rmdone && fk && e == CLW_X && dok;
   DvceArray1D<Real> rmc("cln_rmc", 1);
@@ -3149,14 +3149,14 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
   // clean_stag_fs_line = pcr; on the cubed sphere with fschur its x1 lines, in panel
   const bool fpcr = cln_fspcr && (!cub || cln_fschur) &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
-  // the F of every direction (CLW_Y, CLW_Z, CLW_S or cln_v) in one exchange, started
+  // the F of every direction (CLW_Y, CLW_Z, CLW_S or cln_vf) in one exchange, started
   // after the last direction.  Cubed sphere, one MeshBlock along x1: the x1 family's
   // slots (0..2, 9, 10, 15) have no line across a MeshBlock face: not exchanged
   const int f0 = (cub && pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
                  ? 2 : 0;
   auto yfill = [&](const int part) {
     if (cub) {   // CleanFLine reads the faces' own cells, of the face's family (fm)
-      CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
+      CleanGhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
       return;
     }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
@@ -3203,7 +3203,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
         };
         fc(m,CLF_N+1,k,j,i) += 0.5*(wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
       });
-      auto v = cln_v;
+      auto v = cln_vf;
       auto f1 = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real rc;
         const Real tau = op(m,VET_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
@@ -3254,13 +3254,13 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       // (fm), started once the last direction's sent cells are done
       const bool pv = cub && f0 > 0 && dir == x.nf - 1;
       const std::function<void()> post = [&]() {
-        CleanGhostDefer(cln_v, 3, 6, 1);
+        CleanGhostDefer(cln_vf, 3, 6, 1);
         cln_hpend.back().fm = {0, 7, 070, 0};
-        CleanGhostDefer(cln_v, 11, 4, 1);
+        CleanGhostDefer(cln_vf, 11, 4, 1);
         cln_hpend.back().fm = {0, 3, 014, 0};
-        CleanGhostFill(cln_v, 16, 2, true, 1, 1, {0, 1, 2, 0});
+        CleanGhostFill(cln_vf, 16, 2, true, 1, 1, {0, 1, 2, 0});
       };
-      const std::function<void()> fin = [&]() {CleanGhostFill(cln_v, 16, 2, true, 2, 1);};
+      const std::function<void()> fin = [&]() {CleanGhostFill(cln_vf, 16, 2, true, 2, 1);};
       if (pv) {
         CleanOverlapFor("cln_fs1", pmy_pack, true, f1, fin, -1, post);
       } else {
@@ -3268,7 +3268,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       }
       if (dir == x.nf - 1 && !pv) {
         if (cub) {
-          CleanGhostFill(cln_v, 0, 18, true, 0, 1);
+          CleanGhostFill(cln_vf, 0, 18, true, 0, 1);
         } else {
           CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
           yfill(0);
@@ -3715,7 +3715,7 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
     });
   }
   if (cub) {   // a face two MeshBlocks share: its lower gid's value
-    auto v = cln_v;
+    auto v = cln_vf;
     CleanFor("cln_fcone_v", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int q = 0; q < 3; ++q) {
@@ -3725,7 +3725,7 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
     });
     const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
                    ? 2 : 0;
-    CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
+    CleanGhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
     CleanStagFCsShared();
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
@@ -4071,7 +4071,7 @@ void RadiationVet::CleanStagFSchur() {
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  const CleanFLine ln{cln_v, x.cub};
+  const CleanFLine ln{cln_vf, x.cub};
   const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
   const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
   const int fs[6] = {CLW_TM, CLW_TM+1, CLW_TM+2, CLW_TM+3, CLW_BW, CLW_PW};
@@ -4255,7 +4255,7 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  const CleanFLine ln{cln_v, x.cub};
+  const CleanFLine ln{cln_vf, x.cub};
   const bool cub = x.cub;
   const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
   const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
@@ -4465,14 +4465,14 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
 //! \fn void RadiationVet::CleanStagFCsShared
 //! \brief cubed sphere, the F solve's last step: a face shared with another MeshBlock
 //! takes the lower gid's solution (in our axes, CleanCsSlot), bitwise the same on both
-//! sides (CLF_N + 2), and the cells' slots of cln_v take it
+//! sides (CLF_N + 2), and the cells' slots of cln_vf take it
 
 void RadiationVet::CleanStagFCsShared() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  auto v = cln_v;
+  auto v = cln_vf;
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
@@ -4506,14 +4506,14 @@ void RadiationVet::CleanStagFCsShared() {
   // one MeshBlock along x1: not the x1 family's F (CleanStagFSolve)
   const int f0 =
       (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
-  CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));   // (as the F solve)
+  CleanGhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));   // (as the F solve)
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagCsTie
 //! \brief cubed sphere, the face tie: the nc face slots c0, c1, c2 of a face shared with
 //! another MeshBlock take the lower gid's values in our axes (CleanCsSlot), bitwise one
-//! value on both sides.  Each cell puts its boundary faces' in cln_v slot 3 n + q, which
+//! value on both sides.  Each cell puts its boundary faces' in cln_vf slot 3 n + q, which
 //! the ghosts take.  clean_stag_tie_gid on spherical polar / Cartesian: the same in
 //! CLW_L + 3 n + q; a periodic self-neighbour takes its low face's (the owner's).
 
@@ -4525,7 +4525,7 @@ void RadiationVet::CleanStagCsTie(const int nc, const int c0, const int c1,
   CleanArgs x = CleanMakeArgs();
   const bool cub = x.cub;
   const int v0 = cub ? 0 : CLW_L, nf = x.nf;
-  const CleanW v = cub ? CleanW(cln_v) : cln_w;
+  const CleanW v = cub ? CleanW(cln_vf) : cln_w;
   auto gid = pmy_pack->pmb->mb_gid.d_view;
   auto nb = pmy_pack->pmb->nghbr.d_view;
   CleanFor("cln_cstie", nmb1, ks, ke, js, je, is, ie,
@@ -4539,7 +4539,7 @@ void RadiationVet::CleanStagCsTie(const int nc, const int c0, const int c1,
     }
   });
   if (cub) {
-    CleanGhostFill(cln_v, 0, 3*nc, true, 0, 1);
+    CleanGhostFill(cln_vf, 0, 3*nc, true, 0, 1);
   } else {
     CleanGhostFill(cln_w, CLW_L, 3*nc, 0, 1);
   }

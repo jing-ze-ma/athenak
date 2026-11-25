@@ -618,6 +618,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_rguard_sum", cln_rguard_sum);
   v.value("cln_roff_sum", cln_roff_sum);
   v.view("cln_v", cln_v);
+  v.view("cln_vf", cln_vf);
   v.view("cln_opb", cln_opb);
   v.view("cln_mn", cln_mn);
   v.view("cln_mp", cln_mp);
