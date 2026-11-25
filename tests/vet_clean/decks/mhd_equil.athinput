@@ -1,0 +1,81 @@
+# Relaxing uniform gas + radiation box (vet_test = equil) with <mhd>, eos = general and a
+# uniform field; every key it does not name is the fresh default. Used by: mhd_equil.
+
+<job>
+basename = mhdeq
+
+<mesh>
+nghost = 3
+nx1 = 8
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 8
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = -0.5
+x3max = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 8
+nx2 = 8
+nx3 = 1
+
+<time>
+integrator = rk2
+nlim = 10
+tlim = 1.0
+dt_fixed = 2.5e-7
+
+<units>
+length_cgs = 1.0
+mass_cgs = 1.0
+time_cgs = 1.0
+
+<mhd>
+eos = general
+gamma = 1.666666666666667
+reconstruct = plm
+rsolver = hlld
+
+<rad_vet>
+closure = vet_sc
+c_light = 100.0
+arad = 1.0
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 100.0
+kappa_f = 100.0
+vet_nmu = 8
+vet_nphi = 32
+vet_x1_periodic = true
+vet_x1_npass = 2
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = equil
+user_srcs = false
+gas_rho = 1.0
+gas_eint = 1.5
+e_rad = 100.0
+vet_b0_1 = 3.0
+vet_b0_2 = 2.0
+vet_b0_3 = 1.0
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dcycle = 5
+
+<output2>
+file_type = bin
+bin_double = true
+variable = mhd_w_bcc
+dcycle = 5
