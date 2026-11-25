@@ -32,3 +32,14 @@ Readings:
 - Ray sweeps: one per cycle (rays not rotated): m35zams' chunk 1 printed 1.974240e5 sweeps for 197424 cycles (248240 - 50816); the other chunks print one digit and agree with one per cycle.
 - dt retries: 0 in all four runs (no DT_RETRY line); backward-Euler redo: 0 (backward-Euler steps 0, stage fallbacks 0, failed stage attempts 0, in every chunk); no unconverged stage (it < 0) in any run.
 - t9l62 is still running (to cycle 28964 at the time of reading).
+
+## Update (15:55): t9l62 finished (15:51:34, cycle 29228), t9mlt so far; and a correction
+| star | window | cycles | stages per cycle | Newton passes per stage (mean [5-95 %]) | BiCGStab iterations per pass | BiCGStab iterations per stage | DT_RETRY per cycle | stages not converged (it < 0) | t2s values (count) |
+| t9l62 | whole run | 29228 | 2.00 | 2.84 [2-4] | 5.48 [2-11.3333] | 15.61 [5-34] | 0.00e+00 (0 lines) | 0 | {0: 3, 1: 1, 2: 29227, 3: 29227} |
+| t9l62 | last 1000 cycles | 1000 | 2.00 | 3.29 [3-4] | 7.51 [3-12.6667] | 24.21 [10-39] | - | 0 | {2: 1000, 3: 1000} |
+| t9mlt (running) | whole run | 22648 | 2.00 | 3.54 [2-5] | 4.86 [2.75-7.33333] | 17.33 [7-28] | 0.00e+00 (0 lines) | 0 | {0: 3, 1: 1, 2: 22647, 3: 22647} |
+| t9mlt (running) | last 1000 cycles | 1000 | 2.00 | 3.70 [3-4] | 5.44 [3.6-7.5] | 20.24 [12-30] | - | 0 | {2: 1000, 3: 1000} |
+  - t9l62 end-of-chunk ray-sweep lines: <rad_vet> vet_gd_band_ring (rank 0): sweeps 4e+03, dense band saves 0, save store 0.2 GB || <rad_vet> vet_gd_band_ring (rank 0): sweeps 3e+04, dense band saves 0, save store 0.2 GB
+  - t9mlt (running) end-of-chunk ray-sweep lines: none
+- Correction: the end-of-chunk prints say backward-Euler steps = 1 in each chunk (not 0 as I wrote): one backward-Euler step at the start of each chunk (the first step of a fresh start or of a restart; the four t2s 0 / 1 lines above are the steady initial solve of the fresh start). Stage fallbacks 0, failed stage attempts 0, their BE redo 0 in every chunk. So the backward-Euler redo fraction is 0, and the backward-Euler steps are 1 per chunk start (bsg 1 in 29657 cycles, m35mms 2 in 73280, m35zams 2 in 248240, t9l62 2 in 29228).
+- t9mlt has no end-of-chunk print yet (running); its CLEAN cycle lines give 3.5 Newton passes per stage, 4.9 BiCGStab iterations per pass, 17 per stage, 0 dt retries, 0 unconverged stages so far.
