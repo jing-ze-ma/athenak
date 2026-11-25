@@ -2373,7 +2373,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       }
     }
     const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
-    const Real tcolc = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
+    const Real tcolc = !gen ? 0.0 : (p3 ? tcol4(m,k,j,i) : tcol(m,k,i));
     // relaxation target: the envelope profile inside; outside, material by density
     // relative to the hydrostatic ambient: denser than env_amb_k x rho_amb(r,phi) is
     // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
