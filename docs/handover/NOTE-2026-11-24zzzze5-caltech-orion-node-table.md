@@ -396,3 +396,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 03:14 02-03: g_GATE_fwbmemPS -> fwp_bsg_FW300
 - 11-25 03:14 02-09: IDLE -> fwp_m35mms_FW300
 - 11-25 03:15 02-16: kt2s_t9l62_base_26 -> kt2s_t9l62_5de1_26
+- 11-25 03:17 02-03: fwp_bsg_FW300 -> IDLE
+- 11-25 03:17 02-16: kt2s_t9l62_5de1_26 -> kt2s_t9l62_88cd_26
+- 11-25 03:19 02-09: fwp_m35mms_FW300 -> IDLE
+- 11-25 03:19 02-16: kt2s_t9l62_88cd_26 -> kt2s_m35mms_base_6
