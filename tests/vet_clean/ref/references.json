@@ -534,13 +534,26 @@
  "inf_reject": {
   "_about": "rad_vet/clean_dbg_inf = 4: one non-finite E iterate in cycle 4's first stage-1 write-back; implicit_pos_floor must not floor or book it, the stage is rejected and redone",
   "max": {
-   "dE": 1e-13
+   "dE_be": 1e-13,
+   "dE_retry": 1e-13,
+   "dLz_be": 1e-13,
+   "dLz_retry": 1e-13
   },
   "min": {
-   "rejected": 1
+   "rejected_be": 1,
+   "rejected_retry": 1
   },
   "equal": {
    "nonfinite": 0
+  }
+ },
+ "cmdline_keys": {
+  "_about": "a fresh run's command line names a key its deck does not: taken with a NOTE; a misspelt one or a missing block: return code 1",
+  "equal": {
+   "same": 0.0,
+   "note": 1,
+   "typo": 1,
+   "block": 1
   }
  },
  "merge_lat": {
