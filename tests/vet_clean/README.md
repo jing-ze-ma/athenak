@@ -210,10 +210,8 @@ applies list-valued bounds (orders) to the last element only.
 
 ## The decks
 
-`decks/*.athinput` are complete input files. Each starts with a comment on the problem; its
-`<rad_vet>` block begins with the scheme keys that production pins (the values of the
-production star decks in `inputs/stars/`), then the test's physics and solver
-set-up. A test changes only a few keys on top (for example `time/nlim`, `time/dt_fixed`,
+`decks/*.athinput` are complete input files. Each starts with a comment on the problem and
+names the test's physics and what differs from the defaults. A test changes only a few keys on top (for example `time/nlim`, `time/dt_fixed`,
 `mesh/nx1`); `run_tests.py` writes the deck it actually ran as `in.athinput` in each run
 directory. To run a deck by hand:
 

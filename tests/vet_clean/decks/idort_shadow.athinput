@@ -2,16 +2,11 @@
 # sec. 6.5): two beams at +-15 deg over the whole x1min face, an opaque tanh ellipse (rho 1 ... 10,
 # sigma = rho^2 T^-3.5, T = 1/rho), periodic x2; ring of 12 rays in 2 groups. E against the exact
 # beam attenuation. Used by: idort_shadow.
-#
-# The <rad_vet> block starts with the scheme keys that production pins (the values of the
-# production star decks); the rest are this test's physics, grid and solver set-up.
 
 <job>
 basename = shd
 
 <mesh>
-layout_invariant = true
-nghost = 3
 nx1 = 128
 x1min = -0.5
 x1max = 0.5
@@ -36,88 +31,36 @@ nx2 = 64
 nx3 = 1
 
 <time>
-dt_retry = true
 dt_retry_fac_t2 = 0.9
 dt_retry_grow = 1.1
 dt_retry_ngood = 20
-evolution = dynamic
 integrator = rk2
-cfl_number = 0.3
 nlim = -1
 tlim = 1.027961e-3
-ndiag = 1
 
 <hydro>
 eos = ideal
-reconstruct = plm
-rsolver = hllc
 gamma = 1.000001
 fofc = true
 dfloor_flux_limit = true
 dfloor_keep_velocity = true
-rad_signal_speed = true
 rad_signal_speed_diff = true
 rad_signal_speed_phase = true
 
 <rad_vet>
-# --- production scheme keys ---
-zalesak_active = true
-clean_stag_xdonor = lag
-clean_stag_xsrc = true
-implicit_pos_floor_gas_keep = 1
-implicit_pos_gas_cons = true
-clean_stag_mg_color = mirror
-time2_k1_redist = 0
-time2_tableau = sdirk2
-clean_face_hctau = true
-clean_stag_upwind_central = true
-clean_w_fse_tau = true
-clean_stag_fwb_stage = false
-clean_stag_fwb_t2 = false
-time2_gtime_mom = true
-time2_k1_stiff = 0
-clean_pred_stage = false
-clean_stag_central = true
-clean_stag_eicarry = true
-clean_gas_secant = max_stage2
-clean_pred_xch = true
-clean_stag_fcone_gas = false
-# --- this test ---
-clean_layout = staggered
-scheme = clean
-clean_cs_lz_abs = 2
-clean_stag_csvec_radial = true
 closure = vet_sc
-vet_tensor = full
-time_scheme = hesdirk2
 vet_rotate_avg = 4
 vet_ring = 12
-vet_source_noesrc = true
 vet_scatter = true
-vet_scatter_form = ma
-vet_scatter_j = relaxed
-implicit_resid_fatal = 1.0e-2
-implicit_pos_gas = true
-implicit_pos_floor = true
 time2_reject = retry
-time2_enth_be = true
 c_light = 1.9e5
-chat_over_c = 1.0
 arad = 1.0
 e_floor = 1.0e-30
 opacity = powerlaw
 kappa_p = 1.0
-kappa_e = 1.0
-kappa_f = 1.0
-kappa_s = 0.0
-coupling = true
 gas_feedback = false
-transport = implicit
 implicit_bc_x1min = marshak
 implicit_bc_x1max = marshak
-marshak_q = 0.5
-implicit_ebath_x1min = 0.0
-implicit_ebath_x1max = 0.0
 vet_nmu = 8
 vet_nphi = 32
 implicit_cfl = 1.0e4
@@ -130,8 +73,6 @@ implicit_beam1_e = 200.0
 implicit_beam1_ang = -15.0
 implicit_beam1_y0 = -0.3
 implicit_beam1_y1 = 0.3
-rho_ref = 1.0
-t_ref = 1.0
 opac_a = 1.0
 opac_b = -3.5
 vet_ring_groups = 2

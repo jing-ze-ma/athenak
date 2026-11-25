@@ -16,7 +16,7 @@ Many defaults differ between a **fresh start** and a **restart** whose file does
 the key (the restart default keeps an old run unchanged). The start-up log prints every default
 it applied together with the reason, e.g. `(default with vet_gd on a fresh start)`.
 
-## The restart rule: name every production key
+## The restart rule
 
 A restart is started with `athena -r <file>.rst [-i <deck>] [block/key=value ...]`. The
 parameters are put together in this order (`main.cpp`):
@@ -33,16 +33,17 @@ stored in the restart file, not the code default.** If the file does not hold th
 a key that corrects the scheme takes the fresh default, with a `### NOTE: ... the fix applies`
 (name the old value to keep the old behaviour), and a stored old value of `merge_lat_mom`,
 `merge_lat_blockend`, `fofc_flag_exchange`, `clean_cs_lat_wb`, `time2_gtime_slope`,
-`time2_gtime_pos` or `mlt_src_time` prints a `### NOTE` with the name to switch; the other keys take their restart default. A restart from
-a file of an older scheme should name every key of the production deck (RUN.md, Restarts).
+`time2_gtime_pos` or `mlt_src_time` prints a `### NOTE` with the name to switch; the other keys take their restart default. For a
+file of an older scheme use `restart_old_files.txt` (below).
 
 Example: a restart file had stored `time2_k1_stiff = 1.0` from an earlier deck. The code
 default is 0 (off), but the restart ran with 1.0, because the new deck did not name the key.
 
 Rules:
 
-- When you restart from a restart file written with other keys, restart with
-  `-i <production deck>` or name every production key on the command line. The grid keys
+- The decks name only what differs from the default, so `-i <deck>` does not replace the
+  other stored values: name on the command line each key a file stores differently. For a
+  file of older code see below. The grid keys
   (`<mesh>` x1min..x3max, nx1..nx3, nghost, the stretch keys and `<meshblock>` nx1..nx3)
   must stay as the file was written: a change is FATAL.
 - `athena -r <file>.rst -i <deck> -n` prints the merged parameter list and quits (keys the
@@ -56,33 +57,31 @@ Rules:
   `tools/rename_star_keys.sh FILE ...` renames the keys in decks and scripts. The problem
   generator `-D PROBLEM=star_vet` was `he_star_vet`; CMake accepts the old name.
 
-### Keys that must always be named
+### Restart files of older code
 
-Restart files of earlier runs may carry other values for these keys, so leaving one of them
-out of a restart deck changes the scheme silently. The templates name them all.
+Files of the old implicit solver, or of early versions of this scheme, store other values of
+some keys, or lack keys whose restart default is not the production value.
+`inputs/stars/restart_old_files.txt` names them all, with the reason; use it as the `-i` file:
+
+```bash
+athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt ...
+```
 
 | key | value | why |
 |---|---|---|
-| `<rad_vet>/time2_k1_stiff` | `0` | recorded; older files stored 1.0 |
-| `<rad_vet>/clean_stag_fwb_stage` | `false` | older files stored true |
-| `<rad_vet>/clean_stag_fwb_t2` | `false` | older files stored true |
-| `<rad_vet>/clean_w_fse_tau` | `true` | older files may store false |
-| `<rad_vet>/time2_gtime_mom` | `true` | older files may store false |
-| `<rad_vet>/clean_pred_stage` | `false` | production value |
-| `<rad_vet>/clean_stag_central` | `true` | the fresh default; a restart file without it takes it too (NOTE) |
-| `<rad_vet>/clean_stag_kpat` | `false` | removed (only false) |
-| `<rad_vet>/clean_stag_eicarry` | `true` | the fresh default; a restart file without it takes it too (NOTE) |
-| `<rad_vet>/clean_gas_secant` | `max_stage2` | the fresh default; a restart file without it takes it too (NOTE) |
-| `<rad_vet>/clean_pred_xch` | `true` | the fresh default; a restart file without it takes it too (NOTE) |
-| `<rad_vet>/clean_stag_fcone_gas` | `false` | production value |
-| `<rad_vet>/clean_wb_exch_local` | `true` | recorded |
-| `<rad_vet>/clean_stag_mg_levels` | `2` | the default (m35mms template: 4); named because older restart files may store 4 |
-| `<rad_vet>/vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | recorded; a theta-periodic deck without `vet_gd_theta_seam_sym` stops with a FATAL |
-| `<hydro>/floor_pay` | `rad_column` | older star restart files do not store it (restart default: none) |
-| `<hydro>/floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff` | `true` | recorded |
-| `<hydro>/fofc`, `fofc_retest` | `true` | older star restart files store `fofc = false` |
-| `<mesh>/layout_invariant_mode` | `tile` | see "Layout and reproducibility" |
-| `<mesh>/layout_tile` | `128` | the lateral MeshBlock size of the templates |
+| `<rad_vet>/scheme`, `clean_layout`, `clean_rays` | `clean`, `staggered`, `sc` | the old solver and its forms were removed: FATAL without them |
+| `<rad_vet>/time2_k1_stiff`, `time2_k1_redist` | `0` | older files store 1.0, 0.1 |
+| `<rad_vet>/clean_stag_fwb_stage`, `clean_stag_fwb_t2` | `false` | early files of this scheme store true |
+| `<rad_vet>/clean_w_fse_tau`, `time2_gtime_mom` | `true` | early files may store false |
+| `<rad_vet>/clean_stag_mg_levels` | `2` | early files may store 4 |
+| `<rad_vet>/clean_wb_exch_local`, `clean_maxit`, `clean_pc_sweep` | `true`, `200`, `rb` | not stored, production is not the default |
+| `<rad_vet>/vet_gd_wall_interp`, `vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | spherical-polar wedges with fixed rays (commented out in the file); a theta-periodic wedge without them is FATAL |
+| `<hydro>/fofc` | `true` | older star files store false |
+| `<hydro>/fofc_retest`, `floor_pay`, `floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff`, `rad_signal_speed_phase`, `dt_floor_courant` | `true`, `rad_column`, `true`, `true`, `true`, `true`, `0.6` | not stored, restart default off |
+| `<mesh>/layout_invariant_mode`, `layout_tile` | `tile`, the lateral size of the file's MeshBlocks | stored as block (layout_tile is commented out: set it) |
+| `<time>/restart_refill_ghosts` | `false` | some files store true |
+
+A file this code wrote stores every key it read: nothing needs naming.
 
 Rows marked "hydro only" have no `<mhd>` form: the key named under `<mhd>` (`floorcap_rho`
 with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
@@ -213,11 +212,11 @@ round-off change at the restart.
 
 ## Appendix: advanced and internal keys
 
-These keys are named in the templates to pin the scheme (keep their values) or are solver
+These keys hold the scheme (the templates run the defaults) or are solver
 internals. Do not change them without a dedicated test (energy and momentum conservation, a
-bitwise restart check, and a comparison with the production key set).
+bitwise restart check, and a comparison with the templates).
 
-Scheme options pinned by the templates (in brackets the templates' values):
+Scheme options (in brackets the templates' values):
 
 - `clean_stag_upwind_central` (true), `clean_stag_central` (true): central advective flux within the TVD bound.
 - `clean_face_hctau` (true), `clean_face_jse` (true), `clean_face_opac` (`harmonic`): face values of the rays' flux, half ranges and opacity.

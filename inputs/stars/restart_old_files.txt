@@ -1,0 +1,49 @@
+# Keys to name when a restart file of an older code is continued:
+#   athena -r old.rst -i restart_old_files.txt [block/key=value ...]
+# (docs/vet_clean/RUN.md, "Restarting a file of an older scheme").  Not needed for a file
+# this code wrote.  The other keys of the scheme take their default (the NOTE lines of
+# the log).  Change what differs for your star, and read the log's list of keys.
+
+<rad_vet>
+# a file of the old implicit solver (<rad_m1> or no scheme = clean): FATAL without these
+scheme = clean
+clean_layout = staggered
+clean_rays = sc
+# old values in files: time2_k1_stiff 1.0, time2_k1_redist 0.1 (FATAL)
+time2_k1_stiff = 0
+time2_k1_redist = 0
+# old values in early files of this scheme (true, true, false, false, 4)
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+clean_w_fse_tau = true
+time2_gtime_mom = true
+clean_stag_mg_levels = 2
+# not stored in old files, and their default is not the stars' value
+clean_wb_exch_local = true
+clean_maxit = 200
+clean_pc_sweep = rb
+# a spherical-polar wedge (periodic theta and phi walls, fixed rays):
+#vet_gd_wall_interp = true
+#vet_gd_wall_sym = true
+#vet_gd_theta_seam_sym = true
+
+<hydro>
+# old star files store fofc = false
+fofc = true
+# not stored in old files; a restart without them runs the old form
+fofc_retest = true
+floor_pay = rad_column
+floor_pay_skip = true
+dfloor_flux_limit = true
+rad_signal_speed_diff = true
+rad_signal_speed_phase = true
+dt_floor_courant = 0.6
+
+<mesh>
+# stored as block; layout_tile: the lateral size of the restart file's MeshBlocks
+layout_invariant_mode = tile
+#layout_tile = 64
+
+<time>
+# the R136 files store true
+restart_refill_ghosts = false

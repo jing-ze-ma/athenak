@@ -5,7 +5,6 @@
 basename = mhdeq
 
 <mesh>
-nghost = 3
 nx1 = 8
 x1min = 0.0
 x1max = 1.0
@@ -49,12 +48,9 @@ closure = vet_sc
 c_light = 100.0
 arad = 1.0
 e_floor = 1.0e-30
-opacity = const
 kappa_p = 100.0
-kappa_f = 100.0
 vet_nmu = 8
 vet_nphi = 32
-vet_x1_periodic = true
 vet_x1_npass = 2
 
 <problem>
