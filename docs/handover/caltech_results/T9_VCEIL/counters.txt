@@ -1,0 +1,253 @@
+
+## S5Gon  (/resnick/groups/carnegie_poc/jingze/sdo_1124/S5Gon)
+  log.0 [update]: 300 audit lines, cycles 5279-5578; final cumulative cell-c2p 4.0131e+10 floored 8.9871e+06 skip 2.2223e+04 (skip/cell-c2p 5.538e-07, floored/cell-c2p 2.239e-04, skip_de 2.458e+20)
+     per audit line: skip median 6.700e+01 p90 1.052e+02 max 2.230e+02 at cycle 5286; floored median 2.850e+04 max 6.283e+05
+  log.0 [refresh]: 300 audit lines, cycles 5279-5578; final cumulative cell-c2p 6.0264e+10 floored 5.3705e+04 skip 1.9034e+07 (skip/cell-c2p 3.158e-04, floored/cell-c2p 8.912e-07, skip_de 1.601e+20)
+     per audit line: skip median 4.525e+04 p90 5.969e+04 max 5.585e+06 at cycle 5280; floored median 1.690e+02 max 2.364e+03
+  log.0: 327 floorcap lines; last: CLEAN FALLBACK cycle 5578: pos_gas 22823 (from E 8.108e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 9742 T 38690813 c2p_dfloor 0 (mass 0.000e+00) floor_pay 3.571e+23 (unpaid 0.000e+00)
+  t9l62.log: 2 rows, cycles 5434-5579
+     eos_dfloor  sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     eos_vceil   sum 6.8000e+01  max per interval 6.8000e+01  intervals > 0: 1 / 2
+     eos_tfloor  sum 3.2044e+07  max per interval 2.0438e+07  intervals > 0: 2 / 2
+     fofc        sum 1.1512e+10  max per interval 5.9554e+09  intervals > 0: 2 / 2
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     interval ending cycle 5434: eos_vceil 68, eos_dfloor 0
+  cycle-time span in the logs: cycle 5280 t 4.75224e+05 .. cycle 5570 t 4.85972e+05
+
+## S5Goff  (/resnick/groups/carnegie_poc/jingze/sdo_1124/S5Goff)
+  log.0 [update]: 300 audit lines, cycles 5279-5578; final cumulative cell-c2p 4.0131e+10 floored 9.4685e+06 skip 2.2879e+04 (skip/cell-c2p 5.701e-07, floored/cell-c2p 2.359e-04, skip_de 7.245e+20)
+     per audit line: skip median 7.000e+01 p90 1.052e+02 max 1.950e+02 at cycle 5287; floored median 3.065e+04 max 6.159e+05
+  log.0 [refresh]: 300 audit lines, cycles 5279-5578; final cumulative cell-c2p 6.0264e+10 floored 2.0199e+06 skip 1.9118e+07 (skip/cell-c2p 3.172e-04, floored/cell-c2p 3.352e-05, skip_de 8.877e+19)
+     per audit line: skip median 4.670e+04 p90 5.703e+04 max 5.570e+06 at cycle 5280; floored median 5.105e+03 max 5.284e+05
+  log.0: 327 floorcap lines; last: CLEAN FALLBACK cycle 5578: pos_gas 24801 (from E 8.080e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 8869 T 38596881 c2p_dfloor 0 (mass 0.000e+00) floor_pay 1.478e+25 (unpaid 0.000e+00)
+  t9l62.log: 2 rows, cycles 5461-5579
+     eos_dfloor  sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     eos_vceil   sum 1.0500e+02  max per interval 1.0500e+02  intervals > 0: 1 / 2
+     eos_tfloor  sum 3.5492e+07  max per interval 2.5203e+07  intervals > 0: 2 / 2
+     fofc        sum 1.1517e+10  max per interval 6.9938e+09  intervals > 0: 2 / 2
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     interval ending cycle 5461: eos_vceil 105, eos_dfloor 0
+  cycle-time span in the logs: cycle 5280 t 4.75224e+05 .. cycle 5570 t 4.84668e+05
+
+## T2_rc4v_262affd6f  (/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/t9l62)
+  log.0 [update]: 474 audit lines, cycles 0-473; final cumulative cell-c2p 6.3485e+10 floored 5.9644e+08 skip 4.1344e+04 (skip/cell-c2p 6.512e-07, floored/cell-c2p 9.395e-03, skip_de 0.000e+00)
+     per audit line: skip median 8.100e+01 p90 1.350e+02 max 1.740e+02 at cycle 308; floored median 1.276e+06 max 1.345e+06
+  log.0 [refresh]: 474 audit lines, cycles 0-473; final cumulative cell-c2p 9.5227e+10 floored 3.5854e+07 skip 5.4744e+08 (skip/cell-c2p 5.749e-03, floored/cell-c2p 3.765e-04, skip_de 1.037e+24)
+     per audit line: skip median 1.096e+06 p90 1.127e+06 max 1.130e+06 at cycle 406; floored median 7.625e+04 max 1.103e+05
+  log.0: 512 floorcap lines; last: CLEAN FALLBACK cycle 473: pos_gas 1437954 (from E 1.556e+32) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 41331286 c2p_dfloor 0 (mass 0.000e+00) floor_pay 4.076e+26 (unpaid 0.000e+00)
+  log.1 [update]: 1365 audit lines, cycles 474-1838; final cumulative cell-c2p 1.8307e+11 floored 1.7264e+09 skip 1.4904e+05 (skip/cell-c2p 8.141e-07, floored/cell-c2p 9.430e-03, skip_de 0.000e+00)
+     per audit line: skip median 1.160e+02 p90 1.350e+02 max 2.830e+02 at cycle 1808; floored median 1.267e+06 max 1.310e+06
+  log.1 [refresh]: 1365 audit lines, cycles 474-1838; final cumulative cell-c2p 2.7468e+11 floored 9.4944e+07 skip 1.4707e+09 (skip/cell-c2p 5.354e-03, floored/cell-c2p 3.457e-04, skip_de 0.000e+00)
+     per audit line: skip median 1.078e+06 p90 1.082e+06 max 1.112e+06 at cycle 1838; floored median 6.994e+04 max 7.372e+04
+  log.1: 1476 floorcap lines; last: CLEAN FALLBACK cycle 1838: pos_gas 1451624 (from E 1.570e+32) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 34562424 c2p_dfloor 0 (mass 0.000e+00) floor_pay 4.046e+26 (unpaid 0.000e+00)
+  log.2 [update]: 714 audit lines, cycles 1839-2552; final cumulative cell-c2p 9.5697e+10 floored 9.3496e+08 skip 1.0006e+05 (skip/cell-c2p 1.046e-06, floored/cell-c2p 9.770e-03, skip_de 0.000e+00)
+     per audit line: skip median 1.210e+02 p90 2.250e+02 max 2.470e+02 at cycle 2309; floored median 1.320e+06 max 1.331e+06
+  log.2 [refresh]: 714 audit lines, cycles 1839-2552; final cumulative cell-c2p 1.4361e+11 floored 4.8226e+07 skip 7.8883e+08 (skip/cell-c2p 5.493e-03, floored/cell-c2p 3.358e-04, skip_de 0.000e+00)
+     per audit line: skip median 1.117e+06 p90 1.127e+06 max 1.128e+06 at cycle 2011; floored median 6.960e+04 max 7.178e+04
+  log.2: 773 floorcap lines; last: CLEAN FALLBACK cycle 2552: pos_gas 1386493 (from E 1.506e+32) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 26333551 c2p_dfloor 0 (mass 0.000e+00) floor_pay 3.658e+26 (unpaid 0.000e+00)
+  t9l62.log: 28 rows, cycles 0-2553
+     eos_dfloor  sum 3.7636e+07  max per interval 3.7636e+07  intervals > 0: 1 / 28
+     eos_vceil   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 28
+     eos_tfloor  sum 5.0844e+09  max per interval 2.1496e+08  intervals > 0: 27 / 28
+     fofc        sum 9.8797e+10  max per interval 4.1919e+09  intervals > 0: 27 / 28
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 28
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 28
+  cycle-time span in the logs: cycle 0 t 0.00000e+00 .. cycle 2550 t 2.46957e+05
+
+## rc3_af836f5a3  (/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/t9l62)
+  log.0 [update]: 447 audit lines, cycles 0-446; final cumulative cell-c2p 5.9861e+10 floored 3.0535e+07 skip 5.9821e+08 (skip/cell-c2p 9.993e-03, floored/cell-c2p 5.101e-04, skip_de 0.000e+00)
+     per audit line: skip median 1.357e+06 p90 1.376e+06 max 1.464e+06 at cycle 22; floored median 7.372e+04 max 1.210e+05
+  log.0 [refresh]: 447 audit lines, cycles 0-446; final cumulative cell-c2p 8.9792e+10 floored 1.6121e+06 skip 6.4891e+08 (skip/cell-c2p 7.227e-03, floored/cell-c2p 1.795e-05, skip_de 1.037e+24)
+     per audit line: skip median 1.369e+06 p90 1.663e+06 max 1.681e+06 at cycle 446; floored median 3.470e+03 max 4.483e+04
+  log.0: 483 floorcap lines; last: CLEAN FALLBACK cycle 446: pos_gas 1461974 (from E 1.579e+32) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 36237748 c2p_dfloor 0 (mass 0.000e+00) floor_pay 6.009e+25 (unpaid 0.000e+00)
+  log.1 [update]: 919 audit lines, cycles 447-1365; final cumulative cell-c2p 1.2321e+11 floored 5.8880e+07 skip 1.1802e+09 (skip/cell-c2p 9.579e-03, floored/cell-c2p 4.779e-04, skip_de 0.000e+00)
+     per audit line: skip median 1.290e+06 p90 1.304e+06 max 1.307e+06 at cycle 1296; floored median 6.185e+04 max 9.113e+04
+  log.1 [refresh]: 919 audit lines, cycles 447-1365; final cumulative cell-c2p 1.8488e+11 floored 1.4796e+07 skip 1.4825e+09 (skip/cell-c2p 8.019e-03, floored/cell-c2p 8.003e-05, skip_de 0.000e+00)
+     per audit line: skip median 1.611e+06 p90 1.648e+06 max 1.730e+06 at cycle 455; floored median 1.586e+04 max 3.762e+04
+  log.1: 994 floorcap lines; last: CLEAN FALLBACK cycle 1365: pos_gas 1404537 (from E 1.527e+32) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 36584722 c2p_dfloor 0 (mass 0.000e+00) floor_pay 4.433e+26 (unpaid 0.000e+00)
+  log.2 [update]: 3755 audit lines, cycles 1366-5120; final cumulative cell-c2p 5.0385e+11 floored 1.3142e+08 skip 3.8473e+09 (skip/cell-c2p 7.636e-03, floored/cell-c2p 2.608e-04, skip_de 6.856e+17)
+     per audit line: skip median 1.274e+06 p90 1.368e+06 max 1.387e+06 at cycle 2000; floored median 3.791e+04 max 6.860e+04
+  log.2 [refresh]: 3755 audit lines, cycles 1366-5120; final cumulative cell-c2p 7.5585e+11 floored 2.8560e+07 skip 4.5849e+09 (skip/cell-c2p 6.066e-03, floored/cell-c2p 3.779e-05, skip_de 9.663e+15)
+     per audit line: skip median 1.496e+06 p90 1.620e+06 max 1.635e+06 at cycle 2177; floored median 8.056e+03 max 1.668e+04
+  log.2: 4056 floorcap lines; last: CLEAN FALLBACK cycle 5120: pos_gas 62863 (from E 1.933e+30) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 196193 T 34565673 c2p_dfloor 0 (mass 0.000e+00) floor_pay 7.549e+27 (unpaid 0.000e+00)
+  log.4: 2 floorcap lines; last: CLEAN FALLBACK cycle 5121: pos_gas 62714 (from E 1.871e+30) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 194906 T 34571134 c2p_dfloor 0 (mass 0.000e+00) floor_pay 9.252e+27 (unpaid 0.000e+00)
+  log.5 [update]: 4450 audit lines, cycles 5122-9571; final cumulative cell-c2p 5.9713e+11 floored 4.5352e+05 skip 3.3619e+07 (skip/cell-c2p 5.630e-05, floored/cell-c2p 7.595e-07, skip_de 1.645e+22)
+     per audit line: skip median 1.080e+02 p90 3.680e+04 max 5.724e+04 at cycle 5123; floored median 0.000e+00 max 7.346e+03
+  log.5 [refresh]: 4450 audit lines, cycles 5122-9571; final cumulative cell-c2p 8.9577e+11 floored 2.1494e+05 skip 4.8591e+07 (skip/cell-c2p 5.424e-05, floored/cell-c2p 2.400e-07, skip_de 2.810e+21)
+     per audit line: skip median 2.070e+02 p90 5.279e+04 max 8.197e+04 at cycle 5123; floored median 2.000e+00 max 4.320e+02
+  log.5: 4807 floorcap lines; last: CLEAN FALLBACK cycle 9571: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 75238 T 25911789 c2p_dfloor 0 (mass 0.000e+00) floor_pay 0.000e+00 (unpaid 0.000e+00)
+  t9l62.log: 73 rows, cycles 0-9572
+     eos_dfloor  sum 3.7636e+07  max per interval 3.7636e+07  intervals > 0: 1 / 73
+     eos_vceil   sum 6.5200e+02  max per interval 3.0500e+02  intervals > 0: 5 / 73
+     eos_tfloor  sum 4.7807e+09  max per interval 1.1642e+08  intervals > 0: 72 / 73
+     fofc        sum 3.1109e+11  max per interval 2.5519e+10  intervals > 0: 67 / 73
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 73
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 73
+     interval ending cycle 5623: eos_vceil 238, eos_dfloor 0
+     interval ending cycle 5933: eos_vceil 9, eos_dfloor 0
+     interval ending cycle 6245: eos_vceil 3, eos_dfloor 0
+     interval ending cycle 6715: eos_vceil 97, eos_dfloor 0
+     interval ending cycle 7462: eos_vceil 305, eos_dfloor 0
+  cycle-time span in the logs: cycle 0 t 0.00000e+00 .. cycle 9570 t 6.70540e+05
+
+## c4_start_a000d803c  (/resnick/groups/carnegie_poc/jingze/prod_c4_1124/t9l62)
+  log.0 [update]: 202 audit lines, cycles 0-201; final cumulative cell-c2p 2.6978e+10 floored 2.1016e+08 skip 2.0278e+04 (skip/cell-c2p 7.517e-07, floored/cell-c2p 7.790e-03, skip_de 0.000e+00)
+     per audit line: skip median 1.090e+02 p90 1.190e+02 max 1.460e+02 at cycle 21; floored median 1.110e+06 max 1.169e+06
+  log.0 [refresh]: 202 audit lines, cycles 0-201; final cumulative cell-c2p 4.0467e+10 floored 7.6242e+05 skip 3.2854e+08 (skip/cell-c2p 8.119e-03, floored/cell-c2p 1.884e-05, skip_de 1.037e+24)
+     per audit line: skip median 1.552e+06 p90 1.556e+06 max 1.564e+06 at cycle 21; floored median 1.010e+02 max 7.814e+04
+  log.0: 219 floorcap lines; last: CLEAN FALLBACK cycle 200: pos_gas 1251456 (from E 1.340e+32) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 27616223 c2p_dfloor 0 (mass 0.000e+00) floor_pay 2.393e+25 (unpaid 0.000e+00)
+  t9l62.log: 2 rows, cycles 0-104
+     eos_dfloor  sum 3.7636e+07  max per interval 3.7636e+07  intervals > 0: 1 / 2
+     eos_vceil   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     eos_tfloor  sum 1.7201e+08  max per interval 1.7201e+08  intervals > 0: 1 / 2
+     fofc        sum 3.7287e+09  max per interval 3.7287e+09  intervals > 0: 1 / 2
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+  cycle-time span in the logs: cycle 0 t 0.00000e+00 .. cycle 200 t 1.93704e+04
+
+## T9HOT2_B  (/resnick/groups/carnegie_poc/jingze/t9hot2_1124/B)
+  log.0 [update]: 300 audit lines, cycles 5121-5420; final cumulative cell-c2p 4.0131e+10 floored 1.9165e+05 skip 1.2645e+07 (skip/cell-c2p 3.151e-04, floored/cell-c2p 4.776e-06, skip_de 4.386e+20)
+     per audit line: skip median 4.294e+04 p90 5.074e+04 max 5.730e+04 at cycle 5122; floored median 1.990e+02 max 1.057e+04
+  log.0 [refresh]: 300 audit lines, cycles 5121-5420; final cumulative cell-c2p 6.0264e+10 floored 7.4181e+04 skip 1.8229e+07 (skip/cell-c2p 3.025e-04, floored/cell-c2p 1.231e-06, skip_de 1.143e+20)
+     per audit line: skip median 6.127e+04 p90 7.507e+04 max 8.434e+04 at cycle 5123; floored median 2.470e+02 max 4.000e+02
+  log.0: 325 floorcap lines; last: CLEAN FALLBACK cycle 5420: pos_gas 33625 (from E 5.225e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 67030 T 34631285 c2p_dfloor 0 (mass 0.000e+00) floor_pay 4.591e+23 (unpaid 0.000e+00)
+  t9l62.log: 2 rows, cycles 5371-5421
+     eos_dfloor  sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     eos_vceil   sum 9.0000e+01  max per interval 8.8000e+01  intervals > 0: 2 / 2
+     eos_tfloor  sum 3.1729e+07  max per interval 2.7368e+07  intervals > 0: 2 / 2
+     fofc        sum 1.0751e+10  max per interval 8.9662e+09  intervals > 0: 2 / 2
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     interval ending cycle 5371: eos_vceil 88, eos_dfloor 0
+     interval ending cycle 5421: eos_vceil 2, eos_dfloor 0
+  cycle-time span in the logs: cycle 5130 t 4.73015e+05 .. cycle 5420 t 4.81321e+05
+
+## T9HOT2_F  (/resnick/groups/carnegie_poc/jingze/t9hot2_1124/F)
+  log.0 [update]: 163 audit lines, cycles 5121-5283; final cumulative cell-c2p 2.1743e+10 floored 3.9762e+05 skip 8.1081e+06 (skip/cell-c2p 3.729e-04, floored/cell-c2p 1.829e-05, skip_de 2.688e+41)
+     per audit line: skip median 4.973e+04 p90 5.845e+04 max 6.228e+04 at cycle 5124; floored median 2.345e+03 max 1.114e+04
+  log.0 [refresh]: 163 audit lines, cycles 5121-5283; final cumulative cell-c2p 3.2414e+10 floored 9.8570e+03 skip 1.0774e+07 (skip/cell-c2p 3.324e-04, floored/cell-c2p 3.041e-07, skip_de 1.080e+23)
+     per audit line: skip median 6.784e+04 p90 7.556e+04 max 8.193e+04 at cycle 5123; floored median 4.750e+01 max 4.300e+02
+  log.0: 177 floorcap lines; last: CLEAN FALLBACK cycle 5282: pos_gas 45989 (from E 2.559e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 195738 T 35325490 c2p_dfloor 0 (mass 0.000e+00) floor_pay 8.414e+38 (unpaid 0.000e+00)
+  cycle-time span in the logs: cycle 5130 t 4.73015e+05 .. cycle 5280 t 4.77070e+05
+
+## T9HOT2_K  (/resnick/groups/carnegie_poc/jingze/t9hot2_1124/K)
+  log.0 [update]: 300 audit lines, cycles 5121-5420; final cumulative cell-c2p 4.0131e+10 floored 1.3196e+07 skip 1.9000e+01 (skip/cell-c2p 4.734e-10, floored/cell-c2p 3.288e-04, skip_de 1.683e+39)
+     per audit line: skip median 0.000e+00 p90 0.000e+00 max 2.000e+00 at cycle 5196; floored median 4.454e+04 max 5.775e+04
+  log.0 [refresh]: 300 audit lines, cycles 5121-5420; final cumulative cell-c2p 6.0264e+10 floored 1.8901e+07 skip 1.8000e+01 (skip/cell-c2p 2.987e-10, floored/cell-c2p 3.136e-04, skip_de -8.347e+34)
+     per audit line: skip median 0.000e+00 p90 0.000e+00 max 2.000e+00 at cycle 5183; floored median 6.286e+04 max 8.676e+04
+  log.0: 325 floorcap lines; last: CLEAN FALLBACK cycle 5420: pos_gas 33237 (from E 4.856e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 66606 T 34602845 c2p_dfloor 0 (mass 0.000e+00) floor_pay 2.572e+34 (unpaid 0.000e+00)
+  t9l62.log: 2 rows, cycles 5351-5421
+     eos_dfloor  sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     eos_vceil   sum 3.7000e+01  max per interval 3.0000e+01  intervals > 0: 2 / 2
+     eos_tfloor  sum 5.1806e+07  max per interval 4.2067e+07  intervals > 0: 2 / 2
+     fofc        sum 1.0744e+10  max per interval 8.2455e+09  intervals > 0: 2 / 2
+     vceil_de    sum 4.0621e+11  max per interval 4.0621e+11  intervals > 0: 2 / 2
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 2
+     interval ending cycle 5351: eos_vceil 30, eos_dfloor 0
+     interval ending cycle 5421: eos_vceil 7, eos_dfloor 0
+  cycle-time span in the logs: cycle 5130 t 4.73015e+05 .. cycle 5420 t 4.81491e+05
+
+## T9HOT2_P1  (/resnick/groups/carnegie_poc/jingze/t9hot2_1124/P1)
+  log.0 [update]: 300 audit lines, cycles 9572-9871; final cumulative cell-c2p 4.0131e+10 floored 0.0000e+00 skip 1.9000e+01 (skip/cell-c2p 4.734e-10, floored/cell-c2p 0.000e+00, skip_de 2.605e+12)
+     per audit line: skip median 0.000e+00 p90 0.000e+00 max 2.000e+00 at cycle 9678; floored median 0.000e+00 max 0.000e+00
+  log.0 [refresh]: 300 audit lines, cycles 9572-9871; final cumulative cell-c2p 6.0264e+10 floored 0.0000e+00 skip 4.7000e+01 (skip/cell-c2p 7.799e-10, floored/cell-c2p 0.000e+00, skip_de 0.000e+00)
+     per audit line: skip median 0.000e+00 p90 1.000e+00 max 2.000e+00 at cycle 9612; floored median 0.000e+00 max 0.000e+00
+  log.0: 325 floorcap lines; last: CLEAN FALLBACK cycle 9871: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 89160 T 23967988 c2p_dfloor 0 (mass 0.000e+00) floor_pay 0.000e+00 (unpaid 0.000e+00)
+  t9l62.log: 3 rows, cycles 9668-9872
+     eos_dfloor  sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 3
+     eos_vceil   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 3
+     eos_tfloor  sum 1.9000e+01  max per interval 7.0000e+00  intervals > 0: 3 / 3
+     fofc        sum 7.7888e+09  max per interval 2.7004e+09  intervals > 0: 3 / 3
+     vceil_de    sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 3
+     dfloor_ke   sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 3
+  cycle-time span in the logs: cycle 9580 t 6.71506e+05 .. cycle 9870 t 6.99505e+05
+
+## T9ARMS_L  (/resnick/groups/carnegie_poc/jingze/t9arms_1123/L)
+  log.0 [update]: 413 audit lines, cycles 6457-6849; final cumulative cell-c2p 5.3016e+10 floored 2.3225e+06 skip 4.6074e+09 (skip/cell-c2p 8.691e-02, floored/cell-c2p 4.381e-05, skip_de 4.559e+42)
+     per audit line: skip median 1.166e+07 p90 1.167e+07 max 1.749e+07 at cycle 6468; floored median 6.136e+03 max 9.840e+03
+  log.0 [refresh]: 413 audit lines, cycles 6457-6849; final cumulative cell-c2p 7.8182e+10 floored 2.2101e+07 skip 9.6150e+03 (skip/cell-c2p 1.230e-07, floored/cell-c2p 2.827e-04, skip_de -1.524e+40)
+     per audit line: skip median 2.100e+01 p90 4.300e+01 max 6.800e+01 at cycle 6817; floored median 5.470e+04 max 6.200e+04
+  log.0: 427 floorcap lines; last: CLEAN FALLBACK cycle 6849: pos_gas 49214 (from E 2.692e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 2976 T 69524576 c2p_dfloor 0 (mass 0.000e+00)
+  t9l62.log: 1 rows, cycles 6850-6850
+     eos_dfloor  sum 5.5383e+09  max per interval 5.5383e+09  intervals > 0: 1 / 1
+     eos_vceil   sum 1.1713e+04  max per interval 1.1713e+04  intervals > 0: 1 / 1
+     eos_tfloor  sum 5.8054e+07  max per interval 5.8054e+07  intervals > 0: 1 / 1
+     fofc        sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 1
+     vceil_de    sum 3.4843e+11  max per interval 3.4843e+11  intervals > 0: 1 / 1
+     dfloor_ke   sum 2.0749e-02  max per interval 2.0749e-02  intervals > 0: 1 / 1
+     interval ending cycle 6850: eos_vceil 11713, eos_dfloor 5538267363
+  cycle-time span in the logs: cycle 6500 t 4.75245e+05 .. cycle 6850 t 4.76105e+05
+
+## T9ARMS_S  (/resnick/groups/carnegie_poc/jingze/t9arms_1123/S)
+  log.0 [update]: 393 audit lines, cycles 6457-6849; final cumulative cell-c2p 5.2680e+10 floored 1.6251e+07 skip 2.6400e+03 (skip/cell-c2p 5.011e-08, floored/cell-c2p 3.085e-04, skip_de 2.278e+42)
+     per audit line: skip median 6.000e+00 p90 1.600e+01 max 2.700e+01 at cycle 6652; floored median 4.392e+04 max 4.897e+04
+  log.0 [refresh]: 393 audit lines, cycles 6457-6849; final cumulative cell-c2p 7.8987e+10 floored 2.5872e+07 skip 1.7850e+04 (skip/cell-c2p 2.260e-07, floored/cell-c2p 3.276e-04, skip_de -2.035e+40)
+     per audit line: skip median 3.600e+01 p90 1.304e+02 max 1.900e+02 at cycle 6647; floored median 6.584e+04 max 6.776e+04
+  log.0: 424 floorcap lines; last: CLEAN FALLBACK cycle 6849: pos_gas 45957 (from E 3.374e+29) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 3685 T 64355995 c2p_dfloor 0 (mass 0.000e+00)
+  t9l62.log: 1 rows, cycles 6850-6850
+     eos_dfloor  sum 5.6000e+01  max per interval 5.6000e+01  intervals > 0: 1 / 1
+     eos_vceil   sum 2.0478e+04  max per interval 2.0478e+04  intervals > 0: 1 / 1
+     eos_tfloor  sum 6.9736e+07  max per interval 6.9736e+07  intervals > 0: 1 / 1
+     fofc        sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 1
+     vceil_de    sum 8.8706e+11  max per interval 8.8706e+11  intervals > 0: 1 / 1
+     dfloor_ke   sum 1.8480e-22  max per interval 1.8480e-22  intervals > 0: 1 / 1
+     interval ending cycle 6850: eos_vceil 20478, eos_dfloor 56
+  cycle-time span in the logs: cycle 6500 t 4.75311e+05 .. cycle 6850 t 4.77299e+05
+
+## fresh1121b  (/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t9l62)
+  log.0: 2292 floorcap lines; last: <rad_m1> floorcap cycle 28625 (cumulative, all calls): n_v 1.998462e+09 n_t 1.324148e+12 dKE 6.012717e+40 dEint 3.733590e+35 (erg, to E_rad) momentum removed |dp| 1.995388e+33 dL_z 1.728886e+44
+  log.1: 1 floorcap lines; last: <rad_m1> floorcap: rho < 1e-14: |v| <= 3e+07 (0 = no cap), T <= max(T_rad, 0 K) on, clipped KE -> E_rad
+  log.2: 57 floorcap lines; last: <rad_m1> floorcap cycle 28900 (cumulative, all calls): n_v 9.169672e+07 n_t 8.554400e+09 dKE 1.640092e+40 dEint 2.633316e+34 (erg, to E_rad) momentum removed |dp| 5.409887e+32 dL_z -1.193479e+43
+  log.3: 129 floorcap lines; last: <rad_m1> floorcap cycle 29825 (cumulative, all calls): n_v 2.035557e+08 n_t 1.726947e+10 dKE 2.681124e+41 dEint 1.852686e+35 (erg, to E_rad) momentum removed |dp| 9.778068e+32 dL_z -2.005217e+43
+  log.4: 5 floorcap lines; last: <rad_m1> floorcap cycle 29475 (cumulative, all calls): n_v 4.736390e+06 n_t 3.819792e+08 dKE 1.844656e+39 dEint 2.044288e+33 (erg, to E_rad) momentum removed |dp| 1.942231e+31 dL_z -3.737744e+41
+  log.5: 53 floorcap lines; last: <rad_m1> floorcap cycle 30075 (cumulative, all calls): n_v 1.165253e+08 n_t 5.567507e+09 dKE 8.855542e+39 dEint 3.619442e+34 (erg, to E_rad) momentum removed |dp| 2.921401e+32 dL_z 1.809687e+43
+  log.6: 132 floorcap lines; last: <rad_m1> floorcap cycle 31700 (cumulative, all calls): n_v 8.883687e+08 n_t 1.066055e+10 dKE 1.177270e+40 dEint 1.971614e+35 (erg, to E_rad) momentum removed |dp| 3.869578e+32 dL_z 9.152202e+43
+  log.7: 7 floorcap lines; last: <rad_m1> floorcap cycle 28275 (cumulative, all calls): n_v 1.027248e+07 n_t 1.106732e+09 dKE 6.782242e+38 dEint 1.778680e+33 (erg, to E_rad) momentum removed |dp| 2.244696e+31 dL_z 2.871689e+41
+  log.8: 435 floorcap lines; last: <rad_m1> floorcap cycle 33625 (cumulative, all calls): n_v 6.594042e+08 n_t 5.519235e+10 dKE 4.295152e+40 dEint 2.954116e+35 (erg, to E_rad) momentum removed |dp| 1.419006e+33 dL_z 5.593888e+43
+  log.9: 2 floorcap lines; last: <rad_m1>/floorcap_mesh_vol = false (a restart file without the key: the old default)
+  log.10: 8 floorcap lines; last: <rad_m1> floorcap cycle 33425 (cumulative, all calls): n_v 5.591444e+06 n_t 3.212848e+08 dKE 6.385310e+40 dEint 3.614973e+33 (erg, to E_rad) momentum removed |dp| 1.524157e+31 dL_z 4.460876e+42
+  log.11: 14 floorcap lines; last: <rad_m1> floorcap cycle 33500 (cumulative, all calls): n_v 1.283922e+07 n_t 7.391720e+08 dKE 9.380178e+38 dEint 9.575605e+33 (erg, to E_rad) momentum removed |dp| 2.778039e+31 dL_z 7.831218e+42
+  log.12: 57 floorcap lines; last: <rad_m1> floorcap cycle 34050 (cumulative, all calls): n_v 6.735552e+07 n_t 3.761995e+09 dKE 3.598931e+39 dEint 6.660002e+34 (erg, to E_rad) momentum removed |dp| 1.191430e+32 dL_z 3.569249e+43
+  t9l62.log: 229 rows, cycles 0-34075
+     eos_dfloor  sum 8.8286e+11  max per interval 3.1526e+10  intervals > 0: 228 / 229
+     eos_vceil   sum 1.6290e+03  max per interval 2.4800e+02  intervals > 0: 33 / 229
+     eos_tfloor  sum 6.2508e+09  max per interval 1.8632e+08  intervals > 0: 194 / 229
+     fofc        sum 0.0000e+00  max per interval 0.0000e+00  intervals > 0: 0 / 229
+     vceil_de    sum 3.8720e+12  max per interval 3.1384e+12  intervals > 0: 33 / 229
+     dfloor_ke   sum 9.8704e+02  max per interval 2.0781e+02  intervals > 0: 227 / 229
+     interval ending cycle 6652: eos_vceil 23, eos_dfloor 31525890073
+     interval ending cycle 9133: eos_vceil 32, eos_dfloor 30562233866
+     interval ending cycle 28948: eos_vceil 80, eos_dfloor 665336843
+     interval ending cycle 29033: eos_vceil 25, eos_dfloor 685752251
+     interval ending cycle 29133: eos_vceil 248, eos_dfloor 791446719
+     interval ending cycle 29225: eos_vceil 12, eos_dfloor 715456092
+     interval ending cycle 29309: eos_vceil 14, eos_dfloor 640387685
+     interval ending cycle 29415: eos_vceil 87, eos_dfloor 792716456
+     interval ending cycle 29506: eos_vceil 56, eos_dfloor 668495266
+     interval ending cycle 29603: eos_vceil 17, eos_dfloor 698026426
+     interval ending cycle 29739: eos_vceil 94, eos_dfloor 960280757
+     interval ending cycle 29819: eos_vceil 17, eos_dfloor 553183243
+     interval ending cycle 29514: eos_vceil 10, eos_dfloor 579159677
+     interval ending cycle 29803: eos_vceil 4, eos_dfloor 663821409
+     interval ending cycle 30005: eos_vceil 6, eos_dfloor 656647219
+     interval ending cycle 30085: eos_vceil 1, eos_dfloor 520788765
+     interval ending cycle 30113: eos_vceil 3, eos_dfloor 180201495
+     interval ending cycle 30218: eos_vceil 3, eos_dfloor 666522060
+     interval ending cycle 30340: eos_vceil 19, eos_dfloor 756074289
+     interval ending cycle 30443: eos_vceil 18, eos_dfloor 622902759
+     interval ending cycle 30555: eos_vceil 15, eos_dfloor 660239477
+     interval ending cycle 30714: eos_vceil 16, eos_dfloor 911110264
+     interval ending cycle 30912: eos_vceil 70, eos_dfloor 1104187402
+     interval ending cycle 31132: eos_vceil 124, eos_dfloor 1190626589
+     interval ending cycle 31357: eos_vceil 111, eos_dfloor 1179021621
+     interval ending cycle 31582: eos_vceil 126, eos_dfloor 1139025302
+     interval ending cycle 31717: eos_vceil 40, eos_dfloor 663024335
+     interval ending cycle 33567: eos_vceil 24, eos_dfloor 1223889716
+     interval ending cycle 33445: eos_vceil 160, eos_dfloor 426931753
+     interval ending cycle 33518: eos_vceil 147, eos_dfloor 816380935
+     interval ending cycle 33567: eos_vceil 24, eos_dfloor 1081641312
+     interval ending cycle 33750: eos_vceil 2, eos_dfloor 956459430
+     interval ending cycle 34075: eos_vceil 1, eos_dfloor 607686283
+  cycle-time span in the logs: cycle 0 t 0.00000e+00 .. cycle 34050 t 1.67495e+06
