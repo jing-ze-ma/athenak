@@ -2346,8 +2346,9 @@ void RadiationVet::CleanClosureFromRays() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureFill
 //! \brief cells without ray radiation take the mean closure (D, h+-, k+) of their valid
-//! neighbours (clean_stag_thinf: weighted by their E, so that a neighbour the rays hardly
-//! light does not count as much as a beam), one layer per pass (clean_fill_passes passes)
+//! neighbours, one layer per pass (clean_fill_passes passes).  clean_stag_thinf: the
+//! first layer's, next to the rays, weighted by their E, so that a neighbour the rays
+//! hardly light does not count as much as a beam; the deeper layers hold no radiation
 
 void RadiationVet::CleanClosureFill() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2399,7 +2400,7 @@ void RadiationVet::CleanClosureFill() {
         for (int jj = j-dj; jj <= j+dj; ++jj) {
           for (int ii = i-1; ii <= i+1; ++ii) {
             if (valid(m,0,kk,jj,ii) <= 0.0) continue;
-            const Real wt = thf ? valid(m,2,kk,jj,ii) : 1.0;
+            const Real wt = (thf && pass == 0) ? valid(m,2,kk,jj,ii) : 1.0;
             nv += wt;
             // (rmp: the families q[a] of its h+- slots in our axes, sign sg[a], -1: none)
             int q[3] = {0, 1, 2};
