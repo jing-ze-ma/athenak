@@ -40,3 +40,11 @@
 - DT15: 2026-11-24 17:38:33 rc=0 (srun) ended: Terminating on cycle limit wall=143 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean st
 - DTq: 2026-11-24 17:40:43 rc=0 (srun) ended: Terminating on cycle limit wall=130 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean st
 - All DTREP / DTREG lines: caltech_results/DT_LIMIT/<arm>/dtrep.txt (printed every 5 cycles).
+
+## Reading (11-24 17:46)
+- **M35ZAMS (c0 and the T2 state c22155): a RADIAL cell (dir 1) at the inner wall** (r = 4.7306e11 = the first cell, radial width 2.31e8 cm): cfl*dt 3.4805, the same at both times and all binders in different lateral cells. Not a lateral cell, not floor gas (floor flag 0), v ~ 0; ceff 1.99e7 > cgas 1.78e7, so the radiation signal adds about 11 %; gas-only would give 3.77-3.88.
+- **m35mms, dt 12.0 (t = 0): a PHI cell (dir 3) at the inner wall** (r 6.75e11, theta-edge row, h 9.07e8): 12.0076 (gas-only 14.16). The rest of the mesh (DTREG rest) is also bound there at 12.0272, phi.
+- **m35mms, the dip (T2 c6278, dt 10.58): a RADIAL cell (dir 1) at r 9.1e11 with v 2.9e7 cm/s in thin gas (rho 3.5e-9)**, i.e. a fast radial flow in the atmosphere, advection-limited (v + c: 2.9e7 + 5.7e6 against h 1.24e9); the inner phi cell stays at 12.007 and is not the binder. The same cell (gid 3, kji 35 40 226) binds in 8 of 10 prints: one spot, not the whole mesh.
+- **t9l62 quiet: a PHI cell at the inner wall** (r 1.691e12, theta 45 deg, h 7.36e9): 96.84 (gas-only 123.3); the rest is at 100.9, also phi. v 33 cm/s, so it is the signal speed, ceff 2.28e7 vs cgas 1.79e7.
+- **t9l62 outburst (00015): r 2.47e12, thin gas (rho 8e-13 to 2e-11), |v| 1.3e8 to 2.8e8, direction changes between prints (phi 5, radial 2, theta 3)**: advection in the hot gas, no fixed direction.
+- What the lines do NOT give: the share of cells within 5 % of the limit and the minimum dt per direction over the mesh, hence no radial-only / lateral-only dt for the second class; I did not estimate them.
