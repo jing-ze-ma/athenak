@@ -1,0 +1,2 @@
+2026-11-25 00:56:37 start BKflat hpc-sm-02-16 BIN rel-f 80d16d39 ARGS: -r /resnick/groups/carnegie_poc/jingze/b1_1124/lc/rst_in/bsg_bsg3d.00008.rst -i /resnick/groups/carnegie_poc/jingze/b1_1124/lc/FRoff.athinput output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 time/nlim=29147 hydro/merge_lat_blockend=flat
+2026-11-25 00:57:16 rc=0 (srun) ended: Terminating on cycle limit wall=39 s CW 0 FATAL 0
