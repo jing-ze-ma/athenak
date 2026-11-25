@@ -27,7 +27,6 @@ nx2 = 8
 nx3 = 1
 
 <time>
-integrator = rk2
 nlim = 10
 tlim = 1.0
 dt_fixed = 2.5e-7

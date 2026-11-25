@@ -34,7 +34,6 @@ f_stretch_r_p_amp = -0.66666666666666667
 f_stretch_r_p_xa = 0.1875
 f_stretch_r_p_xb = 0.6875
 f_stretch_r_p_w = 1.0e-12
-layout_invariant_mode = tile
 layout_tile = 16
 
 <meshblock>
@@ -43,12 +42,9 @@ nx2 = 16
 nx3 = 16
 
 <time>
-integrator = rk2
 nlim = 4000
 tlim = 8.4672e5                   # 9.8 d
 ndiag = 10
-dt_retry_grow = 1.1
-dt_retry_ngood = 20
 
 <units>
 length_cgs = 1.0
@@ -57,21 +53,16 @@ time_cgs = 1.0
 mu = 0.62
 
 <hydro>
-dt_floor_courant = 0.6
-rad_signal_speed_phase = true
 merge_lat_rc = 2.43495e12,3.82635e12,5.5656e12
 merge_lat_f = 2,1,2
 merge_lat_diag = 1000
 eos = general
-rad_signal_speed_diff = true
 gamma = 1.6666666666666667
 dfloor = 6.15245e-14
 pfloor = 8.9014e-3
 vceil = 3.0e8
 tfloor = 134104228155.32465
 wb_rmax = 4.231839e+12
-floor_pay_skip = true
-dfloor_flux_limit = true
 
 <rad_vet>
 floorcap_report = 25
@@ -82,17 +73,11 @@ floorcap_rho = 1e-14
 vet_gd_halo_ipc = true
 c_light = 2.99792458e10
 arad = 2.3392742567e-47
-vet_gd_wall_interp = true
-vet_gd_wall_sym = true
-vet_gd_theta_seam_sym = true
-opacity = table
 temp_unit_kelvin = 7.4568864364e-9
 e_floor = 1.0e-4
 implicit_flux_x1min = 2.2942145641e+13
 vet_gd_band_ring = true            # band slabs lent per shell: bitwise, less GPU memory
-clean_maxit = 200
 clean_pc_sweep = rb
-clean_wb_exch_local = true
 
 <problem>
 star_seed_band = old
