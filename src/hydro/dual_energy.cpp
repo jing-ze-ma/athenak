@@ -23,6 +23,7 @@
 #include "eos/eos.hpp"
 #include "eos/general_c2p_hyd.hpp"
 #include "hydro/dual_energy.hpp"
+#include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -66,9 +67,11 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     pretry = pin->GetBoolean(blk, "floor_pay_retry");
     if (pretry && !pay) Fatal("<" + blk + ">/floor_pay_retry needs floor_pay = rad*");
   }
-  // floor_pay_skip (default false; recorded with floor_pay): the dfloor / vceil cells too
+  // floor_pay_skip (recorded with floor_pay; default with a general EOS and <rad_vet>):
+  // the dfloor / vceil cells too
   if (pay || Named(pin, blk, "floor_pay_skip")) {
-    pskip = pin->GetOrAddBoolean(blk, "floor_pay_skip", false);
+    pskip = pin->GetOrAddBoolean(blk, "floor_pay_skip", rad && blk == "hydro" &&
+        eos.IsGeneral() && recipe::Fix(pin, blk, "floor_pay_skip", "true", "false"));
     if (pskip && !pay) Fatal("<" + blk + ">/floor_pay_skip needs floor_pay = rad*");
   }
   if (pay || Named(pin, blk, "fofc_retest")) {

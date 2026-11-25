@@ -453,7 +453,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (pin->DoesParameterExist("hydro","rad_signal_speed_inertia")) {
     rss_inertia = pin->GetBoolean("hydro","rad_signal_speed_inertia");
   }
+  // (defaults with rad_signal_speed and <rad_vet>)
+  rss_diff = rad_signal_speed && pin->DoesBlockExist("rad_vet") &&
+             recipe::Fix(pin, "hydro", "rad_signal_speed_diff", "true", "false");
   rec("rad_signal_speed_diff", rss_diff);
+  rss_phase = rss_diff &&
+              recipe::Fix(pin, "hydro", "rad_signal_speed_phase", "true", "false");
   rec("rad_signal_speed_phase", rss_phase);
   if (rss_phase && !(rad_signal_speed && rss_diff)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -595,10 +600,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // for time-evolving problems, continue to construct methods, allocate arrays
   if (evolution_t.compare("stationary") != 0) {
     // determine if FOFC is enabled
-    // default false; true for the problem generators that set fofc_pgen_default
-    // (hydro.hpp), except on a restart whose file lacks the key (old default kept)
-    bool fofc_dflt = false;
-    if (fofc_pgen_default && !pin->DoesParameterExist("hydro","fofc")) {
+    // default true with <rad_vet>; false without, but for the problem generators that set
+    // fofc_pgen_default (hydro.hpp; not on a restart whose file lacks the key)
+    const bool rad_fofc = pin->DoesBlockExist("rad_vet") &&
+                          pmy_pack->pmesh->mb_indcs.ng >= 3 && !pmy_pack->pmesh->multilevel;
+    bool fofc_dflt = rad_fofc && recipe::Fix(pin, "hydro", "fofc", "true", "false");
+    if (!rad_fofc && fofc_pgen_default && !pin->DoesParameterExist("hydro","fofc")) {
       if (global_variable::restart_run) {
         if (global_variable::my_rank == 0) {
           std::cout << "hydro: restart input has no hydro/fofc: keeping the old default "
@@ -611,6 +618,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
     if (use_fofc) {pbval_fofc = fofc_flags::Init(ppack, pin, "hydro");}
+    // (default with <rad_vet>: adiabatic hydro on a uniform mesh)
+    use_dfl = pin->DoesBlockExist("rad_vet") && nhydro == 5 &&
+              !pmy_pack->pmesh->multilevel &&
+              recipe::Fix(pin, "hydro", "dfloor_flux_limit", "true", "false");
     rec("dfloor_flux_limit", use_dfl);
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
