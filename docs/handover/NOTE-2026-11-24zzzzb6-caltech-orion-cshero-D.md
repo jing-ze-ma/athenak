@@ -79,3 +79,23 @@ run_cs/bin/rsg.hydro_w.00004.bin cycle 600 t = 6.944 d
    900-1000   9.961e-05  5.515e-05  1.879e-04  3.889e-04
   1000-2000   9.251e-07  1.234e-06  4.182e-06  6.865e-06
 ```
+
+## Correction and completion (caltech): what arm D shows, and what it does not
+
+- **Reading: no effect seen. This is NOT "vertex cleared".** In this deck the key has nothing to act on (below), so B and D are the same run and arm D does not test the cube vertices. It neither blames nor clears them.
+- **Dumps:** the whole-file md5s differ (I had looked only at whole-file bytes; unresolved until now). The difference is the parameter text in the header: exactly cs_vertex_3cell true/false and nlim 1200/600. The data payload (134901888 bytes, 8-byte variables) is byte-identical at c0 (704ef1c9c037540adf5c574aeae1f37e) and c600 (774748c1dd9623dc0ad40b908ffef181). bin_convert, all 24 blocks, 3366912 cells: dens, velx, vely, velz, eint: 0 cells differ, max |D-B| = 0 at c0 and c600. Only hydro_w can be compared (B's other c600 outputs are gone), so the radiation field is covered only through the gas and the hst.
+- **Every use of cs_vertex_3cell in src at 262affd6f (complete grep, 41 lines, 16 files; B and D name the key in `<mesh>`, the block mesh.cpp reads):**
+
+| file | guard | active in this deck? |
+|---|---|---|
+| mesh/mesh.cpp, mesh.hpp | reads the key | read (no run-time effect by itself) |
+| hydro/hydro_fofc.cpp (trial state of seam GHOST cells near a vertex; corner-block cells never flagged) | fofc, cubed sphere, 3-D | **code runs** (fofc = true) |
+| hydro/fofc_etotgrav.cpp (the same terms in the gravity part of the trial state) | fofc + etotgrav | **code runs** (both true) |
+| diffusion/conduction.cpp (2 sites), conduction_transverse.cpp | `<hydro>` isotropic_conduction named | no: key not in the deck, no Conduction object |
+| diffusion/ambipolar.cpp, resistivity_gnomonic.cpp, resistivity.hpp, cs_edge_jb.hpp, cs_vertex_res.hpp | MHD resistivity / ambipolar | no: no `<mhd>` block |
+| mhd/mhd.cpp, mhd_corner_e.cpp, mhd_cs_seam.cpp, mhd_fofc.cpp | `<mhd>` | no |
+| bvals/bvals.hpp | comment on the helper used by the two FOFC sites | (helper) |
+
+  No use in src/rad_vet, src/radiation or src/coordinates. The radiation's vertex treatment is a different key, cs_vertex_mono, true in both arms and not varied.
+- **The two active sites had no flag to change:** they alter only the FOFC trial state and flags. FOFC never fired: 166 of 166 fofc_report lines in D and 333 of 333 in B read at-floor=0 other=0 (active cells), and the end-of-run total is FOFC first-order cell-stages = 0 in both. The run total counts the trial range including one ghost layer, net of retest unflags, so a flag set and then unflagged by fofc_retest is not seen in it.
+- For a test that varies the vertex treatment here, the key to change is one the radiation transport reads (cs_vertex_mono), or a run in which FOFC fires. I have queued nothing.
