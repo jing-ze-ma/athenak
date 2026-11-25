@@ -17,7 +17,9 @@
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/meshblock_pack.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/gnomonic_raisevel.hpp"
 #include "eos/eos.hpp"
 #include "eos/general_c2p_hyd.hpp"
 #include "hydro/dual_energy.hpp"
@@ -77,7 +79,8 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
           pin->GetBoolean(blk, "floor_audit_worst");
   if (worst && report <= 0) Fatal("<" + blk + ">/floor_audit_worst needs floor_audit");
   if (Named(pin, blk, "dual_energy_eta")) eta = pin->GetReal(blk, "dual_energy_eta");
-  any = on || pay || retest || (report > 0);
+  any = on || pay || retest || (report > 0) || eos.ekin_heat;
+  led = any && blk == "hydro" && (eos.ekin_heat || eos.vceil > 0.0);
   if (!any) return;
   if (!eos.IsGeneral()) {
     Fatal("<" + blk + ">/dual_energy, floor_pay, fofc_retest, floor_audit need eos = "
@@ -305,8 +308,127 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   hc[b + DC_SKIP_DE] += s[14];
   hc[b + DC_SKIP_DM] += s[15];
   if (worst && (pp->pmesh->ncycle % report) == 0) Worst(pp, u0, w0);
+  if (led && book && s[8] > 0.0) Book(pp, u0, eos);   // (s[8]: cells changed)
   armed = false;
   if (on) valid = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void DualEnergy::Book
+//! \brief the momentum ledger (dual_energy.hpp): what this conversion took from the
+//! active cells' momentum, by cause, with the weight wst
+
+namespace {
+struct MomCause {   // 0 floor_from_ekin, 1 ceiling, 2 other, -1 momentum unchanged
+  DvceArray5D<Real> u, p;
+  DvceArray3D<Real> cosc;
+  Real vc;
+  bool cs;
+  KOKKOS_INLINE_FUNCTION
+  int operator()(const int m, const int k, const int j, const int i) const {
+    const Real d = p(m,1,k,j,i), p1 = p(m,2,k,j,i), p2 = p(m,3,k,j,i), p3 = p(m,4,k,j,i);
+    if (u(m,IM1,k,j,i) == p1 && u(m,IM2,k,j,i) == p2 && u(m,IM3,k,j,i) == p3) return -1;
+    if (u(m,IDN,k,j,i) != d) return 2;
+    const Real c = cs ? cosc(m,k,j) : 0.0, di = 1.0/d;
+    const Real vsq = SQR(di*p1) + (SQR(di*p2) + SQR(di*p3) - 2.0*c*SQR(di)*p2*p3)/
+                     (1.0 - c*c);
+    if (vc > 0.0 && vsq > SQR(vc)) return 1;
+    return (u(m,IEN,k,j,i) == p(m,0,k,j,i)) ? 0 : 2;
+  }
+};
+}  // namespace
+
+void DualEnergy::Book(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
+                      const EOS_Data &eos) {
+  auto &indcs = pp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nji = nx2*nx1, nkji = nx3*nji, nt = u0.extent_int(0)*nkji;
+  const bool cs = pp->pmesh->use_cubed_sphere;
+  const bool curv = cs || pp->pmesh->use_spherical_polar;
+  auto vol_ = curv ? pp->pcoord->volume : DvceArray4D<Real>("duale_v", 1, 1, 1, 1);
+  auto &size = pp->pmb->mb_size;
+  auto pnl = pp->pmb->mb_panel.d_view;
+  auto pre_ = pre;
+  const Real wst_ = wst;
+  const MomCause cause{u0, pre_, pp->pcoord->cos_cell, eos.vceil, cs};
+  Real n[3] = {};
+  Kokkos::parallel_reduce("duale_ledn", Kokkos::RangePolicy<>(DevExeSpace(), 0, nt),
+  KOKKOS_LAMBDA(const int &idx, Real &n0, Real &n1, Real &n2) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+    const int c = cause(m, k, j, i);
+    if (c == 0) n0 += 1.0;
+    if (c == 1) n1 += 1.0;
+    if (c == 2) n2 += 1.0;
+  }, Kokkos::Sum<Real>(n[0]), Kokkos::Sum<Real>(n[1]), Kokkos::Sum<Real>(n[2]));
+  for (int q = 0; q < 3; ++q) {
+    if (!(n[q] > 0.0)) continue;
+    repro::ReproVal<6> r;
+    Kokkos::parallel_reduce("duale_led", Kokkos::RangePolicy<>(DevExeSpace(), 0, nt),
+    KOKKOS_LAMBDA(const int &idx, repro::ReproVal<6> &a) {
+      const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+      const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+      if (cause(m, k, j, i) != q) return;
+      const Real v = wst_*(curv ? vol_(m,k,j,i) : size.d_view(m).dx1*size.d_view(m).dx2*
+                                                  size.d_view(m).dx3);
+      Real dp[3];
+      for (int b = 0; b < 3; ++b) dp[b] = u0(m,IM1+b,k,j,i) - pre_(m,2+b,k,j,i);
+      if (cs) {   // the covariant (2, 3) on theta_hat = phi_hat x r_hat and phi_hat
+        const auto &sz = size.d_view(m);
+        Real f2, f3;
+        GnomonicPhiHat(pnl(m), 0.25*M_PI*CellCenterX(j - js, nx2, sz.x2min, sz.x2max),
+                       0.25*M_PI*CellCenterX(k - ks, nx3, sz.x3min, sz.x3max), f2, f3);
+        const Real c = cause.cosc(m,k,j), det = 1.0 - c*c, sn = sqrt(det);
+        if (f2 == 0.0 && f3 == 0.0) {f2 = c; f3 = 1.0;}   // (the axis)
+        const Real t2 = (f3 - c*f2)/sn, t3 = (c*f3 - f2)/sn, d2 = dp[1], d3 = dp[2];
+        dp[1] = (d2*(t2 - c*t3) + d3*(t3 - c*t2))/det;
+        dp[2] = (d2*(f2 - c*f3) + d3*(f3 - c*f2))/det;
+      }
+      for (int b = 0; b < 3; ++b) {
+        a.s[b].Add(v*dp[b]);
+        a.s[3+b].Add(v*fabs(dp[b]));
+      }
+    }, repro::ReproRed<6, Kokkos::HostSpace>(r));
+    lsum[q*nlq].Add(n[q]);
+    for (int b = 0; b < 6; ++b) lsum[q*nlq+1+b].Join(r.s[b]);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void DualEnergy::LedgerLine
+//! \brief the ledger of the accepted step (when: "cycle N" or "initial") over all ranks;
+//! nothing printed where no cell's momentum changed
+
+static void LedgerText(const char *pre, const std::string &when, const Real *t) {
+  const char *nm[3] = {"ekin", "vceil", "other"};
+  std::string s;
+  for (int c = 0; c < 3; ++c) {
+    const Real *v = t + 7*c;
+    if (v[0] == 0.0) continue;
+    char b[220];
+    std::snprintf(b, sizeof(b), " %s %.0f dp %.15e %.15e %.15e |dp| %.6e %.6e %.6e",
+                  nm[c], v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+    s += b;
+  }
+  if (!s.empty()) std::printf("%s%s:%s\n", pre, when.c_str(), s.c_str());
+}
+
+void DualEnergy::LedgerLine(const std::string &when) {
+  if (!led) return;
+  repro::AllMerge(lsum, 3*nlq);
+  Real v[3*nlq];
+  for (int q = 0; q < 3*nlq; ++q) {
+    v[q] = lsum[q].Value();
+    ltot[q] += v[q];
+    lsum[q].Init();
+  }
+  if (global_variable::my_rank == 0) LedgerText("CLEAN FLOORMOM ", when, v);
+}
+
+void DualEnergy::LedgerTotal() {
+  if (!led || global_variable::my_rank != 0) return;
+  LedgerText("<hydro> floor momentum ledger, accepted steps, RK-weighted", "", ltot);
 }
 
 //----------------------------------------------------------------------------------------

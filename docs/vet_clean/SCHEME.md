@@ -180,7 +180,8 @@ test output).
   the test prints (6e-5) uses the cell-centred flux vector and is a diagnostic mismatch, not
   the scheme's $L_z$.
 - Not recorded in the ledger: the momentum the floor-gas cap (`floorcap`), the density floor
-  with `dfloor_keep_velocity` and the velocity ceiling remove.
+  with `dfloor_keep_velocity` and the velocity ceiling remove (the ceiling keeps $L_z$ with
+  `floor_from_ekin`; what it takes without it is in the `CLEAN FLOORMOM` phi component).
 
 Test: `conservation_sp`, `conservation_cs` (drift of `Lz_tot` <= 1e-13, with `dLz_gr`
 printed).
@@ -198,8 +199,9 @@ physical sources. Three things change gas + radiation momentum without being giv
   `clean_stag_fwb_cart = true` removes its line mean: no net momentum);
 - the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
 
-Their unsigned sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line), but there
-is no linear-momentum ledger. In a periodic Cartesian box at small amplitude, where none of
+Their sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line; what the primitive
+recovery takes per step, signed, by cause: `CLEAN FLOORMOM`, test `floor_momentum`), but there
+is no ledger of the total. In a periodic Cartesian box at small amplitude, where none of
 them acts, momentum is conserved to 5e-17; in a violent stress test the well-balancing
 residual changes it by about 6e-7 and the production cut by up to a few 1e-3 per cycle. On
 spherical-polar and cubed-sphere meshes Cartesian momentum is not a discrete invariant (the

@@ -56,6 +56,11 @@ void DualMark(Mesh *pm) {
   if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Mark(pm->pmb_pack);
   if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Mark(pm->pmb_pack);
 }
+// the momentum the hydro inversions' floors removed in the step (DualEnergy::LedgerLine)
+void DualLedger(Mesh *pm, const std::string &when) {
+  auto *ph = pm->pmb_pack->phydro;
+  if (ph != nullptr) ph->dual.LedgerLine(when);
+}
 // <hydro|mhd>/floor_pay = rad: the energy the fluid floors and dual selection created
 // is taken from E_rad of the same cell (hydro/dual_energy.hpp)
 fluid::DualEnergy *DualPayer(Mesh *pm) {
@@ -514,6 +519,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   // floor_pay: the initial conversions' floors are paid here, before the t = 0 outputs,
   // so that the first cycle starts from the state they record (Execute pays none again)
   DualPay(pmesh);
+  DualLedger(pmesh, "initial");
 
   //---- Step 3.  Cycle through output Types and load data / write files.
   if (!res_flag) { // only write outputs at the beginning of the run
@@ -923,6 +929,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // dual selection created is taken from E_rad of the same cell, once, after every
       // radiation stage (hydro/dual_energy.hpp)
       if (!dpre) {DualPay(pmesh);}
+      DualLedger(pmesh, "cycle " + std::to_string(pmesh->ncycle));
       if (pctr_ != nullptr) {pctr_->Cycle(pmesh);}   // (CLEAN FALLBACK)
       if (t2kind == 1) {
         pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we));
@@ -1337,6 +1344,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                   << dn[1] << ", kinetic energy x vol made heat=" << dn[2] << std::endl;
       }
     }
+    if (pmesh->pmb_pack->phydro != nullptr) pmesh->pmb_pack->phydro->dual.LedgerTotal();
     // the density floor / velocity ceiling cells floor_pay skips: their total energy and
     // mass change (hydro/dual_energy.cpp, all attempts, RK-weighted, x vol)
     fluid::DualEnergy *pde = DualPayer(pmesh);
