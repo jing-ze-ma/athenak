@@ -34,6 +34,7 @@ class Driver;
 
 namespace radvet {
 struct CleanArgs;   // rad_vet_clean.hpp
+struct CleanFLine;  // rad_vet_clean.cpp
 struct CleanLevel;  // rad_vet_clean.hpp
 
 //! \struct CleanW
@@ -1141,8 +1142,7 @@ class RadiationVet {
   void CleanStagDrag(const bool first, const bool vel = false, const bool lat = true);
   void CleanStagFCsShared();
   void CleanStagFCone(const int e, const int kd);
-  void CleanStagFwbProject(const int d, const int slot, const DvceArray4D<Real> &rs,
-                           const DvceArray4D<Real> &rw, const bool cnt);
+  void CleanStagFwbProject(const CleanFLine &ln);
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real CleanStagFSweepChange();
@@ -1293,6 +1293,7 @@ class RadiationVet {
   bool cln_fwbpj[3] = {false, false, false};   // fwb_line, -, _ring (fwb_cart: all)
   int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
   bool cln_fwbok = false;
+  int cln_fwe = -1;         // clean_stag_fwb: the E of F_ray in the F solve's rows
   bool cln_fwbt2 = false;   // clean_stag_fwb_t2
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze

@@ -508,6 +508,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_fwbpj", cln_fwbpj);
   v.value("cln_fwbs", cln_fwbs);
   v.value("cln_fwbok", cln_fwbok);
+  v.value("cln_fwe", cln_fwe);
   v.value("cln_fwbt2", cln_fwbt2);
   v.view("cln_fconc", cln_fconc);
   v.value("cln_xdfz", cln_xdfz);

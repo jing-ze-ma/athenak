@@ -429,6 +429,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         !pmy_pack->pmesh->use_cubed_sphere) {
       cln_fwbpj[0] = cln_fwbpj[1] = cln_fwbpj[2] = true;
     }
+    if (cln_fwbst || cln_fwbpj[0]) {
+      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_stage, _line, _cart: not with "
+                << "the implicit relaxation of clean_stag_fwb" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_fcone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
     // (CleanStagFCone)

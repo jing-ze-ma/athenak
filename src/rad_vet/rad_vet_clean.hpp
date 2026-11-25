@@ -302,6 +302,7 @@ struct CleanArgs {
   bool cub;
   bool ys = false;    // clean_stag_lat_sums: lateral sums Y off the cubed sphere
   bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
+  int fwe = -1;       // clean_stag_fwb: the E of F_ray (CleanStagFRow), -1 off
   DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
   DvceArray4D<Real> ae0;   // cubed sphere: pcoord's radial face area (CleanDivW)
   CleanGeo g;

@@ -301,6 +301,7 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   x.ys = !x.cub && cln_ysum;
   x.lwb = x.cub && cln_latwb;
+  x.fwe = cln_fwe;
   x.yl = cln_yl;
   if (x.sph) {
     auto *pc = pmy_pack->pcoord;
