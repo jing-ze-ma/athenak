@@ -1018,6 +1018,8 @@ def t_ray_cut_slab(c):
          'rad_vet/vet_gd_rotate_align': 'true', 'rad_vet/clean_rot_ring': 'live',
          'rad_vet/clean_rot_fuse': 'true', 'rad_vet/clean_ray_cut_wait': 0,
          'rad_vet/clean_verbose': 1, 'time/dt_retry': 'true', 'time/nlim': 3,
+         'rad_vet/vet_gd_wall_interp': 'true', 'rad_vet/vet_gd_wall_sym': 'true',
+         'rad_vet/vet_gd_theta_seam_sym': 'true',   # (default with a fixed set only)
          'output9/file_type': 'rst', 'output9/dcycle': 3}
     exe, c.exe = c.exe, c.star
     arms = (('shared', {}), ('nofuse', {'rad_vet/clean_rot_fuse': 'false'}),
