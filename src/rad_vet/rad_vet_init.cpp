@@ -14,6 +14,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -21,7 +22,9 @@
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
+#include "hydro/hydro.hpp"
 #include "utils/recipe.hpp"
+#include "utils/scratch_view.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_parfor.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
@@ -715,7 +718,7 @@ bool RadiationVet::MemArenaVgd(VgdRag &a, const int64_t n) {
   if (!marena_on || marena_sealed) return false;
   const int64_t off = marena_sw;
   const int64_t need = off + n;
-  MemArenaGrow(need);
+  MemArenaGrow(need, false);   // (the earlier array holds zeros, as a new arena)
   a.d = DvceArray1D<Real>(marena.data() + off, n);
   marena_sw = need + ((64 - (need % 64)) % 64);   // 64-Real alignment
   return true;
@@ -787,12 +790,101 @@ void RadiationVet::MemArenaSeal() {
     off += n + ((64 - (n % 64)) % 64);
     moved += std::string(" ") + nm[q];
   }
+  MemArenaBind();
   Kokkos::fence();
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> mem_arena: intensities " << marena_sw*sizeof(Real)/1.0e9
               << " GB in one allocation; solve scratch moved over them (" << off*
               sizeof(Real)/1.0e9 << " GB on rank 0):" << moved << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaBind
+//! \brief once cln_w.o lies in the arena: moves the scratch arrays that are dead across a
+//! closure build, written before they are read in each use, over the intensities too:
+//! after cln_w the solver's (matrix rows, lateral sums, multigrid levels, write-back
+//! scratch), and over both, from the start, the hydro's flux-stage arrays (dead across
+//! the radiation stage: x2, x3 fluxes, FOFC's trial state, the well-balanced cache, the
+//! seam and block-end records).  The history reads uflx.x1f, so it stays.  Behind both:
+//! DualEnergy's pre-conversion state, used within Hydro::ConToPrim
+
+void RadiationVet::MemArenaBind() {
+  const Real *a0 = marena.data();
+  const int64_t have = static_cast<int64_t>(marena.extent(0));
+  if (marena_bound || a0 == nullptr || cln_w.o.data() != a0) return;
+  marena_bound = true;
+  Kokkos::fence();
+  auto align = [](const int64_t n) {return n + ((64 - (n % 64)) % 64);};
+  int64_t off = 0;
+  for (auto *w : {&cln_w.o, &cln_w.s}) {
+    const int64_t o = w->data() - a0;
+    if (w->data() != nullptr && o >= 0 && o < have) {
+      off = std::max(off, align(o + static_cast<int64_t>(w->span())));
+    }
+  }
+  int64_t moved = 0;
+  auto bind = [&](DvceArray5D<Real> &a) {
+    const int64_t n = static_cast<int64_t>(a.span());
+    if (a.data() == nullptr || n <= 1 || off + n > have) return;
+    a = DvceArray5D<Real>(marena.data() + off, a.extent(0), a.extent(1), a.extent(2),
+                          a.extent(3), a.extent(4));
+    off = align(off + n);
+    moved += n;
+  };
+  // (cubed sphere: cln_st holds the build's face-layer chunks, CleanGdFaceSums)
+  if (!pmy_pack->pmesh->use_cubed_sphere) bind(cln_st);
+  bind(cln_yl);
+  for (auto &a : cln_mg) bind(a);
+  // (the write-back's: their first use makes them, here already over the arena)
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int n1 = id.nx1 + 2*id.ng, n2 = (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1;
+  const int n3 = (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1, nmb = pmy_pack->nmb_thispack;
+  for (const auto &s : {std::make_pair("cln_wbfp", 4), std::make_pair("cln_xf", 3)}) {
+    const int64_t n = static_cast<int64_t>(nmb)*s.second*n3*n2*n1;
+    if (off + n > have) continue;
+    ScratchBind(s.first, DvceArray5D<Real>(marena.data() + off, nmb, s.second, n3, n2,
+                                           n1));
+    off = align(off + n);
+    moved += n;
+  }
+  hydro::Hydro *ph = pmy_pack->phydro;
+  if (ph != nullptr) {
+    const int64_t os = off;
+    off = 0;
+    bind(ph->wbq0);
+    if (ph->rsolver_method != Hydro_RSolver::advect) {   // (it leaves IEN's fluxes zero)
+      bind(ph->uflx.x2f);
+      bind(ph->uflx.x3f);
+    }
+    bind(ph->utest);
+    auto record = [&](DvceFaceFld5D<Real> *r) {
+      if (r == nullptr) return;
+      bind(r->x2f);
+      bind(r->x3f);
+    };
+    record(ph->pseamfs);
+    if (ph->pmlfs != ph->pseamfs) record(ph->pmlfs);
+    marena_hyd = off;
+    // (behind both: the conserved state before each conversion to primitives)
+    off = std::max(off, os);
+    bind(ph->dual.pre);
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_vet> mem_arena: " << moved*sizeof(Real)/1.0e9
+              << " GB of solver and hydro scratch over the intensities" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaHydro
+//! \brief the hydro's arrays over the intensities, zero at each flux stage as their own
+//! allocations are where nothing writes them (FOFC's trial reads faces beyond the sweeps)
+
+void RadiationVet::MemArenaHydro() {
+  if (marena_hyd == 0) return;
+  auto h = Kokkos::subview(marena, std::make_pair(int64_t(0), marena_hyd));
+  Kokkos::deep_copy(DevExeSpace(), h, 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -813,7 +905,10 @@ void RadiationVet::CleanWoBind() {
       cln_w.o = DvceArray5D<Real>(marena.data(), nmb, cln_wo_nc, n3, n2, n1);
     }
   }
-  if (cln_w.s.data() != nullptr) return;
+  if (cln_w.s.data() != nullptr) {
+    MemArenaBind();
+    return;
+  }
   if (cln_w.o.data() != marena.data()) {
     Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
     return;
@@ -822,6 +917,7 @@ void RadiationVet::CleanWoBind() {
   const int64_t off = no + ((64 - (no % 64)) % 64);   // 64-Real alignment
   MemArenaGrow(off + static_cast<int64_t>(nmb)*CLW_NS*n3*n2*n1, false);
   cln_w.s = DvceArray5D<Real>(marena.data() + off, nmb, CLW_NS, n3, n2, n1);
+  MemArenaBind();
 }
 
 } // namespace radvet
