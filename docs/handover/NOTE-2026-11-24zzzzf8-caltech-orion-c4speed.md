@@ -16,3 +16,19 @@
 - zam_c4 vs zam_cs: user: 100 rows IDENTICAL; hydro: 100 rows IDENTICAL
   - zam_c4: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc 0.2978 (c22240-22250)
   - zam_cs: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc 0.2845 (c22240-22250)
+
+## 3. Continuation, 5 cycles from the newest production rst of each star that is at least 5 min old (hard-linked; production runs untouched): c4 against c4speed for t9l62, 95813cf85 against c4speed for m35mms and M35ZAMS
+- t9l62 t9l62.00001.rst c2677 c4
+- m35mms m35mms.00001.rst c7576 s3
+- m35zams m35zams.00001.rst c24824 s3
+- t9l62_c4 vs t9l62_cs: user: 5 rows IDENTICAL; hydro: 5 rows IDENTICAL
+  - t9l62_c4: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc -
+  - t9l62_cs: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc -
+- m35mms_s3 vs m35mms_cs: user: 5 rows IDENTICAL; hydro: 5 rows IDENTICAL
+  - m35mms_s3: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc -
+  - m35mms_cs: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc -
+- m35zams_s3 vs m35zams_cs: user: 5 rows IDENTICAL; hydro: 5 rows IDENTICAL
+  - m35zams_s3: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc -
+  - m35zams_cs: CW 0 FATAL 0 inf 0 DT_RETRY 0 BE 0 fallback 0, s/cyc -
+VERDICT ALL IDENTICAL
+- Files: caltech_results/C4SPEED/. No star was stopped, no switch was made.
