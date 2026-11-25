@@ -754,6 +754,37 @@ int CleanCsSlot(const CleanArgs &x, const int dir, const int m, const int kf,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanThinG
+//! \brief the thinness of cell (k,j,i) for face (kf,jf,iff) of family dir: clean_w_fse
+//! (wfs) g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi, 1), else C1; clean_w_fse_tau
+//! (wft): eps -> 1 - (1 - eps)(1 - exp(-tau_d)), tau_d = chi V/A_f, the faces' mean.  Of
+//! the E solve's face weight and the F solve's cells
+
+KOKKOS_INLINE_FUNCTION
+Real CleanThinG(const CleanArgs &x, const bool wfs, const bool wft, const int dir,
+                const int m, const int kf, const int jf, const int iff, const int k,
+                const int j, const int i) {
+  if (!wfs) return x.cs(m,CLN_C1,k,j,i);
+  Real h2 = 0.0;
+  for (int a = 0; a < 3; ++a) {
+    h2 += SQR(x.cs(m,CLN_HP+a,k,j,i) + x.cs(m,CLN_HM+a,k,j,i));
+  }
+  const Real ct = x.op(m,VET_OP_T,k,j,i);
+  Real ep = (ct > 0.0) ? fmin(x.op(m,VET_OP_P,k,j,i)/ct, 1.0) : 1.0;
+  if (wft && ep < 1.0) {
+    Real td = 2.0*ct/(CleanDivW(x, dir, m, k, j, i, 0) +
+                      CleanDivW(x, dir, m, k, j, i, 1));
+    if (x.cub && dir > 0) {   // (the cell's own family: one w at a seam)
+      Real s;
+      const int q = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2;
+      td = ct*x.g(m,CLG_F+3,k,j,i)/x.g.At<CLG_A>(m,q,k,j,i);
+    }
+    ep = 1.0 - (1.0 - ep)*(1.0 - exp(-td));
+  }
+  return fmax(sqrt(h2), ep*x.cs(m,CLN_C1,k,j,i)/1.5);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanStagCsLat
 //! \brief cubed sphere: n.(Y_p + Y_p') of cell (k,j,i), n the face's normal, p, p' the
 //! other two face families (owner's axes).  clean_cs_lat_wb, a lateral face: n less its

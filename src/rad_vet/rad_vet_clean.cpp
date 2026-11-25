@@ -3121,6 +3121,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
   const int kd = (t2_solve == VET_T2S_NONE) ? 0 :
                  ((t2_solve == VET_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
+  const bool wfs = cln_wfse, wft = cln_wfst;
   // clean_stag_fs_line = pcr; on the cubed sphere with fschur its x1 lines, in panel
   const bool fpcr = cln_fspcr && (!cub || cln_fschur) &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
@@ -3170,7 +3171,8 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
           const Real ec = x.w(m,e,kk,jj,ii);
           const Real rs = CleanSmoothStep(2.5*fmax(ec, 0.0)/
                                           fmax(x.cs(m,CLN_J,kk,jj,ii), 1.0e-300) - 0.25);
-          return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*rs*
+          return CleanSmoothStep((CleanThinG(x, wfs, wft, dir, m, k, j, i, kk, jj, ii) -
+                                  c1lo)/(c1hi - c1lo))*rs*
                  (q1*(CleanStagSph(x, q, dir, m, k, j, i) -
                       qn*x.cs(m,CLN_D11+dir,kk,jj,ii))*ec -
                   x.cs(m,CLN_G+dir,kk,jj,ii)/x.vol(m,kk,jj,ii));
@@ -3196,8 +3198,9 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
         // fkin: w of the cell; the part of P - D E without F, -w D E, and the stress the
         // kinetic form misses for the rays' own state, (D - s^2) J (0 for a beam, J/3
         // isotropic), lagged; cubed sphere: D about the family's mean normal, area form
-        const Real wc = fk ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
-                           : 0.0;
+        const Real wc = !fk ? 0.0 :
+            CleanSmoothStep((CleanThinG(x, wfs, wft, dir, m, k, j, i, k, j, i) - c1lo)/
+                            (c1hi - c1lo));
         const Real ec = x.w(m,e,k,j,i);
         const Real sr = x.cs(m,CLN_HP+dir,k,j,i) + x.cs(m,CLN_HM+dir,k,j,i);
         const Real jc = fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0));

@@ -1844,6 +1844,21 @@ def t_star_smoke(c):
     return out
 
 
+def t_steady_flux(c):
+    """the steady start (clean_init = steady) of star_small, t = 0, no step: the face
+    momentum F (vet_f1) against the energy flux Phi (vet_phi1) of the same solve over c E.
+    thick: the largest inside r = 3.68e12, where every face is thick (weight 0) by the E
+    solve's g: the F solve must call the same faces thick (0 to round-off).  total: the sum
+    over the shells of the largest, the thin and mixed faces included."""
+    d = star_run(c, 'run', {'time/nlim': '0'})
+    m = vett.read_bin(vett.bins(d, 'vet')[0])
+    cl = float(vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+               ['rad_vet']['c_light'])
+    g = np.abs(m['vet_f1'] - m['vet_phi1'])/(cl*m['vet_e'])
+    g = g.reshape(-1, g.shape[-1]).max(axis=0)
+    return {'thick': float(g[m['_x1v'] < 3.685e12].max()), 'total': float(g.sum())}
+
+
 def t_star_cs_ring(c):
     """the production RSG deck (inputs/stars/star3d_cs: cubed sphere, live ring, fused
     two-set sweeps, general EOS, well-balanced x1, fofc) on 274 x 16 x 16 cells a panel,
@@ -1987,6 +2002,7 @@ TESTS = [  # name, function, in --quick
     ('inf_reject', t_inf_reject, False),
     ('cmdline_keys', t_cmdline_keys, True),
     ('star_smoke', t_star_smoke, False),
+    ('steady_flux', t_steady_flux, True),
     ('star_cs_ring', t_star_cs_ring, False),
     ('wb_star', t_wb_star, False),
     ('mlt_time', t_mlt_time, False),
@@ -2070,8 +2086,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
-                   '(star_smoke, star_cs_ring, ray_cut_slab, wb_star; without it they are skipped)')
-    p.add_argument('--quick', action='store_true', help='the short subset (23 tests)')
+                   '(star_smoke, steady_flux, star_cs_ring, ray_cut_slab, wb_star; without it '
+                   'they are skipped)')
+    p.add_argument('--quick', action='store_true', help='the short subset (24 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')
@@ -2086,12 +2103,12 @@ def main():
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]
     if not a.star_exe:
-        for n in ('star_smoke', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time'):
+        for n in ('star_smoke', 'steady_flux', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time'):
             if any(t[0] == n for t in sel):
                 print('SKIP %-16s        needs --star-exe (a binary built with '
                       '-D PROBLEM=star_vet)' % n)
         sel = [t for t in sel if t[0] not in
-               ('star_smoke', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time')]
+               ('star_smoke', 'steady_flux', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time')]
     for n in ('mpi_ranks', 'star_cs_ring', 'ray_cut_slab'):
         if any(t[0] == n for t in sel) and not has_mpi(a):
             print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' % n)

@@ -142,7 +142,7 @@ PASS conservation_sp       6 s  dE 1e-15 dM 6.74e-16 dLz 1.47e-16 dLz_gr 5.92e-0
 1 passed, 0 failed, 14 s
 ```
 
-Then run the quick suite, 23 tests (50 s on 48 cores). By default the suite runs one test
+Then run the quick suite, 24 tests (50 s on 48 cores). By default the suite runs one test
 per 4 cores of the machine; on a shared login node cap it with `--jobs` (12 jobs x 4
 threads = 48 cores):
 

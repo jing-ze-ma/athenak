@@ -1365,7 +1365,7 @@ void RadiationVet::CleanFaceCoefficients() {
   const bool fjs = cln_jse;    // (clean_face_jse)
   const bool fjc = cln_jsec;   // (clean_face_jse_cell)
   const bool fho = cln_rfh;    // (vet_rotate_avg_ema_wb: the cells' own)
-  const CleanArgs *px = (fho || fjs || wft) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
+  const CleanArgs *px = CleanDevArgs(CleanMakeArgs(), 0);
   // (clean_closure = eddington | sphere sweeps no rays: the cells' half ranges)
   const int nd = (pmy_pack->pmesh->use_cubed_sphere && !cln_edd && !cln_sphere)
                  ? cln_fvn : 0;
@@ -1382,26 +1382,8 @@ void RadiationVet::CleanFaceCoefficients() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real chi = CleanFaceChi(op, x1f, mbc, hrm, dir, m, k, j, i, is, ie);
-      // (clean_w_fse: g = max(|H|/J, eps C1/1.5) of the cell, else its C1)
       auto gw = [&](const int kk, const int jj, const int ii) {
-        if (!wfs) return cs(m,CLN_C1,kk,jj,ii);
-        Real h2 = 0.0;
-        for (int a = 0; a < 3; ++a) {
-          h2 += SQR(cs(m,CLN_HP+a,kk,jj,ii) + cs(m,CLN_HM+a,kk,jj,ii));
-        }
-        const Real ct = op(m,VET_OP_T,kk,jj,ii);
-        Real ep = (ct > 0.0) ? fmin(op(m,VET_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
-        if (wft && ep < 1.0) {   // (clean_w_fse_tau: tau_d = chi V/A_f, the faces' mean)
-          Real td = 2.0*ct/(CleanDivW(*px, dir, m, kk, jj, ii, 0) +
-                            CleanDivW(*px, dir, m, kk, jj, ii, 1));
-          if (px->cub && dir > 0) {   // (the cell's own family: one w at a seam)
-            Real s;
-            const int q = CleanCsSlot(*px, dir, m, k, j, i, kk, jj, ii, false, s)/2;
-            td = ct*px->g(m,CLG_F+3,kk,jj,ii)/px->g.At<CLG_A>(m,q,kk,jj,ii);
-          }
-          ep = 1.0 - (1.0 - ep)*(1.0 - exp(-td));
-        }
-        return fmax(sqrt(h2), ep*cs(m,CLN_C1,kk,jj,ii)/1.5);
+        return CleanThinG(*px, wfs, wft, dir, m, k, j, i, kk, jj, ii);
       };
       const Real c1 = fmax(gw(k, j, i), gw(kl, jl, il));
       fc(m,CLF_W,k,j,i) = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));

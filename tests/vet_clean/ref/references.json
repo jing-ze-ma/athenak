@@ -608,6 +608,13 @@
    "warnings": 0
   }
  },
+ "steady_flux": {
+  "_about": "largest |F - Phi|/(c E) of the shells at t = 0 of the steady start of star_small, F the face momentum (vet_f1), Phi the energy flux (vet_phi1). thick: shells with E-solve face weight 0: 0 to round-off when the F solve weights the faces as the E solve does (it did not while its cells took C1 and the faces g, clean_w_fse: 0.33). total: summed over the shells; the mixed faces (0 < w < 1) are off by up to 0.25",
+  "max": {
+   "thick": 0.001,
+   "total": 1.3
+  }
+ },
  "mlt_time": {
   "_about": "energy the solves add from a frozen MLT flux with a cosine ramp, against the exact integral (4, 8, 16 steps). Measured: stage 8.0e-3, 1.1e-3, 1.6e-4 (order 2.81; second order plus vanishing end slopes), start 7.1e-2, 3.7e-2, 1.9e-2 (order 0.98): the start arm documents what the test detects (order_start <= 1.3).",
   "min": {
