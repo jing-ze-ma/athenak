@@ -1,0 +1,2 @@
+2026-11-24 22:33:57 start bsg C50 hpc-sm-02-16 ranks 4 BIN athena_sdorder3_95813cf85 md5=30d01765970051212176cc2eb81ea034 ARGS: -r /resnick/groups/carnegie_poc/jingze/b1_1124/rc/rst_in/bsg_bsg3d.00008.rst -i /resnick/groups/carnegie_poc/jingze/b1_1124/rc/FRoff.athinput time/nlim=29177
+2026-11-24 22:35:30 rc=0 (srun) ended: Terminating on cycle limit wall=93 s CW 0 FATAL 0 inf 0 DT_RETRY 0

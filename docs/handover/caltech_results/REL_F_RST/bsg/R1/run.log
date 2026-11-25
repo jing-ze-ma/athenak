@@ -1,0 +1,2 @@
+2026-11-24 22:30:22 start bsg R1 hpc-sm-02-16 ranks 4 BIN athena_relf_b09a7b3c1 md5=80d16d39bd1f47bd3f22b5711c660519 ARGS: -r /resnick/groups/carnegie_poc/jingze/b1_1124/rc/rst_in/bsg_bsg3d.00008.rst -i /resnick/groups/carnegie_poc/jingze/b1_1124/rc/FRoff.athinput time/nlim=29128
+2026-11-24 22:30:53 rc=0 (srun) ended: Terminating on cycle limit wall=31 s CW 0 FATAL 0 inf 0 DT_RETRY 0
