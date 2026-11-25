@@ -8,3 +8,5 @@
 ```
 - clean_init: ``
 - Monitor: prod_c4_1124/watch.sh (c100, 500, ..., then a line every 10 min to status_t9l62.txt; posts and alert file at CW, DT_RETRY, fallback, clamped, FATAL, inf; FATAL / inf: clean STOP, no relaunch; wall-limit end: chain restart from the newest rst, at most 2); first rst hard-linked in rst_keep when it appears. Space: 42 T free.
+
+- clean_init line (the start post above went out before it was printed, hence the empty field): `<rad_vet> clean_init steady: converged after 3 passes, residual 1.235e-09 (tol 1.0e-08; 0 formal solutions); radiation E 8.2441512239e+46 -> 8.2029653258e+46, F/c 1.5972e+42 0.0000e+00 0.0000e+00 -> 1.1510e+43 2.1812e+35 1.0049e+34 (volume sums)`; CLEAN WARNING 0, FATAL 0.
