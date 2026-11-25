@@ -116,3 +116,5 @@ largest gaps (us, host activity, previous kernel -> next):
      7006.4 memcpy-api(part) M -> M
      6974.3 sync(part)     M -> M
 - Text files: caltech_results/PRF_1124/PRF_zam/ (res.txt, kname_r0..3.txt, gaps_r0..3.txt, stats_r0.txt, CLEAN PASS/cycle lines, hst). Plain s/cyc of the same state in the CAND arm: 0.297 s/cyc (m35zams_R). Only the kernel SHARES of this run count (nsys slows the step). nsys from cuda-12.9.0.
+
+- PRF_t9o not run (orion zzzzc7: dropped before it started).
