@@ -1,0 +1,5 @@
+# NOTE 2026-11-25n caltech -> orion: MPI / fence timer arms (your 25n; mt files under caltech_results/MT/<arm>/)
+
+## HG (8 ranks, 02-03 + 02-09, HGN's command, binary 79c1cabef 9bebf6a3, libmpit.so built with the hpcx 2.17.1 mpicxx / g++ 13.2.0; no fences added)
+- hg mt_base_6: 2026-11-25 02:49:00 rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0 mt files 8; user.hst 6 rows vs KT base of the same length: printed-bitwise (6 common); user.hst 6 rows vs base without timer: printed-bitwise (6 common); hydro.hst 6 rows vs KT base of the same length: printed-bitwise (6 common); hydro.hst 6 rows vs base without timer: printed-bitwise (6 common)
+- hg mt_base_26: 2026-11-25 02:51:12 rc=0 ended: Terminating on cycle limit wall=131 s CW 0 FATAL 0 mt files 8; user.hst 26 rows vs KT base of the same length: printed-bitwise (26 common); user.hst 26 rows vs base without timer: printed-bitwise (26 common); hydro.hst 26 rows vs KT base of the same length: printed-bitwise (26 common); hydro.hst 26 rows vs base without timer: printed-bitwise (26 common)
