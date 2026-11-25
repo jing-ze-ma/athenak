@@ -838,6 +838,7 @@ void RadiationVet::MemArenaBind() {
   if (!pmy_pack->pmesh->use_cubed_sphere || cln_ring == 1) bind(cln_st);
   bind(cln_yl);
   bind(cln_vf);
+  if (CleanExtrapSx()) bind(cln_csy);   // (else CleanRingMoments' scratch)
   for (auto &a : cln_mg) bind(a);
   // (the closure built once per stage: no pass keeps the faces' coefficients over one)
   if (!cln_closit && !(cln_fwbst && t2_tab == 0)) {
