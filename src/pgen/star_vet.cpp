@@ -145,6 +145,7 @@ Real star_bheat_ = 0.0;
 DvceArray1D<Real> star_fb_;
 Real star_sp_rate_ = 0.0, star_sp_r0_ = 0.0, star_rtop_ = 1.0;
 bool star_zflux_ = true;
+DvceArray3D<Real> star_min_;   // (the top inflow mass flux removed, StarWallFlux)
 // problem/star_wb_grav_window (read only when named, default false): the x1
 // WB gravity source honours the fluid's wb_rmax / wb_phimax window -- the cells
 // the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
@@ -567,6 +568,7 @@ Real StarKeCs(const Real m1, const Real m2, const Real m3, const Real d, const R
   return CsKeMom(m1, m2, m3, c)/d;
 }
 void StarGravity(Mesh *pm, const Real bdt);
+void StarWallFlux(Mesh *pm);
 void StarBC(Mesh *pm);
 void StarHist(HistoryData *pdata, Mesh *pm);
 void StarApplyMltW(Mesh *pm, const Real w);
@@ -2905,11 +2907,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "noinflow|outflow|hse|copy", __LINE__);
     }
     star_binf_ = (bi == "inflow");
-    hydro::AmModule *pam = hydro::AmModuleOf(pmbp);   // (the faces star_zflux takes back)
-    if (pam != nullptr) {
-      pam->am_bzero[0] = star_zflux_ && !star_binf_;
-      pam->am_bzero[1] = star_zflux_;
-    }
     star_bzc_ = (bi == "zerocontact");
     star_bout_ = (bo == "outflow");
     star_bhse_ = (bo == "hse");
@@ -2994,6 +2991,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   star_sp_law_ = (sf == "lawson");}
   star_rtop_ = rtop;
   user_srcs_func = StarGravity;
+  if (star_zflux_) {
+    user_hydro_flux_func = StarWallFlux;
+    Kokkos::realloc(star_min_, pmbp->nmb_thispack, indcs.nx3 + 2*indcs.ng,
+                    indcs.nx2 + 2*indcs.ng);
+  }
   // fin51-r-fix: the per-cycle state of StarGravity joins the <time>/dt_retry
   // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly
   // as the straight cycle; esrc itself is in the m1 minimal list)
@@ -3806,33 +3808,6 @@ void StarGravity(Mesh *pm, const Real bdt) {
     }
   }
   if (htal) {ht[1] = htsum();}
-  // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
-  // Riemann flux through a "closed" wall carries mass.  The inner wall loses its mass,
-  // transverse momentum and energy fluxes (u0 was just updated with them); the pressure
-  // flux stays.  The outer face keeps OUTFLOW and loses only inflow (no mass enters).
-  if (star_zflux_) {
-    auto flx1 = ph->uflx->x1f;
-    auto &mbbcs = pmbp->pmb->mb_bcs;
-    const bool binf = star_binf_;
-    par_for("star_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      if (!binf && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-        const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
-        u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
-        u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
-        u0(m,IM3,k,j,is) -= f*flx1(m,IM3,k,j,is);
-        u0(m,IEN,k,j,is) -= f*flx1(m,IEN,k,j,is);
-      }
-      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
-          !(flx1(m,IDN,k,j,ie+1) > 0.0)) {
-        const Real f = bdt*area1(m,k,j,ie+1)/volume(m,k,j,ie);
-        u0(m,IDN,k,j,ie) += f*flx1(m,IDN,k,j,ie+1);
-        u0(m,IM2,k,j,ie) += f*flx1(m,IM2,k,j,ie+1);
-        u0(m,IM3,k,j,ie) += f*flx1(m,IM3,k,j,ie+1);
-        u0(m,IEN,k,j,ie) += f*flx1(m,IEN,k,j,ie+1);
-      }
-    });
-  }
   if (htal) {
     ht[2] = htsum();
     if (star_sp_rate_ <= 0.0) {ht[3] = ht[2];}
@@ -3946,6 +3921,39 @@ void StarGravity(Mesh *pm, const Real bdt) {
     }
   }
   if (hdrv) {stardrive::StageLedger(pm, bdt, star_binf_, star_zflux_, htsum() - hdsp0);}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void StarWallFlux()
+//! \brief star_wall_zero_flux (user_hydro_flux_func): the scaled-profile ghosts are not a
+//! mirror image of the edge cell, so the Riemann flux through a "closed" x1 wall carries
+//! mass.  The inner wall's fluxes are set to 0, the pressure (IM1) flux stays; the outer
+//! face keeps OUTFLOW and loses only inflow (no mass enters).  Before the update: the
+//! source terms and am_transport see the closed wall (L_z exact), as do the scalars.
+
+void StarWallFlux(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  auto flx1 = radvet::FluidRef::Get(pmbp).uflx->x1f;
+  const int nv = flx1.extent_int(1);
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  const bool binf = star_binf_;
+  auto mn = star_min_;
+  par_for("star_wallflux", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
+          indcs.js, indcs.je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const bool z[2] = {
+      !binf && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user,
+      mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
+      !(flx1(m,IDN,k,j,ie+1) > 0.0)};
+    mn(m,k,j) = z[1] ? flx1(m,IDN,k,j,ie+1) : 0.0;   // (Min_top)
+    for (int n = 0; n < nv; ++n) {
+      if (n == IM1) continue;
+      if (z[0]) flx1(m,n,k,j,is) = 0.0;
+      if (z[1]) flx1(m,n,k,j,ie+1) = 0.0;
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -4305,7 +4313,7 @@ void StarBC(Mesh *pm) {
 //! (conserved IEN incl. kinetic and the static potential) + radiation energy: with closed
 //! walls its rate is L_in - L_top(lab) (the comoving L_top differs from it by O(v/c)).
 //! Mdot_top is the mass really leaving through the top (the inflow part is removed by
-//! the gravity-source correction), Min_top the inflow that was removed.
+//! StarWallFlux), Min_top the inflow that was removed.
 //! M_hflx, E_hflx, Lz_hflx: the hydro's mass, energy (IEN) and L_z leaving through the
 //! physical x1 faces over the step, as rates (am_bflx, hydro_am.hpp: the RK-weighted
 //! fluxes); Lz_tot: the L_z of gas + radiation (CleanLzTotal, incl. the L_z ledger), so
@@ -4343,6 +4351,8 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   auto w0 = ph->w0;
   auto u0 = ph->u0;
   auto fl1 = ph->uflx->x1f;
+  const bool hmn = star_zflux_;
+  auto mn = star_min_;
   auto eos = ph->peos->eos_data;
   auto *pm1 = pmbp->pradvet;
   auto ur = pm1->u0;
@@ -4408,7 +4418,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
     if (i == ie) {
       const Real fm = fl1(m,IDN,k,j,i+1)*area1(m,k,j,i+1);
       h.the_array[14] = (fm > 0.0) ? fm : 0.0;
-      h.the_array[17] = (fm > 0.0) ? 0.0 : fm;
+      h.the_array[17] = hmn ? mn(m,k,j)*area1(m,k,j,i+1) : ((fm > 0.0) ? 0.0 : fm);
     }
     if (i == is) {
       h.the_array[15] = fl1(m,IDN,k,j,i)*area1(m,k,j,i);
@@ -5669,6 +5679,7 @@ void StarFinal(ParameterInput *pin, Mesh *pm) {
   star_phig_ = DvceArray1D<Real>();
   star_gmr_ = DvceArray1D<Real>();
   star_fb_ = DvceArray1D<Real>();
+  star_min_ = DvceArray3D<Real>();
   star_sfac_ = DvceArray4D<Real>();
   stardrive::Final();
 }
