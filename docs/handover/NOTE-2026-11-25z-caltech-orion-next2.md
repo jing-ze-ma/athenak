@@ -37,3 +37,16 @@
 - MT_SKIP: Waitall cln_hd_copy 234.4 ms per cycle (215.5/249.8 min/max rank, 535 calls), all Waitall 357.4 ms per cycle; the ab9994907 and the base timer: compare with T6r (Waitall cln_hd_copy 584 ms, 644 calls per cycle, 79c1cabef)
 - MT_SKIP: 2026-11-25 05:32:41 rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0
 - ONE4: 2026-11-25 05:35:17 rc=0 ended: Terminating on cycle limit wall=156 s CW 0 FATAL 0
+
+## HG: memory table corrected, and the suite
+- The memory minima printed in the HG table above are wrong (two nodes append to one mem.log on NFS, samples get lost or garbled). The peak (max) is right. Parsed again with a strict host / index pattern; minima below are still lower bounds where samples were lost:
+| arm | s/cyc mean / median | peak MiB per GPU (min / max) | user.hst / hydro.hst vs BASE1 | CW/FATAL | end |
+|---|---|---|---|---|---|
+| ABBA/BASE1 | 2.8703 / 2.7974 | 639 / 76139 (8 GPUs) | bitwise(26) / bitwise(26) | 0/0 | rc=0 ended: Terminating on cycle limit wall=116 s CW 0  |
+| ABBA/NEW1 | 2.4765 / 2.4011 | 53409 / 53839 (4 GPUs) | bitwise(26) / bitwise(26) | 0/0 | rc=0 ended: Terminating on cycle limit wall=111 s CW 0  |
+| ABBA/NEW2 | 2.4322 / 2.3598 | 1465 / 53633 (8 GPUs) | bitwise(26) / bitwise(26) | 0/0 | rc=0 ended: Terminating on cycle limit wall=106 s CW 0  |
+| ABBA/BASE2 | 2.8495 / 2.7739 | 60295 / 76139 (8 GPUs) | bitwise(26) / bitwise(26) | 0/0 | rc=0 ended: Terminating on cycle limit wall=116 s CW 0  |
+| MT_SKIP | 2.3880 / 2.3137 | 52633 / 53549 (8 GPUs) | bitwise(26) / bitwise(26) | 0/0 | rc=0 ended: Terminating on cycle limit wall=106 s CW 0  |
+| ONE4 | 4.0572 / 3.9414 | 104835 / 105343 (4 GPUs) | bitwise(26) / bitwise(26) | 0/0 | rc=0 ended: Terminating on cycle limit wall=156 s CW 0  |
+- Read: peak per GPU 79c1cabef 76.1 GB (1000 MiB), e8d3e64d9 and ab9994907 53.8 GB, one node 105.3 GB. Speed (T6, ABBA): e8d3e64d9 / 79c1cabef 0.858 (2.454 vs 2.860 s/cycle mean; base arms 2.870, 2.850, new 2.477, 2.432). The ab9994907 arm with the MPI timer: 2.388 s/cycle, Waitall cln_hd_copy 234 ms per cycle in 535 calls (79c1cabef T6r: 584 ms, 644 calls), so the fill's exchange counts fell by 17 %. ONE4: 4.057 s/cycle (median 3.94), hst bitwise with the 8-GPU base.
+- The e8d3e64d9 suite: my first run used the 79c1cabef tests (wrong worktree variable), so it had no star_cs_ring / ray_cut_slab; stopped after 25 of the old tests had passed, restarted 05:36 with the e8d3e64d9 tests. The logs of the wrong run are kept under b1_1124/suiten2_oldtests and runs_suiten2*_oldtests.
