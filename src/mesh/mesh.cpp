@@ -180,7 +180,11 @@ Mesh::Mesh(ParameterInput *pin) :
   layout_invariant = pin->DoesParameterExist("mesh", "layout_invariant") &&
                      pin->GetBoolean("mesh", "layout_invariant");
   if (layout_invariant) {
-    const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode", "block");
+    // (default of a fresh run that names layout_tile: tile)
+    const bool ltn = !global_variable::restart_run &&
+                     pin->DoesParameterExist("mesh", "layout_tile");
+    const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode",
+                                                ltn ? "tile" : "block");
     // tile (with <mesh>/layout_tile N): block mode with fixed N x N (x2, x3) tiles of the
     // mesh in place of MeshBlocks (repro::tile_n; one MeshBlock along x1, checked with
     // the MeshBlock size by rad_vet)

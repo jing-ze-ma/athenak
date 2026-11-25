@@ -2344,7 +2344,8 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
         std::exit(EXIT_FAILURE);
       }
     }
-    vra_ema_wb = pin->GetOrAddBoolean("rad_vet","vet_rotate_avg_ema_wb",vra_ema_wb);
+    // (default of a fresh vet_gd run)
+    vra_ema_wb = pin->GetOrAddBoolean("rad_vet","vet_rotate_avg_ema_wb",nw && vgd_on);
     if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_dema")) {
       vra_ema_dema = pin->GetBoolean("rad_vet","vet_rotate_avg_ema_dema");
       if (vra_ema_dema) {vra_k = 4;}   // slot 2 = e2, slot 3 the Delta
