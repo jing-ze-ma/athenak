@@ -1,0 +1,2 @@
+2026-11-24 16:09:24 start m35mms hpc-sm-02-09 BIN md5=30d01765970051212176cc2eb81ea034
+2026-11-24 16:11:53 rc=0 (srun) ended: Terminating on cycle limit wall=149 s CW 0 FATAL 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 6.349884e+

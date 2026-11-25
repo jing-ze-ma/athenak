@@ -245,3 +245,15 @@ max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36
 - S5F on vs off at matched time (300 rows): KE_int rel end -3.420e-05 max 3.420e-05
 - model time advanced: off 9848.7 s on 11598.1 s
 - The 'last common row' line of the S5F table compares the 300th rows, which sit at different model times (dt differs by 18 %), so its -8.4e-3 in L_top mixes evolution; the lines above are the matched-time numbers. The off arm's ef<=0 502823 / max ratio 951 are printed with the key off (the print uses the key's state).  Both are stated as measured; the meaning of the post-cap counter in the off arm is yours to judge.
+
+## S3G (fixed binary sdorder3 95813cf85, both arms, SDO_PRINT=1), 11-24 16:12
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S3Goff | 300 | 1.0152 (c7000-7250) | 9.862 / 11.5 / 12.01 | 34.1, 4.95 | 16.1, 4.01 | 0.99958 | 1.00016 | 1.57167e+39 | 9.32e-07 | -3.78e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 0, 0.0000, nan, nan, nan, nan |
+| S3Gon | 300 | 1.0138 (c7000-7250) | 9.86 / 11.5 / 12.01 | 34.2, 4.96 | 16.1, 3.97 | 0.99977 | 1.00016 | 1.57194e+39 | 9.06e-07 | -2.27e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 0, 0.0000, nan, nan, nan, nan |
+
+- last common row 300: L_top 1.93e-04 L_in 6.91e-16 KE 1.71e-04 Etot -2.59e-08 M 1.51e-15 Lz -4.25e-06 (on - off relative)
+- floor_pay sum (CLEAN FALLBACK lines): off 1.781e+26 on 1.708e+26 ratio 0.959; per 50 cycles off: 4.51e+25 3.56e+25 4.23e+25 3.15e+25 1.59e+25 6.86e+24 7.92e+23 | on: 4.55e+25 3.43e+25 3.95e+25 3.30e+25 1.34e+25 4.79e+24 2.22e+23
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
+- ends: S3Goff: 2026-11-24 16:06:53 rc=0 wall=336 s CW 0 FATAL 0 inf 0 DT_RETRY 0 | S3Gon: 2026-11-24 16:12:29 rc=0 wall=336 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- ef<=0 per 50 cycles (post-cap) off/on: 0 ; 0 ; 
