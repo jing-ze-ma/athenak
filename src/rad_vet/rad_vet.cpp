@@ -1701,9 +1701,20 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     vsrc_noes_h2be =
         pin->GetOrAddBoolean("rad_vet","vet_source_noesrc_h2be",vsrc_noes_h2be);
-    if (vgd_on) vgd_wint = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_interp",vgd_wint);
-    if (vgd_on) vgd_wsym = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_sym",vgd_wsym);
-    if (vgd_on) vgd_wst = pin->GetOrAddBoolean("rad_vet","vet_gd_theta_seam_sym",vgd_wst);
+    // defaults of a fresh 3-D spherical-polar run: wall_interp; with a fixed product set
+    // wall_sym, and theta_seam_sym on a theta-periodic wedge centred on the equator with
+    // a set that is its equatorial mirror (odd nmu, or no stagger)
+    const auto &msz = ppack->pmesh->mesh_size;
+    const bool w3 = nw && vgd_on && ppack->pmesh->use_spherical_polar &&
+                    ppack->pmesh->three_d && !ppack->pmesh->use_polar_boundary;
+    const bool wgl = w3 && vgd_gl_nmu > 0 && !VgdRotOn();
+    if (vgd_on) vgd_wint = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_interp",w3);
+    if (vgd_on) vgd_wsym = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_sym",
+        wgl && vgd_wint);
+    if (vgd_on) vgd_wst = pin->GetOrAddBoolean("rad_vet","vet_gd_theta_seam_sym",
+        wgl && vgd_wint && (vgd_gl_nmu%2 == 1 || !vgd_gl_stag) &&
+        ppack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic &&
+        std::fabs(msz.x2min + msz.x2max - M_PI) <= 1.0e-12);
     // vet_gd_theta_wall: periodic | mirror (specular) | vacuum (no incoming intensity at
     // a physical theta wall) | extrap (zero gradient)
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_theta_wall")) {
