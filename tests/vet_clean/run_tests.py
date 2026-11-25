@@ -339,16 +339,17 @@ def t_restart_fixes(c):
     NOTE, no CLEAN WARNING, a different run; stored: the file as written prints the NOTE on
     the stored old value."""
     sp = {'mesh/nx3': 16, 'mesh/nghost': 3}
-    cases = (('lat_wb', 'shell_cs.athinput', {}, {'rad_vet/clean_cs_lat_wb': 'false'}),
-             ('fofc', 'fofc_cs.athinput', {'meshblock/nx2': 8, 'meshblock/nx3': 8},
-              {'hydro/fofc_flag_exchange': 'false'}),
-             ('merge', 'merge_sp.athinput', {}, {'hydro/merge_lat_mom': 'rigid'}),
+    fo = {'meshblock/nx2': 8, 'meshblock/nx3': 8, 'hydro/dfloor': 1e-12,
+          'problem/cs2': 0.03, 'problem/rot': 4.0}
+    cases = (('lat_wb', 'shell_cs.athinput', {}, {'rad_vet/clean_cs_lat_wb': 'false'}, 4),
+             ('fofc', 'fofc_cs.athinput', fo, {'hydro/fofc_flag_exchange': 'false'}, 1),
+             ('merge', 'merge_sp.athinput', {}, {'hydro/merge_lat_mom': 'rigid'}, 4),
              ('gtime', 'shell_sp.athinput', sp, {'rad_vet/time2_gtime_slope': 'false',
-                                                 'rad_vet/time2_gtime_pos': 'false'}))
+                                                 'rad_vet/time2_gtime_pos': 'false'}, 4))
     out = {'warnings': 0, 'notes': 0, 'stored': 0}
-    for tag, deck, o, old in cases:
-        w = dict(o, **dict(old, **{'output9/file_type': 'rst', 'output9/dcycle': 4,
-                                   'time/nlim': 4}))
+    for tag, deck, o, old, n in cases:
+        w = dict(o, **dict(old, **{'output9/file_type': 'rst', 'output9/dcycle': n,
+                                   'time/nlim': n}))
         d = c.run(deck, tag, w)
         rst = os.path.abspath(sorted(vett.glob_rst(d))[-1])
         new = rst[:-4] + '_nokey.rst'

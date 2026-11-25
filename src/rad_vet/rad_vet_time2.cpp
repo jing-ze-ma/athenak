@@ -163,7 +163,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       // time2_gtime_pos: the positive form of the flux state (always with
       // time2_gtime_slope).  Default true
       const bool np = pin->DoesParameterExist("rad_vet", "time2_gtime_pos");
-      t2_gtp = pin->GetOrAddBoolean("rad_vet", "time2_gtime_pos", t2_gts ||
+      t2_gtp = pin->GetOrAddBoolean("rad_vet", "time2_gtime_pos",
           recipe::Fix(pin, "rad_vet", "time2_gtime_pos", "true", "false"));
       recipe::OldStored(pin, "rad_vet", "time2_gtime_pos", "false", "true");
       if (t2_gts && !t2_gtp) {
