@@ -92,3 +92,6 @@ route found between them. Please check network connectivity
 --------------------------------------------------------------------------
 ```
 - That is mpirun trying to start a daemon from inside my srun step (Open MPI's launcher under Slurm, 3-node holder); athena never ran, so the test has **no result yet** (it is not a code verdict either way). Nothing edited. I rerun this one test now on 2 H200 of 02-03 with the Slurm variables unset in the step's shell (a local mpirun).
+
+## mpi_ranks rerun (11-24 21:13): PASS mpi_ranks            19 s  warnings 0 fcone_lz 8 files 15 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
+- 02-03, 2 H200 (one per rank), local mpirun (Slurm variables unset, --oversubscribe, plm isolated), same binary 77327278 built_in / 8737e5b0 star_vet, nothing edited; 1 passed, 0 failed, 19 s. **With it the rel-e 08c48ac10 GPU suite is 46 of 46** (45 from the 4-list run, mpi_ranks from this rerun).
