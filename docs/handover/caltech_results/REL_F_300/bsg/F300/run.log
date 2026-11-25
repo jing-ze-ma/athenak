@@ -1,0 +1,2 @@
+2026-11-25 00:32:59 start bsg F300 hpc-sm-02-03 ranks 4 BIN athena_relf_b09a7b3c1 md5=80d16d39bd1f47bd3f22b5711c660519 ARGS: -r /resnick/groups/carnegie_poc/jingze/b1_1124/lc/rst_in/bsg_bsg3d.00008.rst -i /resnick/groups/carnegie_poc/jingze/b1_1124/lc/FRoff.athinput output2/dt=1e30 output2/dcycle=100 output3/dt=1e30 output3/dcycle=100 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 time/nlim=29427 
+2026-11-25 00:36:57 rc=0 (srun) ended: Terminating on cycle limit wall=238 s CW 0 FATAL 0 inf 0 DT_RETRY 0
