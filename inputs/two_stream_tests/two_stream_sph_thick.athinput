@@ -1,6 +1,6 @@
-# OPTICALLY THICK 1-D SPHERICAL unit test of the grey two-stream (tests_r2/thick).
+# OPTICALLY THICK 1-D SPHERICAL unit test of the grey two-stream.
 #
-# The transparent gate (inputs-adjacent tests_r2/rg1d) checks the r^2 dilution the
+# The transparent gate (red_giant_1d_dilution.athinput) checks the r^2 dilution the
 # spherical two-stream was built for.  This one checks the opposite limit.  Commit
 # 1159a8f3 transports J = A I against a source A B (A ~ r^2), so in the DIFFUSION limit
 # the sweep returns
@@ -16,6 +16,7 @@
 # state the correct radiative flux at every face is F_req = L/(4 pi r^2), and deep in the
 # shell T^4 ~ r^-(n+1), so H_T/(2r) -> 2/(n+1) and the prediction is
 #    F_2s/F_req = 1 - 2/(n+1):   n=0 -> -1,  n=1 -> 0,  n=3 -> +0.5,  n=7 -> +0.75.
+# The present scheme gives F_2s/F_req = 1 within 2e-4 over the inner 85 % of this shell.
 #
 # The BLEND IS OFF (rad_tau_lo/hi far deeper than the domain), so the two-stream is the
 # only carrier and L is injected on its own lower boundary (problem/rt_bottom_flux).
@@ -24,8 +25,12 @@
 # F_raddiff w_blend F_rad_col0 F_conv_res grad_rad D F_2s"; F_raddiff must come back at
 # F_req, since the state IS the exact diffusion solution).
 #
-# Per-case knobs (n, tau_tot, r_out/r_in) come from the command line -- see
-# tests_r2/thick/run_thick.sh and tests_r2/thick/make_ic_thick.py.
+# Build:  cmake -B build -D PROBLEM=red_giant && make -C build -j
+# Run (from the repository root, the state of this file's n = 3, tau = 100 shell):
+#   python3 tools/two_stream/make_ic_thick.py --n 3 --tau 100 --ratio 2 --out ic_thick.txt
+#   build/src/athena -i inputs/two_stream_tests/two_stream_sph_thick.athinput
+# Other cases (n, tau_tot, r_out/r_in): the script prints the values of mesh/x1max,
+# problem/kappa_const, problem/lstar and hydro/rad_flux_inner for the command line.
 
 <comment>
 problem   = optically thick 1-D spherical two-stream diffusion-limit test
@@ -81,7 +86,7 @@ etotgrav    = true
 wellbalance_dynamic = false
 isotropic_conduction = radiative
 rad_kappa_src        = table_rho
-rad_flux_inner       = 1.4188435e6    # L/(4 pi rin^2); overridden per case
+rad_flux_inner       = 1.4175936048e11   # L/(4 pi rin^2); per case
 rad_flux_limit       = true
 rad_tau_lo           = 1.0e5          # the blend is OFF over the whole domain:
 rad_tau_hi           = 1.0e6          # w = 0 everywhere, the two-stream carries all of L
@@ -91,13 +96,13 @@ pfloor = 1.0e-12
 <problem>
 user_srcs   = true
 mstar       = 1.0e33
-lstar       = 1.7832e37      # 4 pi rout^2 sigma Teff^4; overridden per case
+lstar       = 1.7814006618e36   # 4 pi rout^2 sigma Teff^4; per case
 teff        = 5000.0
 ptop        = 3.0
 mu          = 1.0
 vpert       = 0.0
 kappa_fac   = 1.0
-kappa_const = 2.6666667e-4   # set from tau_tot per case
+kappa_const = 2.6666666667e-4   # from tau_tot; per case
 inner_bc    = wall
 ic_profile  = ic_thick.txt
 mlt_alpha   = 1.5
@@ -118,7 +123,7 @@ rt_strang   = true
 rt_bottom_flux = true
 rt_de_max   = 0.5
 met         = 0.0
-opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
+opac_table  = data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt   # unused (kappa_const)
 column_dump =
 
 <output1>
