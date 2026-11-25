@@ -169,3 +169,29 @@
 - NX300 CLEAN FWB lines 0; first: - | last: -
 - mass-weighted shell-mean v_r [cm/s] of the last dump (c6632 FW300 / c6632 NX300): r: FW300 | NX300
   1.6909e+12: 2.463e+02 | 2.463e+02; 2.2091e+12: 2.348e+04 | 2.348e+04; 2.8860e+12: -6.631e+05 | -6.631e+05; 3.7704e+12: -2.393e+06 | -2.393e+06; 4.9597e+12: 5.514e+05 | 5.514e+05; 6.4795e+12: 7.871e+06 | 7.871e+06; 8.4651e+12: 2.118e+07 | 2.118e+07; 1.1135e+13: 8.824e+02 | 7.924e+02; 1.4548e+13: 5.094e+02 | 4.622e+02; 1.9006e+13: 2.922e+02 | 2.662e+02; 2.5000e+13: 1.474e+02 | 1.339e+02; 3.2662e+13: 7.431e+01 | 6.902e+01; 4.2670e+13: 3.848e+01 | 3.555e+01; 5.6130e+13: 1.182e+01 | 1.273e+01
+
+## FCONE / FWB lines (correction: clean_verbose defaults to 0, so the 300-cycle logs print none in either arm and say nothing about cuts): 20 cycles with rad_vet/clean_verbose=1, same rst and keys, 02-16
+- t9l62 FW: t9l62 FW rc=0 Terminating on cycle limit CW 0 FATAL 0; FCONE lines 40, FWB lines 40
+  - first: CLEAN FCONE cycle 6332 t2s 2 faces 52675329 momentum cut sum |dF| V/c^2 3.412355e+30 | last: CLEAN FCONE cycle 6351 t2s 3 faces 62941253 momentum cut sum |dF| V/c^2 4.180600e+30
+  - first: CLEAN FWB cycle 6332 t2s 2 faces 102417981 radiation momentum sum |dp| 9.804047e+30 x1 faces sum dp 5.969097e+30 | last: CLEAN FWB cycle 6351 t2s 3 faces 102247128 radiation momentum sum |dp| 4.753694e+30 x1 faces sum dp 3.508625e+30
+  - user.hst against the 300-cycle arm, 20 rows: printed-bitwise
+- t9l62 NX: t9l62 NX rc=0 Terminating on cycle limit CW 0 FATAL 0; FCONE lines 40, FWB lines 40
+  - first: CLEAN FCONE cycle 6332 t2s 2 faces 28147517 momentum cut sum |dF| V/c^2 1.840912e+29 | last: CLEAN FCONE cycle 6351 t2s 3 faces 28057357 momentum cut sum |dF| V/c^2 1.843953e+29
+  - first: CLEAN FWB cycle 6332 t2s 2 faces 135651843 radiation momentum sum |dp| 1.185496e+30 x1 faces sum dp -9.381112e+28 | last: CLEAN FWB cycle 6351 t2s 3 faces 135537483 radiation momentum sum |dp| 1.184113e+30 x1 faces sum dp -9.544726e+28
+  - user.hst against the 300-cycle arm, 20 rows: printed-bitwise
+- m35mms FW: m35mms FW rc=0 Terminating on cycle limit CW 0 FATAL 0; FCONE lines 40, FWB lines 40
+  - first: CLEAN FCONE cycle 22144 t2s 2 faces 163 momentum cut sum |dF| V/c^2 1.965189e+22 | last: CLEAN FCONE cycle 22163 t2s 3 faces 112 momentum cut sum |dF| V/c^2 4.477228e+21
+  - first: CLEAN FWB cycle 22144 t2s 2 faces 17132717 radiation momentum sum |dp| 7.855995e+26 x1 faces sum dp -2.253156e+25 | last: CLEAN FWB cycle 22163 t2s 3 faces 17201938 radiation momentum sum |dp| 6.538017e+26 x1 faces sum dp -5.823584e+24
+  - user.hst against the 300-cycle arm, 20 rows: printed-bitwise
+- m35mms NX: m35mms NX rc=0 Terminating on cycle limit CW 0 FATAL 0; FCONE lines 40, FWB lines 40
+  - first: CLEAN FCONE cycle 22144 t2s 2 faces 1439831 momentum cut sum |dF| V/c^2 1.318558e+25 | last: CLEAN FCONE cycle 22163 t2s 3 faces 1376004 momentum cut sum |dF| V/c^2 1.246290e+25
+  - first: CLEAN FWB cycle 22144 t2s 2 faces 33481724 radiation momentum sum |dp| 6.263259e+26 x1 faces sum dp 7.979448e+24 | last: CLEAN FWB cycle 22163 t2s 3 faces 33528246 radiation momentum sum |dp| 6.289242e+26 x1 faces sum dp 7.800571e+24
+  - user.hst against the 300-cycle arm, 20 rows: printed-bitwise
+- bsg FW: bsg FW rc=0 Terminating on cycle limit CW 0 FATAL 0; FCONE lines 0, FWB lines 40
+  - first:  | last: 
+  - first: CLEAN FWB cycle 29127 t2s 2 faces 19661297 radiation momentum sum |dp| 2.356722e+28 x1 faces sum dp 1.357040e+27 | last: CLEAN FWB cycle 29146 t2s 3 faces 19663000 radiation momentum sum |dp| 2.027297e+28 x1 faces sum dp 2.259849e+25
+  - user.hst against the 300-cycle arm, 20 rows: printed-bitwise
+- bsg NX: bsg NX rc=0 Terminating on cycle limit CW 0 FATAL 0; FCONE lines 40, FWB lines 40
+  - first: CLEAN FCONE cycle 29127 t2s 2 faces 271216 momentum cut sum |dF| V/c^2 6.721382e+25 | last: CLEAN FCONE cycle 29146 t2s 3 faces 261107 momentum cut sum |dF| V/c^2 6.695199e+25
+  - first: CLEAN FWB cycle 29127 t2s 2 faces 29933903 radiation momentum sum |dp| 2.058573e+28 x1 faces sum dp 9.326646e+25 | last: CLEAN FWB cycle 29146 t2s 3 faces 29935074 radiation momentum sum |dp| 2.020473e+28 x1 faces sum dp 1.075372e+26
+  - user.hst against the 300-cycle arm, 20 rows: printed-bitwise
