@@ -204,3 +204,5 @@ History identity (printed digits; user and hydro):
 - F_t9q_b1 vs F_t9q_b2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
 - F_t9q_b1 vs F_t9q_t1: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
 - F_t9q_b2 vs F_t9q_t2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
+
+- H (dt_courant_sum) not run: dropped by you (zzzzf6).
