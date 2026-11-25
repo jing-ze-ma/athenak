@@ -122,3 +122,11 @@ hegiant.m1.02296.bin r/R 1.1-1.5 d 0.00-0.02: 0.0272 (N 3048) d 0.02-0.05: 0.022
 -- HT2 hegiant.m1.02296.bin cycle 794790 CSCALE=0.5 range 1.5 2
 hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.6107 (N 3048) d 0.02-0.05: 0.6124 (N 5952) d 0.05-0.10: 0.6132 (N 8568) d 0.10-0.20: 0.6110 (N 18312) d 0.20-0.40: 0.6241 (N 27768) d 0.40-0.70: 0.6226 (N 25992) d 0.70-1.01: 0.6407 (N 8664)
 ```
+
+## HX and HT2: reading (11-24 17:34), and the pair is released
+- hegiant.user.hst: H0 vs HX byte-identical (every printed value in all 51 rows); HT (24zzzt, older source) vs HT2 byte-identical
+- hegiant.hydro.hst: H0 vs HX byte-identical (every printed value in all 51 rows); HT (24zzzt, older source) vs HT2 byte-identical
+- **HX (FIX, thinf false) vs H0: hst and CLEAN lines as above; every counter of the table is the same (e_floor 1, pos_gas 1423120, ffct_left 1120750, floor_pay 4.055e31, SDO max 0.147, 0 cells > 1).** So on this HG state the fix has no visible effect with thinf = false, in the hst and in those counters (cell dumps not compared byte for byte).
+- **HT2 (BASE, thinf true) reproduces HT's numbers** (e_floor 10955 with 4102, 2286, 1733 ... per cycle; pos_gas 2311120; panel edge d < 0.02 0.0027 / 0.0079; L_top max 6.2e-3). Its SDO line differs (max 0.25, 0 cells > 1; HT's was 78.2) because the diagnostic is another source's. So HTX's e_floor 30 vs 10955 is the fix's effect on this binary, the first-cycles transient included.
+- Stage time (dump-free, rank 0, one run each): H0 1.847012e+02 s; HTX 1.747711e+02 s; HX 1.734811e+02 s; HT2 1.871276e+02 s; 
+- Bins of all four arms kept in b1_1124/hg/<arm>/bin until you say they are scored. The pair 02-03 + 02-09 is free again.
