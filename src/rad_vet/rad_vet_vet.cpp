@@ -704,7 +704,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   // material edge, log elsewhere
   {
     const std::string vi = pin->GetOrAddString("rad_vet", "vet_interp",
-                               global_variable::restart_run ? "lin" : "auto");
+        recipe::Fix(pin, "rad_vet", "vet_interp", "auto", "lin") ? "auto" : "lin");
     if (vi.compare("lin") == 0) {
       vet_interp = 0;
     } else if (vi.compare("log") == 0) {
@@ -722,12 +722,12 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   // implicit_bc = marshak gives its entering rays the bath implicit_ebath
   VetBcInit(pin, false);
   vet_bc_bath = pin->GetOrAddBoolean("rad_vet", "vet_bc_bath",
-                                     !global_variable::restart_run);
+      recipe::Fix(pin, "rad_vet", "vet_bc_bath", "true", "false"));
   // vet_bc_diff: E of the bottom diffusion intensity from the cell, or moved to the face
   // by the source's linear extrapolation, E + (S_f - S_0), S_f = 1.5 S_0 - 0.5 S_1
   {
     std::string bd = pin->GetOrAddString("rad_vet", "vet_bc_diff",
-                                         global_variable::restart_run ? "cell" : "face");
+        recipe::Fix(pin, "rad_vet", "vet_bc_diff", "face", "cell") ? "face" : "cell");
     if (bd.compare("face") == 0) {
       vet_bc_face = true;
     } else if (bd.compare("cell") == 0) {
@@ -738,7 +738,8 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   }
   // vet_seg = mean | split | emit | jump (rad_vet_vetseg.hpp)
   {
-    const char *sgd = global_variable::restart_run ? "mean" : "jump";
+    const char *sgd = recipe::Fix(pin, "rad_vet", "vet_seg", "jump", "mean") ? "jump"
+                                                                             : "mean";
     std::string sg = pin->GetOrAddString("rad_vet", "vet_seg", sgd);
     if (sg.compare("split") == 0) {
       vet_seg_split = true;
@@ -770,7 +771,8 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   vet_full = false;
   {
     std::string vt = pin->GetOrAddString("rad_vet", "vet_tensor",
-                         global_variable::restart_run ? "uniaxial" : "full");
+        recipe::Fix(pin, "rad_vet", "vet_tensor", "full", "uniaxial") ? "full"
+                                                                      : "uniaxial");
     if (vt.compare("full") == 0) {
       vet_full = true;
     } else if (vt.compare("uniaxial") != 0) {
@@ -825,8 +827,8 @@ void RadiationVet::VetInit(ParameterInput *pin) {
     //   boundary: the ordinary boundary intensities (one-sided: a spurious H ~ J at
     //             small npass).
     std::string vin = pin->GetOrAddString("rad_vet", "vet_x1_periodic_inflow",
-                                          global_variable::restart_run ? "boundary"
-                                                                       : "source");
+        recipe::Fix(pin, "rad_vet", "vet_x1_periodic_inflow", "source", "boundary")
+            ? "source" : "boundary");
     if (vin.compare("source") == 0) {
       vet_x1src = true;
     } else if (vin.compare("boundary") == 0) {
