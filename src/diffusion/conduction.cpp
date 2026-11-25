@@ -587,6 +587,10 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           // the same <mesh>/cs_seam_blockend rule as the fluid's halo
           pbval_tr->cs_blockend_ext_ = CsSeamBlockendExtend(pp, pin);
           pbval_tr->InitializeBuffers(1);
+          if (pp->pmesh->use_cubed_sphere) {
+            tr_fs = new DvceFaceFld5D<Real>("radtrfs", nmb, 1, ncells3, ncells2, ncells1);
+            Kokkos::realloc(tr_fs->x1f, nmb, 1, 1, 1, 1);  // x1 faces never cross a seam
+          }
         }
       }
     } else if (pin->GetOrAddBoolean(block,"rad_implicit_x1",false) ||
@@ -624,6 +628,7 @@ Conduction::~Conduction() {
   if (adi_comm_set) MPI_Comm_free(&adi_comm);
 #endif
   if (pbval_tr != nullptr) delete pbval_tr;
+  if (tr_fs != nullptr) delete tr_fs;
 }
 
 //----------------------------------------------------------------------------------------
@@ -932,7 +937,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
   // <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
-  // take the parallelogram value (CsCornerCell)
+  // take the value extrapolated from real cells (CsCornerCell)
   const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
   auto &vsz_ = pmy_pack->pmb->mb_size;
   const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
@@ -1391,7 +1396,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
   // <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
-  // take the parallelogram value (CsCornerCell)
+  // take the value extrapolated from real cells (CsCornerCell)
   const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
   auto &vsz_ = pmy_pack->pmb->mb_size;
   const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;

@@ -130,6 +130,22 @@ void Conduction::StsConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void Conduction::ShareSeamFluxes
+//! \brief The two panels of a seam face form its flux from their own resampled ghosts:
+//! tr_fs <- the average of the two, as the hydro fluxes (Hydro::SendFlux / RecvFlux), so
+//! the operator takes from one cell exactly what it gives to the other.
+
+void Conduction::ShareSeamFluxes() {
+  pbval_tr->InitFluxSeamRecv(1);
+  pbval_tr->PackAndSendFluxSeamCC(*tr_fs);
+  while (pbval_tr->RecvAndUnpackFluxSeamCC(*tr_fs) != TaskStatus::complete) {}
+  // (asynchronous unpack, see the CC exchanges below)
+  Kokkos::fence();
+  pbval_tr->ClearFluxSend();
+  pbval_tr->ClearFluxRecv();
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void Conduction::RklConductionUpdate
 //! \brief the RKL1 loop itself, over the transverse faces alone (`with_x1` false) or
 //! over all three directions (`with_x1` true).  Every added term is guarded by that flag
@@ -375,7 +391,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // therefore not part of the 5-point/tridiagonal structure: it is carried explicitly.
   // Th = T* + alpha y when a register is supplied (usey), T* alone otherwise.
   // <mesh>/cs_vertex_3cell: corner-block reads of the cross term take the
-  // parallelogram value (CsCornerCell, diffusion/cs_vertex_res.hpp)
+  // value extrapolated from real cells (CsCornerCell, diffusion/cs_vertex_res.hpp)
   const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
   auto &vsz_ = pmy_pack->pmb->mb_size;
   const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
@@ -411,14 +427,11 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   };
   // the cross term's contribution to the Gershgorin ROW RADIUS of the face: the sum of
   // |entry| over the four cells its stencil reads, each weighted by that cell's alpha
-  // a corner-block read enters thof as the parallelogram of three real cells
-  // (CsCornerCell), so its |entry| reaches each of them: alpha summed over the three
+  // (a corner-block read enters thof through real cells: |weight| alpha summed over them)
   auto aof = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
-    int kv, jv;
-    if (v3c_ && CsCornerRead(vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_, kv, jv)) {
-      return fabs(st(m,ia_,k,jv,i)) + fabs(st(m,ia_,kv,j,i)) + fabs(st(m,ia_,kv,jv,i));
-    }
-    return st(m,ia_,k,j,i);
+    auto a0 = [&](const int kk, const int jj) { return st(m,ia_,kk,jj,i); };
+    if (!v3c_) return a0(k, j);
+    return CsCornerCell(a0, vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_, true);
   };
   auto crad2 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     const Real gg = fabs(g2(m,k,j,i));
@@ -1164,11 +1177,11 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     //     delta = tau [ C_f (Th_B - Th_A) + s_f Q_f ]
     //             / ( 1 + tau C_f (alpha_A/V_A + alpha_B/V_B) ),    y_A += delta/V_A,
     // which is L-stable -- as tau -> infinity delta saturates at the pair's equilibrium
-    // exchange and never overshoots -- and exactly conservative: the cell on the far
-    // side forms the same expression with the roles swapped and gets -delta, up to the
-    // along-seam RESAMPLE of the halo, which is the same error the explicit cubed-sphere
-    // operator already makes at a seam.  (rad_ang_solver = sts needs none of this: RKL1
-    // has no line structure and a panel face is an ordinary open face to it.)
+    // exchange and never overshoots.  The cell on the far side forms the same
+    // expression with the roles swapped, up to the along-seam RESAMPLE of the halo, and
+    // the two are averaged (ShareSeamFluxes): the exchange is exactly conservative.
+    // (rad_ang_solver = sts needs no sub-step: RKL1 has no line structure, a panel face is
+    // an ordinary open face to it whose two fluxes are averaged the same way.)
     if (anyseam) {
       pbval_tr->InitRecv(1);
       pbval_tr->PackAndSendCC(yy, tr_ycoar, sla_, sua_);
@@ -1192,49 +1205,52 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // leaves the ISOLATED pair (the sweeps move nothing) exactly backward Euler, so
       // the L-stability argument above is untouched.
       const Real wsm = rad_adi_seam_w;
+      // the energy that crosses each seam face in the step, in the +x2 / +x3 direction
+      auto fs2 = tr_fs->x2f;
+      auto fs3 = tr_fs->x3f;
       par_for("radtradiseam", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real ai = st(m,ia_,k,j,i);
         const Real va = vcell(m,k,j,i);
-        if (!(ai > 0.0) || !(va > 0.0)) return;
         const Real tha = st(m,it_,k,j,i) + ai*wsm*sn_(m,0,k,j,i);
-        Real dy = 0.0;
         for (int f=0; f<4; ++f) {
           if (f >= 2 && !three_d) break;
-          int kn = k, jn = j;
-          Real cf = 0.0, qf = 0.0, sgn = 1.0;
-          if (f == 0) {
-            if (!seam2(m,j)) continue;
-            jn = j - 1;
-            cf = c2(m,k,j,i);
-            if (csx) qf = cross2(sn_, true, m, k, j, i);
-          } else if (f == 1) {
-            if (!seam2(m,j+1)) continue;
-            jn = j + 1;
-            cf = c2(m,k,j+1,i);
-            sgn = -1.0;
-            if (csx) qf = cross2(sn_, true, m, k, j+1, i);
-          } else if (f == 2) {
-            if (!seam3(m,k)) continue;
-            kn = k - 1;
-            cf = c3(m,k,j,i);
-            if (csx) qf = cross3(sn_, true, m, k, j, i);
-          } else {
-            if (!seam3(m,k+1)) continue;
-            kn = k + 1;
-            cf = c3(m,k+1,j,i);
-            sgn = -1.0;
-            if (csx) qf = cross3(sn_, true, m, k+1, j, i);
-          }
+          const int up = f%2;
+          const int jf = (f < 2) ? j + up : j, kf = (f < 2) ? k : k + up;
+          if ((f < 2) ? !seam2(m,jf) : !seam3(m,kf)) continue;
+          const int jn = (f < 2) ? j - 1 + 2*up : j, kn = (f < 2) ? k : k - 1 + 2*up;
+          const Real cf = (f < 2) ? c2(m,k,jf,i) : c3(m,kf,j,i);
+          const Real sgn = up ? -1.0 : 1.0;
+          Real qf = 0.0;
+          if (csx) qf = (f < 2) ? cross2(sn_, true, m, k, jf, i)
+                                : cross3(sn_, true, m, kf, j, i);
           const Real ab = st(m,ia_,kn,jn,i);
           const Real vb = vcell(m,kn,jn,i);
-          if (!(cf > 0.0) || !(ab > 0.0) || !(vb > 0.0)) continue;
-          const Real thb = st(m,it_,kn,jn,i) + ab*wsm*sn_(m,0,kn,jn,i);
-          const Real den = 1.0 + tau*cf*(ai/va + ab/vb);
-          const Real dlt = tau*(cf*(thb - tha) + sgn*qf)/den;
-          if (isfinite(dlt)) dy += dlt/va;
+          Real dlt = 0.0;
+          if (ai > 0.0 && va > 0.0 && cf > 0.0 && ab > 0.0 && vb > 0.0) {
+            const Real thb = st(m,it_,kn,jn,i) + ab*wsm*sn_(m,0,kn,jn,i);
+            const Real den = 1.0 + tau*cf*(ai/va + ab/vb);
+            dlt = tau*(cf*(thb - tha) + sgn*qf)/den;
+            if (!isfinite(dlt)) dlt = 0.0;
+          }
+          if (f < 2) {
+            fs2(m,0,k,jf,i) = sgn*dlt;
+          } else {
+            fs3(m,0,kf,j,i) = sgn*dlt;
+          }
         }
-        if (dy != 0.0) y_(m,0,k,j,i) += dy;
+      });
+      ShareSeamFluxes();
+      par_for("radtradisupd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real dy = 0.0;
+        if (seam2(m,j)) dy += fs2(m,0,k,j,i);
+        if (seam2(m,j+1)) dy -= fs2(m,0,k,j+1,i);
+        if (three_d) {
+          if (seam3(m,k)) dy += fs3(m,0,k,j,i);
+          if (seam3(m,k+1)) dy -= fs3(m,0,k+1,j,i);
+        }
+        if (dy != 0.0) y_(m,0,k,j,i) += dy/vcell(m,k,j,i);
       });
     }
     ++sts_ncall;
@@ -1372,6 +1388,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   Kokkos::deep_copy(ycur, 0.0);
   Kokkos::deep_copy(yold, 0.0);
   // Y_0 = Y_{-1} = 0 over the WHOLE array, ghosts included: both start fully valid.
+  auto fs2 = iscs ? tr_fs->x2f : DvceArray5D<Real>("radtrfs2dummy", 1, 1, 1, 1, 1);
+  auto fs3 = iscs ? tr_fs->x3f : DvceArray5D<Real>("radtrfs3dummy", 1, 1, 1, 1, 1);
   for (int js_ = 1; js_ <= nsub; ++js_) {
     // Y_{j-1} is exchanged before every substage but the first
     if (js_ > 1) {
@@ -1406,6 +1424,35 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto yo_ = yold;
     auto yn_ = ynew;
     const int ilo_ = is + plo[js_], ihi_ = is + phi[js_];
+    // the FLUX through a face, written so that the neighbour forms the identical
+    // expression from the identical operands; the CUBED-SPHERE cross flux at the SAME Th
+    // the diagonal part uses -- so RKL1 integrates the exact cubed-sphere operator, cross
+    // term and all, and the Gershgorin radius above covers the extra entries
+    auto fx2 = KOKKOS_LAMBDA (const int m, const int k, const int jf, const int i) {
+      const Real al = st(m,ia_,k,jf-1,i), ar = st(m,ia_,k,jf,i);
+      if (!(open2(m,jf) && al > 0.0 && ar > 0.0)) return static_cast<Real>(0.0);
+      const Real f = c2(m,k,jf,i)*((st(m,it_,k,jf,i) + ar*yc_(m,0,k,jf,i))
+                                   - (st(m,it_,k,jf-1,i) + al*yc_(m,0,k,jf-1,i)));
+      return csx ? f - cross2(yc_, true, m, k, jf, i) : f;
+    };
+    auto fx3 = KOKKOS_LAMBDA (const int m, const int kf, const int j, const int i) {
+      const Real al = st(m,ia_,kf-1,j,i), ar = st(m,ia_,kf,j,i);
+      if (!(open3(m,kf) && al > 0.0 && ar > 0.0)) return static_cast<Real>(0.0);
+      const Real f = c3(m,kf,j,i)*((st(m,it_,kf,j,i) + ar*yc_(m,0,kf,j,i))
+                                   - (st(m,it_,kf-1,j,i) + al*yc_(m,0,kf-1,j,i)));
+      return csx ? f - cross3(yc_, true, m, kf, j, i) : f;
+    };
+    // a panel-seam face: one flux, shared by the two panels
+    if (iscs) {
+      par_for("radtrseam", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo_, ihi_,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (seam2(m,j)) fs2(m,0,k,j,i) = fx2(m,k,j,i);
+        if (seam2(m,j+1)) fs2(m,0,k,j+1,i) = fx2(m,k,j+1,i);
+        if (three_d && seam3(m,k)) fs3(m,0,k,j,i) = fx3(m,k,j,i);
+        if (three_d && seam3(m,k+1)) fs3(m,0,k+1,j,i) = fx3(m,k+1,j,i);
+      });
+      ShareSeamFluxes();
+    }
     par_for("radtrsub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo_, ihi_,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // the stiffness split left this block nothing to do: its increment stays zero,
@@ -1426,35 +1473,12 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       }
       const Real ai = st(m,ia_,k,j,i);
       const Real thc = st(m,it_,k,j,i) + ai*yc_(m,0,k,j,i);
-      // the FLUX through each face, written so that the neighbour forms the identical
-      // expression from the identical operands
-      const Real alm2 = st(m,ia_,k,j-1,i), alp2 = st(m,ia_,k,j+1,i);
-      Real fl = (open2(m,j) && ai > 0.0 && alm2 > 0.0)
-                ? c2(m,k,j,i)*(thc - (st(m,it_,k,j-1,i) + alm2*yc_(m,0,k,j-1,i))) : 0.0;
-      Real fr = (open2(m,j+1) && ai > 0.0 && alp2 > 0.0)
-                ? c2(m,k,j+1,i)*((st(m,it_,k,j+1,i) + alp2*yc_(m,0,k,j+1,i)) - thc) : 0.0;
-      // the CUBED-SPHERE cross flux of the same two faces, at the SAME Th the diagonal
-      // part uses -- so RKL1 integrates the exact cubed-sphere operator, cross term and
-      // all, and the Gershgorin radius above covers the extra entries
-      if (csx) {
-        if (open2(m,j) && ai > 0.0 && alm2 > 0.0) fl -= cross2(yc_, true, m, k, j, i);
-        if (open2(m,j+1) && ai > 0.0 && alp2 > 0.0) {
-          fr -= cross2(yc_, true, m, k, j+1, i);
-        }
-      }
+      const Real fl = seam2(m,j) ? fs2(m,0,k,j,i) : fx2(m,k,j,i);
+      const Real fr = seam2(m,j+1) ? fs2(m,0,k,j+1,i) : fx2(m,k,j+1,i);
       Real mi = fr - fl;
       if (three_d) {
-        const Real alm3 = st(m,ia_,k-1,j,i), alp3 = st(m,ia_,k+1,j,i);
-        Real gl = (open3(m,k) && ai > 0.0 && alm3 > 0.0)
-                ? c3(m,k,j,i)*(thc - (st(m,it_,k-1,j,i) + alm3*yc_(m,0,k-1,j,i))) : 0.0;
-        Real gr = (open3(m,k+1) && ai > 0.0 && alp3 > 0.0)
-                ? c3(m,k+1,j,i)*((st(m,it_,k+1,j,i) + alp3*yc_(m,0,k+1,j,i)) - thc) : 0.0;
-        if (csx) {
-          if (open3(m,k) && ai > 0.0 && alm3 > 0.0) gl -= cross3(yc_, true, m, k, j, i);
-          if (open3(m,k+1) && ai > 0.0 && alp3 > 0.0) {
-            gr -= cross3(yc_, true, m, k+1, j, i);
-          }
-        }
+        const Real gl = seam3(m,k) ? fs3(m,0,k,j,i) : fx3(m,k,j,i);
+        const Real gr = seam3(m,k+1) ? fs3(m,0,k+1,j,i) : fx3(m,k+1,j,i);
         mi += gr - gl;
       }
       if (sts1) {
