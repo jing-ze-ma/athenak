@@ -1967,7 +1967,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "closure memory; the first step is unrelaxed and this restart is not "
               << "bitwise." << std::endl;
   }
-  // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step, staged
+  // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last VET step, staged
   // for RadiationVet::RssPrime (Driver::Initialize) when this run uses the signal speed
   const bool rss_read = (nrss_file > 0) && (pradvet != nullptr) &&
                         ((phydro != nullptr && phydro->rad_signal_speed) ||

@@ -348,7 +348,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
-    // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step
+    // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last VET step
     if ((phydro != nullptr && phydro->rad_signal_speed) ||
         (pmhd != nullptr && pmhd->rad_signal_speed)) {
       const int rmode = pradvet->RssRstMode();

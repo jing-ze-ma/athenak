@@ -472,7 +472,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   bool cs_lin_resample = false;   // convex linear seam resample (fluid state)
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
-  // images of this block's cells across the seam. Set by the implicit M1 on its scratch
+  // images of this block's cells across the seam. Set by the implicit VET on its scratch
   // exchanges (stage CS1, rad_vet_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
   // teams of each (block, buffer, variable) of the CC pack/unpack: 1; the clean VET
@@ -508,7 +508,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   bool seam_xform_off = false;
   // cs_perm_pairs (default false): the tangential vector pairs of this object are
   // face-normal components; a seam permutes them with the axis signs instead of the
-  // covariant metric transform (bvals_cc.cpp). Set by the implicit M1 on pbval_th.
+  // covariant metric transform (bvals_cc.cpp). Set by the implicit VET on pbval_th.
   bool cs_perm_pairs = false;
   // cs- cs_hrq0 >= 0 (default -1): slots cs_hrq0..+3 hold the HALF-RANGE ratios
   // (h+_2, h-_2, h+_3, h-_3) about this block's x2 / x3 axes (rad_vet vgd_hr on the cubed
@@ -519,7 +519,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // exch_depth > 0 (default 0 = ng): this object's SAME-level buffers carry
   // only the exch_depth ghost layers next to the active range (send and receive strips,
   // the cube-vertex widening); set before InitializeBuffers. For exchanges whose readers
-  // never touch the deeper ghost layers (the implicit M1 scratch arrays: poisoned-ghost
+  // never touch the deeper ghost layers (the implicit VET scratch arrays: poisoned-ghost
   // gate), the same values in the layers that are read with fewer bytes on the wire.
   int exch_depth = 0;
 

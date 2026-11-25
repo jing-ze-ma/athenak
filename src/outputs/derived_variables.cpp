@@ -1278,7 +1278,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       pdens(m,0,kp,jp,ip) += 1.0;
     });
   }
-  // grey M1: the Eddington factor f_K of the closure and the diagonal of D = P/E
+  // grey VET: the Eddington factor f_K of the closure and the diagonal of D = P/E
   // (coordinate basis) the transport used for the state being written.
   //   implicit transport, after the first solve: the lagged closure (chi, n) the last
   //     Picard pass handed to the operator, stored in the work array iw (every closure:

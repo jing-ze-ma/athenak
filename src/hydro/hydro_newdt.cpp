@@ -119,9 +119,9 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   DvceArray2D<Real> rnf_;
   if (rav_) rnf_ = pravg->nfac;
 
-  // RADIATION SIGNAL SPEED (<hydro>/rad_signal_speed; default on with an implicit M1
+  // RADIATION SIGNAL SPEED (<hydro>/rad_signal_speed; default on with an implicit VET
   // transport, see hydro.cpp).  The gas sound speed alone understates the acoustic speed
-  // where the M1 radiation is trapped: there P_rad takes part in the compression.  In
+  // where the VET radiation is trapped: there P_rad takes part in the compression.  In
   // the strong-coupling, no-diffusion (equilibrium) limit gas + LTE radiation is one
   // fluid with P = P_g + P_r, beta = P_g/P, and the adiabatic exponent of an ideal gas of
   // ratio gamma mixed with radiation is (Chandrasekhar 1939, ch. II; Mihalas & Mihalas
@@ -141,7 +141,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   //   c_d^2 = c_g^2 + (1 - exp(-tau_d)) (c_eq,d^2 - c_g^2),
   // so optically thin cells keep the gas speed.  The fully coupled speed is the LARGEST
   // acoustic speed of the medium (radiative diffusion at the grid scale only lowers it),
-  // so the bound is conservative.  E, F, the tensor and opac are the M1 state of the
+  // so the bound is conservative.  E, F, the tensor and opac are the VET state of the
   // last radiation step (the module runs after the hydro stages): a lag of one step.
   // Before the first step they come from RadiationVet::RssPrime (Driver::Initialize):
   // the restart file's copy, or opac of the initial state on a fresh start.

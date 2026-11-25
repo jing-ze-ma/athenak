@@ -11,7 +11,8 @@
 //!
 //! Mark(pm, "name") is called at the task boundaries (hydro flux update, coordinate
 //! sources, am_transport, polar ring averaging, the pgen's source kernel / density floor
-//! / reference-force work, ConToPrim, the M1 solve, the M1 ring averaging, the M1 fluid
+//! / reference-force work, ConToPrim, the VET solve, the VET ring averaging, the VET
+//! fluid
 //! refresh).  At each mark the hydro u0 of every active cell is turned into
 //!   rho, KE = |m|^2/(2 rho), e = E - KE - rho Phi (etotgrav)
 //! and compared with the previous mark.  The difference is booked to the operator that

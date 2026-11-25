@@ -189,7 +189,7 @@ class Hydro {
   bool dt_diag_valid = false;
   Real dtnew_prev = -1.0;
   // <hydro>/rad_signal_speed: the CFL signal speed includes the radiation pressure of
-  // the M1 field in optically thick cells (hydro_newdt.cpp). Read only when named.
+  // the VET field in optically thick cells (hydro_newdt.cpp). Read only when named.
   bool rad_signal_speed = false;
   // <hydro>/rad_signal_speed_inertia (read only when named; default false): the
   // radiation enthalpy (E + P_dd)/c^2 joins rho as the inertia of that speed
@@ -256,7 +256,7 @@ class Hydro {
   // ---- THE EFFECTIVE POTENTIAL OF THE WELL-BALANCED x1 SCHEME.
   // Phi_eff = Phi - int a_rad dz, i.e. the potential of the EFFECTIVE gravity
   // g_eff = g - a_rad, where a_rad is a radiative acceleration that a separate module
-  // (a grey two-stream, or M1) exerts on the gas. It is used ONLY by the x1
+  // (a grey two-stream, or VET) exerts on the gas. It is used ONLY by the x1
   // well-balanced walk (BuildWBCache and the WB x1 reconstruction) and by the problem
   // generator's WB gravity source, which together deliver -rho g_eff exactly. Every
   // other use of the potential -- the etotgrav energy bookkeeping (AddGravEtot /

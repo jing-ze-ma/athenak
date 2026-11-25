@@ -154,7 +154,7 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   // <mesh>/layout_invariant: results independent
   // of the MeshBlock layout and the rank count. true: every global / shell SUM that feeds
-  // the state (M1 Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell
+  // the state (VET Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell
   // sums, problem-generator IC shell sums) uses the order-independent exact accumulator
   // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
   // from the GLOBAL cell index (<mesh>/sp_phi_global follows it unless named). Default

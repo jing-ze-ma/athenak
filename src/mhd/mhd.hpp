@@ -216,8 +216,8 @@ class MHD {
   bool dt_diag_valid = false;
   Real dtnew_prev = -1.0;
   // <mhd>/rad_signal_speed: the CFL fast speed takes the radiation-modified sound speed
-  // of the M1 field in optically thick cells (mhd_newdt.cpp; the MHD form of
-  // <hydro>/rad_signal_speed). Default on with an implicit M1 transport.
+  // of the VET field in optically thick cells (mhd_newdt.cpp; the MHD form of
+  // <hydro>/rad_signal_speed). Default on with an implicit VET transport.
   bool rad_signal_speed = false;
 
   // following used for time derivatives in computation of jcon

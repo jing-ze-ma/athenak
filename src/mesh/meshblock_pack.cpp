@@ -188,7 +188,7 @@ void MeshBlockPack::AddPhysics(ParameterInput *pin) {
     prad = nullptr;
   }
 
-  // (5b) GREY PHOTON M1 RADIATION (<rad_vet>).  Runs in its own sub-cycled task lists
+  // (5b) GREY PHOTON VET RADIATION (<rad_vet>).  Runs in its own sub-cycled task lists
   // (see rad_vet_tasks.cpp), so nothing is added to the main integrator lists here.
   if (pin->DoesBlockExist("rad_vet")) {
     if (pin->DoesBlockExist("radiation")) {

@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_sph.cpp
-//! \brief Option checks for implicit M1 on curvilinear meshes (spherical-polar wedge or
+//! \brief Option checks for implicit VET on curvilinear meshes (spherical-polar wedge or
 //! full sphere, cubed sphere) and the cubed-sphere seam set-up (CubedS1Init).
 //!
 //! The geometry lives in the implicit kernels: the E row takes dt A_f/V_i per face and

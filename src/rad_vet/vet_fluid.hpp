@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file vet_fluid.hpp
-//! \brief FluidRef: one accessor for the fluid M1 couples to (<hydro> or <mhd>).
+//! \brief FluidRef: one accessor for the fluid VET couples to (<hydro> or <mhd>).
 //! FluidRef::Get(pmbp) returns shallow View handles plus flags and EOS. Under MHD the
 //! conserved energy carries |B|^2/2, removed with the C2P cell field (VetEmagCell).
 
