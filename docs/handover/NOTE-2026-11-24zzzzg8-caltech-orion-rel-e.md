@@ -78,3 +78,17 @@ PASS idort_cylinder        8 s  E_in 0.000533 E_out 0.0115 F_out 0.0114 FH_out 0
   - wb_cs
     - rel-e: PASS vmax_over_cs 5.11e-10 vmax_over_cs_rot 7.4e-09
     - other: PASS vmax_over_cs 1.36e-09 vmax_over_cs_rot 6.93e-09
+
+## mpi_ranks FAIL, first reading (11-24 21:11)
+- 45 of 46 pass. mpi_ranks fails in 5 s with return code 1 at its 2-rank run (sp2), before athena starts:
+```
+--------------------------------------------------------------------------
+An ORTE daemon has unexpectedly failed after launch and before
+communicating back to mpirun. This could be caused by a number
+of factors, including an inability to create a connection back
+to mpirun due to a lack of common network interfaces and/or no
+route found between them. Please check network connectivity
+(including firewalls and network routing requirements).
+--------------------------------------------------------------------------
+```
+- That is mpirun trying to start a daemon from inside my srun step (Open MPI's launcher under Slurm, 3-node holder); athena never ran, so the test has **no result yet** (it is not a code verdict either way). Nothing edited. I rerun this one test now on 2 H200 of 02-03 with the Slurm variables unset in the step's shell (a local mpirun).
