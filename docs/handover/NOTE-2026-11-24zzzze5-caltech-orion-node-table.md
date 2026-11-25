@@ -142,3 +142,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 22:10 02-03: b_relf b_relfsuite suiterf0 -> b_relf b_relfsuite mpirf
 - 11-24 22:10 02-09: IDLE -> suitelz
 - 11-24 22:11 02-03: b_relf b_relfsuite mpirf -> b_relf b_relfsuite
+- 11-24 22:12 02-09: suitelz -> IDLE
