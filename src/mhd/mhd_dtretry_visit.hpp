@@ -73,6 +73,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
   v.view("fofc_cnt", fofc_cnt);
+  v.view("fofc_x", fofc_x);
   v.value("fofc_hlle", fofc_hlle);
   v.value("use_bs_emf", use_bs_emf);
   v.value("emf_smooth", emf_smooth);
@@ -177,6 +178,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
 //   pcond : Conduction *
 //   psrc : SourceTerms *
 //   fofc_rep : FofcReport
+//   pbval_fofc : MeshBoundaryValuesCC *
 //   pbval_fs : MeshBoundaryValuesCC *
 //   pbval_us : MeshBoundaryValuesCC *
 //   pseamfs : DvceFaceFld5D<Real> *

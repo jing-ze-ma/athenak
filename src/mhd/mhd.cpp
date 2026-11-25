@@ -26,6 +26,7 @@
 #include "mhd/mhd.hpp"
 #include "hydro/hydro_am.hpp"
 #include "utils/recipe.hpp"
+#include "utils/fofc_flags.hpp"
 #include "units/units.hpp"
 
 namespace {
@@ -227,7 +228,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  for (const char *k : {"fofc_flag_exchange", "dfloor_flux_limit", "dt_floor_courant",
+  for (const char *k : {"dfloor_flux_limit", "dt_floor_courant",
                         "rad_signal_speed_diff", "rad_signal_speed_phase",
                         "rad_signal_speed_inertia", "merge_lat_rc"}) {
     if (!pin->DoesParameterExist("mhd", k)) continue;
@@ -708,6 +709,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("mhd","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "mhd");}
+    if (use_fofc) {pbval_fofc = fofc_flags::Init(ppack, pin, "mhd");}
     // <mhd>/fofc_rsolver: see the note in mhd.hpp. Default llf keeps every existing
     // run bit-for-bit unchanged.
     {
@@ -1073,6 +1075,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("mhd","cs_seam_mhd")) {
         CsSeamInit(pin);
       }
+      CsSeamEmfXInit(pin);
 
       // allocate array of flags used with FOFC
       if (use_fofc) {
@@ -1101,6 +1104,7 @@ MHD::~MHD() {
   delete peos;
   delete pbval_u;
   delete pbval_b;
+  if (pbval_fofc != nullptr) {delete pbval_fofc;}
   if (pbval_fs != nullptr) {delete pbval_fs;}
   if (pbval_us != nullptr) {delete pbval_us;}
   if (pseamfs != nullptr) {delete pseamfs;}

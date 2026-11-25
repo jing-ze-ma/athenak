@@ -20,6 +20,7 @@
 #include "bvals/bvals.hpp"
 #include "mhd.hpp"
 #include "hydro/fofc_etotgrav.hpp"
+#include "utils/fofc_flags.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -358,6 +359,7 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         fofcv_(m,k,j,i) = false;
       });
     }
+    if (pbval_fofc != nullptr) fofc_flags::Exchange(pmy_pack, pbval_fofc, fofc_x, fofc);
     // Accumulate the PER-CELL FOFC flag count for the `mhd_fofc` output variable.
     // Placed after every writer of the flag array and before the flux kernel that reads
     // and clears it, so it sees exactly the set of cells this stage flagged -- the same
