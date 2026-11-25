@@ -8,6 +8,7 @@
 #                recipe of docs/vet_clean/BUILD.md); without --exe or --build the script
 #                uses <repo>/build_vettest/src/athena if it exists, else builds it
 #   --quick      the short subset (16 tests, ~1 min on 48 cores)
+#   --star-exe PATH   a -D PROBLEM=star_vet binary, for star_smoke and wb_star (else skipped)
 # Exit status 0 if every test passes.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)

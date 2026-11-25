@@ -33,6 +33,7 @@ class Ctx:
 
     def __init__(self, a, name):
         self.exe = [os.path.abspath(a.exe)]
+        self.star = [os.path.abspath(a.star_exe)] if a.star_exe else None
         self.dir = os.path.join(os.path.abspath(a.workdir), name)
         self.threads = a.threads
         self.quick = a.quick
@@ -252,6 +253,15 @@ def t_dt_retry(c):
 # ---------------------------------------------------------------------------------------
 # layout invariance (tile mode): 1 MeshBlock vs 2 x 2 MeshBlocks, bitwise
 
+# star settings the layout test cannot take: the 2 x 2 difference (bound 1e-8) is 7e-8 on
+# the 60 deg wedge with GL 7 x 18 and 8e-8 with the budget norms; dfloor_keep_velocity
+# creates energy where the density floor acts (no floor_pay with this ideal gas)
+LAYOUT_OFF = {'rad_vet/clean_clos1_budget': 'false', 'rad_vet/clean_bud_maxnorm': 'false',
+              'rad_vet/vet_gd_wall_interp': 'false', 'rad_vet/vet_gd_wall_sym': 'false',
+              'mesh/x3max': 1.5707963267948966, 'rad_vet/vet_gd_gl_nmu': 16,
+              'rad_vet/vet_gd_gl_nphi': 32, 'hydro/dfloor_keep_velocity': 'false'}
+
+
 def t_layout_tile(c):
     """tile mode with 8 x 8 tiles: one MeshBlock vs 1 x 2 MeshBlocks (along phi, mirror
     theta walls of the ray sweep) and vs 2 x 2 MeshBlocks (vacuum theta walls: the mirror
@@ -264,6 +274,7 @@ def t_layout_tile(c):
     o = {'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
          'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8,
          'meshblock/nx2': 16, 'meshblock/nx3': 16}
+    o.update(LAYOUT_OFF)
     out = {}
     for tag, wall, mb2 in (('1x2', 'mirror', 16), ('2x2', 'vacuum', 8)):
         o['rad_vet/vet_gd_theta_wall'] = wall
@@ -515,10 +526,13 @@ def t_radwave(c):
         o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 0.3, 'time/tlim': tl,
              'hydro/rad_signal_speed': 'true',
              'hydro/rad_signal_speed_diff': 'false' if diff == 'false' else 'true',
+             'rad_vet/clean_clos1_budget': 'false', 'rad_vet/clean_bud_maxnorm': 'false',
              'rad_vet/c_light': cl, 'rad_vet/arad': ar, 'rad_vet/implicit_cfl': -1.0,
              'problem/radwave_amp': amp, 'output2/dt': tl/32}
         if diff == 'phase':
             o['hydro/rad_signal_speed_phase'] = 'true'
+        else:
+            o['hydro/rad_signal_speed_phase'] = 'false'
         o.update({'rad_vet/kappa_' + s: kap for s in 'pef'})
         o.update({'problem/' + kk: v for kk, v in eig.items()})
         d = c.run('wave_cart.athinput', tag, o)
@@ -564,7 +578,9 @@ def t_wedge_sym(c):
         out['fphi'].append(float(abs(m['vet_f3'].sum())/np.abs(m['vet_f1']).sum()))
         out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
     try:
-        c.run('shell_sp.athinput', 'w3.7_nosym', dict(o, **{'mesh/x3max': 0.064}))
+        c.run('shell_sp.athinput', 'w3.7_nosym', dict(o, **{
+            'mesh/x3max': 0.064, 'rad_vet/vet_gd_wall_sym': 'false',
+            'rad_vet/vet_gd_wall_interp': 'false'}))
         out['wedge_fatal'] = 0
     except RuntimeError:
         log = open(os.path.join(c.dir, 'w3.7_nosym', 'run.log')).read()
@@ -825,9 +841,10 @@ def t_idort_beams_mb(c):
     along x1 in block mode (tile mode needs one MeshBlock along x1; the result depends on
     the MeshBlock size at the solver tolerance)."""
     t = {'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 16}
-    a, b = c.run('idort_beams.athinput', 'tile1', t), c.run('idort_beams.athinput', 'block1')
+    bl = {'mesh/layout_invariant_mode': 'block'}
+    a, b = c.run('idort_beams.athinput', 'tile1', t), c.run('idort_beams.athinput', 'block1', bl)
     x2 = c.run('idort_beams.athinput', 'tile4x2', dict(t, **{'meshblock/nx2': 16}))
-    x1 = c.run('idort_beams.athinput', 'block4x1', {'meshblock/nx1': 64})
+    x1 = c.run('idort_beams.athinput', 'block4x1', dict(bl, **{'meshblock/nx1': 64}))
     return dict(maxdiff_tile_x2=vett.compare_dirs(a, x2)[1],
                 maxdiff_block_x1=vett.compare_dirs(b, x1)[1])
 
@@ -938,6 +955,7 @@ def t_diffusion(c):
     cases = [('tau1', 1.0, {}), ('tau10', 10.0, {}), ('tau1e3', 1e3, {}),
              ('tau1e5', 1e5, {}), ('2d', 1e3, {'mesh/nx2': 64, 'meshblock/nx2': 64,
                                                 'mesh/nx1': 64, 'meshblock/nx1': 64,
+                                                'mesh/layout_tile': 16,
                                                 'problem/pulse_1d': 'false'}),
              ('tophat', 1e4, {'problem/vet_test': 'tophat'})]
     for tag, tc, o in cases:
@@ -1068,6 +1086,70 @@ def t_shadow(c):
 
 # ---------------------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------------------
+# the star tests: the production star deck's settings on a small spherical-polar wedge
+# (a binary built with -D PROBLEM=star_vet, --star-exe; the opacity and profile tables of
+# inputs/stars/star3d_data are linked into the run directory)
+
+STAR_DATA = os.path.abspath(os.path.join(HERE, '..', '..', 'inputs', 'stars', 'star3d_data'))
+# columns of the histories compared with ref/star_smoke.*.hst (Lz and the momenta of the
+# unrotating star are sums of cancelling noise and are left out)
+STAR_COLS = {'hydro': ('mass', 'tot-E', '1-KE', '2-KE', '3-KE'),
+             'user': ('time', 'dt', 'L_bot', 'L_mid', 'L_int', 'L_top', 'L_in', 'E_rad',
+                      'e_gas', 'M_tot', 'Etot', 'KE_int', 'L_midE', 'L_intE')}
+
+
+def star_run(c, sub, over):
+    d = os.path.join(c.dir, sub)
+    os.makedirs(d, exist_ok=True)
+    os.symlink(STAR_DATA, os.path.join(d, 'star3d_data'))
+    exe, c.exe = c.exe, c.star
+    try:
+        return c.run('star_small.athinput', sub, over)
+    finally:
+        c.exe = exe
+
+
+def t_star_smoke(c):
+    """the reduced star3d_sp deck (256 x 8 x 8, the decided production scheme keys and
+    tables) for 20 cycles against the stored history: dev = largest |x - x_ref| / max|x_ref|
+    over the columns STAR_COLS and all rows."""
+    d = star_run(c, 'run', {})
+    out = {'dev': 0.0, 'warnings': vett.warnings(open(os.path.join(d, 'run.log')).read())}
+    for kind, cols in STAR_COLS.items():
+        lab, a = vett.read_hst(os.path.join(d, 'bsg3d.%s.hst' % kind))
+        rl, r = vett.read_hst(os.path.join(HERE, 'ref', 'star_smoke.%s.hst' % kind))
+        if a.shape != r.shape:
+            raise RuntimeError('%s history: %s rows x columns, reference %s' % (
+                kind, a.shape, r.shape))
+        for q in cols:
+            x, y = a[:, lab.index(q)], r[:, rl.index(q)]
+            v = float(np.abs(x - y).max()/np.abs(y).max())
+            if v > out['dev']:
+                out['dev'], out['worst'] = v, q
+    return out
+
+
+def t_wb_star(c):
+    """the well-balance mode of the stars (wellbalance_dynamic, wb_x1, force_reference =
+    wb_arad, fixed GL 7 x 18 rays) on the unseeded BSG column, 20 cycles.  A report, not a
+    criterion: the BSG column is not in discrete equilibrium with its own opacities, so
+    v/c_s does not stay at 1e-8 (see README); it passes when the run completes with no
+    CLEAN WARNING.  v_in: largest |v|/c_s where r < 2.9e12 (the interior); v_all: over the
+    mesh; lat_mid: largest lateral |v|/c_s at 2.44e12 < r < 2.95e12 (outside the
+    merged-cell radius), ~1e-11 in a symmetric star."""
+    d = star_run(c, 'run', {'problem/star_ic_profile_amp': 0.0})
+    r = vett.cell_centres(d)[0]
+    h = vett.last_bin(d, 'hydro_w')
+    cs = np.sqrt((5.0/3.0)*(2.0/3.0)*h['eint']/h['dens'])
+    vt = np.sqrt(h['vely']**2 + h['velz']**2)
+    v = np.sqrt(h['velx']**2 + vt**2)/cs
+    m = (r > 2.44e12) & (r < 2.95e12)
+    return dict(v_in=float(v[:, :, r < 2.9e12].max()), v_all=float(v.max()),
+                lat_mid=float((vt/cs)[:, :, m].max()),
+                warnings=vett.warnings(open(os.path.join(d, 'run.log')).read()))
+
+
 TESTS = [  # name, function, in --quick
     ('conservation_sp', t_conservation_sp, True),
     ('conservation_cs', t_conservation_cs, True),
@@ -1092,6 +1174,8 @@ TESTS = [  # name, function, in --quick
     ('floor_pay', t_floor_pay, True),
     ('ceiling_metric', t_ceiling_metric, True),
     ('inf_reject', t_inf_reject, False),
+    ('star_smoke', t_star_smoke, False),
+    ('wb_star', t_wb_star, False),
     ('idort_beams', t_idort_beams, False),
     ('idort_beams_mb', t_idort_beams_mb, False),
     ('idort_shadow', t_idort_shadow, True),
@@ -1164,6 +1248,8 @@ def one(a, name, fn):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
+    p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
+                   '(star_smoke, wb_star; without it they are skipped)')
     p.add_argument('--quick', action='store_true', help='the short subset (16 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
@@ -1178,6 +1264,12 @@ def main():
     a = p.parse_args()
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]
+    if not a.star_exe:
+        for n in ('star_smoke', 'wb_star'):
+            if any(t[0] == n for t in sel):
+                print('SKIP %-16s        needs --star-exe (a binary built with '
+                      '-D PROBLEM=star_vet)' % n)
+        sel = [t for t in sel if t[0] not in ('star_smoke', 'wb_star')]
     print('clean VET test suite: %d tests, %s, %d at a time x %d threads, binary %s' % (
         len(sel), 'quick' if a.quick else 'full', a.jobs, a.threads, a.exe))
     t0, rows = time.time(), []

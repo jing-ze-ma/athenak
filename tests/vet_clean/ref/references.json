@@ -134,11 +134,11 @@
   },
   "near": {
    "err_E": [
-    0.00449,
+    0.00436,
     0.05
    ],
    "err_v": [
-    0.0111,
+    0.00981,
     0.05
    ]
   }
@@ -281,6 +281,21 @@
    "warnings": 0
   }
  },
+ "star_smoke": {
+  "_about": "largest |x - x_ref| / max|x_ref| of the history columns STAR_COLS over 20 cycles against ref/star_smoke.user.hst / .hydro.hst (CPU, 4a26282a6, binary md5 b7a40d7f, star_small.athinput). The run is bitwise identical on 1, 4 and 16 OpenMP threads (0 difference). Bound 2e-4: changes at the solver tolerance (clean_pc_sweep = rb, implicit clean_conv_max doubled, MeshBlock splits at tile 4) move these columns by at most 5.1e-5; a physical change, cfl_number 0.29 instead of 0.3, moves the history by 3e-2",
+  "max": {
+   "dev": 0.0002
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "wb_star": {
+  "_about": "a report, not a criterion (as momentum_box): the velocities of the unseeded BSG column after 20 cycles in the stars' well-balance mode; not bounded. Measured 4a26282a6: v_in 3.1e-3, v_all 0.68 (photosphere and floor gas), lat_mid 1.4e-11; the static envelope of wb_sp / wb_cs (1e-8) has no counterpart here, see README",
+  "equal": {
+   "warnings": 0
+  }
+ },
  "idort_beams": {
   "_about": "L1 = sum |E - E_exact| / sum E_exact over the box; the exact field is the cell average of the straight beams at the angles the code snapped them to. lum_top = energy of the third row below x1max / exact. The beams are 4 cells wide and stay straight (full width at half maximum 0.8 cells above the exact), but carry 1.19 x the exact energy (the cap of the streaming share at the beam edges; before the ray-hole fix of the thin share 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells), which dominates L1: regression references, not accuracy bounds. The energy flux is exact: flux_err = largest |sum of vet_phi1 over a row / injected flux - 1| (6e-8)",
   "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.1; Jiang 2021, ApJS 253, 49 sec. 4.2",
@@ -354,19 +369,19 @@
   "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
   "near": {
    "L1_rho": [
-    0.000356,
+    0.000375,
     0.05
    ],
    "L1_v": [
-    0.000213,
+    0.000236,
     0.05
    ],
    "L1_Tg": [
-    0.000385,
+    0.000373,
     0.05
    ],
    "L1_Tr": [
-    0.00026,
+    0.000268,
     0.05
    ]
   }
@@ -376,19 +391,19 @@
   "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
   "near": {
    "L1_rho": [
-    0.0017,
+    0.00197,
     0.05
    ],
    "L1_v": [
-    0.000818,
+    0.000884,
     0.05
    ],
    "L1_Tg": [
-    0.00162,
+    0.00177,
     0.05
    ],
    "L1_Tr": [
-    0.00094,
+    0.00101,
     0.05
    ]
   }

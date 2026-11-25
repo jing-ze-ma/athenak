@@ -106,7 +106,7 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 | linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
-| order | successive orders of the finest pair: 1.8 (time ladder of deck D), 1.9-2.2 (grid + time ladder of a linear wave); 2 also where the gas-radiation exchange is stiff (`order_stiff`) |
+| order | successive orders of the finest pair: 1.8 (time ladder of deck D), 1.9-2.3 (grid + time ladder of a linear wave); 2 also where the gas-radiation exchange is stiff (`order_stiff`) |
 | radiation-acoustic waves | phase speed and damping right in every trapping regime |
 | diffusion limit | the right diffusion coefficient at any cell optical depth (asymptotic preserving) |
 | moving media | radiation advected with the gas; comoving diffusion Galilean invariant |
@@ -262,7 +262,7 @@ The face terms are second order in space by design. What the tests measure:
   1.68e-4 (F_r) and 6.9e-6 (T). The loss is attributed to the weight 1/(1 + z), z = c dt/dx,
   of the stage-2 closure line (an earlier study, not re-measured on this release).
 - Grid and time step together, a linear radiation-hydro wave (N = 16 ... 128): the orders are
-  1.79, 2.19 (E) and 1.50, 1.94 (v); the finest pair differs by 4.49e-3 (E) and 1.11e-2 (v).
+  2.12, 2.26 (E) and 1.48, 1.95 (v); the finest pair differs by 4.36e-3 (E) and 9.81e-3 (v).
 
 The exchange is not stiff in either deck. Where it is stiff, the production tableau
 (`time2_tableau = sdirk2`) is second order with `time2_gtime_slope` (the default on a fresh
@@ -314,7 +314,7 @@ non-equilibrium diffusion). The gas-radiation exchange is L-stable: at time step
 relaxation times the gas reaches the exact equilibrium temperature with the total energy
 conserved.
 
-Test: `idort_radshock_m2`, `idort_radshock_m5` (L1 of rho, v, T_gas, T_rad 2.1e-4 to 1.7e-3,
+Test: `idort_radshock_m2`, `idort_radshock_m5` (L1 of rho, v, T_gas, T_rad 2.4e-4 to 2.0e-3,
 each within 5 % of the reference), `idort_thermal_eq2` (error of T within 5 % of 2e-3 after
 5 steps, energy drift <= 1e-13), `thermal_eq`; `radshock`, `radshock_m5` (the same shocks
 with the production closure: L1 of rho and T_rad about 0.5 % and 1 %, within 5 % of the

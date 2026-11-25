@@ -17,7 +17,7 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
   (counted backstops); gas internal energy not by construction (the step is redone, or the
   radiation pays);
 - well-balanced: equilibrium envelopes stay at rest to about 1e-9 of the sound speed;
-- order of accuracy: the finest pairs of the test ladders give 1.8 (time) and 1.9-2.2 (grid +
+- order of accuracy: the finest pairs of the test ladders give 1.8 (time) and 1.9-2.3 (grid +
   time); also where the gas-radiation exchange is stiff (`time2_gtime_slope`);
 - bitwise restarts and dt retries;
 - bitwise across MPI rank counts, and across tile layouts in tile mode (one MeshBlock along

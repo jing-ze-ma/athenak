@@ -152,7 +152,7 @@ tests/vet_clean/run_tests.sh --exe build_tests/src/athena --quick --jobs 12
 
 It ends with `13 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
 values`; a `FAIL` line names the failed criterion after `<-` and keeps the run directory in
-`vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (38 tests, 3 min on
+`vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (40 tests, 5 min on
 48 cores) runs without `--quick`. What each test checks: [tests/vet_clean/README.md](../../tests/vet_clean/README.md).
 
 On a GPU, run the same suite with the GPU `build_tests` binary, one test at a time (2 min

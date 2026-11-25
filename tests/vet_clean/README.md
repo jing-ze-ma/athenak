@@ -16,7 +16,8 @@ a C++17 compiler. The binary needs only the built-in problem generators, so the 
 build (no `-D PROBLEM`) is enough. Every test runs on one MPI rank with OpenMP threads.
 
 Options (`run_tests.py --help`): `--jobs N` tests at the same time (default: cores / 4),
-`--threads T` OpenMP threads per run (default 4; on a shared node cap `--jobs`, the default
+`--star-exe PATH` a binary built with `-D PROBLEM=star_vet` (for `star_smoke` and
+`wb_star`, which are skipped without it), `--threads T` OpenMP threads per run (default 4; on a shared node cap `--jobs`, the default
 takes every core), `--workdir DIR` (default
 `./vet_clean_runs`), `--keep` (keep the run directories of passed tests; failed tests are
 always kept), `--record FILE` (write every measured number to a JSON file), `--keys
@@ -48,6 +49,8 @@ is a FAIL with the path of its `run.log`.
 | `radwave` | `wave_cart` (64 x 4) | linear radiation-acoustic wave (amplitude 1e-6, the exact eigenmode, 2 periods, cfl 0.3) at P_rad/P_gas, x = (10, 0.01), (100, 0.1), (10, 1), (1, 100), x = tau_cell c_eq / c the grid-scale trapping parameter; phase speed and damping of a k = 1 fit vs the analytic root (`vett.radwave_root`); the x = 0.01 case also without `hydro/rad_signal_speed_diff`, x = 0.1 and 1 also with `hydro/rad_signal_speed_phase` (full only, ~1 min) | phase speed within 3e-3, damping within 5e-3 per radian, no growth; dt gain of the diff key within 2 % of 2.77; the phase key's dt >= the diff key's (2.15 at x = 0.1, 1 at x = 1) |
 | `wedge_sym` | `shell_sp` | the shell at rest, spherically symmetric, GL 7 x 18 rays, 8 cycles, on a 20 deg wedge and (with `vet_gd_wall_sym = true`) 3.7 and 7.3 deg wedges: fphi = \|Σ F_phi\| / Σ \|F_r\|; the 3.7 deg wedge without the key; the 20 deg shell made theta-periodic with `vet_gd_theta_seam_sym = true`: fth = \|Σ F_theta\| / Σ \|F_r\|, and without the key; the theta-periodic 30 deg wedge with GL 11 x 12 turning about z (EMA ring, cross-fade): fth_rot, and GL 10 x 12 staggered (no mirror) | fphi, fth, fth_rot <= 1e-8; the runs without their key, and 10 x 12, stop with the FATAL |
 | `floor_pay` | `shell_sp` | `hydro/eos = general`, `tfloor` just above the gas temperature (the floor acts in most cells every cycle), `floor_pay = rad_column`, `floor_pay_skip`, `dfloor_flux_limit`, `floor_audit = 1`, 40 cycles: total-energy drift from t = 0; then 16 cycles with `floor_from_ekin = true` and `vceil = 1.2e-2`: energy, mass and L_z drift | dE <= 1e-13; floor energy paid > 0, unpaid 0; ekin dE, dM, dLz <= 1e-13; no `CLEAN WARNING` |
+| `star_smoke` | `star_small` | the star3d_sp deck on 256 x 8 x 8 cells with the decided production scheme keys and the BSG tables, 20 cycles, ~15 s (needs `--star-exe`, a `-D PROBLEM=star_vet` binary) | every history column of `STAR_COLS` within 2e-4 of the stored history `ref/star_smoke.*.hst` (relative to its maximum); no `CLEAN WARNING` |
+| `wb_star` | `star_small` | the stars' well-balance mode (dynamic, `wb_x1`, `force_reference = wb_arad`) on the unseeded BSG column, 20 cycles (needs `--star-exe`) | **a report, not a criterion**: the column is not in discrete equilibrium with its own opacities, so v/c_s reaches 3e-3 in the interior (r < 2.9e12 cm) and 0.7 at the photosphere and in the floor gas; lateral velocity 1.4e-11 outside the merged-cell radius; no `CLEAN WARNING` |
 | `ceiling_metric` | `shell_sp`, `shell_cs` | the rotating shells (`gas_rot = 0.3`, `gas_vr = 0.2`, r 1-3), `hydro/eos = general`, `floor_from_ekin = true`, `vceil = 0.5` (below \|v\| in 1408 / 2928 cells) against the same run without the ceiling, cell by cell at t = 0 (cs: the velocity rebuilt from the contravariant v^a on the unit tangents, \|V\| the metric norm): v_phi kept (L_z), \|V\| = max(vceil, \|v_phi\|) where capped, else unchanged, v_theta 0, the radial part scaled in [0, 1]. A ceiling on Σ v_a² of mixed components or a split along the covariant phi component fails it on cs (dvphi 0.31). The cell-level C++ test `unit/ceiling_cell.cpp` (build line in its header) checks the same, the tfloor payment and the heat = metric KE change, at corner and ghost-extended points of all six panels, on sp, Cartesian and cs | dvphi, dcap, vtheta <= 1e-13; scale_ok |
 | `momentum_box` | `wave_cart` (8^3, periodic 3-D) | total linear momentum, gas (`hydro_u`) + radiation (face momenta of `vet_face` / c^2), every cycle for 8 cycles; radiation wave along the xyz diagonal, amplitude 1e-3, `radwave_eig = false`, `nghost = 3`, tile 8: `dP_cyc` = largest component of \|P - P_0\| / Σ\|p_gas\| per cycle, `dP_max` its maximum (quick and full, ~10 s) | **a report, not a criterion**: passes when the run completes, the numbers are finite and there is no `CLEAN WARNING` |
 
@@ -64,7 +67,7 @@ fast-relaxation thermal equilibrium is `thermal_eq`). L1 is sum |q - q_exact| / 
 | `idort_beams_mb` | `idort_beams` | the beams on 4 MeshBlocks vs 1: along x2 in tile mode (`layout_tile = 16`), along x1 in block mode | tile x2: identical; block x1: largest difference <= 1e-8 |
 | `idort_shadow`, `idort_shadow_gl` | `idort_shadow*` | two beams at +-15 deg past an opaque ellipse (128 x 64; ring of 12 rays, or the general 8 x 32 set with the beams snapped to its rays): E vs the exact attenuated beams | L1 within 5 % of 0.0138 and 0.0126 |
 | `idort_cylinder` | `idort_cylinder` | homogeneous emitting cylinder (rho kappa = 10, a T^4 = 1) in vacuum, 128 x 128: E inside and outside, the energy flux Phi_x (`vet_phi1`, `F_out`) and the face momentum F_x (`vet_f1`, `FH_out`) outside along y = 0 vs the exact transport solution (`ref/idort_cylinder_exact.npz`) | each L1 within 5 % of 5.3e-4, 0.011, 0.0116, 0.203 |
-| `idort_radshock_m2`, `_m5` | `idort_radshock_m*` | Lowrie & Edwards (2008) radiative shocks, Mach 2 and 5, 256 cells, started from the semi-analytic profile (`ref/idort_radshock_m*.txt`, its absolute path set by `run_tests.py`) with the Eddington closure of the diffusion-theory reference (`clean_closure = eddington`): rho, v, T_gas, T_rad at t = 2e-10 s, no shift | each L1 within 5 % of the reference (2.1e-4 ... 1.7e-3) |
+| `idort_radshock_m2`, `_m5` | `idort_radshock_m*` | Lowrie & Edwards (2008) radiative shocks, Mach 2 and 5, 256 cells, started from the semi-analytic profile (`ref/idort_radshock_m*.txt`, its absolute path set by `run_tests.py`) with the Eddington closure of the diffusion-theory reference (`clean_closure = eddington`): rho, v, T_gas, T_rad at t = 2e-10 s, no shift | each L1 within 5 % of the reference (2.4e-4 ... 2.0e-3) |
 | `idort_thermal_eq2` | `idort_thermal_eq2` | hot gas cooling into radiation (Jiang 2021 sec. 4.1), dt = 5 to 1e5 relaxation times: T(t) vs the exact ODE | max error within 5 % of 2.0e-3; total-energy drift <= 1e-13 |
 
 `idort_shadow` and `idort_shadow_gl` are in `--quick`; the eight take about 45 s with
@@ -110,6 +113,33 @@ initialised by the problem generator and the `vet_sc` formal solution has no sou
 the packet does not move); `jump`, `advect_shear` (no such `vet_test` in the problem
 generator); `equil`, `equil_table` (= `thermal_eq`), `atmosphere` (= `nlte_*`);
 `g5_pulse2d` is part of `diffusion`.
+
+## Star settings
+
+The decks run the settings of the production star decks (`inputs/stars/`) where a test can
+take them: cfl 0.3, `dt_retry` with the stars' factors, three ghost zones, tile mode, the
+radiation signal speed with `rad_signal_speed_diff` and `_phase`, FOFC,
+`dfloor_flux_limit`, `dfloor_keep_velocity`, the budget norms (`clean_clos1_budget`,
+`clean_bud_maxnorm`), `clean_maxit` 200, `clean_wb_exch_local`, the default solver tolerances,
+and on spherical-polar decks the 60 deg wedge with Gauss-Legendre 7 x 18 and the
+interpolated, symmetrised walls (cubed sphere: 10 x 12). Not taken:
+
+- everything in code units: the floors (`floorcap_*`, `floor_from_ekin` (general EOS only),
+  `floor_pay`, `e_floor`, `vceil`), tables and the general EOS: these are covered by the
+  tests that name them (`floor_pay`, `floor_dt`, `floorcap_spin`, `ceiling_metric`) and by
+  `star_smoke`;
+- `layout_tile`: the 60 deg wedge with 7 x 18 rays (the 2 x 2 difference is 7e-8, bound 1e-8)
+  and the budget norms (8e-8), and `dfloor_keep_velocity` (it creates energy);
+- `radwave`: the budget norms (one phase speed 3.1e-3, bound 3e-3) and, per case,
+  `rad_signal_speed_phase`;
+- `order_time`: the ray set (with 7 x 18 its coarse steps are pre-asymptotic, first order 0.9,
+  and the finest F error doubles) and the wedge; `wedge_sym` sets its own rays and walls;
+- decks with a fixed `dt` (`deckD`, `rad_diffusion`, `rad_marshak`, `thermal_eq`): `dt_retry`
+  (a retry changes the cap of a fixed step);
+- the theta-periodic seam key (the decks' theta walls are mirrors), the dynamic
+  well-balancing (it needs the star problem generator: `wb_star`) and `clean_init = steady`
+  (the decks start from their own analytic states); Cartesian decks have no ray set of the
+  star kind.
 
 Notes on the results of this release (465aff485):
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
