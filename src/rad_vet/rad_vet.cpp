@@ -954,7 +954,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
 
   // opacities per unit mass (code units); kappa_e and kappa_f default to kappa_p
-  {std::string op = pin->GetOrAddString("rad_vet","opacity","const");
+  {std::string op = pin->GetOrAddString("rad_vet","opacity",
+      (nw && pin->DoesParameterExist("problem","star_opac_table")) ? "table" : "const");
   if (op.compare("const") == 0) {
     opacity_type = VET_OPAC_CONST;
   } else if (op.compare("powerlaw") == 0) {
