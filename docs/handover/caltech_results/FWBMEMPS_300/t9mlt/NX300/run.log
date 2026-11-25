@@ -1,0 +1,2 @@
+2026-11-25 03:57:27 start t9mlt NX300 hpc-sm-02-16 ranks 4 BIN athena_next_79c1cabef md5=9bebf6a3972983aedf3ba060d8a5c9cb ARGS: -r /resnick/groups/carnegie_poc/jingze/b1_1124/fwp/rst_in/t9mlt_t9l62.00003.rst -i /resnick/groups/carnegie_poc/jingze/b1_1124/fwp/FRoff.athinput output2/dt=1e30 output2/dcycle=100 output3/dt=1e30 output3/dcycle=100 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 time/nlim=8352 
+2026-11-25 04:14:18 rc=0 (srun) ended: Terminating on cycle limit wall=1011 s CW 0 FATAL 0 inf 0 DT_RETRY 0
