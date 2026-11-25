@@ -198,26 +198,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   Kokkos::realloc(pos_cnt_d, VET_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
   marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
-  // implicit_marshak_face: cell | linear (Marshak face value; spherical wedge only)
-  if (sph_geom || pin->DoesParameterExist("rad_vet","implicit_marshak_face")) {
-    const bool mfdef = !global_variable::restart_run;
-    const std::string smf = sph_geom ?
-        pin->GetOrAddString("rad_vet","implicit_marshak_face",
-                            mfdef ? "linear" : "cell") :
-        pin->GetString("rad_vet","implicit_marshak_face");
-    if (smf.compare("cell") == 0) {
-      impl_mface_lin = false;
-    } else if (smf.compare("linear") == 0) {
-      impl_mface_lin = true;
-    } else {
-      ImplFatal("<rad_vet>/implicit_marshak_face = '" + smf
-                + "' is not a choice (cell | linear)");
-    }
-    if (impl_mface_lin && !sph_geom) {
-      ImplFatal("<rad_vet>/implicit_marshak_face = linear is implemented on the "
-                "spherical-polar wedge only");
-    }
-  }
   std::string srn = pin->GetOrAddString("rad_vet","implicit_recon","dc");
   if (srn.compare("dc") == 0) {
     impl_recon = VET_IRECON_DC;
@@ -476,23 +456,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
         Kokkos::realloc(thx3, nmb, ncells3+1, ncells2, ncells1);
         Kokkos::deep_copy(thx3, 0.0);
       }
-    }
-    // implicit_hr_q: cell | col (outer Marshak q of the half-range beam: top-cell
-    // H+_N/J_N, or the vet_col surface estimate)
-    bool hrq_col = false;
-    if (pin->DoesParameterExist("rad_vet","implicit_hr_q")) {
-      const std::string sq = pin->GetString("rad_vet","implicit_hr_q");
-      if (sq.compare("col") == 0) {
-        hrq_col = true;
-      } else if (sq.compare("cell") != 0) {
-        ImplFatal("<rad_vet>/implicit_hr_q = '" + sq + "' is not a choice (cell | col)");
-      }
-    }
-    hr_q = impl_beam_hr && (vet_sc || (vgd_on && sph_geom)) &&
-           (ibc_x1max == VET_IBC_MARSHAK) && !(hrq_col && sph_geom);
-    if (hr_q && vcol_q.extent_int(0) < nmb) {
-      Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
-      Kokkos::deep_copy(vcol_q, marshak_q);
     }
   }
 

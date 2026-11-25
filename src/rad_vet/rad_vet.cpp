@@ -835,7 +835,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   }
   // geometry guard: uniform Cartesian, a spherical-polar wedge or full sphere, or the
-  // cubed sphere (checks in SphericalS1Check, VetRaySetup); no relativistic coordinates
+  // cubed sphere (checks in SphericalS1Check, VetRayInit); no relativistic coordinates
   sph_geom = false;
   cs_geom = false;
   {
@@ -1351,9 +1351,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_itime = 0.0;
   vet_ncall = 0.0;
   vray_ready = false;
-  vcol_sph = false;
-  vcol_sq = false;
-  vcol_qmin = vcol_qmax = 0.0;
   // sc: short characteristics, on a Cartesian mesh and (vgd_on) on spherical polar and
   // the cubed sphere.  An older name is read as sc only where it ran the same closure:
   // vet_sc on a Cartesian mesh, vet_col with vet_gd = true on a curved one; with an
@@ -1407,17 +1404,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     // spherical polar, cubed sphere (rad_vet_vetray.cpp, rad_vet_vetgd.cpp)
     vgd_on = VetCurvedRays(pin);
-    // vet_col_surface_face (sp): acts with vet_col_surface_q and implicit_marshak_face =
-    // linear (rad_vet.hpp)
-    if (sph_geom) {
-      vcol_sqf = pin->GetOrAddBoolean("rad_vet","vet_col_surface_face",
-                                      !global_variable::restart_run);
-    }
-    // vet_col_surface_q: outer Marshak q from the formal solution
-    vcol_sq = pin->GetOrAddBoolean("rad_vet","vet_col_surface_q",
-                                   !global_variable::restart_run);
-    vcol_qmin = pin->GetOrAddReal("rad_vet","vet_col_surface_qmin",1.0e-3);
-    vcol_qmax = pin->GetOrAddReal("rad_vet","vet_col_surface_qmax",1.0);
     if (pin->DoesParameterExist("rad_vet","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_vet","vet_source_noesrc");
     }
@@ -1466,7 +1452,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // Athena++ x2rat / x3rat (not AthenaK keys) noted for VetRaySetup
+    // Athena++ x2rat / x3rat (not AthenaK keys) noted for VetRayInit
     for (const char *rk : {"x2rat", "x3rat"}) {
       if (pin->DoesParameterExist("mesh", rk) && pin->GetReal("mesh", rk) != 1.0) {
         vray_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);

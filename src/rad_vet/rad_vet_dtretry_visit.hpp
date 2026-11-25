@@ -155,7 +155,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("ibm_i", ibm_i);
   v.view("ibm_f", ibm_f);
   v.view("ibm_s", ibm_s);
-  v.value("impl_mface_lin", impl_mface_lin);
   v.view("f0x1", f0x1);
   v.view("iw", iw);
   v.value("impl_nstep", impl_nstep);
@@ -195,7 +194,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_hr_sf", impl_hr_sf);
   v.value("hsf_ncell", hsf_ncell);
   v.value("hsf_nsf", hsf_nsf);
-  v.value("hr_q", hr_q);
   v.view("vgd_hr", vgd_hr);
   v.view("vgd_pin_cnt", vgd_pin_cnt);
   v.value("impl_gas_src_cons", impl_gas_src_cons);
@@ -654,18 +652,9 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_nfail", cln_nfail);
   v.value("cln_nneg", cln_nneg);
   v.value("vray_ready", vray_ready);
-  v.value("vcol_sph", vcol_sph);
   v.value("vscat", vscat);
   v.value("vscat_form", vscat_form);
   v.value("vscat_jrel", vscat_jrel);
-  v.value("vcol_sqf", vcol_sqf);
-  v.value("vcol_jca", vcol_jca);
-  v.value("vcol_jcb", vcol_jcb);
-  v.value("vcol_jcap", vcol_jcap);
-  v.value("vcol_sq", vcol_sq);
-  v.value("vcol_qmin", vcol_qmin);
-  v.value("vcol_qmax", vcol_qmax);
-  v.view("vcol_q", vcol_q);
   v.value("vray_rat_keys", vray_rat_keys);
   v.value("vray_icut", vray_icut);
   v.value("vray_cut_thin", vray_cut_thin);

@@ -4,9 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetray.cpp
-//! \brief Set-up read by the vet_gd closure (VetRayInit: checks, outer Marshak q
-//! vcol_q, spherical Marshak coefficients), the end-of-run cost report; the checks,
-//! the buffers and the source (ln chi, ln S) of the vet_gd rays.
+//! \brief the rays of closure = sc on spherical polar and the cubed sphere: set-up, source
+//! (ln chi, ln S) and the end-of-run cost report; the sweeps are in rad_vet_vetgd*.cpp
 
 #include <algorithm>
 #include <cmath>
@@ -46,7 +45,7 @@ void VrayFatal(const std::string &msg) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRayInit
-//! \brief the checks, the spherical Marshak coefficients and vcol_q
+//! \brief checks, buffers, exchange objects and the direction set (VetGdInit)
 
 void RadiationVet::VetRayInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -54,32 +53,69 @@ void RadiationVet::VetRayInit() {
   if (!trans_on) {VrayFatal("needs <rad_vet>/transport = implicit on a MULTI-D mesh");}
   if (pm->multilevel) {VrayFatal("SMR/AMR is not supported");}
   if (ibc_x1min == VET_IBC_PERIODIC) {VrayFatal("a periodic x1 boundary has no top");}
-  if (indcs.nx1 < 2) {VrayFatal("needs at least 2 cells along x1");}
-  vcol_sph = sph_geom;
-  vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
-  const int ie = indcs.ie;
-  if (vcol_sph) {
-    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                     pmy_pack->pcoord->x1v);
-    auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                     pmy_pack->pcoord->xx1f);
-    const double rtop = x1f_h(0, ie + 1);
-    VetSphMarshakCoef(x1v_h(0, ie), x1v_h(0, ie - 1), rtop, vcol_jca, vcol_jcb);
-    vcol_jcap = 2.0*SQR(x1v_h(0, ie)/rtop);
+  // a stretched theta and the full sphere take the node table
+  if (!pm->use_cubed_sphere) {
+    vgd_pol = pm->use_polar_boundary;
+    vgd_sth = pm->use_grid_stretch_theta || vgd_pol;
   }
-  const int nmb = pmy_pack->nmb_thispack;
-  int c2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
-  int c3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  if (vcol_sq) {
-    Kokkos::realloc(vcol_q, nmb, c3, c2);
-    Kokkos::deep_copy(vcol_q, marshak_q);
-    if (ibc_x1max != VET_IBC_MARSHAK && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> vet_col_surface_q: the outer x1 boundary is not marshak; "
-                << "the q is built but unused" << std::endl;
+  // the SC upwind interpolation is bilinear in lateral INDEX space: exact only for
+  // uniform lateral spacing (radial stretch is fine).  Refuse a theta stretch, the
+  // Athena++ ratio keys, and any non-uniform built xx2f / xx3f (cs panel coordinates
+  // are uniform by construction).
+  {
+    if (!vray_rat_keys.empty()) {
+      VrayFatal("needs a laterally UNIFORM mesh; this input sets" + vray_rat_keys +
+                " (Athena++ ratio keys: AthenaK does not read them, its theta/phi grid "
+                "stays uniform -- remove them, or set 1)");
+    }
+    auto &ix = pm->mb_indcs;
+    auto f2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx2f);
+    auto f3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx3f);
+    // per direction: min and max face spacing over every active face of every block
+    double dmin[2] = {1.0e300, 1.0e300}, dmax[2] = {-1.0e300, -1.0e300};
+    for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+      for (int j = ix.js; j <= ix.je; ++j) {
+        const double d = f2(m,j+1) - f2(m,j);
+        dmin[0] = std::min(dmin[0], d); dmax[0] = std::max(dmax[0], d);
+      }
+      for (int k = ix.ks; k <= ix.ke; ++k) {
+        const double d = f3(m,k+1) - f3(m,k);
+        dmin[1] = std::min(dmin[1], d); dmax[1] = std::max(dmax[1], d);
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, dmin, 2, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, dmax, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    for (int a = (vgd_sth ? 1 : 0); a < 2; ++a) {   // theta via the table
+      const double rtol = (sizeof(Real) == 4) ? 1.0e-3 : 1.0e-9;  // LeftEdgeX round-off
+      if (!(dmin[a] > 0.0) || dmax[a] - dmin[a] > rtol*dmax[a]) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf), "%s cell widths range %.17g .. %.17g",
+                      (a == 0) ? "x2 (theta)" : "x3 (phi)", dmin[a], dmax[a]);
+        VrayFatal(std::string("needs a laterally UNIFORM mesh; the built grid has ") +
+                  buf + " (the SC upwind interpolation is bilinear in (theta, phi) index "
+                  "space; only radial stretches are supported)");
+      }
     }
   }
+  if (indcs.nx1 < 3) {VrayFatal("needs at least 3 cells along x1");}
+  const int nmb = pmy_pack->nmb_thispack;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  Kokkos::realloc(vray_cs, nmb, 2, c3, c2, c1);
+  Kokkos::deep_copy(vray_cs, 0.0);
+  Kokkos::realloc(vray_cs_c, nmb, 2, 1, 1, 1);
+  Kokkos::realloc(vray_cnt, 1);
+  Kokkos::deep_copy(vray_cnt, 0.0);
+  pbval_vs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+  pbval_vs->InitializeBuffers(2);
+  pbval_vs->SetVectorPairs(2, {});
+  // follow <mesh>/cs_seam_blockend as pbval_u does
+  pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   vray_ready = true;
-  VetRaySetup();
+  VetGdInit();
 }
 
 //----------------------------------------------------------------------------------------
@@ -169,77 +205,6 @@ void RadiationVet::VetRayReport() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetRaySetup
-//! \brief checks, buffers, exchange objects (called at the end of VetRayInit)
-
-void RadiationVet::VetRaySetup() {
-  Mesh *pm = pmy_pack->pmesh;
-  // a stretched theta and the full sphere take the node table
-  if (!pm->use_cubed_sphere) {
-    vgd_pol = pm->use_polar_boundary;
-    vgd_sth = pm->use_grid_stretch_theta || vgd_pol;
-  }
-  // the SC upwind interpolation is bilinear in lateral INDEX space: exact only for
-  // uniform lateral spacing (radial stretch is fine).  Refuse a theta stretch, the
-  // Athena++ ratio keys, and any non-uniform built xx2f / xx3f (cs panel coordinates
-  // are uniform by construction).
-  {
-    if (!vray_rat_keys.empty()) {
-      VrayFatal("needs a laterally UNIFORM mesh; this input sets" + vray_rat_keys +
-                " (Athena++ ratio keys: AthenaK does not read them, its theta/phi grid "
-                "stays uniform -- remove them, or set 1)");
-    }
-    auto &ix = pm->mb_indcs;
-    auto f2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx2f);
-    auto f3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx3f);
-    // per direction: min and max face spacing over every active face of every block
-    double dmin[2] = {1.0e300, 1.0e300}, dmax[2] = {-1.0e300, -1.0e300};
-    for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
-      for (int j = ix.js; j <= ix.je; ++j) {
-        const double d = f2(m,j+1) - f2(m,j);
-        dmin[0] = std::min(dmin[0], d); dmax[0] = std::max(dmax[0], d);
-      }
-      for (int k = ix.ks; k <= ix.ke; ++k) {
-        const double d = f3(m,k+1) - f3(m,k);
-        dmin[1] = std::min(dmin[1], d); dmax[1] = std::max(dmax[1], d);
-      }
-    }
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, dmin, 2, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-    MPI_Allreduce(MPI_IN_PLACE, dmax, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-#endif
-    for (int a = (vgd_sth ? 1 : 0); a < 2; ++a) {   // theta via the table
-      const double rtol = (sizeof(Real) == 4) ? 1.0e-3 : 1.0e-9;  // LeftEdgeX round-off
-      if (!(dmin[a] > 0.0) || dmax[a] - dmin[a] > rtol*dmax[a]) {
-        char buf[256];
-        std::snprintf(buf, sizeof(buf), "%s cell widths range %.17g .. %.17g",
-                      (a == 0) ? "x2 (theta)" : "x3 (phi)", dmin[a], dmax[a]);
-        VrayFatal(std::string("needs a laterally UNIFORM mesh; the built grid has ") +
-                  buf + " (the SC upwind interpolation is bilinear in (theta, phi) index "
-                  "space; only radial stretches are supported)");
-      }
-    }
-  }
-  auto &indcs = pm->mb_indcs;
-  if (indcs.nx1 < 3) {VrayFatal("needs at least 3 cells along x1");}
-  const int nmb = pmy_pack->nmb_thispack;
-  const int c1 = indcs.nx1 + 2*indcs.ng;
-  const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-  const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-  Kokkos::realloc(vray_cs, nmb, 2, c3, c2, c1);
-  Kokkos::deep_copy(vray_cs, 0.0);
-  Kokkos::realloc(vray_cs_c, nmb, 2, 1, 1, 1);
-  Kokkos::realloc(vray_cnt, 1);
-  Kokkos::deep_copy(vray_cnt, 0.0);
-  pbval_vs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  pbval_vs->InitializeBuffers(2);
-  pbval_vs->SetVectorPairs(2, {});
-  // follow <mesh>/cs_seam_blockend as pbval_u does
-  pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
-  VetGdInit();
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRayExchange
 //! \brief cell-centred ghost exchange of a (m, n, k, j, i) array
 
@@ -277,8 +242,6 @@ void RadiationVet::VetRaySource() {
   auto iw_ = iw;
   auto opac_ = opac;
   auto cs_ = vray_cs;
-  auto cx1f = pmy_pack->pcoord->xx1f;
-  auto &mbsize = pmy_pack->pmb->mb_size;
 
   const bool thermal = fl_on && coupling && !opac_zero;
   // vet_source_noesrc: the physical E^n = u0
