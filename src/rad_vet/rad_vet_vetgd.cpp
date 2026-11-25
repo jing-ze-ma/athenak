@@ -1234,8 +1234,6 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
         vgd_rot_slope = 3;
         vgd_rot_cfrac = pin->GetOrAddReal("rad_vet","vet_gd_rotate_slope_frac",
                                           1.0 - 1.0/std::sqrt(2.0));
-        vgd_rot_creuse = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_slope_reuse",
-                                              true);
         if (!(vgd_rot_cfrac > 0.0 && vgd_rot_cfrac <= 1.0)) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<rad_vet>/vet_gd_rotate_slope_frac must be in "

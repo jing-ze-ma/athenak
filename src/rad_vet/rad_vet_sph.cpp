@@ -79,7 +79,6 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     if ((!eddington && !vet_col) || vet_sc) {
       wcs += " closure != eddington | vet_col;";
     }
-    if (vet_col && vcol_axis_flux) {wcs += " vet_col_axis = flux;";}
     if (pin->DoesParameterExist("rad_vet","implicit_offdiag") &&
         pin->GetString("rad_vet","implicit_offdiag").compare("lagged") == 0) {
       wcs += " implicit_offdiag = lagged;";

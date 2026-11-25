@@ -72,15 +72,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // vet_every > 1 is not accepted under vet_sc
-  const std::string kev = VetKeyName(pin, "vet_every", {"vet_sc_every"});
-  if (vet_sc && pin->DoesParameterExist("rad_vet", kev) &&
-      pin->GetInteger("rad_vet", kev) > 1) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/" << kev << " > 1 (vet_sc) is removed; only 1 "
-              << "is accepted" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // be with t2_beonly runs as hesdirk2 with every step on the backward-Euler path
   if (time_scheme == VET_TIME_BE && t2_beonly) {
     time_scheme = VET_TIME_HESDIRK2;
@@ -235,44 +226,12 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // vet_col: the same modes, plus extrap (D^n + (dt/dt_prev)(D^n - D^{n-1}); its history
-  // is not in the restart file) and extrap2
-  t2_vcmode = 0;
-  if (vet_col) {
-    const bool vdef = sph_geom && !global_variable::restart_run;
+  // a restart's time2_vet (alias time2_vet_col) = extrap2: the extrap2 channels of a file
+  // of version < 4 (Time2RstNchWant)
+  if (vet_col && global_variable::restart_run) {
     const std::string kvc = VetKeyName(pin, "time2_vet", {"time2_vet_col"});
-    std::string vm = (sph_geom || pin->DoesParameterExist("rad_vet", kvc)) ?
-        pin->GetOrAddString("rad_vet", kvc, vdef ? "extrap2" : "lag") :
-        std::string("lag");
-    if (vm.compare("lag") == 0) {
-      t2_vcmode = 0;
-    } else if (vm.compare("predict") == 0) {
-      t2_vcmode = 1;
-    } else if (vm.compare("rebuild") == 0) {
-      t2_vcmode = 2;
-    } else if (vm.compare("extrap") == 0) {
-      t2_vcmode = 3;
-    } else if (vm.compare("extrap2") == 0) {
-      t2_vcmode = 4;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/" << kvc << " = '" << vm
-                << "' is not a choice (lag | predict | rebuild | extrap | extrap2)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (t2_vcmode != 0 && vcol_every != 1) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/" << kvc << " = " << vm
-                << " needs vet_every (vet_col_every) = 1" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // time2_vet_source (alias time2_vet_col_source)
-    Time2VetSourceInit(pin, t2_vcmode == 1 || t2_vcmode == 2, true);
-  }
-  // vet_sc reads the same time2_vet_source
-  if (vet_sc) {
-    Time2VetSourceInit(pin, t2_vsmode == 1 || t2_vsmode == 2, false);
+    t2_x2old = pin->DoesParameterExist("rad_vet", kvc) &&
+               pin->GetString("rad_vet", kvc).compare("extrap2") == 0;
   }
   // time2_pred_cap: the predicted state is P = U^n + theta dt K1 per cell,
   //   theta = min(1, cap/r),  r = max(|dt K1_E|/E^n, |eint(P) - eint_b|/eint_b),
@@ -280,7 +239,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   // slope from overshooting where the state relaxes within a step; theta = 1 (bitwise the
   // unlimited build) where r <= cap.  0 = off.
   t2_pcap = 0.0;
-  if (t2_vsmode != 0 || t2_vcmode == 1 || t2_vcmode == 2) {
+  if (t2_vsmode != 0) {
     t2_pcap = pin->GetOrAddReal("rad_vet", "time2_pred_cap",
                                 global_variable::restart_run ? 0.0 : 0.5);
     if (!(t2_pcap >= 0.0)) {
@@ -1326,47 +1285,6 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   return true;
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::Time2VetSourceInit
-//! \brief time2_vet_source = relaxed | state | blend: VET source of the predict / rebuild
-//! builds.  relaxed: a local backward-Euler exchange over dt (one step ahead of the
-//! state: first order at P); state: the source of P itself; blend: S*(0) + w (S*(dt) -
-//! S*(0)), w = x^2/(x0^2 + x^2), x = c dt rho kappa (time2_vet_source_x0).
-
-void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
-                                      const bool col) {
-  const std::string key = col ? VetKeyName(pin, "time2_vet_source",
-                                          {"time2_vet_col_source"})
-                              : std::string("time2_vet_source");
-  if (!act && !pin->DoesParameterExist("rad_vet", key)) {return;}
-  // vet_sc: state; vet_col / vet_gd: blend (relaxed on a restart without the key)
-  const char *dflt = col ? (global_variable::restart_run ? "relaxed" : "blend") : "state";
-  std::string vs = act ?
-      pin->GetOrAddString("rad_vet", key, dflt) :
-      pin->GetString("rad_vet", key);
-  if (vs.compare("relaxed") == 0) {
-    t2_vcsrc = false;
-  } else if (vs.compare("state") == 0) {
-    t2_vcsrc = true;
-  } else if (vs.compare("blend") == 0) {
-    t2_vcsbl = true;
-    const std::string kx = col ? VetKeyName(pin, "time2_vet_source_x0",
-                                           {"time2_vet_col_source_x0"})
-                               : std::string("time2_vet_source_x0");
-    vcol_sx0 = pin->GetOrAddReal("rad_vet", kx, 1.0);
-    if (!(vcol_sx0 > 0.0)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/" << kx << " must be > 0" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  } else {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/" << key << " = '" << vs
-              << "' is not a choice (relaxed | state | blend)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-}
-
 int RadiationVet::Time2FctSlot(const int q) const {
   return q ? VET_IW_S2 : VET_IW_S1;
 }
@@ -1409,7 +1327,7 @@ int RadiationVet::Time2RstNchWant() {
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != VET_TIME_HESDIRK2) ? 0 :
          VET_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? VET_T2_NVET : 0)
-         + ((vet_col && t2_vcmode == 4 && !sk) ? VET_X2_NCH : 0);   // extrap2
+         + ((t2_x2old && !sk) ? VET_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == VET_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == VET_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
@@ -1809,7 +1727,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     ch -= nd;
   }
   // extrap2 (version < 4): read past
-  if (h2 && vet_col && t2_vcmode == 4) skip();
+  if (h2 && t2_x2old) skip();
 }
 
 //----------------------------------------------------------------------------------------
@@ -1892,23 +1810,9 @@ void RadiationVet::Time2Report() {
               << zl_halos;
     std::cout << ")";
   }
-  if (vet_col && t2_vcmode != 0) {
-    std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
-                                       ((t2_vcmode == 2) ? "rebuild" :
-                                        ((t2_vcmode == 4) ? "extrap2" : "extrap")))
-              << " fallbacks=" << t2_vcnfb;
-    if (t2_vcsrc && t2_vcmode < 3) {std::cout << " source=state";}
-    if (t2_vcsbl && t2_vcmode < 3) {std::cout << " source=blend x0=" << vcol_sx0;}
-  }
   if (vet_sc && t2_vsmode != 0) {
     std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")
               << " fallbacks=" << t2_vcnfb;
-    if (t2_vcsrc) {std::cout << " source=state";}
-    if (t2_vcsbl) {std::cout << " source=blend x0=" << vcol_sx0;}
-    if (!t2_vcsrc && !t2_vcsbl) {
-      std::cout << (vcol_srelax ? (vcol_sesc ? " source=relaxed_esc" : " source=relaxed")
-                                : " source=gas");
-    }
   }
   if (t2_pcap > 0.0) {
     std::cout << " time2_pred_cap=" << t2_pcap << " limited cell-builds=" << t2_pnlim
@@ -1917,8 +1821,7 @@ void RadiationVet::Time2Report() {
   if (vgd_rot_slope == 3) {
     std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="
               << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass << " (frac "
-              << vgd_rot_cfrac << ", reuse "
-              << (vgd_rot_creuse ? "on" : "off") << ")";
+              << vgd_rot_cfrac << ")";
   }
   if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
   if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
