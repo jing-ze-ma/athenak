@@ -567,30 +567,28 @@ void RadiationVet::CleanInit() {
   cln_w.o = DvceArray5D<Real>();
   if (!marena_on) Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
   cln_w.ns = CLW_NS;
-  const int nfc = (cln_fsolve && cln_fkin) ? CLF_KD + 2 :
-                  (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3);
   // clean_stag_opac_update: only for T-dependent opacities (tables, powerlaw T exponent)
   cln_opt = cln_opt && !opac_zero && (opacity_type == VET_OPAC_TABLE ||
             (opacity_type != VET_OPAC_CONST && opac_b != 0.0));
   // staggered bracket's lagged flux DG: one more slot (CleanStagBracket)
-  cln_fdg = cln_consist ? nfc : -1;
-  cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // clean_stag_xdonor's q
-  int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0);
+  cln_fdg = cln_consist ? CLF_NF : -1;
+  cln_xqs = cln_xd ? CLF_NF + (cln_fdg >= 0) : -1;   // clean_stag_xdonor's q
+  int nfx = CLF_NF + (cln_fdg >= 0) + (cln_xd ? 3 : 0);
   cln_fwbs = cln_fwbst ? nfx++ : -1;
-  Kokkos::realloc(cln_fc1, nmb, nfx, n3, n2, n1);
-  Kokkos::realloc(cln_fc2, nmb, nfx, n3, n2, n1);
-  Kokkos::realloc(cln_fc3, nmb, nfx, n3, n2, n1);
   Kokkos::deep_copy(cln_w.s, 0.0);
   Kokkos::deep_copy(cln_w.o, 0.0);
-  Kokkos::deep_copy(cln_fc1, 0.0);
-  Kokkos::deep_copy(cln_fc2, 0.0);
-  Kokkos::deep_copy(cln_fc3, 0.0);
+  for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) {
+    Kokkos::realloc(f->s, nmb, CLF_NS, n3, n2, n1);
+    Kokkos::realloc(f->o, nmb, nfx - CLF_NS, n3, n2, n1);
+    Kokkos::deep_copy(f->s, 0.0);
+    Kokkos::deep_copy(f->o, 0.0);
+  }
   for (int d = 0; d < 3 && cln_rstd.extent_int(0) == nmb && cln_fsolve; ++d) {
     auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);   // from a restart
     auto AL = Kokkos::ALL;
-    Kokkos::deep_copy(Kokkos::subview(fc, AL, CLF_N + 3, AL, AL, AL),
+    Kokkos::deep_copy(Kokkos::subview(fc.s, AL, CLF_N + 3, AL, AL, AL),
                       Kokkos::subview(cln_rstd, AL, d, AL, AL, AL));
-    Kokkos::deep_copy(Kokkos::subview(fc, AL, CLF_KD, AL, AL, AL),
+    Kokkos::deep_copy(Kokkos::subview(fc.s, AL, CLF_KD, AL, AL, AL),
                       Kokkos::subview(cln_rstd, AL, 3 + d, AL, AL, AL));
   }
   if ((force_ref == VET_FREF_CLEAN || force_ref == VET_FREF_WB_MD) &&
@@ -1732,13 +1730,13 @@ void RadiationVet::CleanStagXDonor(const bool first, const bool lat, const bool 
       for (int q = 0; q < 3; ++q) fc(m,xq+q,k,j,i) = 0.0;
       if (k < ks || k > ke+dk || j < js || j > je+dj || i < is || i > ie+di) return;
       const Real cn = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
-      const Real cp = fc(m,xq+3,k,j,i), d = cn - cp, dp = fc(m,xq+4,k,j,i);
+      const Real cp = fc(m,CLF_XC,k,j,i), d = cn - cp, dp = fc(m,CLF_XC+1,k,j,i);
       // l < 0 where C turns back: step d/(1 - l), the fixed point of a mode C -> l C;
       // continuous in l
       const Real l = (d*dp < 0.0) ? d/dp : 0.0;
       const Real cu = first ? cn : cp + d/(1.0 - l);
-      fc(m,xq+3,k,j,i) = cu;
-      fc(m,xq+4,k,j,i) = first ? 0.0 : cu - cp;
+      fc(m,CLF_XC,k,j,i) = cu;
+      fc(m,CLF_XC+1,k,j,i) = first ? 0.0 : cu - cp;
     });
   }
   cln_xd_on = true;
@@ -2771,8 +2769,8 @@ void RadiationVet::CleanDMem(const bool save) {
   if (!cln_init) CleanInit();
   auto AL = Kokkos::ALL;
   for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
-    auto d = Kokkos::subview(fc, AL, CLF_N + 3, AL, AL, AL);
-    auto s = Kokkos::subview(fc, AL, CLF_DS, AL, AL, AL);
+    auto d = Kokkos::subview(fc.s, AL, CLF_N + 3, AL, AL, AL);
+    auto s = Kokkos::subview(fc.s, AL, CLF_DS, AL, AL, AL);
     if (save) {Kokkos::deep_copy(s, d);} else {Kokkos::deep_copy(d, s);}
   }
 }
@@ -2814,8 +2812,8 @@ void RadiationVet::CleanDtrD(const bool save) {
                     cln_fc1.extent_int(4));
   }
   for (int e = 0; e < cln_rstd.extent_int(1) && cln_rstd.extent_int(0) == nmb; ++e) {
-    auto d = Kokkos::subview((e%3 == 0) ? cln_fc1 : ((e%3 == 1) ? cln_fc2 : cln_fc3), AL,
-                             (e < 3) ? CLF_N + 3 : CLF_KD, AL, AL, AL);
+    auto d = Kokkos::subview((e%3 == 0) ? cln_fc1.s : ((e%3 == 1) ? cln_fc2.s :
+                             cln_fc3.s), AL, (e < 3) ? CLF_N + 3 : CLF_KD, AL, AL, AL);
     auto r = Kokkos::subview(cln_rstd, AL, e, AL, AL, AL);
     if (save) {Kokkos::deep_copy(r, d);} else {Kokkos::deep_copy(d, r);}
   }

@@ -836,6 +836,10 @@ void RadiationVet::MemArenaBind() {
   if (!pmy_pack->pmesh->use_cubed_sphere) bind(cln_st);
   bind(cln_yl);
   for (auto &a : cln_mg) bind(a);
+  // (the closure built once per stage: no pass keeps the faces' coefficients over one)
+  if (!cln_closit && !(cln_fwbst && t2_tab == 0)) {
+    for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) bind(f->o);
+  }
   // (the write-back's: their first use makes them, here already over the arena)
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int n1 = id.nx1 + 2*id.ng, n2 = (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1;
