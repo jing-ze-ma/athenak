@@ -42,3 +42,13 @@
 - CW 0 FATAL 0 inf 0 DT_RETRY 2; fallback 8.000000e+00; BE 2.000000e+01
 - end lines of the rays / split timers: []
 - peak memory per GPU (MiB, nvidia-smi samples): {'hpc-sm-02-03:0': 66979, 'hpc-sm-02-03:1': 67271, 'hpc-sm-02-03:2': 67257, 'hpc-sm-02-03:3': 66977, 'hpc-sm-02-09:0': 66653, 'hpc-sm-02-09:1': 67103, 'hpc-sm-02-09:2': 67093, 'hpc-sm-02-09:3': 66655, 'hpc-sm-02-c-sm-02-03:1': 66843}
+
+## HGN and HGO: the per-cycle statistics above include the final print (which contains the final bins / rst) and the start-up cycle; corrected:
+- HGN: s/cycle without the first and the last print: mean 3.4484 median 3.3946 min 3.2791 max 4.1656 (58 cycles); last 50 before the final print: mean 3.4372 median 3.3874; model time advanced 5.4000e+03 s in 60 cycles (mean dt 90.00); wall of the main loop 2.098805e+02 s = 38.87 s per 1000 s model
+  dt sequence: 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90
+  cycles above 1.15 x median: [(794794, 4.17), (794807, 3.93), (794820, 3.92), (794833, 3.95)]
+- HGO: s/cycle without the first and the last print: mean 4.1682 median 3.0284 min 1.9292 max 10.1981 (58 cycles); last 50 before the final print: mean 4.1505 median 3.2600; model time advanced 4.0500e+03 s in 60 cycles (mean dt 67.50); wall of the main loop 2.521928e+02 s = 62.27 s per 1000 s model
+  dt sequence: 90 90 90 90 90 90 90 90 90 90 90 90 90 90 22.5 22.5 22.5 22.5 22.5 22.5 22.5
+  cycles above 1.15 x median: [(794786, 5.82), (794787, 10.2), (794788, 4.58), (794794, 7.12), (794795, 5.91), (794797, 7.0), (794798, 4.28), (794806, 8.15), (794807, 8.8), (794809, 5.0), (794810, 8.55), (794811, 4.48), (794812, 3.52), (794813, 8.28), (794814, 4.5), (794815, 8.0), (794816, 4.57), (794817, 4.53), (794818, 8.13), (794819, 4.7), (794820, 6.44), (794821, 4.66), (794822, 4.49), (794823, 3.55), (794824, 9.88), (794825, 4.74), (794828, 3.78)]
+- HGO retry/fallback lines: ['DT_RETRY cycle=794824 t=6.609960e+07 dt 9.000000e+01 -> 4.500000e+01 reason=eint<=0 resid=5.000000e+00 cut 1\n', 'DT_RETRY cycle=794824 t=6.609960e+07 dt 4.500000e+01 -> 2.250000e+01 reason=eint<=0 resid=2.500000e+01 cut 2\n']
+- HGO's last print includes writing its final rst (46 s); the old binary has no final_restart key. HGO is NOT at the same dt as HGN: it runs 90 s for the first cycles, then drops to 22.5 (DT_RETRY 2, stage fallback 8, BE 20) with the old scheme's own rule, so its cycles are partly retried steps and its s/cycle is not at the same state as HGN's (compare per model time, and read dt from the sequence).
