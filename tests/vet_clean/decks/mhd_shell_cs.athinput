@@ -9,8 +9,6 @@
 basename = cs
 
 <mesh>
-layout_invariant = true
-nghost = 3
 nx1 = 16
 x1min = 1.0
 x1max = 3.0
@@ -36,15 +34,9 @@ nx2 = 16
 nx3 = 16
 
 <time>
-evolution = dynamic
-integrator = rk2
-cfl_number = 0.3
 nlim = 8
 tlim = 1e+30
 ndiag = 1000000
-dt_retry = true
-dt_retry_grow = 1.1
-dt_retry_ngood = 20
 
 <mhd>
 eos = ideal
@@ -59,55 +51,18 @@ ambipolar = constant
 eta_ad = 0.01
 
 <rad_vet>
-# --- production scheme keys ---
-zalesak_active = true
-clean_stag_xdonor = lag
-clean_stag_xsrc = true
-implicit_pos_floor_gas_keep = 1
-implicit_pos_gas_cons = true
-clean_stag_mg_color = mirror
-clean_face_hctau = true
-clean_stag_upwind_central = true
-clean_w_fse_tau = true
-clean_stag_fwb_stage = false
-clean_stag_fwb_t2 = false
-clean_pred_stage = false
-clean_stag_central = true
-clean_stag_eicarry = true
-clean_gas_secant = max_stage2
-clean_pred_xch = true
-clean_stag_fcone_gas = false
-# --- this test ---
-clean_layout = staggered
 c_light = 10.0
-chat_over_c = 1.0
 e_floor = 1.0e-30
-opacity = const
 kappa_p = 1.0
-kappa_e = 1.0
 kappa_f = 0.0
 kappa_s = 20.0
 arad = 1.0
-coupling = true
-gas_feedback = true
-transport = implicit
 implicit_cfl = 4.0
 implicit_bc_x1min = reflect
 implicit_bc_x1max = reflect
-implicit_ebath_x1min = 0.0
-implicit_ebath_x1max = 0.0
-time_scheme = hesdirk2
-scheme = clean
-clean_sphere_radius = 0.0
 vet_gd_gl_nmu = 10
 vet_gd_gl_nphi = 12
 vet_gd_rotate_dt = 0
-vet_gd_allow_clamp = false
-clean_clos1_budget = true
-clean_bud_maxnorm = true
-clean_maxit = 200
-clean_wb_exch_local = true
-vet_gd_gl_stagger = true
 
 <problem>
 pgen_name = rad_vet_beam

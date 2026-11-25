@@ -29,7 +29,6 @@ ox3_bc = periodic
 use_spherical_polar = true
 use_grid_stretch_r = true
 f_stretch_r = -3.509253962786431
-layout_invariant_mode = tile
 layout_tile = 128
 
 <meshblock>
@@ -38,12 +37,9 @@ nx2 = 128
 nx3 = 128
 
 <time>
-integrator = rk2
 nlim = -1
 tlim = 2.682e6
 ndiag = 50
-dt_retry_grow = 1.1
-dt_retry_ngood = 20
 
 <units>
 length_cgs = 1.0
@@ -52,16 +48,11 @@ time_cgs = 1.0
 mu = 0.674
 
 <hydro>
-dt_floor_courant = 0.6
-rad_signal_speed_phase = true
 eos = general
-rad_signal_speed_diff = true
 gamma = 1.6666666666666667
 dfloor = 3.6e-19
 pfloor = 1.0e-12
 vceil = 3.0e8
-floor_pay_skip = true
-dfloor_flux_limit = true
 floor_audit = 1
 tfloor = 123359972487.0939
 wb_rmax = 7.504290e+12
@@ -75,17 +66,11 @@ floorcap_rho = 1e-14
 vet_gd_halo_ipc = false
 c_light = 2.99792458e10
 arad = 3.2670356041e-47
-vet_gd_wall_interp = true
-vet_gd_wall_sym = true
-vet_gd_theta_seam_sym = true
-opacity = table
 temp_unit_kelvin = 8.1063567271e-09
 e_floor = 1.0e-4
 implicit_flux_x1min = 6.9466003350e+13
 vet_gd_band_ring = true            # band slabs lent per shell: bitwise, less GPU memory
 clean_verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
-clean_maxit = 200
-clean_wb_exch_local = true
 clean_pc_sweep = rb
 
 <problem>

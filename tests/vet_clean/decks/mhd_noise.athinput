@@ -32,7 +32,6 @@ nx3 = 16
 
 <time>
 evolution = dynamic
-integrator = rk2
 cfl_number = 0.3
 nlim = 8
 tlim = 1e30
