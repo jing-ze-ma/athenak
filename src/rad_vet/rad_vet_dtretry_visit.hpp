@@ -751,7 +751,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("marena_k2", marena_k2);
   v.value("vgd_rg_k", vgd_rg_k);
   v.value("vgd_ring", vgd_ring);
-  v.value("vgd_ring_named", vgd_ring_named);
   v.value("vgd_ring_par", vgd_ring_par);
   v.value("vgd_ring_act", vgd_ring_act);
   v.value("vgd_rg_two", vgd_rg_two);

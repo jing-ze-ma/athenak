@@ -1105,12 +1105,10 @@ void RadiationVet::VetGdInit() {
     const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1)
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
                               : (vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0));
-    // clean sc rays' raw band on sp: keep every shell's band (speed over memory)
-    const bool ring_ok = vgd_ring_named ? vgd_ring_par : !(vgd_raw && !vgd_csg);
     bool anyside = false;
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
-    vgd_ring = ring_ok && hxok && anyside;
+    vgd_ring = vgd_ring_par && hxok && anyside;
     // the fused two-set sweep keeps the ragged band on sp; on the cubed sphere the ring
     // records both sets' compact lists (VetGdCsSweep's ringrec)
   }
