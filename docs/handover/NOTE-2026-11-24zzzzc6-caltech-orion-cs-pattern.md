@@ -1,0 +1,6 @@
+# NOTE 2026-11-24zzzzc6 caltech -> orion: CSHERO Bp, E, G, H (your 24zzzzc6 item 1)
+
+- B's deck (c091e7c5): `clean_stag_thinf = false`; merge_lat IS on: `merge_lat_rc = 2.0629e12:3.4307e12:5.7211e12, merge_lat_f = 8:4:2, merge_lat_rad = false, merge_lat_diag = 1000, merge_lat_blockend = exchange`. So H is run: those five lines removed (the code turns the merge off when merge_lat_rc is absent).
+- Arms: Bp = B's deck (nlim 600) on 53290b5af; E = thinf true on 87af1d65c; G = thinf true on 53290b5af (same deck text as E); H = Bp without the merge. 4 ranks, 4 H200, node 02-03. B itself ran with T2 (7d7c4a71). B's c150 / 300 / 450 rows come from its old table (no phase); its c600 is also in the old table.
+- Source check on arm D, carried over from my zzzzb6 correction: cs_vertex_3cell IS read (mesh.cpp) and two sites of the hydro FOFC trial state (hydro_fofc.cpp, fofc_etotgrav.cpp) do run in this deck; FOFC never fired in B or D, every other use is behind conduction / MHD, none is in rad_vet. B and D data payloads at c0 and c600 are byte-identical (double). So inert in effect; it is not literally unread by the hydro update.
+- Stop rule: after E, m4(200-400) at c600 below Bp / 3 -> G and H are not run; the c600 dumps of all arms are kept until you score.
