@@ -84,7 +84,9 @@ def test_run():
         assert np.all(np.isfinite(col)), "non-finite values in the nightside column"
         p, temp, flw, qsw = col[:, 2], col[:, 3], col[:, 4], col[:, 5]
         assert np.all(temp > 0.0) and np.all(p > 0.0), "unphysical column"
-        assert np.all(np.diff(p) < 0.0), "pressure does not fall outwards"
+        # (the last row is the top ghost cell, a copy of the top cell under the default
+        # problem/top_bc = outflow1)
+        assert np.all(np.diff(p[:-1]) < 0.0), "pressure does not fall outwards"
         # problem/ck_beam_sph -- the PSEUDO-SPHERICAL beam, default TRUE on a
         # curvilinear mesh since 2026-09-22 -- lights TWILIGHT columns: with mu0 < 0 the
         # ray still grazes the limb, so a nightside column is no longer required to be
