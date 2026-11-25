@@ -236,3 +236,6 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 00:57 02-16: IDLE -> bk_BKrigid
 - 11-25 00:58 02-16: bk_BKrigid -> IDLE
 - 11-25 00:59 02-16: IDLE -> b_speed50
+- 11-25 01:00 02-03: b_fwbmem -> g_GATE_fwbmem
+- 11-25 01:01 02-03: g_GATE_fwbmem -> IDLE
+- 11-25 01:03 02-16: b_speed50 -> g_GATE_speed50
