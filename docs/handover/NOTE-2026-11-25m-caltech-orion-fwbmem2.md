@@ -112,3 +112,60 @@
 - NX300 CLEAN FWB lines 0; first: - | last: -
 - mass-weighted shell-mean v_r [cm/s] of the last dump (c22444 FW300 / c22444 NX300): r: FW300 | NX300
   6.7509e+11: -1.646e+00 | -1.646e+00; 6.9838e+11: -9.478e+01 | -9.478e+01; 7.2344e+11: -1.438e+02 | -1.438e+02; 7.4941e+11: -7.538e+00 | -7.538e+00; 7.7631e+11: 1.738e+03 | 1.738e+03; 8.0309e+11: 8.125e+03 | 8.125e+03; 8.3191e+11: 1.220e+04 | 1.220e+04; 8.6177e+11: 5.290e+04 | 5.290e+04; 8.9270e+11: 1.317e+05 | 1.317e+05; 9.2349e+11: 1.347e+05 | 1.346e+05; 9.5664e+11: 6.531e+05 | 6.277e+05; 9.9098e+11: -8.043e+06 | -8.307e+06; 1.0265e+12: -4.278e+06 | -4.282e+06; 1.0634e+12: 1.822e+01 | -1.180e+02
+
+## t9l62 (11-25 02:46): rst t9l62_t9l62.00003.rst (the 25b pair's hard link, c6332), prototype adcfad3f against next 9bebf6a3, 300 cycles, 02-16; own keys: rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=2 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5; R_ph by rph.py; dumps at global cycles that are multiples of 100 and the end
+- FW300: 2026-11-25 02:31:21 rc=0 (srun) ended: Terminating on cycle limit wall=866 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- NX300: 2026-11-25 02:46:26 rc=0 (srun) ended: Terminating on cycle limit wall=890 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+| arm | rows | s/cyc (elapsed prints) | dt min/mean/max | its (sum/cycle), solves | CW/FATAL/inf/DT_RETRY | fallback/BE |
+|---|---|---|---|---|---|---|
+| FW300 | 300 | 2.6443 (c6400-6600) | 54.2218/58.9475/66.0362 | 17.9, 6.77 | 0/0/0/0 | 0.000000e+00/0.000000e+00 |
+| NX300 | 300 | 2.6098 (c6400-6600) | 54.2218/58.9475/66.0362 | 17.9, 6.79 | 0/0/0/0 | 0.000000e+00/0.000000e+00 |
+
+| row | t (prototype) | L_top/L_in | rel L_top, L_bot, L_mid, L_int, KE, M_tot, Etot, dt (prototype / next - 1) |
+|---|---|---|---|
+| 0 | 5.184690e+05 | 2.141651 | 1.49e-13, -1.04e-08, 5.23e-02, 4.14e-13, -3.44e-15, 8.88e-16, 0.00e+00, 0.00e+00 |
+| 9 | 5.189596e+05 | 2.138847 | 1.04e-07, 6.44e-09, 4.64e-02, 6.84e-09, 3.66e-12, 1.33e-15, 1.08e-13, 2.72e-09 |
+| 49 | 5.211484e+05 | 2.127227 | -2.57e-05, 6.62e-09, 4.21e-02, -1.25e-09, 1.01e-10, 2.66e-15, 1.33e-10, -3.49e-08 |
+| 99 | 5.240140e+05 | 2.113628 | 1.04e-06, 9.90e-10, 3.48e-02, 1.59e-11, -4.28e-10, 2.22e-16, 4.58e-10, 2.42e-08 |
+| 199 | 5.298664e+05 | 2.090395 | -1.73e-05, -3.92e-09, 1.95e-02, 7.82e-09, 1.35e-09, 1.33e-15, 1.10e-09, 3.02e-07 |
+| 299 | 5.360989e+05 | 2.073137 | -2.46e-05, -1.51e-08, 8.59e-03, 1.96e-08, 4.56e-10, 2.66e-15, 1.81e-09, -4.81e-07 |
+| 299 | 5.360989e+05 | 2.073137 | -2.46e-05, -1.51e-08, 8.59e-03, 1.96e-08, 4.56e-10, 2.66e-15, 1.81e-09, -4.81e-07 |
+- L_top: max |prototype / next - 1| over 300 rows 4.001e-05
+- L_bot: max |prototype / next - 1| over 300 rows 2.741e-05
+- L_mid: max |prototype / next - 1| over 300 rows 5.228e-02
+- L_int: max |prototype / next - 1| over 300 rows 9.944e-07
+- KE_int: max |prototype / next - 1| over 300 rows 1.372e-08
+
+| dump | cycle | t | R_A (mean tau 2/3) | R_A / first production dump before - 1 | T_A [K] | R_M (median column) | T_M [K] |
+|---|---|---|---|---|---|---|---|
+| production before | 5943 | 5.076050e+05 | 9.520301e+12 | -2.67e-02 | 16961.93 | 9.185541e+12 | 17071.23 |
+| production before | 6332 | 5.184150e+05 | 9.781226e+12 | 0.00e+00 | 16582.88 | 9.493198e+12 | 16736.69 |
+| FW300 | 6400 | 5.221580e+05 | 9.871818e+12 | 9.26e-03 | 16671.86 | 9.595472e+12 | 16726.00 |
+| FW300 | 6500 | 5.280440e+05 | 1.001635e+13 | 2.40e-02 | 16514.53 | 9.758387e+12 | 16569.36 |
+| FW300 | 6600 | 5.340280e+05 | 1.016495e+13 | 3.92e-02 | 16367.87 | 9.918913e+12 | 16427.53 |
+| FW300 | 6632 | 5.360990e+05 | 1.021647e+13 | 4.45e-02 | 16320.59 | 9.974351e+12 | 16378.00 |
+| NX300 | 6400 | 5.221580e+05 | 9.871817e+12 | 9.26e-03 | 16475.01 | 9.595464e+12 | 16630.06 |
+| NX300 | 6500 | 5.280440e+05 | 1.001634e+13 | 2.40e-02 | 16312.77 | 9.758380e+12 | 16470.90 |
+| NX300 | 6600 | 5.340280e+05 | 1.016493e+13 | 3.92e-02 | 16166.17 | 9.918859e+12 | 16329.88 |
+| NX300 | 6632 | 5.360990e+05 | 1.021645e+13 | 4.45e-02 | 16117.25 | 9.974319e+12 | 16285.82 |
+| production after | 6521 | 5.292430e+05 | 1.004729e+13 | 2.72e-02 | 16280.56 | 9.789622e+12 | 16444.71 |
+| production after | 6695 | 5.400260e+05 | 1.031637e+13 | 5.47e-02 | 16034.17 | 1.008700e+13 | 16201.88 |
+| production after | 6884 | 5.508170e+05 | 1.059192e+13 | 8.29e-02 | 15833.38 | 1.037768e+13 | 15996.14 |
+
+- FW300: CLEAN FCONE lines 0 (faces sum 0, max 0 per line, cycles with a cut 0); FCONE_LZ lines 0; CLEAN FCS/bound lines: ['CLEAN FALLBACK', 'CLEAN FLOORMOM']; clamped lateral reads (all ranks, end) 0.000000e+00; CLEAN WARNING 0
+- FW300: top mass loss Mdot_top mean 3.8629e+05 (first 2.2054e+05, last 3.4629e+05, min 1.5881e+05, max 1.0265e+06); cumulative M_tot change 0.000e+00; L_mid / L_midE - 1: mean 1.888e-02 max abs 3.060e-02; L_intE/L_int - 1 mean 6.753e-08
+- NX300: CLEAN FCONE lines 0 (faces sum 0, max 0 per line, cycles with a cut 0); FCONE_LZ lines 0; CLEAN FCS/bound lines: ['CLEAN FALLBACK', 'CLEAN FLOORMOM']; clamped lateral reads (all ranks, end) 0.000000e+00; CLEAN WARNING 0
+- NX300: top mass loss Mdot_top mean 2.5157e+05 (first 2.1177e+05, last 2.5731e+05, min 1.2669e+05, max 6.2375e+05); cumulative M_tot change -1.665e-15; L_mid / L_midE - 1: mean -8.393e-03 max abs 2.092e-02; L_intE/L_int - 1 mean 6.879e-08
+- L_midE prototype - next: max |diff| / max |next| 6.949e-04, at the last row 3.154e-04
+- Mdot_top prototype - next: max |diff| / max |next| 1.182e+00, at the last row 1.427e-01
+- E_rad prototype - next: max |diff| / max |next| 9.911e-10, at the last row -9.289e-10
+- e_gas prototype - next: max |diff| / max |next| 2.942e-11, at the last row -2.832e-11
+- Lz_tot prototype - next: max |diff| / max |next| 6.908e-06, at the last row 3.132e-06
+- FW300: L_top / L_in first 2.141651, last 2.073137, mean of the last 100 rows 2.081226
+- NX300: L_top / L_in first 2.141651, last 2.073188, mean of the last 100 rows 2.081254
+- FW300 CLEAN FCONE lines 0; first: - | last: -
+- FW300 CLEAN FWB lines 0; first: - | last: -
+- NX300 CLEAN FCONE lines 0; first: - | last: -
+- NX300 CLEAN FWB lines 0; first: - | last: -
+- mass-weighted shell-mean v_r [cm/s] of the last dump (c6632 FW300 / c6632 NX300): r: FW300 | NX300
+  1.6909e+12: 2.463e+02 | 2.463e+02; 2.2091e+12: 2.348e+04 | 2.348e+04; 2.8860e+12: -6.631e+05 | -6.631e+05; 3.7704e+12: -2.393e+06 | -2.393e+06; 4.9597e+12: 5.514e+05 | 5.514e+05; 6.4795e+12: 7.871e+06 | 7.871e+06; 8.4651e+12: 2.118e+07 | 2.118e+07; 1.1135e+13: 8.824e+02 | 7.924e+02; 1.4548e+13: 5.094e+02 | 4.622e+02; 1.9006e+13: 2.922e+02 | 2.662e+02; 2.5000e+13: 1.474e+02 | 1.339e+02; 3.2662e+13: 7.431e+01 | 6.902e+01; 4.2670e+13: 3.848e+01 | 3.555e+01; 5.6130e+13: 1.182e+01 | 1.273e+01
