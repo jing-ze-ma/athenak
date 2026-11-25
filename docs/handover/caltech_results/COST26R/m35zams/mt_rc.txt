@@ -1,0 +1,1 @@
+m35zams mpit rc=0 ended: Terminating on cycle limit wall=25 s mt files 4

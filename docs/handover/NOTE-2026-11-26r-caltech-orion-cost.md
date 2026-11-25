@@ -8,3 +8,12 @@
 - mpit arm (26 cycles, MPI per call site, no fences): bsg mpit rc=0 ended: Terminating on cycle limit wall=41 s mt files 4
 - nsys arm: bsg nsys rc=0 ended: Terminating on cycle limit wall=70 s reports 4  
 - files: caltech_results/COST26R/bsg/ (kname_r0..3, gaps_r0..3, stats_r0). Window: kname / gaps C0 = 2 (cycles 0 and 1 of the 25 dropped).
+
+## m35zams (11-25 12:34): rst m35zams_m35zams.00010.rst (hard link, c223416, state in rst), next3 c3f133b44 ad2f2007, own keys none; node 02-16
+- m35zams plain: 39 cycles timed, wall per cycle mean 0.2998 median 0.2715 min 0.2589 max 1.0571 s; dt 3.4805 (first) 3.4805 (last); its per cycle 35.0, solves per cycle 4.40; stage fallbacks 0.000000e+00, backward-Euler steps 0.000000e+00, DT_RETRY 0, CLEAN WARNING 0, FATAL 0; peak MiB per GPU 0:15535 1:15535 2:15535 3:15535; start cycle 223416 t 7.776028e+05
+- per cycle wall [s]: 0.271 0.270 0.294 0.293 0.262 0.269 0.299 0.265 0.267 0.295 0.278 0.271 0.269 0.298 0.310 0.297 0.296 0.261 0.292 0.264 0.267 0.289 0.299 0.291 0.267 0.262 0.266 0.266 0.261 0.265 0.296 0.299 0.291 0.267 0.259 0.297 0.307 0.263 1.057
+- <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.380257e+01 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
+- <rad_vet> vet_gd_band_ring (rank 0): sweeps 4.000000e+01, dense band saves 0.000000e+00, save store 2.176951e+00 GB
+- mpit arm (26 cycles, MPI per call site, no fences): m35zams mpit rc=0 ended: Terminating on cycle limit wall=25 s mt files 4
+- nsys arm: m35zams nsys rc=0 ended: Terminating on cycle limit wall=51 s reports 4  
+- files: caltech_results/COST26R/m35zams/ (kname_r0..3, gaps_r0..3, stats_r0). Window: kname / gaps C0 = 2 (cycles 0 and 1 of the 25 dropped).

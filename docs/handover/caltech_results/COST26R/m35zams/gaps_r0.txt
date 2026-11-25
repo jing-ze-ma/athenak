@@ -1,0 +1,21 @@
+nsys_r0.sqlite: cycles 1.5 wall 2331.5 ms/cyc  GPU idle 405.1 ms/cyc (17.4 %)  gaps 42362/cyc
+idle by host activity (ms/cyc): MPI 115.1  sync 72.1  MPI(part) 66.8  sync(part) 55.4  memcpy-api(part) 48.0  memcpy-api 16.7  launch(part) 11.3  cuda-other 8.6  launch 6.6  cuda-other(part) 3.3  host-compute 1.2
+idle by gap size   (ms/cyc, n/cyc): <10us 76.4 (29854)  10-100us 208.7 (12421)  0.1-1ms 20.7 (63)  >1ms 99.3 (25)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 7101, 9.5, 7.52  2: 1324, 0.0, 2.82  8: 168, 6367.4, 3.57  10: 10429, 38011.4, 353.59
+host time in (ms/cyc, overlapping GPU work or not): sync 1592.1  MPI 1319.8
+largest gaps (us, host activity, previous kernel -> next):
+     8478.2 sync(part)     M -> M
+     7105.1 sync(part)     M -> M
+     7010.8 memcpy-api(part) M -> M
+     6931.7 sync(part)     M -> M
+     6928.2 sync(part)     M -> M
+     6910.3 memcpy-api(part) M -> M
+     6904.5 sync(part)     M -> M
+     6901.1 sync(part)     M -> M
+     6900.9 sync(part)     M -> M
+     6899.4 memcpy-api(part) M -> M
+     6886.6 memcpy-api(part) M -> M
+     6883.5 memcpy-api(part) M -> M
+     6003.4 MPI(part)      radvet::RadiationVet::CleanLzTotal#1 -> M
+     5303.2 MPI(part)      M -> M
+     4048.2 MPI(part)      radvet::RadiationVet::CleanLzTotal#1 -> M
