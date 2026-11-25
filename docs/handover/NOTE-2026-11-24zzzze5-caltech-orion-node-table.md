@@ -174,3 +174,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 22:42 02-16: pg_bsg rc_t9l62_R25a -> pg_bl rc_t9l62_R25a
 - 11-24 22:44 02-16: pg_bl rc_t9l62_R25a -> pg_rf rc_t9l62_R25a
 - 11-24 22:45 02-16: pg_rf rc_t9l62_R25a -> pg_t9 rc_t9l62_R25b
+- 11-24 22:47 02-03: IDLE for 10 min
+- 11-24 22:47 02-16: pg_t9 rc_t9l62_R25b -> rc_t9l62_R25b
+- 11-24 22:48 02-16: rc_t9l62_R25b -> rc_t9l62_C50
+- 11-24 22:49 02-09: pg_m35zams -> IDLE
+- 11-24 22:49 02-16: rc_t9l62_C50 -> pg_z rc_t9l62_C50
