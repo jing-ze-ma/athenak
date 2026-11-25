@@ -361,13 +361,6 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         Kokkos::deep_copy(outarray_vett, tmp);
       }
     }
-    // implicit_closure_thin_relax: the relaxed closure of the last step (ctr_mem)
-    if (pradvet->impl_ctrelax > 0.0 && pradvet->ctr_init) {
-      Kokkos::realloc(outarray_vetc, nmb, 4, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_vetc, Kokkos::subview(pradvet->ctr_mem,
-                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
-                        Kokkos::ALL));
-    }
     // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last VET step
     if ((phydro != nullptr && phydro->rad_signal_speed) ||
         (pmhd != nullptr && pmhd->rad_signal_speed)) {
@@ -568,16 +561,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // the implicit-ck state block (utils/two_stream_ck_rst.hpp), behind even that one
   const int nck = ck_rst_hdr_bytes.empty() ? 0
                   : static_cast<int>(outarray_ck.extent(0));
-  // <rad_vet> implicit_closure_thin_relax: 4 ctr_mem slabs behind everything (0 = none,
-  // and then not one byte).  radvet::kVetCtrRstMagic.
-  const int nctr = (pradvet != nullptr && pradvet->impl_ctrelax > 0.0 &&
-                    pradvet->ctr_init)
-                   ? 4 : 0;
-  char ctr_hdr[2*sizeof(std::int32_t)];
-  {
-    const std::int32_t hdr[2] = {(nctr > 0) ? 1 : 0, static_cast<std::int32_t>(nctr)};
-    std::memcpy(&(ctr_hdr[0]), &(hdr[0]), sizeof(hdr));
-  }
   // <hydro|mhd>/rad_signal_speed: nrss slabs behind even those (radvet::kVetRssRstMagic)
   const bool wrss = (pradvet != nullptr) &&
                     ((phydro != nullptr && phydro->rad_signal_speed) ||
@@ -868,16 +851,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(ck_rst_hdr_bytes.data(), nb, "byte", single_file_per_rank);
     }
-    // the thin_relax closure header, same marked form, behind the implicit-ck one
-    if (nctr > 0) {
-      IOWrapperSizeT nb = sizeof(ctr_hdr);
-      resfile.Write_any_type(&(radvet::kVetCtrRstMagic[0]),
-                             sizeof(radvet::kVetCtrRstMagic),
-                             "byte", single_file_per_rank);
-      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
-      resfile.Write_any_type(&(ctr_hdr[0]), nb, "byte", single_file_per_rank);
-    }
-    // the signal-speed header, same marked form, behind the thin_relax one
+    // the signal-speed header, same marked form, behind the implicit-ck one
     if (nrss > 0) {
       IOWrapperSizeT nb = sizeof(rss_hdr);
       resfile.Write_any_type(&(radvet::kVetRssRstMagic[0]),
@@ -1010,7 +984,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // hydro / mhd w0(IEN), + the hydro w0 density and velocities
   data_size += (neint + (we_hyd ? 4 : 0))*cell_bytes;
   data_size += nck*cell_bytes;   // implicit-ck state
-  data_size += nctr*cell_bytes;   // rad_vet thin_relax ctr_mem
   data_size += nrss*cell_bytes;   // rad_signal_speed inputs
   data_size += ncsk*cell_bytes;   // conservative csk1
   data_size += nra*cell_bytes;   // vet_rotate_avg history
@@ -1060,10 +1033,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nck > 0) {
     step3size += sizeof(two_stream_rt::kCkRstMagic) + sizeof(IOWrapperSizeT)
                  + ck_rst_hdr_bytes.size();
-  }
-  if (nctr > 0) {
-    step3size += sizeof(radvet::kVetCtrRstMagic) + sizeof(IOWrapperSizeT) +
-        sizeof(ctr_hdr);
   }
   if (nrss > 0) {
     step3size += sizeof(radvet::kVetRssRstMagic) + sizeof(IOWrapperSizeT) +
@@ -1630,7 +1599,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                 Kokkos::ALL), "ck restart state");
   }
   // and the thin_relax closure memory last of all (kVetCtrRstMagic)
-  write_group(outarray_vetc, nctr, "rad_vet thin_relax closure");
   // and the rad_signal_speed inputs behind it (kVetRssRstMagic)
   write_group(outarray_vets, nrss, "rad_signal_speed inputs",
               [&](DvceArray5D<Real> &t, int m, int) {
@@ -1663,7 +1631,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   outarray = HostArray5D<Real>();
   outarray_hyd = outarray_mhd = outarray_rad = outarray_vet = outarray_force =
       outarray_z4c = outarray_adm = outarray_ck = outarray_vetp = outarray_vett =
-      outarray_vetc = outarray_vets = outarray_vetr = outarray_vetk =
+      outarray_vets = outarray_vetr = outarray_vetk =
       outarray_ams = outarray_pgs = outarray_fax = outarray_x1e = outarray_wpv =
       HostArray5D<Real>();
   outarray_vett_d = DvceArray5D<Real>();

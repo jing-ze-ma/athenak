@@ -970,10 +970,6 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     // F0 = 0 -> F = (4/3) v E (covariant on cs), E0 = E (1 - (4/3) beta^2) = arad T^4
     const bool reqb = pin->DoesParameterExist("problem","rad_eq_boost") &&
                       pin->GetBoolean("problem","rad_eq_boost");
-    // (the chi(f) closures solve f = beta (1 + chi(f)); VET / eddington take chi = 1/3)
-    const bool rqm1 = reqb && (pmbp->pradvet != nullptr) && !pmbp->pradvet->eddington &&
-                      !pmbp->pradvet->vet_col && !pmbp->pradvet->vet_sc;
-    const int rqck = (pmbp->pradvet != nullptr) ? pmbp->pradvet->chi_kind : 0;
     auto ccl_ = pmbp->pcoord->cos_cell;
     const Real ara = (pmbp->pradvet != nullptr) ? pmbp->pradvet->arad : 1.0;
     Real gm1 = ((pmbp->phydro != nullptr) ? pmbp->phydro->peos : pmbp->pmhd->peos)
@@ -1265,8 +1261,8 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       u0(m,radvet::VET_F3,k,j,i) = 0.0;
       if (reqb) {
         // the moving radiative equilibrium of the cell velocity (gas_rot,
-        // gas_vr, gas_vth), the exact fixed point F0 = 0, E0 = arad T^4 for D = chi(f)
-        // about v (1/3 for eddington / VET closures): f = beta (1 + chi), E = arad T^4 /
+        // gas_vr, gas_vth), the exact fixed point F0 = 0, E0 = arad T^4 for D = I/3
+        // (chi = 1/3): f = beta (1 + chi), E = arad T^4 /
         // ((1 + beta^2) - 2 beta f + beta^2 chi), F = c E f vhat (cs: covariant)
         const Real dd = uh(m,IDN,k,j,i);
         const Real w1 = uh(m,IM1,k,j,i)/dd, w2 = uh(m,IM2,k,j,i)/dd;
@@ -1277,13 +1273,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
           vq = w1*w1 + (w2*w2 + w3*w3 - 2.0*c*w2*w3)/(1.0 - c*c);
         }
         const Real bb = sqrt(vq)/cl;
-        Real ff = (4.0/3.0)*bb, chq = 1.0/3.0;
-        if (rqm1) {
-          for (int it = 0; it < 60; ++it) {
-            chq = radvet::VetChi(fabs(ff), rqck);
-            ff = bb*(1.0 + chq);
-          }
-        }
+        const Real ff = (4.0/3.0)*bb, chq = 1.0/3.0;
         const Real er = ara*SQR(SQR(tgas))/((1.0 + bb*bb) - 2.0*bb*ff + bb*bb*chq);
         const Real fs = (bb > 0.0) ? cl*er*ff/(bb*cl) : 0.0;   // F = fs v
         u0(m,radvet::VET_E,k,j,i) = er;
