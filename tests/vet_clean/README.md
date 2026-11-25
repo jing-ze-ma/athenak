@@ -14,7 +14,8 @@ tests/vet_clean/run_tests.sh --exe build_cpu/src/athena --only restart_sp,dt_ret
 Requirements: python3 with numpy (nothing else), and for `--build` CMake, MPI (`mpicxx`) and
 a C++17 compiler. The binary needs only the built-in problem generators, so the default
 build (no `-D PROBLEM`) is enough. Every test runs on one MPI rank with
-OpenMP threads, except `mpi_ranks` (2 ranks).
+OpenMP threads, except `mpi_ranks` (2 ranks), which compares the dumps and `hydro.hst`
+(the sums of `user.hst` depend on the order of the ranks' partial sums).
 
 Options (`run_tests.py --help`): `--jobs N` tests at the same time (default: cores / 4),
 `--star-exe PATH` a binary built with `-D PROBLEM=star_vet` (for `star_smoke` and

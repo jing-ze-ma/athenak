@@ -8,7 +8,9 @@ hydrodynamics), in a well-balanced formulation for stellar envelopes.
 
 Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 
-- energy and mass conserved to round-off (floors paid from the radiation);
+- energy and mass conserved to round-off (floors paid from the radiation), except that with
+  `hydro/floor_from_ekin = true` rare single steps change the total energy by 1e-9 to 5e-8 of
+  itself (cause not known, SCHEME.md);
 - angular momentum L_z: exact on the cubed sphere; on spherical polar exact except where the
   face-flux cone cut acts (booked), and there too with `clean_stag_fcone_lz` + `clean_lz_spin`;
 - linear momentum: not conserved in general (cone cut, well-balancing residual, floor velocity
@@ -20,8 +22,8 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 - order of accuracy: the finest pairs of the test ladders give 1.8 (time) and 1.9-2.3 (grid +
   time); also where the gas-radiation exchange is stiff (`time2_gtime_slope`);
 - bitwise restarts and dt retries;
-- bitwise across MPI rank counts, and across tile layouts in tile mode (one MeshBlock along
-  x1 and x2);
+- bitwise across MPI rank counts (the state: dumps, restart files, `hydro.hst`; the sums of
+  `user.hst` are not), and across tile layouts in tile mode (one MeshBlock along x1 and x2);
 - CPU and GPU agree to round-off (not bitwise);
 - no silent fallbacks: unsupported options are FATAL, handled events print `CLEAN WARNING`;
 - Cartesian, spherical-polar and cubed-sphere meshes with one implementation.
