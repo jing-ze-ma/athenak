@@ -115,3 +115,38 @@ PASS mpi_ranks            19 s  warnings 0 fcone_lz 8 files 15 maxdiff_sp 0 maxd
 - next2: 55 lines, PASS 55, FAIL 0: []
 
 - against next 79c1cabef: 53 common tests, printed values equal in 53, different in 0, only in rel-e ['star_cs_ring', 'ray_cut_slab']
+
+## m35zams (11-25 05:57): rst m35zams_m35zams.00007.rst (hard link, c148944), next2 f3c50eae1b2ebb30a02dd3f498722bf6 against athena_next_79c1cabef; own keys: rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=2 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5
+- R1: 2026-11-25 05:54:41 rc=0 (srun) ended: Terminating on cycle limit wall=24 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- R50: 2026-11-25 05:55:13 rc=0 (srun) ended: Terminating on cycle limit wall=32 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- R25a: 2026-11-25 05:55:51 rc=0 (srun) ended: Terminating on cycle limit wall=38 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- R25b: 2026-11-25 05:56:21 rc=0 (srun) ended: Terminating on cycle limit wall=30 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- C50: 2026-11-25 05:56:56 rc=0 (srun) ended: Terminating on cycle limit wall=34 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+#### NOTE lines of the restart (next line, 1 step)
+- ### NOTE: <problem>/he_* (hs_*) keys are now named star_*; read so: he_bc_inner he_bc_linhao he_bc_outer he_bc_outer_r2 he_esrc_const he_gm he_gravity he_grid_dump he_ic_balance he_ic_cols he_ic_eint_from_t he_ic_file he_ic_profile he_ic_rad he_ic_rad_atm_post
+- ### NOTE: <hydro>/fofc_flag_exchange = true (restart file without it: the fix applies; name fofc_flag_exchange=false to keep the old behaviour)
+- ### NOTE: <rad_vet>/time2_gtime_pos = true (restart file without it: the fix applies; name time2_gtime_pos=false to keep the old behaviour)
+- NOTE lines: 3; "the fix applies": 2; "added from the command line": 0; "old behaviour": 2; FATAL 0, CLEAN WARNING 0; clean_init lines: []
+#### 50 straight against 25 + rst + 25
+- user.hst: R50 50 rows, R25a 25, R25b 25; rows not printed-identical to R50 at the same t: 0 (first t -) -> BITWISE (printed)
+- hydro.hst: R50 50 rows, R25a 25, R25b 25; rows not printed-identical to R50 at the same t: 0 (first t -) -> BITWISE (printed)
+- final hydro_w dump, payload md5: R50 9dcb7af7497b, R25b 9dcb7af7497b -> IDENTICAL
+- final vet dump, payload md5: R50 1a2812d0dcdd, R25b 1a2812d0dcdd -> IDENTICAL
+#### against next 79c1cabef (C50, same rst, same keys, 50 cycles)
+- final hydro_w dump, payload md5: next2 R50 9dcb7af7497b, 79c1cabef C50 9dcb7af7497b -> IDENTICAL
+- final vet dump, payload md5: next2 R50 1a2812d0dcdd, 79c1cabef C50 1a2812d0dcdd -> IDENTICAL
+- user.hst next2 R50 against 79c1cabef C50: 50 rows, printed-bitwise
+- hydro.hst next2 R50 against 79c1cabef C50: 50 rows, printed-bitwise
+- row 0: t 5.18405012e+05 / 5.18405012e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 1: t 5.18408492e+05 / 5.18408492e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 2: t 5.18411973e+05 / 5.18411973e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 3: t 5.18415453e+05 / 5.18415453e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 4: t 5.18418934e+05 / 5.18418934e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 9: t 5.18436336e+05 / 5.18436336e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 24: t 5.18488544e+05 / 5.18488544e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- row 49: t 5.18575557e+05 / 5.18575557e+05, dt 3.480520 / 3.480520, L_top rel 0.00e+00, KE_int rel 0.00e+00, M_tot rel 0.00e+00, Etot rel 0.00e+00
+- R50: s/cyc (elapsed prints) 0.2716 (c148950-148990); its sum per cycle 28.6, solves 4.30; CW 0 FATAL 0 inf 0 DT_RETRY 0
+- C50: s/cyc (elapsed prints) 0.2827 (c148950-148990); its sum per cycle 28.6, solves 4.30; CW 0 FATAL 0 inf 0 DT_RETRY 0
+#### END-row residuals over the 50 cycles (R_E = dEtot - dt (L_in - L_top + P_esrc - P_sponge - E_hflx); R_M = dM_tot + dt M_hflx; bsg: R_L = dLz_tot + dt Lz_hflx)
+- R50: R_E / Etot RMS 1.28e-15 max 3.13e-15 sum 1.29e-15; R_M / M_tot RMS 1.14e-15 max 2.48e-15 sum 2.48e-16
+- C50: R_E / Etot RMS 1.28e-15 max 3.13e-15 sum 1.29e-15; R_M / M_tot RMS 1.14e-15 max 2.48e-15 sum 2.48e-16
