@@ -599,10 +599,13 @@ bool CleanCsSeamFace(const CleanArgs &x, const int dir, const int m, const int k
 //! \brief cubed sphere: area A_n in the face momentum's A_n (P_R - P_L)/V_f: the face
 //! area, but on a seam face (mirror-image cells, whose volume variation adds in V_f)
 //! A_n = V_f/d, d = 2 |X| |r_hat.n_f| the chord of the mirror pair's centres
+//! clean_cs_lat_wb: a radial face takes the hydro's r^2 Omega (as V_f), not its vector
+//! area r^2 |S| (|S|/Omega - 1 = O(dtheta^2) varies over the panel)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanCsNormA(const CleanArgs &x, const int dir, const int m, const int k,
                   const int j, const int i) {
+  if (x.lwb && dir == 0) return x.ae0(m,k,j,i);
   if (!CleanCsSeamFace(x, dir, m, k, j, i)) return x.area[dir](m,k,j,i);
   const int kl = k - (dir == 2), jl = j - (dir == 1);
   const bool lo = ((dir == 1) ? j : k) == ((dir == 1) ? x.js : x.ks);
