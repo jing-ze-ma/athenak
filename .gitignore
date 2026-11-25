@@ -7,6 +7,7 @@ build*/
 *.bin
 *.athdf*
 *.hst
+!tests/vet_clean/ref/*.hst
 *.rst
 
 # Mac OS metadata
