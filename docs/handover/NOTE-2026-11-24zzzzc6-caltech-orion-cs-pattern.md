@@ -239,3 +239,8 @@ Columns of the imprint table (m4, m8, sym_rms, rms_all; printed digits), over al
 | H | 601 | 5.739130e+05 | 956.52 | 0.997294 | 0.999500 | 5.722459e+40 | Bp: 5.46e-04, -4.79e-02, 0 of 601 |
 | L | 601 | 6.000000e+05 | 1000 | 0.996744 | 0.999509 | 5.083272e+40 | Bp: -5.91e-06, -1.54e-01, 0 of 601 |
 - Bp vs B m4(200-400) at c600: +0.0 % (within 10 %)
+
+## L: the rule (orion zzzzd4; residual radial pattern reported in the table, not scored)
+- m4(200-400) c600: Bp 1.391e-04, L 2.511e-06
+- factor Bp / L = 55.396 (needs >= 3); L_top/L_in -6.020e-06, KE_int -1.543e-01 relative to Bp (needs |.| <= 0.01); clean run and end on cycle limit: True
+- **FAIL**
