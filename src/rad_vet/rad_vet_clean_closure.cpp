@@ -705,7 +705,6 @@ void RadiationVet::CleanRays() {
     CleanClosureFromGd();
     // (cubed-sphere sc rays: also the face half ranges from cln_fvi, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
-    if (cln_cssc && cln_rfh) CleanCellHalf(vgd_dir);
     if (cln_cssc && !cln_rfh) CleanFaceHalf(vgd_dir, 0, true, 0);
     if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
@@ -1145,7 +1144,6 @@ void RadiationVet::CleanRingMoments() {
       if (cln_scmem) VetGdTopCopy();
       CleanClosureFromGd();
       if (cln_consist || cln_cssc) CleanGdFaceSums();
-      if (cln_rfh) CleanCellHalf(vgd_dir);   // (every swept set: the ring's moments)
       if (cln_cssc && !cln_rfh && (p == nr || p == nk)) {
         CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
         fh0 = false;
@@ -1541,6 +1539,9 @@ void RadiationVet::CleanClosureFromGd() {
   auto cs = cln_s;
   auto valid = cln_v;
   Real ray_min = cln_raymin;
+  const bool hf = cln_rfh;   // (CLN_HO)
+  const bool kp = cs.extent_int(1) > CLN_KP + 8;   // (k+, not CLN_HO)
+  auto gn = cln_gn;
   CleanArgs x = CleanMakeArgs();
   // (in device memory, CleanGdFaceSums)
   cln_gdx = CleanDevArgs(x, 3);
@@ -1579,6 +1580,11 @@ void RadiationVet::CleanClosureFromGd() {
     Real nd[3][3];
     if (x.cub) CleanCsFamily(x, m, k, j, i, nd);
     Real q[CLN_N] = {0.0}, hp[3] = {0.0}, hm[3] = {0.0};   // (q in registers)
+    Real fh[3][3] = {{0.0}}, fl[3][3] = {{0.0}}, oh[3] = {0.0}, ol[3] = {0.0};
+    for (int a = 0; a < 9 && hf; ++a) {   // (the normals of the high and low faces)
+      fh[a/3][a%3] = gn.At<CLG_N>(m,a,k+(a/3 == 2),j+(a/3 == 1),i+(a/3 == 0));
+      fl[a/3][a%3] = gn.At<CLG_N>(m,a,k,j,i);
+    }
     const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -1599,7 +1605,16 @@ void RadiationVet::CleanClosureFromGd() {
           continue;
         }
         hp[b] += a*nu[b];
-        for (int c = 0; c < 3; ++c) q[CLN_KP+3*b+c] += a*mu[c]*nu[b];
+        for (int c = 0; c < 3 && kp; ++c) q[CLN_KP+3*b+c] += a*mu[c]*nu[b];
+      }
+      for (int b = 0; b < 3 && hf; ++b) {
+        Real mh = 0.0, ml = 0.0;
+        for (int c = 0; c < 3; ++c) {
+          mh += dir_(d,c)*fh[b][c];
+          ml += dir_(d,c)*fl[b][c];
+        }
+        if (mh > 0.0) oh[b] += a*mh;
+        if (!(ml > 0.0)) ol[b] += a*ml;
       }
       q[CLN_D11+3] += a*mu[0]*mu[1];
       q[CLN_D11+4] += a*mu[0]*mu[2];
@@ -1613,6 +1628,16 @@ void RadiationVet::CleanClosureFromGd() {
     q[CLN_JR] = q[CLN_J];
     if (q[CLN_J] < ray_min*iw_(m,VET_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
+    // vet_rotate_avg_ema_wb on the cubed sphere: CleanFaceHalf's half ranges per cell,
+    // each about the normal of the face it leaves through: CLN_HO + b = h+ out of the
+    // high face of family b, CLN_HO + 3 + b = h- out of the low one (over the cell's J).
+    // The ring carries them as cell moments, so a set change keeps a static state's; a
+    // face takes its two cells' (a ghost's in its own axes, CleanCsSlot)
+    const bool ohk = cs(m,CLN_J,k,j,i) > 0.0 && q[CLN_JR] > 0.0;
+    for (int b = 0; b < 3 && hf; ++b) {
+      cs(m,CLN_HO+b,k,j,i) = ohk ? oh[b]/q[CLN_JR] : 0.25;
+      cs(m,CLN_HO+3+b,k,j,i) = ohk ? ol[b]/q[CLN_JR] : -0.25;
+    }
   });
 }
 #endif  // VET_TU_PART(1)
@@ -1707,46 +1732,6 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       fh(m,4*dir+3,k,j,i) = hm0;
     });
   }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanCellHalf
-//! \brief vet_rotate_avg_ema_wb on the cubed sphere: CleanFaceHalf's half ranges per
-//! cell, each about the normal of the face it leaves through: CLN_HO + q = h+ out of the
-//! high face of family q, CLN_HO + 3 + q = h- out of the low one (over the cell's J of
-//! the set dv).  The ring carries them as cell moments, so a set change keeps a static
-//! state's; a face takes its two cells' (a ghost's in its own axes, CleanCsSlot)
-
-void RadiationVet::CleanCellHalf(const DvceArray2D<Real> &dv) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks, n = vgd_n;
-  auto cs = cln_s;
-  auto gn = cln_gn;
-  const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true,
-                    indcs.ke, indcs.je, is, indcs.ie};
-  CleanForK("cln_cellhalf", pmy_pack->nmb_thispack - 1, ks, indcs.ke, js, indcs.je, is,
-            indcs.ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real jc = 0.0, h[6] = {0.0};
-    const CleanRow r = gi.At(m, k, j, i);
-    for (int e = 0; e < n; ++e) {
-      const Real w = dv(e,3)*r[e];
-      jc += w;
-      for (int q = 0; q < 3; ++q) {
-        Real mh = 0.0, ml = 0.0;
-        for (int b = 0; b < 3; ++b) {
-          mh += dv(e,b)*gn.At<CLG_N>(m,3*q+b,k+(q == 2),j+(q == 1),i+(q == 0));
-          ml += dv(e,b)*gn.At<CLG_N>(m,3*q+b,k,j,i);
-        }
-        if (mh > 0.0) h[q] += w*mh;
-        if (!(ml > 0.0)) h[3+q] += w*ml;
-      }
-    }
-    const bool ok = cs(m,CLN_J,k,j,i) > 0.0 && jc > 0.0;
-    for (int a = 0; a < 6; ++a) {
-      cs(m,CLN_HO+a,k,j,i) = ok ? h[a]/jc : ((a < 3) ? 0.25 : -0.25);
-    }
-  });
 }
 
 //----------------------------------------------------------------------------------------
