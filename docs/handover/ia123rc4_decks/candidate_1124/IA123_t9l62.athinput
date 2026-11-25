@@ -1,0 +1,364 @@
+# IA12.3-rc3 2026-11-24 ia123-rc3 af836f5a3 (release trunk vet-clean-release + IA12.3). = caltech_ia122/tile/IA122_t9l62.athinput in the release names (<rad_vet>, vet*) with ONLY the IA12.3 best keys (mk.py header)
+# IA12.2 2026-11-23 candidate clean-stag2-interim-f 465aff485. = caltech_ia121/tile/IA121_t9l62.athinput with ONLY clean_gas_secant -> max_stage2 and <hydro> rad_signal_speed_diff = true
+# IA12.1 2026-11-23 candidate clean-stag2-interim-e fa59bffd6. = calia12/tile/IA12_t9l62.athinput (512cf768a) with ONLY the IA12.1 keys: 4 in <rad_m1> after clean_stag_eicarry, 3 in <hydro>, clean_stag_fwb_ring 0 -> 1
+# IA12 2026-11-23 GitHub caltech-ia12-512cf768a = clean-stag2-interim-d 512cf768a. = Caltech AS-RUN IA11_t9l62.athinput (caltech_results/PROD_IA11_1123/decks, md5 see NOTE) with ONLY: the 4 IA12 keys in <rad_m1> (after clean_w_fse_tau) and <mesh> layout_invariant_mode = tile, layout_tile = 128
+# IA11 2026-11-23 (USER: adopt IA11): GitHub caltech-ia11-bd9553537 = clean-stag2-interim-c bd9553537. = IA9_t9l62.athinput (77551e823) with ONLY:
+#   rad_m1/clean_stag_fwb_stage = false, clean_stag_fwb_t2 = false (IA10 FDIP: thin rows F of each solve's own E); + clean_w_fse_tau = true (EPSEFF); + time2_gtime_mom = true (CALQ sdirk2 wall momentum)
+# FRESHGO 11-20 PRODUCTION recipe WN-GL (USER): WB on, NO rebalance, GL 7x18 fixed, THINF + maxit 800 + conv_max 1e-5, general gamma-law + floor_pay, 128x128 blocks, paper tlim, m1_vet/face x4; binary B_v203
+# FRESHPREP 2026-11-20: fresh-production deck on v20.1 25ea76366, built by freshprep/build_decks.py
+#   base viper1120/t9l62/t9l62.athinput + common_scheme (fixed rays: no ring keys) + keys/t9l62.txt keys/fixed_lq10.txt keys/wb.txt keys/wb_t9l62.txt
+#   dropped: hydro/tfloor_kelvin rad_m1/ic_rad rad_m1/implicit_blend rad_m1/implicit_blend_alpha rad_m1/implicit_blend_dtc rad_m1/implicit_blend_fhi rad_m1/implicit_blend_flo rad_m1/implicit_blend_tau0 rad_m1/implicit_blend_xthin rad_m1/implicit_closure_lag rad_m1/implicit_closure_thin_relax rad_m1/implicit_cs2_hll rad_m1/implicit_cs2_shift rad_m1/implicit_cs2_vimp_npass rad_m1/implicit_cs2_wbsolve rad_m1/implicit_f0_init rad_m1/implicit_face_mmat rad_m1/implicit_face_opac_n rad_m1/implicit_fb_local rad_m1/implicit_fb_local_rounds rad_m1/implicit_flux rad_m1/implicit_flux_beam rad_m1/implicit_flux_faces rad_m1/implicit_g0_exchange rad_m1/implicit_g0_limit rad_m1/implicit_gas_newton rad_m1/implicit_gas_newton_switch rad_m1/implicit_halo_direct rad_m1/implicit_halo_mpi rad_m1/implicit_halo_overlap rad_m1/implicit_hr_cmem rad_m1/implicit_hr_excess rad_m1/implicit_hr_face rad_m1/implicit_hr_face_gd rad_m1/implicit_krylov_fuse rad_m1/implicit_lin_cnorm rad_m1/implicit_lin_ew_max rad_m1/implicit_lin_tol rad_m1/implicit_lzx rad_m1/implicit_nofb_work rad_m1/implicit_od_cache rad_m1/implicit_offdiag rad_m1/implicit_one_pass rad_m1/implicit_op_stencil rad_m1/implicit_opac_lag_passes rad_m1/implicit_opac_newton rad_m1/implicit_opac_newton_guard_mode rad_m1/implicit_opac_update rad_m1/implicit_physflux rad_m1/implicit_precond rad_m1/implicit_predictor_frozen rad_m1/implicit_rad_inertia rad_m1/implicit_realisable_coupling rad_m1/implicit_solver rad_m1/implicit_thin_bq rad_m1/implicit_thin_bq_gd rad_m1/implicit_thin_corr rad_m1/implicit_thin_freeze rad_m1/implicit_thin_hcface rad_m1/implicit_thin_hcface_gd rad_m1/implicit_thin_hcsf rad_m1/implicit_thin_js_face rad_m1/implicit_thin_js_gd rad_m1/implicit_thin_recon rad_m1/implicit_thin_switch rad_m1/implicit_tol rad_m1/implicit_tsolve_opac rad_m1/implicit_tsolve_opac_mode rad_m1/implicit_vimp rad_m1/implicit_vimp_bc rad_m1/time2_adm_poslim rad_m1/time2_vet_col rad_m1/time2_vet_sc rad_m1/time2_vet_x2_fields rad_m1/vet_col_lat_posfix rad_m1/vet_gd_gl_nmu rad_m1/vet_gd_gl_nphi rad_m1/vet_gd_gl_stagger rad_m1/vet_gd_ls rad_m1/vet_gd_rotate_align rad_m1/vet_gd_rotate_dt rad_m1/vet_gd_rotate_slope rad_m1/vet_gd_rotate_stretch rad_m1/vet_gd_rotate_t0 rad_m1/vet_rotate_avg rad_m1/vet_source_noesrc rad_m1/zalesak_cap_rounds
+# T9L6.2 (Jiang+2018 Nature 561 498; Schultz+2020 ApJ 902 67 Table 1) reproduction deck, arm final: r = 24.2286 - 809.8 Rsun
+# made by /viper/ptmp2/jinma/t9l62_1113/jobs/mkdeck.py from the BSG Ma+2026 reproduction deck; parameter table in T9L62_SETUP_1113.md
+# tags: [PAPER] [IC] [SCRIPT] [NS]=not stated (our choice) [RT]=radiation by necessity [PROD]=prod-1118 numerics [CANNOT]
+# BSG-deck keys without a tag are the BSG reproduction numerics kept as they were (rk2, plm, hllc, no fofc, pointmass gravity,
+# FINAL (USER 11-13 "follow the ic file"): r_in = IC bottom, L_base = IC column L (10^5.811 Lsun). Differences from the papers:
+#   S20 Table 1 r_base 35.0 Rsun and log L 6.20 (S23: global models "boosted by ~50%") are NOT used; Table 1 M_env/r_Fe/R_ph/tau_Fe are 3-D results
+# zero-contact inner ghosts + he_bc_linhao fixed rho/T/F_r ghosts with the half-range DO-style face, marshak top, vet_gd rotation off).
+# OURWALL 11-13: inner BC replaced by the HG/RSG production closed wall (he_bc_inner wall, he_wall_closed, he_wall_zero_flux, no he_bc_linhao); implicit_flux_x1min = L_IC/(4 pi r_in^2) kept; see OURWALL_1113.md
+<job>
+basename                 = t9l62                  # 
+<mesh>
+nghost    = 3
+nx1                      = 512                    # [PAPER] Schultz+2020 sect 2: effective resolution 512 radial (root grid / SMR not stated: uniform here)
+x1min                    = 1.6850984345e+12       # [IC] USER 11-13 "follow the ic file": IC bottom 24.2286 Rsun (= J18 Fig 2 axis); S20 Table 1 r_base 35.0 NOT used
+x1max                    = 5.6321590000e+13       # [PAPER] Schultz+2020 Table 1 r_max 809.8 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2                      = 256                    # [PAPER/INFERRED] 256 theta cells over pi/2: d theta = pi/512 (text order 512x512x256 = r,theta,phi literal; see SETUP)
+x2min                    = 0.78539816339744831    # [PAPER] theta = pi/4
+x2max                    = 2.3561944901923448     # [PAPER] theta = 3 pi/4
+ix2_bc                   = periodic               # [NS] global T9L6.2 angular BCs not stated (Schultz+2022 wedges: periodic)
+ox2_bc                   = periodic               # [NS] as ix2
+nx3                      = 512                    # [PAPER/INFERRED] 512 phi cells over pi: d phi = pi/512
+x3min                    = 0.0                    # [PAPER] phi = 0
+x3max                    = 3.1415926535897931     # [PAPER] phi = pi
+ix3_bc                   = periodic               # [NS] as ix2
+ox3_bc                   = periodic               # [NS] as ix2
+use_spherical_polar = true
+# (removed: BSG-only) use_grid_stretch_r_poly = true
+# (removed: BSG-only) f_stretch_r_p_amp = -0.66666666666666667   # [PAPER, his SMR reconstructed] dr 0.3125 Rsun on 20-35 and 55-80, 0.15625 on 35-55 (refinement level 1)
+# (removed: BSG-only) f_stretch_r_p_xa = 0.1875                    # = face 48/256 = 35 Rsun (his refined region starts at a base-block edge)
+# (removed: BSG-only) f_stretch_r_p_xb = 0.6875                    # = face 176/256 = 55 Rsun
+# (removed: BSG-only) f_stretch_r_p_w = 1.0e-12                    # sharp edges: every face equals his piecewise-uniform faces to < 1e-10 Rsun
+use_grid_stretch_r       = true                   # [PAPER-ish] logarithmic radial grid (Schultz+2022 wedges: log bins; T9L6.2 not stated)
+f_stretch_r              = -3.509253962786431     # = -ln(x1max/x1min): StretchR is then exactly r = r0 (r1/r0)^xi (dlnr = 0.006854)
+layout_invariant = true   # FRESHPREP
+layout_invariant_mode = tile   # IA12 LAYOUT (USER: tile in production)
+layout_tile = 128   # IA12 LAYOUT: = this deck's lateral MeshBlock (128 x 128); must divide meshblock nx2, nx3
+<meshblock>
+nx1                      = 512                    # vet_gd: one x1 block
+nx2                      = 128                    # 8 blocks on 8 GPUs (4 viper apu nodes); see jobs/ for other layouts
+nx3                      = 128                    # 
+<time>
+dt_retry = true   # FRESHPREP
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3   # CALSMOKE IA9 key (NOTE 23c; deck had: cfl_number = 0.3   # FRESHPREP)
+nlim       = -1
+tlim = 2.682e6   # PROD 11-21 (orion ig/ih), replaced: 2.682e6
+ndiag      = 50
+restart_refill_ghosts = false   # FRESHPREP
+# ---- UNISET IA9-validated <time> keys (all three stars; D8, D14: dt_retry_t2_be 0 named) ----
+dt_retry_fac             = 0.5        # UNISET IA9
+dt_retry_fac_t2          = 0.9        # UNISET IA9
+dt_retry_grow            = 1.1        # UNISET IA9
+dt_retry_host            = false      # UNISET IA9
+dt_retry_ngood           = 20         # UNISET IA9
+dt_retry_views           = minimal    # UNISET IA9
+dt_retry_t2_be           = 0          # UNISET IA9
+nan_check_cycles         = 100        # UNISET IA9
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu                       = 0.674                  # [SCRIPT] Will id_initial_condition.py mu = 0.674 (Jiang+2018 Fig 2 c_g0 = 4.54e6 -> mu 0.668); IC HSE fit consistent
+<hydro>
+dt_floor_courant = 0.6   # USER 11-24 (ZAMSFAST): floor gas does not set dt
+rad_signal_speed_phase = true   # USER 11-24 (T9HOT): in-phase trapping weight 1 - exp(-x^2)
+floor_from_ekin = true   # IA12.3 FLOORT/GEOMAUDIT/LZCUT: c2p keeps E; vceil KE -> heat; KE-dominated tfloor deficit paid from own r/theta KE (phi kept, L_z exact)
+rad_signal_speed_diff = true   # IA12.2 M35FAST 0f2087fbb (dt only: radiation signal speed tapered by 1 - exp(-tau c_eq/c))
+floor_pay_skip = true   # IA12.1 FLOORE (needs floor_pay = rad_column, named in this block)
+dfloor_flux_limit = true   # IA12.1 FLOORE (mass-conserving density floor)
+floor_audit = 1   # IA12.1 FLOORE diagnostic (run.log lines per cycle, for the eres2 rule-1 scorer)
+# (removed: BSG-only) merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
+# (removed: BSG-only) merge_lat_f              = 2,1,2
+# (removed: BSG-only) merge_lat_mom            = rigid
+# (removed: BSG-only) merge_lat_rad            = true            # USER 11-06: radiation also 128^2 in the merged shells, as his grid
+# (removed: BSG-only) merge_lat_diag           = 1000
+split_c2p_once = true   # FRESHPREP
+am_transport   = true         # [OURS] numerical default kept (user 11-04); Athena++ (his code) has none
+sp_x2_periodic_image = true   # theta-periodic wedge: seam mass/energy fix (mass_1009)
+eos = general   # FRESHPREP
+rad_signal_speed = true
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc             # paper: HLLC
+fofc = true   # USER 11-24 ~02:10 PST: FOFC on for all stars (NOTE 24q / 24r)
+fofc_retest = true   # USER 11-24 (with fofc)
+etotgrav = true   # FRESHPREP
+wellbalance_dynamic = true   # FRESHPREP
+dfloor                   = 3.6e-19                # [NS/IC] = the IC floor 1e-10 rho0 (rho0 3.6e-9)
+pfloor                   = 1.0e-12                # [NS]
+dfloor_keep_velocity = true
+vceil                    = 3.0e8                  # [NS] > escape speed at the base (7.8e7)
+wall_wb_onesided = true   # FRESHPREP
+floor_pay = rad_column   # FRESHPREP
+general_eos = gamma   # FRESHPREP
+tfloor = 123359972487.0939   # FRESHPREP
+wb_x1 = true   # FRESHPREP
+wb_option = polytropic   # FRESHPREP
+wb_rmax = 7.504290e+12   # FRESHPREP
+<rad_vet>
+clean_stag_mg_levels = 2   # USER 11-24: mg 2 for all stars (reverses mg 4)
+floorcap_report = 25   # PROD 11-21 (orion ig/ih)
+floorcap_v = 3e7   # PROD 11-21 (orion ig/ih)
+floorcap_lz = true   # IA12.3-rc4 (rule 1: the floor-gas cap keeps v_phi, L_z exact)
+floorcap_lz_spin = true   # IA12.3-rc4 FCAPSPIN (Caltech FS1 clean, NOTE 138f84eff): the cap's L_z back to the dense gas as one rigid rotation
+floorcap_rho = 1e-14   # PROD 11-21 (orion ig/ih)
+clean_stag_flim                  = false        # UNISET IA9: IA9 all three false; Caltech prod already moved to flim off (was true)
+clean_init_dtfac = 1.0e6   # PROD 11-21 (orion ig/ih)
+vet_gd_gl_nmu = 7
+vet_gd_gl_nphi = 18
+vet_gd_gl_stagger = true
+clean_stag_thinf                 = true   # USER 11-24: streaming form on (uniform with tests; cs stars wait for the cs fix)
+time2_enth_be            = true           # [RT] = the 10-14 binary's fresh default (named)
+time2_fref_wacc          = true           # [RT] inert (force_reference = none)
+# vet_gd_twin_state        = mean   # needed with twin off   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+# vet_gd_twin_weight       = none           # FIN3 (prodswitch-1013, fin3-1012)   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+vet_interp               = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_col_lat_cut_thin     = 1.0            # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_inner             = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_reflect           = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_source                       = relaxed_esc  # UNISET IA9: IA9 all three relaxed_esc (HG via alias vet_col_source); deck had relaxed (was relaxed)
+# time2_vstage             = true           # FIN   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+# time2_pred_cap           = 0.5            # FIN   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+time2_vet_col_source     = blend          # FIN (X sporder-1012)
+implicit_gas_src         = conservative2  # FIN (consfix-1011; full BSG OK, DeltaAI 3363656)
+vet_seg                  = jump           # FIN (coreL-1012; was emit)
+vet_bc_diff              = face           # FIN
+# vet_gd_symref            = none   # USER 11-06 twin off, as R136a1   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+vet_source_noesrc_h2be   = true           # bsgrec-R
+vet_gd_allow_clamp       = false   # USER 11-24: exact sweep required (was true: 10-14 binary compatibility)
+vet_gd_halo_ipc          = false                  # multi-node run (Caltech IPC key off)
+# vet_gd_twin_fuse         = false  # twin off, as R136a1   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+# vet_gd_twin_lowmem       = true           # Caltech: 8 blocks/GPU, as your BSG fin3 deck (bitwise vs false per DeltaAI mem2)   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+# vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+# vet_gd_twin = false   # FRESHPREP   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+vet_scatter_form         = ma     # paper split (Jiang 2021 eq. 6)
+vet_scatter_j            = relaxed
+vet_scatter_kappa_e      = const                  # ideal gas, kappa_es const 0.34 (X 0.70)
+# report_newton_fb = false   # rc-1009: no per-step iw host copy (F4 counters keep the count)   # UNISET: dropped, listed under no effect in the CALSMOKE run.log
+c_light          = 2.99792458e10
+arad                     = 3.2670356041e-47       # a_cgs (7.5657332e-15) T_unit^4, T_unit = mu m_u/k_B = 8.1063567271e-09 K
+chat_over_c      = 1.0
+closure          = vet_col          # vet_gd rides on the vet_col interface; vet_gd_replace drops the vet_col sweep
+vet_gd           = true
+vet_scatter      = true           # Ma+2026 kappa_a/kappa_e split in the closure source (Jiang 2021 eq. 6, form ma; VET_SCATTER.md: <= 6e-6 effect)
+vet_gd_replace   = true
+# vet_gd_rotate_every = 10  # bsgprod-1012: DROPPED (vet_gd_rotate_dt in this block = the physical clock)
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential = true   # FRESHPREP
+vet_gd_wall_interp  = true           # T5wihc
+vet_gd_wall_sym = true   # IA12.3 WALLSYM: mirror-paired phi-wall maps (identical on whole-period wedges)
+vet_gd_theta_seam_sym = true   # IA12.3: theta seam face from both sides (equatorial mirror); FATAL without it on theta-periodic meshes
+clean_clos1_budget = true   # IA12.3-rc3 HALFDAY-M35 L1 + RWFIX floor (radwave 2.4-5.5e-5): stage-1 pass 0 in the budget norm
+clean_bud_maxnorm = true   # IA12.3-rc3 HDM35-C 83b71abed form (HALF12): budget test in the per-cell max norm
+clean_vel_settled = false   # named OFF: HALF12 drops it (the correct form costs more than it saves)
+vet_gd_halo_compact = 2              # T5wihc
+opacity          = table
+temp_unit_kelvin         = 8.1063567271e-09       # 
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference = wb_arad   # FRESHPREP
+transport        = implicit
+implicit_lin_maxit = 200
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_enthalpy = plm
+implicit_predictor = step
+implicit_pos_gas = true   # FRESHPREP
+implicit_pos_floor = true
+time_scheme              = hesdirk2       # FIN (was be in the 10-09 hr deck)
+vet_col_every    = 1
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min      = 6.9466003350e+13       # [IC] USER 11-13 "follow the ic file": L_base = L_IC = 10^5.811 Lsun (the IC column diffusion L); S20 Table 1 log L 6.20 NOT used
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+implicit_predictor_tcap = 1.1   # FRESHPREP
+time2_face_fct = true   # FRESHPREP
+time2_k1_redist = 0   # FRESHPREP
+scheme = clean   # FRESHPREP
+clean_layout = staggered   # FRESHPREP
+clean_rays = sc   # FRESHPREP
+zalesak_active = true   # FRESHPREP
+clean_xt_exact = cons   # FRESHPREP
+implicit_pos_floor_cons = true   # FRESHPREP
+implicit_pos_floor_gas_keep = 1   # FRESHPREP
+implicit_pos_gas_cons = true   # FRESHPREP
+clean_stag_xdonor = lag   # FRESHPREP
+clean_stag_xsrc = true   # FRESHPREP
+clean_stag_mg_color = mirror   # FRESHPREP
+time2_auto_be = 16   # FRESHPREP
+time2_k1_stiff = 0   # CALSMOKE IA9 key (NOTE 23c; deck had: time2_k1_stiff = 0   # FRESHPREP)
+clean_conv_kappa = 1.0   # FRESHPREP
+cs_vertex_mono = true   # FRESHPREP
+clean_init = steady   # FRESHPREP
+vet_rotate_avg_ema               = 0            # USER 11-23: rotation OFF for the Caltech stars (resolution choice), as J4
+clean_cs_lz_tel                  = false        # spherical-polar deck: cs-only key (true FATALs); deck value kept (UNISET fix 08:15)
+vet_rotate_avg                   = 0            # USER 11-23: rotation OFF for the Caltech stars (resolution choice), as J4
+vet_gd_rotate_dt                 = 0            # USER 11-23: rotation OFF for the Caltech stars (resolution choice), as J4
+force_reference_work = split   # FRESHPREP
+clean_maxit                      = 200          # UNISET IA9: IA9 all three 200 (FLAG: deck had 800; fresh start may need more -> see FLAGS) (was 800)
+clean_conv_max = 1.0e-5   # FRESHPREP
+time2_tableau = sdirk2   # CALSMOKE IA9 key (NOTE 23c)
+time2_gtime_slope = true   # USER 11-24: sdirk2 fix (95813cf85 or later; needs that binary)
+time2_gtime_mom = true   # IA11 (CALQ: sdirk2 stage-2 flux momentum f = 1/g)
+clean_stag_xdonor_freeze = 4   # CALSMOKE IA9 key (NOTE 23c)
+time2_cfl_post = true   # CALSMOKE IA9 key (NOTE 23c)
+clean_w_fse = true   # CALSMOKE IA9 key (NOTE 23c)
+clean_w_fse_tau = true   # IA11 (EPSEFF: fse eps over the cell optical depth)
+clean_pred_stage = false   # IA12 (USER 11-23: off, it costs t9l62 +11 %, stage-2 solves 2.0 -> 3.1)
+clean_stag_central = true   # IA12 (MPRK2 9765dd30e: central face rest + Patankar work drain on the E rows)
+clean_stag_eicarry = true   # IA12 (EXSHARE 1812af758: stage-start gas eint < 0 carried into the gas row, not taken as 0)
+clean_gas_secant = max_stage2   # IA12.2 RSGPASS 889136d65 (chord only where steeper than the tangent; HG30 +51 L_top 2.76 %, -14 % wall)
+clean_pred_xch = true   # IA12.1 PRED2 2d33367d7 (with clean_pred_stage = false, clean_stag_eicarry = true)
+clean_stag_fcone_gas = false   # IA12.1 USER 11-23 option (a): named off (LZFIX code in, by-construction fix in IA12.2)
+clean_wb_exch_local = true   # IA12.1 T9FIX dd2647ef4 (write-back cell exchange solved locally)
+clean_face_hctau = true   # CALSMOKE IA9 key (NOTE 23c)
+clean_face_jse = true   # CALSMOKE IA9 key (NOTE 23c)
+clean_face_jse_cell = false   # CALSMOKE IA9 key (NOTE 23c)
+clean_bc_area = true   # CALSMOKE IA9 key (NOTE 23c)
+clean_stag_upwind_central = true   # CALSMOKE IA9 key (NOTE 23c)
+vet_seg_plateau = false   # CALSMOKE IA9 key (NOTE 23c)
+clean_rot_ring_fill_rst = true   # CALSMOKE IA9 key (NOTE 23c)
+clean_rst_mshare = true   # CALSMOKE IA9 key (NOTE 23c)
+# ---- UNISET IA9-validated keys not named before (D8: name every uniform key) ----
+clean_bc                         = halfrange    # UNISET IA9 (all three stars)
+clean_bicg_stall_fac             = 0.99         # UNISET IA9 (all three stars)
+clean_bicg_stall_its             = 0            # UNISET IA9 (all three stars)
+clean_closure                    = extrap1      # UNISET IA9 (all three stars)
+clean_consistency                = 1            # UNISET IA9 (all three stars)
+clean_conv                       = budget       # UNISET IA9 (all three stars)
+clean_conv_est_f                 = 0            # UNISET IA9 (all three stars)
+clean_face_area                  = 0            # UNISET IA9 (all three stars)
+clean_face_opac                  = harmonic     # UNISET IA9 (all three stars)
+clean_fill_cs_remap              = 0            # UNISET IA9 (all three stars)
+clean_fill_passes                = 8            # UNISET IA9 (all three stars)
+clean_gas_newton_switch          = 4            # UNISET IA9 (all three stars)
+clean_gas_newton_switch_min      = 6            # UNISET IA9 (all three stars)
+clean_halo_direct                = 1            # UNISET IA9 (all three stars)
+clean_init_cnorm                 = 1e-10        # UNISET IA9 (all three stars)
+clean_lin_cnorm                  = 1e-10        # UNISET IA9 (all three stars)
+clean_lin_pass                   = true         # UNISET IA9 (all three stars)
+clean_maxnl                      = 200          # UNISET IA9 (all three stars)
+clean_maxpic                     = 12           # UNISET IA9 (all three stars)
+clean_nl_norm                    = global       # UNISET IA9 (all three stars)
+clean_pass_damp                  = 0            # UNISET IA9 (all three stars)
+clean_pc_sweep                   = rb           # UNISET IA9 (all three stars)
+clean_predict                    = 1            # UNISET IA9 (all three stars)
+clean_ray_cut_margin             = 10           # UNISET IA9 (all three stars)
+clean_ray_cut_r                  = 0.01         # UNISET IA9 (all three stars)
+clean_ray_cut_taumin             = 0            # UNISET IA9 (all three stars)
+clean_ray_cut_wait               = 10           # UNISET IA9 (all three stars)
+clean_ray_min                    = 0.001        # UNISET IA9 (all three stars)
+clean_retry_budget               = 0            # UNISET IA9 (all three stars)
+clean_ring_jmin                  = 1            # UNISET IA9 (all three stars)
+clean_rot_fuse                   = true         # UNISET IA9 (all three stars)
+clean_rot_ring                   = off          # rotation OFF (USER): live FATALs without rotating rays (UNISET fix 08:15)
+clean_source_convex              = 1            # UNISET IA9 (all three stars)
+clean_stag_fcone                 = true         # UNISET IA9 (all three stars)
+clean_stag_fwb                   = true         # UNISET IA9 (all three stars)
+clean_stag_fwb_ring              = 1            # IA12.1 USER 11-23: ring on sp periodic-x3 decks (L_z exact, LZFIX)
+clean_stag_fwb_stage             = false        # IA11 (FDIP; IA9 had true)
+clean_stag_fwb_t2                = false        # IA11 (FDIP; IA9 had true)
+clean_stag_lat_sums              = true   # USER 11-24: uniform with tests and release default (was 0, UNISET IA9)
+clean_stag_opac_drag             = true   # USER 11-24: uniform with tests and release default (was 0, UNISET IA9)
+clean_stag_opac_passes           = 3            # UNISET IA9 (all three stars)
+clean_stag_opac_update           = true         # UNISET IA9 (all three stars)
+clean_stag_pcr                   = 1            # UNISET IA9 (all three stars)
+clean_stag_rayratio              = 0            # UNISET IA9 (all three stars)
+clean_stag_tie_gid               = true   # USER 11-24: uniform with tests and release default (was 0, UNISET IA9)
+clean_stall_fac                  = 0.5          # UNISET IA9 (all three stars)
+clean_tol                        = 1e-10        # UNISET IA9 (all three stars)
+clean_tol_nl                     = 1e-11        # UNISET IA9 (all three stars)
+clean_troot_rtol                 = 1e-13        # UNISET IA9 (all three stars)
+clean_w_c0                       = 0.3          # UNISET IA9 (all three stars)
+clean_w_c1                       = 0.6          # UNISET IA9 (all three stars)
+clean_w_face_min                 = 0            # UNISET IA9 (all three stars)
+clean_wb_fct                     = true         # UNISET IA9 (all three stars)
+vet_gd_rotate_xfade              = true         # UNISET IA9 (all three stars)
+vet_rotate_advance               = true         # UNISET IA9 (all three stars)
+clean_stag_fs_line               = pcr          # UNISET D14 arm 14 PASS: pcr = thomas on RSG to 0.009 pp (IA9_RSGgp), uniform pcr
+floorcap_mesh_vol = true   # IA12.3-rc4 (needed by floorcap_lz_spin; Caltech FS1)
+<problem>
+he_ic_balance = false
+he_seed_band             = n2                     # [NS] seed not stated: AthenaK default n2 band seed (amplitude 1e-3)
+# (removed: BSG-only) he_seed                  = 0.0            # LI: the 1e-6 T seed is REPLACED by the Linhao perturbation
+he_ic_profile             = false                  # IC from he_ic_file (no Ma+2026 IC/seed)
+# [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_ic_linhao_file        = /viper/ptmp2/jinma/orion_stag2/calsmoke/in/t9l62/prof_t9l62_LIC.txt # [IC] ghost T, rho = IC (fixed), F_r = L_IC/(4 pi r^2) (S22 sect 2.1 fixed T, rho, F_r ghosts)
+# (removed: BSG-only) he_ic_linhao_amp         = 0.05           # his rho *= 1 + 0.05 (U - 0.5)
+# (removed: BSG-only) he_ic_linhao_rho_thr     = 6.15245e-7     # his rho > 0.01 code x density_unit 6.15245e-5 (his athinput.bsg_star.rusty)
+# (removed: BSG-only) he_ic_linhao_seed_group = true   # lhxseed-1106: one deviate per merged group, as his coarse cells
+# (removed: BSG-only) he_ic_linhao_rng         = 0              # splitmix64(global cell index) seed
+# (removed: BSG-only) he_ic_linhao_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
+# (removed: BSG-only) he_ic_linhao_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
+he_bc_linhao             = false                  # [OURWALL 11-13] was true: no Ma+2026 ghost-bath radiation; inner face = implicit_bc_x1min flux = implicit_flux_x1min (L_IC), M1FillGhost ghosts
+# [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_rad         = halfrange      # [HIS] cpp:969-1034 half-range ghost intensities, DO upwind face (M1 face flux + VET outward rays); <mu>_+ of his 120-angle LQ10 set
+# [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_diss        = none           # [USER 11-04] inner-face dissipation: none (central average; his stock Athena++ HLLE would add ~1/(taucell tau) x the E jump)
+# [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_fis = iter   # vstarfix-1106 (F_is = Picard iterate, not the shifted F0^n)
+he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
+he_ic_eint_from_t        = true                   # eint from the IC T with the code EOS
+user_srcs   = true
+user_hist   = true
+he_gm                    = 7.4033817458e+27       # [PAPER/IC] M_core 56 Msun (Table 1) = 55.77 Msun of the IC HSE fit (G 6.67408e-8, Msun 1.989e33)
+he_gravity = wb   # FRESHPREP
+he_ic_file               = /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/t9l62/ic_t9l62_LIC.txt # [IC] Y.-F. Jiang init_outburst.txt (T9L6.2 IC) as is, cgs, F_r = L_IC/(4 pi r^2); below 24.2286 Rsun (ghosts + margin only) RK4 HSE+diffusion extension
+he_opac_table            = /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/tables/rosseland_mesakap_gs98_x0.70_z0.02.txt # [PAPER-closest] OPAL (gs98, MESA kap) X 0.70 Z 0.02; X not stated
+he_planck_table          = /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/tables/planck_ext2_gs98_x0.70_z0.02.txt # [NS source] TOPS/Ferguson Planck X 0.70 Z 0.02 (paper: OPAL Planck, source not given)
+he_nfine                 = 262144                 # 
+he_tau_int  = 1.0
+he_ic_cols               = 5                      # 
+he_wall_zero_flux        = true                   # [OURWALL 11-13] was false: inner face mass/transverse-mom/energy flux removed (as HG262); NOTE also drops INFLOW at the top face
+mlt_flux_frozen = false          # radiative-only IC, no MLT deposit
+he_wall_closed           = true                   # [OURWALL 11-13] was false: wall face sees the exact mirror state, zero mass flux to round-off (as HG262)
+mlt_closure    = frozen
+he_grid_dump   = true
+he_bc_outer              = copy                   # [PAPER] open top (Schultz+2022); outflow ghosts, no inflow
+he_bc_outer_r2           = false                  # plain copy (r^-2 ghost density was Ma+2026-specific)
+he_bc_inner              = wall                   # [OURWALL 11-13] was zerocontact: production closed wall (HG262/RSG): scaled-IC-profile ghosts, v_r mirrored
+# [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_mu1         = 0.5085136694622286     # <mu>_+ of the LQ8 set (80 dirs)
+<output1>
+file_type = hst
+dt = 0
+dcycle = 1
+data_format = %24.16e
+
+# CALTECH 11-23: <output2..7> = the PROD1121b production outputs (bin hydro_w/m1/m1_vet/m1_face, log, periodic rst); orion's deck had the CALSMOKE rst-only output2 (dt 1e30, final rst only). <output1> hst every cycle kept.
+<output2>
+file_type = bin
+variable  = hydro_w
+dt                       = 10800.0                # 3 h
+<output3>
+file_type = bin
+variable  = vet
+dt                       = 10800.0                # 3 h
+<output4>
+file_type = log
+dt = 1.0e4
+<output5>
+file_type = rst
+dt                       = 2.592e5   # 3 d (USER 11-24: rst cadence; was 43200.0)
+<output6>
+file_type = bin
+variable  = vet_vet
+dt = 43200   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 10800.0)
+<output7>
+file_type = bin
+variable  = vet_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
+dt = 43200   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 10800.0)
+
