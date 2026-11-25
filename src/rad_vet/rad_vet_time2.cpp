@@ -77,8 +77,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     time_scheme = VET_TIME_HESDIRK2;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> time_scheme = be: the hesdirk2 backward-Euler path on "
-                   "every "
-                << "step (be_legacy = true for the old step)" << std::endl;
+                   "every step" << std::endl;
     }
   } else if (time_scheme == VET_TIME_HESDIRK2 && t2_beonly &&
              global_variable::my_rank == 0) {
@@ -186,79 +185,12 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   // enthalpy face rule too (else the operator changes for one step: an O(dt) error)
   t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
       recipe::Fix(pin, "rad_vet", "time2_enth_be", "true", "false"));
-  // time2_vet_extrap: stage solves use D* = D^n + (dt/dt_prev)(D^n - D^{n-1})
-  t2_vext = false;
-  if (pin->DoesParameterExist("rad_vet", "time2_vet_extrap")) {
-    t2_vext = pin->GetBoolean("rad_vet", "time2_vet_extrap");
-  }
-  // time2_vet (aliases time2_vet_sc / time2_vet_col by closure): when the formal-solution
-  // tensor of the two stage solves is built.  Both stages sit at t^{n+1}, so D(U^n) is an
-  // O(dt) lag (first order in time wherever the tensor changes).
-  //   lag     : D(U^n) for both stages (vet_sc extrap: D* of time2_vet_extrap)
-  //   predict : one build per step at P = (stage-1 start) + dt K1, t^{n+1} + O(dt^2)
-  //   rebuild : predict for stage 1, a second build at Y1 for stage 2
-  t2_vsmode = 0;
-  const std::string kvs = VetKeyName(pin, "time2_vet", {"time2_vet_sc"});
-  const bool vs_named = pin->DoesParameterExist("rad_vet", kvs);
-  if (vet_sc && vs_named && pin->GetString("rad_vet", kvs).compare("extrap") == 0) {
-    t2_vext = true;
-  }
-  if (vet_sc && (vs_named || !t2_vext)) {
-    std::string vm = pin->GetOrAddString("rad_vet", kvs,
-                                         global_variable::restart_run ? "lag"
-                                                                      : "predict");
-    if (vm.compare("lag") == 0 || vm.compare("extrap") == 0) {
-      t2_vsmode = 0;
-    } else if (vm.compare("predict") == 0) {
-      t2_vsmode = 1;
-    } else if (vm.compare("rebuild") == 0) {
-      t2_vsmode = 2;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/" << kvs << " = '" << vm
-                << "' is not a choice (lag | predict | rebuild | extrap)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (t2_vsmode != 0 && t2_vext) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/" << kvs << " = " << vm << " excludes "
-                << "time2_vet_extrap = true" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
   // a restart's time2_vet (alias time2_vet_col) = extrap2: the extrap2 channels of a file
   // of version < 4 (Time2RstNchWant)
   if (sph_geom && global_variable::restart_run) {
     const std::string kvc = VetKeyName(pin, "time2_vet", {"time2_vet_col"});
     t2_x2old = pin->DoesParameterExist("rad_vet", kvc) &&
                pin->GetString("rad_vet", kvc).compare("extrap2") == 0;
-  }
-  // time2_pred_cap: the predicted state is P = U^n + theta dt K1 per cell,
-  //   theta = min(1, cap/r),  r = max(|dt K1_E|/E^n, |eint(P) - eint_b|/eint_b),
-  // eint_b the stage-start eint without the coupling's K1.  It stops the previous step's
-  // slope from overshooting where the state relaxes within a step; theta = 1 (bitwise the
-  // unlimited build) where r <= cap.  0 = off.
-  t2_pcap = 0.0;
-  if (t2_vsmode != 0) {
-    t2_pcap = pin->GetOrAddReal("rad_vet", "time2_pred_cap",
-                                global_variable::restart_run ? 0.0 : 0.5);
-    if (!(t2_pcap >= 0.0)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/time2_pred_cap must be >= 0" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-  // time2_lin_tol / time2_lin_tol_fac: Krylov tolerance of the stage solves
-  // (time2_lin_tol, else implicit_lin_tol x time2_lin_tol_fac)
-  const bool rs = global_variable::restart_run;
-  // time2_one_pass_safety: implicit_one_pass safety factor of the stage solves (0 =
-  // implicit_one_pass_safety); one-pass acceptance leaves a Picard error ~ tol/safety
-  t2_onep_s = pin->GetOrAddReal("rad_vet", "time2_one_pass_safety", rs ? 0.0 : 30.0);
-  if (t2_onep_s != 0.0 && !(t2_onep_s >= 1.0)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/time2_one_pass_safety must be 0 or >= 1"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
   }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_vet", "time2_dbg_fail")) {
@@ -274,15 +206,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       recipe::Fix(pin, "rad_vet", "time2_face_fct", "true", "false"));
   t2_pfst = true;
   t2_ffct_emin = 0.1;   // (rad_vet.hpp)
-  // time2_accept_fallback (read only when named)
-  t2_accfb = true;
-  if (pin->DoesParameterExist("rad_vet", "time2_accept_fallback")) {
-    t2_accfb = pin->GetBoolean("rad_vet", "time2_accept_fallback");
-  }
-  // time2_adm_poslim (read only when named)
-  if (pin->DoesParameterExist("rad_vet", "time2_adm_poslim")) {
-    t2_adm_pl = pin->GetBoolean("rad_vet", "time2_adm_poslim");
-  }
   t2_cfl_post = pin->GetOrAddBoolean("rad_vet", "time2_cfl_post", t2_cfl_post);
   t2_abe = pin->GetOrAddInteger("rad_vet", "time2_auto_be", t2_abe);
   if (t2_abe < 0) {
@@ -327,16 +250,12 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(vet_prev, nmb, VET_T2_NVET, n3, n2, n1);
     Kokkos::deep_copy(vet_prev, 0.0);
   }
-  if (t2_pcap > 0.0) {
-    Kokkos::realloc(t2pth, nmb, n3, n2, n1);
-    Kokkos::deep_copy(t2pth, 1.0);
-  }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
     std::cout << "         time2_enth_be=" << (t2_enth_be ? "true" : "false")
-              << " implicit_cs2_vimp_npass=" << cs2_vnp << std::endl;
+              << std::endl;
   }
 }
 
@@ -615,21 +534,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
-  // am_vector: the spin reservoir's increment from its slopes
-  if (am_vec && aminc.extent_int(0) > 0) {
-    auto a1_ = amk1;
-    auto a2_ = amk2;
-    auto ai_ = aminc;
-    par_for("vet_t2_aminc", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1, 0,
-            static_cast<int>(aminc.extent(1)) - 1, 0,
-            static_cast<int>(aminc.extent(2)) - 1,
-            0, static_cast<int>(aminc.extent(3)) - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real v = c1*a1_(m,k,j,i);
-      if (two) {v += c2*a2_(m,k,j,i);}
-      ai_(m,k,j,i) = v;
-    });
-  }
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? VET_T2S_STAGE1 : VET_T2S_STAGE2;
@@ -799,8 +703,8 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   }
   if (iw.extent_int(1) <= Time2FctSlot(0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/time2_face_fct needs the Krylov work slots "
-              << "(implicit_solver = bicgstab)" << std::endl;
+              << std::endl << "<rad_vet>/time2_face_fct needs the Krylov work slots"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   t2_ffct_calls += 1.0;
@@ -1785,21 +1689,11 @@ void RadiationVet::Time2Report() {
               << zl_halos;
     std::cout << ")";
   }
-  if (vet_sc && t2_vsmode != 0) {
-    std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")
-              << " fallbacks=" << t2_vcnfb;
-  }
-  if (t2_pcap > 0.0) {
-    std::cout << " time2_pred_cap=" << t2_pcap << " limited cell-builds=" << t2_pnlim
-              << " of " << t2_pncell;
-  }
   if (vgd_rot_slope == 3) {
     std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="
               << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass << " (frac "
               << vgd_rot_cfrac << ")";
   }
-  if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
-  if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   if (cln_ring) {

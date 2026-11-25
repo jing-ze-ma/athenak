@@ -31,9 +31,7 @@
 namespace radvet {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::SphericalS1Check
-//! \brief fatal on any option the sp / cs implicit operator does not support; sets
-//! impl_offdiag
-
+//! \brief fatal on any option the sp / cs implicit operator does not support
 
 void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   std::string why;
@@ -42,37 +40,9 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
-  {
-  // berthon | blend on the radial faces (ImplicitInit refuses them on cs)
-    if (impl_flux != VET_IFLUX_CENTRAL && impl_flux != VET_IFLUX_BERTHON &&
-        impl_flux != VET_IFLUX_BLEND) {
-      why += " implicit_flux = ap_hll;";
-    }
-    // plm_dc corrects the berthon part: needs berthon | blend
-    if (impl_recon != VET_IRECON_DC && impl_flux == VET_IFLUX_CENTRAL) {
-      why += " implicit_recon != dc;";
-    }
-    // lpr allowed on the wedge, lp not; cs refuses both (skewed rows ignore thx2/thx3)
-    if (impl_tlim == VET_TLIM_LP || (impl_tlim != VET_TLIM_NONE && cs_geom)) {
-      why += " implicit_trans_limit != none (lpr only, wedge only);";
-    }
-    if (pin->DoesParameterExist("rad_vet","implicit_offdiag")) {
-      std::string s = pin->GetString("rad_vet","implicit_offdiag");
-      // `operator` (19-point stencil, od cache, uniform-dx VetOffDiv) is not converted
-      bool ok = (s.compare("auto") == 0 || s.compare("none") == 0 ||
-                 s.compare("lagged") == 0);
-      if (!ok) {
-        why += " implicit_offdiag = " + s + ";";
-      }
-    }
-  }
-  // cubed sphere: no lagged off-diagonal
+  // cubed sphere
   if (cs_geom) {
     std::string wcs;
-    if (pin->DoesParameterExist("rad_vet","implicit_offdiag") &&
-        pin->GetString("rad_vet","implicit_offdiag").compare("lagged") == 0) {
-      wcs += " implicit_offdiag = lagged;";
-    }
     // seam geometry needs the equiangular panel [-1, 1]^2 with nx2 = nx3, and the
     // one-sided tangential derivatives at a seam need >= 3 cells per block
     if (pm->mesh_indcs.nx2 != pm->mesh_indcs.nx3 ||
@@ -86,16 +56,13 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_vet> on the cubed sphere supports only "
-        << "transport = implicit, "
-        << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
-        << "= bicgstab, implicit_precond = rbgs_fwd | mg (and the spherical-polar "
-        << "list below); this input has:"
+        << "time_scheme = be | hesdirk2 (and the spherical-polar list below); this "
+        << "input has:"
         << wcs << why << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
-  // full sphere: a polar face has zero area and must be reflecting (F_theta = 0);
-  // lagged off-diagonal terms and trans_limit are refused there
+  // full sphere: a polar face has zero area and must be reflecting (F_theta = 0)
   if (!cs_geom && pm->use_polar_boundary) {
     const bool p2lo = (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar);
     const bool p2hi = (pm->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar);
@@ -103,29 +70,14 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
         {
       why += " implicit_bc_x2min|max != auto | reflect at a polar face;";
     }
-    if (pin->DoesParameterExist("rad_vet","implicit_offdiag") &&
-        pin->GetString("rad_vet","implicit_offdiag").compare("lagged") == 0) {
-      why += " implicit_offdiag = lagged on the full sphere;";
-    }
-    if (impl_tlim != VET_TLIM_NONE) {
-      why += " implicit_trans_limit != none on the full sphere;";
-    }
   }
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> on a spherical-polar mesh supports "
-      << "only transport = implicit, "
-      << "implicit_offdiag = auto | none | lagged, "
-      << "time_scheme = be | hesdirk2, one MeshBlock "
-      << "along x1, no SMR, implicit_flux = central | berthon | blend, "
-      << "implicit_recon = dc, implicit_trans_limit = none; this input has:" << why
+      << "only time_scheme = be | hesdirk2, one MeshBlock along x1, no SMR; this "
+      << "input has:" << why
       << std::endl;
     std::exit(EXIT_FAILURE);
-  }
-  {
-    std::string s = pin->GetOrAddString("rad_vet","implicit_offdiag","auto");
-    impl_offdiag = (s.compare("lagged") == 0) ? VET_OD_LAGGED : VET_OD_NONE;
-    od_now = impl_offdiag;
   }
   if (global_variable::my_rank == 0 && cs_geom) {
     std::cout << "<rad_vet>: cubed sphere (covariant cell F and gas coupling; skewed "

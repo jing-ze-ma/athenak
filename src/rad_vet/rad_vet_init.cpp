@@ -88,17 +88,10 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   (void) pin->GetOrAddString("rad_vet","time_scheme",
                              (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
   // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted;
-  // be_legacy: plain BE step (default on restart); time2_be_only: BE path under hesdirk2
+  // time2_be_only: the same under time_scheme = hesdirk2
   const std::string tsn = pin->GetString("rad_vet","time_scheme");
   if (tsn.compare("be") == 0) {
-    const bool leg = pin->GetOrAddBoolean("rad_vet","be_legacy",
-                                          global_variable::restart_run);
-    t2_beonly = h2ok && !leg;
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> time_scheme = be: be_legacy = " << (leg ? "true" : "false")
-                << (t2_beonly ? " (the hesdirk2 backward-Euler path)" : " (the old step)")
-                << std::endl;
-    }
+    t2_beonly = h2ok;
   } else if (tsn.compare("hesdirk2") == 0 &&
              pin->DoesParameterExist("rad_vet","time2_be_only")) {
     t2_beonly = pin->GetBoolean("rad_vet","time2_be_only");
@@ -106,49 +99,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   trans_on = false;
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_vet","implicit_cfl",-1.0);
-  // implicit_solver: bicgstab under the recipe defaults, else line_jacobi
-  if (!pin->DoesParameterExist("rad_vet","implicit_solver")) {
-    const bool nd = recipe::NewDefaults(pin);
-    recipe::Log(std::string("<rad_vet>/implicit_solver = ") +
-                (nd ? "bicgstab (default)" : "line_jacobi (the old default)"));
-    pin->GetOrAddString("rad_vet","implicit_solver", nd ? "bicgstab" : "line_jacobi");
-  }
-  {std::string sv = pin->GetOrAddString("rad_vet","implicit_solver","line_jacobi");
-  if (sv.compare("line_jacobi") == 0) {
-    impl_solver = VET_ISOLV_LINE_JACOBI;
-  } else if (sv.compare("bicgstab") == 0) {
-    impl_solver = VET_ISOLV_BICGSTAB;
-  } else {
-    ImplFatal("<rad_vet>/implicit_solver = '" + sv
-              + "' is not a choice (line_jacobi | bicgstab)");
-  }
-  }
-  // implicit_offdiag: auto = operator with multi-D bicgstab, else lagged
-  std::string sod = pin->GetOrAddString("rad_vet","implicit_offdiag","auto");
-  bool od_auto = (sod.compare("auto") == 0);
-  if (od_auto || sod.compare("lagged") == 0) {
-    impl_offdiag = VET_OD_LAGGED;
-  } else if (sod.compare("operator") == 0) {
-    impl_offdiag = VET_OD_OPERATOR;
-  } else if (sod.compare("none") == 0) {
-    impl_offdiag = VET_OD_NONE;
-  } else {
-    ImplFatal("<rad_vet>/implicit_offdiag = '" + sod
-              + "' is not a choice (auto | lagged | operator | none)");
-  }
-  // implicit_trans_limit: transverse realizability limiter
-  {std::string st = pin->GetOrAddString("rad_vet","implicit_trans_limit","none");
-  if (st.compare("none") == 0) {
-    impl_tlim = VET_TLIM_NONE;
-  } else if (st.compare("lp") == 0) {
-    impl_tlim = VET_TLIM_LP;
-  } else if (st.compare("lpr") == 0) {
-    impl_tlim = VET_TLIM_LPR;
-  } else {
-    ImplFatal("<rad_vet>/implicit_trans_limit = '" + st
-              + "' is not a choice (none | lp | lpr)");
-  }
-  }
   dbg_etally = pin->GetOrAddBoolean("rad_vet","dbg_energy_tally",false);
   impl_onep = 0;
   for (int t = 0; t < 3; ++t) {
@@ -199,14 +149,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   Kokkos::realloc(pos_cnt_d, VET_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
   marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
-  std::string srn = pin->GetOrAddString("rad_vet","implicit_recon","dc");
-  if (srn.compare("dc") == 0) {
-    impl_recon = VET_IRECON_DC;
-  } else if (srn.compare("plm_dc") == 0) {
-    impl_recon = VET_IRECON_PLMDC;
-  } else {
-    ImplFatal("<rad_vet>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
-  }
   // implicit_enthalpy: reconstruction of the face enthalpy flux a_f E_f
   recipe::Old(pin, "rad_vet", "implicit_enthalpy", "upwind");
   const bool enth_up = global_variable::restart_run;
@@ -226,17 +168,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
   }
-  // implicit_vimp: gas velocity implicit in the enthalpy flux
-  {auto *pmh = pmy_pack->pmesh;
-  const bool gas_live = !pin->DoesParameterExist("time","evolution") ||
-                        (pin->GetString("time","evolution").compare("dynamic") == 0);
-  const bool vdef = ((pin->GetString("rad_vet","time_scheme").compare("hesdirk2") == 0) ||
-                     t2_beonly) &&
-                    pmh->multi_d && (impl_solver == VET_ISOLV_BICGSTAB) &&
-                    (pmh->mb_indcs.ng >= 2) && fl_on && gas_live &&
-                    coupling && gas_feedback && dbg_gas_force &&
-                    !global_variable::restart_run;
-  impl_vimp = pin->GetOrAddBoolean("rad_vet","implicit_vimp",vdef);}
   // doppler_face: donor | central x1 enthalpy flux (read only when named)
   if (pin->DoesParameterExist("rad_vet","doppler_face")) {
     const std::string df = pin->GetString("rad_vet","doppler_face");
@@ -246,12 +177,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_vet>/doppler_face must be donor | central");
     }
     if (dop_face == 1) {
-      if (impl_vimp && global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> doppler_face = central: implicit_vimp overridden to "
-                     "false "
-                  << "(its Newton rows linearise the donor flux)" << std::endl;
-      }
-      impl_vimp = false;
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> doppler_face = central: x1 enthalpy flux "
                   << "a E = v (1 + chi) E as the face mean 0.5 (a_L E_L + a_R E_R) "
@@ -321,11 +246,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       impl_gas_src_cons = true;
     } else if (gs.compare("conservative2") == 0) {
       impl_gas_src_cons = true;
-      cs2_vnp = pin->GetOrAddInteger("rad_vet","implicit_cs2_vimp_npass",
-                                     global_variable::restart_run ? 0 : 3);
-      if (cs2_vnp < 0) {
-        ImplFatal("<rad_vet>/implicit_cs2_vimp_npass must be >= 0");
-      }
     } else {
       ImplFatal("<rad_vet>/implicit_gas_src = '" + gs + "' is not a choice (matched | "
                 "conservative | conservative2 | conservative_full)");
@@ -406,37 +326,10 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(f0x1, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1, 0.0);
-  bicg_on = trans_on && (impl_solver == VET_ISOLV_BICGSTAB);
-  if (od_auto) {
-    impl_offdiag = bicg_on ? VET_OD_OPERATOR : VET_OD_LAGGED;
-  }
-  if (impl_offdiag == VET_OD_OPERATOR && trans_on && !bicg_on) {
-    ImplFatal("<rad_vet>/implicit_offdiag = operator needs implicit_solver = bicgstab");
-  }
-  od_now = impl_offdiag;
-  if (impl_vimp && !bicg_on) {
-    ImplFatal("<rad_vet>/implicit_vimp needs transport = implicit on a multi-D mesh with "
-              "implicit_solver = bicgstab");
-  }
-  if (impl_vimp && indcs.ng < 2) {
-    ImplFatal("<rad_vet>/implicit_vimp needs <mesh>/nghost >= 2");
-  }
-  // cubed sphere: the spin slope am_vec follows <hydro|mhd>/am_vector unless
-  // implicit_am_cs = false
-  if (cs_geom) {
-    auto named = [&](const char *b, const char *k) {
-      return pin->DoesParameterExist(b, k) && pin->GetBoolean(b, k);
-    };
-    bool am_cs = named("hydro","am_transport") || named("hydro","am_vector") ||
-                 named("mhd","am_transport") || named("mhd","am_vector");
-    if (pin->DoesParameterExist("rad_vet","implicit_am_cs")) {
-      am_cs = pin->GetBoolean("rad_vet","implicit_am_cs");
-    } else {
-      recipe::Log(std::string("<rad_vet>/implicit_am_cs = ") +
-                  (am_cs ? "true" : "false") +
-                  " (cubed sphere: follows <hydro|mhd>/am_transport)");
-    }
-    am_vec = am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
+  // cubed sphere: the spin slope follows <hydro|mhd>/am_vector
+  for (const char *b : {"hydro", "mhd"}) {
+    am_vec = am_vec || (cs_geom && pin->DoesParameterExist(b, "am_vector") &&
+                        pin->GetBoolean(b, "am_vector"));
   }
   // Zalesak limiter of the hesdirk2 face fluxes: zalesak_halo_skip, zalesak_active
   if (pin->DoesParameterExist("rad_vet","zalesak_halo_skip")) {
@@ -453,14 +346,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(f0x3, nmb, ncells3+1, ncells2, ncells1);
       Kokkos::deep_copy(f0x3, 0.0);
     }
-    if (impl_tlim != VET_TLIM_NONE) {
-      Kokkos::realloc(thx2, nmb, ncells3, ncells2+1, ncells1);
-      Kokkos::deep_copy(thx2, 0.0);
-      if (trans_x3) {
-        Kokkos::realloc(thx3, nmb, ncells3+1, ncells2, ncells1);
-        Kokkos::deep_copy(thx3, 0.0);
-      }
-    }
   }
 
   if (global_variable::my_rank == 0) {
@@ -472,7 +357,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
                   : (impl_enth == VET_IENTH_PLMC) ? "plmc"
                   : (impl_enth == VET_IENTH_LIN) ? "lin"
                   : (impl_enth == VET_IENTH_UPWIND) ? "upwind" : "central")
-              << " implicit_vimp=" << (impl_vimp ? "true" : "false") << std::endl;
+              << std::endl;
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;

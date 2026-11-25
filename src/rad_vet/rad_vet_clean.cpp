@@ -355,11 +355,11 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_maxit", nullptr},
     {"rad_vet/implicit_tol_rel_max", nullptr},
     {"rad_vet/implicit_lin_maxit", nullptr},
-    {"rad_vet/implicit_recon", ""},
     {"rad_vet/implicit_closure_lag", "clean_closure"},
     {"rad_vet/time2_vet", "clean_closure"}, {"rad_vet/time2_vet_col", "clean_closure"},
     {"rad_vet/time2_vet_sc", "clean_closure"},
     {"rad_vet/time2_vet_extrap", "clean_closure"},
+    {"rad_vet/advect_split", ""}, {"rad_vet/time2_one_pass_safety", ""},
     {"rad_vet/time2_lin_tol*", "clean_tol"},
     {"rad_vet/implicit_ghost_x1min", "!"}, {"rad_vet/ic_rad*", "clean_init"},
     {"rad_vet/implicit_predictor", nullptr}, {"rad_vet/implicit_predictor_tcap", nullptr},
@@ -373,11 +373,13 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_pos_floor_cons", nullptr},
     {"rad_vet/implicit_pos_floor_gas_keep", nullptr},
     {"rad_vet/implicit_pos_gas_cons", nullptr},
+    {"rad_vet/implicit_am_cs", "=true"}, {"rad_vet/be_legacy", "=false"},
     {"rad_vet/implicit_*", ""},
     // hesdirk2 stage formation (Time2FormStage / Time2Stash) and dt_retry: read;
     // ImplicitSolve's acceptance, posfix and KE cap: none
     {"rad_vet/time2_k1_reset", "!"},   // K1 reset of held cells: removed
-    {"rad_vet/time2_k1_redist", "=0"}, {"rad_vet/time2_k1_*", nullptr}, {"rad_vet/time2_face_fct*", nullptr},
+    {"rad_vet/time2_k1_redist", "=0"}, {"rad_vet/time2_k1_*", nullptr},
+    {"rad_vet/time2_face_fct*", nullptr},
     {"time/dt_retry_max", ""},
     // a rejected stage: always the backward-Euler redo of the cycle at its dt
     {"rad_vet/time2_reject", ""}, {"time/dt_retry_t2_be", "=0"},

@@ -2241,11 +2241,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                             sp.extent_int(2), sp.extent_int(3));
             Kokkos::realloc(pradvet->amk2, sp.extent_int(0), sp.extent_int(1),
                             sp.extent_int(2), sp.extent_int(3));
-            Kokkos::realloc(pradvet->aminc, sp.extent_int(0), sp.extent_int(1),
-                            sp.extent_int(2), sp.extent_int(3));
             Kokkos::deep_copy(pradvet->amk1, 0.0);
             Kokkos::deep_copy(pradvet->amk2, 0.0);
-            Kokkos::deep_copy(pradvet->aminc, 0.0);
           }
           DeepCopyAcross(Kokkos::subview(pradvet->amk1, std::make_pair(0,nmb),
                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);

@@ -69,22 +69,6 @@ constexpr int kVetXfdRstNr = 8;   // Real header words
 // at slab r / n1, cell i = r % n1 (RadiationVet::X1eRst*), behind the fax slabs
 constexpr char kVetX1eRstMagic[8] = {'M', '1', 'X', '1', 'E', 'R', 'S', '1'};
 
-// implicit_solver (both converge to the same fixed point)
-constexpr int VET_ISOLV_LINE_JACOBI = 0;  // x1 tridiagonal exact, x2/x3 lagged (M-matrix)
-constexpr int VET_ISOLV_BICGSTAB = 1;  // BiCGStab, x1 line solve as right preconditioner
-
-// implicit_offdiag: the off-diagonal Eddington terms sum_{e != d} d_e P_de (lagging them
-// diverges in thin cells, where they scale as (c dt/dx)^2)
-constexpr int VET_OD_LAGGED   = 0;  // previous Picard iterate, on the right-hand side
-constexpr int VET_OD_OPERATOR = 1;  // in the operator (bicgstab; not an M-matrix)
-constexpr int VET_OD_NONE     = 2;  // dropped: P diagonal in the grid frame
-
-// implicit_trans_limit: transverse realizability limiter.  lp adds the lagged opacity
-// |G_f|/(phi_f E_f), phi_f = fmax sqrt(max(1 - f1^2, 0.01)), so |F_f| <= c phi_f E_f
-constexpr int VET_TLIM_NONE = 0;
-constexpr int VET_TLIM_LPR  = 2;  // bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
-constexpr int VET_TLIM_LP   = 1;  // lagged limiter opacity (above)
-
 // boundary types of the implicit solve, as the total normal flux F_f at the face
 constexpr int VET_IBC_MARSHAK  = 0;  // free surface, F_f = +- c marshak_q E
 constexpr int VET_IBC_FLUX     = 1;  // imposed F_f = implicit_flux_x1min/max
@@ -94,21 +78,12 @@ constexpr int VET_IBC_EFIX     = 4;  // Dirichlet: boundary cell E frozen at its
 constexpr int VET_IBC_OUTFLOW  = 5;  // x2: F_f = max(+-F2_cell, 0), lagged
 constexpr int VET_IBC_X2FLUX   = 6;  // x2: F_f = ifx2_lo/hi from the pgen (SetX2FaceFlux)
 
-// implicit_flux: spatial form of the implicit face E-flux
-constexpr int VET_IFLUX_CENTRAL = 0;  // face-eliminated central (diffusion) form
-constexpr int VET_IFLUX_BERTHON = 2;  // A_up + alpha F_HLL (Berthon), no F_diff
-constexpr int VET_IFLUX_BLEND   = 3;  // (1 - w_f) central + w_f berthon, w_f lagged
-
 // implicit_thin_switch: dt-free face weight of the half-range blend (VetThinFace)
 constexpr int VET_THSW_FS   = 3;  // smoothstep of max(|H|/J, C1/1.5), C1 = <|I-S|>/J
 constexpr int VET_THSW_FSKN = 5;  // max(fs, kn)
 constexpr int VET_THSW_FSI  = 7;  // fs; h+- isotropic where the rays miss E^n (VetThinHr)
 constexpr int VET_THSW_FSE  = 8;  // max(|H|/J, eps C1/1.5), eps the thermal fraction
 constexpr int VET_THSW_FSQ  = 6;  // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
-
-// implicit_recon: states of the HLL part
-constexpr int VET_IRECON_DC    = 0;  // piecewise constant
-constexpr int VET_IRECON_PLMDC = 1;  // plm as a lagged deferred correction (rhs)
 
 // implicit_enthalpy: face value of the enthalpy flux a_d E, a_d = v_d + (v.D)_d.  The
 // matrix carries the donor form; the others add their lagged difference to the rhs.

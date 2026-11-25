@@ -80,18 +80,22 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   {
     CleanPreflight(pin);
     // rst_version, recorded: a restart file without it is of an older code and must name
-    // the solver, the layout and (sphere) the rays it ran, the only ones left
+    // the solver, the layout and (sphere) the rays it ran, the only ones left, and with
+    // time_scheme = be the be step
     if (!nw && !pin->DoesParameterExist("rad_vet","rst_version")) {
-      for (const char *k : {"scheme", "clean_layout", "clean_rays"}) {
+      for (const char *k : {"scheme", "clean_layout", "clean_rays", "be_legacy"}) {
         if (pin->DoesParameterExist("rad_vet", k)) continue;
         const std::string s(k);
         if (s == "clean_rays" && !((pmy_pack->pmesh->use_spherical_polar ||
             pmy_pack->pmesh->use_cubed_sphere) && VetCurvedRays(pin))) continue;
+        if (s == "be_legacy" && pin->DoesParameterExist("rad_vet", "time_scheme") &&
+            pin->GetString("rad_vet", "time_scheme") != "be") continue;
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_vet>: the restart file does not hold " << k << ": it ran "
           << "the removed " << (s == "scheme" ? "old solver" : s == "clean_layout" ?
-          "cell layout" : "FV rays") << "; name " << k << "="
-          << (s == "scheme" ? "clean" : s == "clean_layout" ? "staggered" : "sc")
+          "cell layout" : s == "clean_rays" ? "FV rays" : "be step") << "; name " << k
+          << "=" << (s == "scheme" ? "clean" : s == "clean_layout" ? "staggered" :
+          s == "clean_rays" ? "sc" : "false")
           << " to continue with the present one (inputs/stars/restart_old_files.txt)"
           << std::endl;
         std::exit(EXIT_FAILURE);
@@ -827,10 +831,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_nstep = 0.0;
   impl_itsum = 0.0;
   impl_itmax = 0.0;
-  impl_solver = VET_ISOLV_LINE_JACOBI;
   trans_on = false;
   trans_x3 = false;
-  bicg_on = false;
   impl_prec_fb = -1;
   bcg_capped = false;
   bcg_r0rel = 0.0;
@@ -839,9 +841,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_pred = false;
   pred_ok = false;
   pred_dt = 0.0;
-  impl_offdiag = VET_OD_LAGGED;
-  od_now = VET_OD_LAGGED;
-  impl_vimp = false;
   vimp_now = false;
   t2_enth_be = false;
   time_scheme = 0;
@@ -854,13 +853,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_nfall = 0.0;
   t2_dtprev = 0.0;
   t2_vprev = false;
-  t2_vext = true;
   t2_nclip = 0.0;
   pred2_ok = false;
   pred2_dt = 0.0;
   t2_lin_save = 0.0;
-  t2_onep_s = -1.0;
-  impl_tlim = VET_TLIM_NONE;
   // Anderson acceleration
   aa_nh = 0;
   aa_head = 0;
@@ -1051,8 +1047,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   const std::string fblk = have_mhd ? "mhd" : "hydro";
   fl_on = have_hydro;
   fl_mhd = have_mhd;
-  // advect_split: advective enthalpy-flux split of the E equation
-  advect_split = pin->GetOrAddBoolean("rad_vet","advect_split",false);
   coupling = pin->GetOrAddBoolean("rad_vet","coupling",!opac_zero);
   gas_feedback = pin->GetOrAddBoolean("rad_vet","gas_feedback",true);
   // debug switch (see rad_vet.hpp)
@@ -1771,7 +1765,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet>: c=" << c_light << " chat/c=" << chat_over_c
-              << " advect_split=" << (advect_split ? "true" : "false")
               << " closure=" << ((vet_sc || vgd_on) ? "sc" : "analytic")
               << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
