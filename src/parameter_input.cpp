@@ -939,6 +939,21 @@ void ParameterInput::MarkAllAsRestart() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool ParameterInput::SameValue
+//! \brief two values as text: numbers by value, true = 1, false = 0
+
+bool ParameterInput::SameValue(std::string a, std::string b) {
+  for (auto *s : {&a, &b}) {
+    if (*s == "true") *s = "1";
+    if (*s == "false") *s = "0";
+  }
+  char *ea, *eb;
+  const double x = std::strtod(a.c_str(), &ea), y = std::strtod(b.c_str(), &eb);
+  const bool num = !a.empty() && !b.empty() && *ea == 0 && *eb == 0;
+  return num ? (x == y) : (a == b);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void ParameterInput::PrintNonDefault()
 //  \brief the resolved scheme (rank 0, at start-up, runs with <rad_vet>): every
 //  <rad_vet>, <hydro>, <mhd>, <time>, <mesh> key read with a default (GetOrAdd*)
@@ -947,16 +962,6 @@ void ParameterInput::MarkAllAsRestart() {
 
 void ParameterInput::PrintNonDefault() {
   if (global_variable::my_rank != 0 || !DoesBlockExist("rad_vet")) return;
-  auto same = [](std::string a, std::string b) {
-    for (auto *s : {&a, &b}) {
-      if (*s == "true") *s = "1";
-      if (*s == "false") *s = "0";
-    }
-    char *ea, *eb;
-    const double x = std::strtod(a.c_str(), &ea), y = std::strtod(b.c_str(), &eb);
-    const bool num = !a.empty() && !b.empty() && *ea == 0 && *eb == 0;
-    return num ? (x == y) : (a == b);
-  };
   static const char *org[] = {"code", "file", "cmdline", "restart", "cmdline"};
   std::cout << "--- keys that differ from the default (file | cmdline | restart) ---"
             << std::endl;
@@ -966,7 +971,7 @@ void ParameterInput::PrintNonDefault() {
     if (pb == nullptr) continue;
     for (const auto &l : pb->line) {
       if (l.origin == kOriginCode || l.def.empty()) continue;
-      if (same(l.param_value, l.def)) continue;
+      if (SameValue(l.param_value, l.def)) continue;
       std::cout << "  " << bk << "/" << l.param_name << " = " << l.param_value
                 << " (default " << l.def << ") " << org[l.origin] << std::endl;
       ++n;

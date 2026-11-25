@@ -449,7 +449,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_bdry_form", cln_bdry_form);
   v.value("cln_maxpic", cln_maxpic);
   v.value("cln_gflux", cln_gflux);
-  v.value("cln_csvr", cln_csvr);
   v.value("cln_rayratio", cln_rayratio);
   v.value("cln_ringjmin", cln_ringjmin);
   v.value("cln_rfrst", cln_rfrst);

@@ -377,7 +377,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // hesdirk2 stage formation (Time2FormStage / Time2Stash) and dt_retry: read;
     // ImplicitSolve's acceptance, posfix and KE cap: none
     {"rad_vet/time2_k1_reset", "!"},   // K1 reset of held cells: removed
-    {"rad_vet/time2_k1_*", nullptr}, {"rad_vet/time2_face_fct*", nullptr},
+    {"rad_vet/time2_k1_redist", "=0"}, {"rad_vet/time2_k1_*", nullptr}, {"rad_vet/time2_face_fct*", nullptr},
     {"time/dt_retry_max", ""},
     // a rejected stage: always the backward-Euler redo of the cycle at its dt
     {"rad_vet/time2_reject", ""}, {"time/dt_retry_t2_be", "=0"},
@@ -406,6 +406,15 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/reconstruct", "=plm"}, {"rad_vet/split_vel", "=recon"},
     {"rad_vet/source_form", "=full"}, {"rad_vet/f_source", "=cell"},
     {"rad_vet/dbg_tensor", "=none"}, {"rad_vet/dbg_tensor_tilt", ""},
+    // the one value left
+    {"rad_vet/scheme", "=clean"}, {"rad_vet/clean_layout", "=staggered"},
+    {"rad_vet/clean_rays", "=sc"}, {"rad_vet/clean_halo_direct", "=true"},
+    {"rad_vet/clean_cs_lz_abs", "=2"}, {"rad_vet/clean_stag_csvec_radial", "=true"},
+    {"rad_vet/clean_stag_flim", "=false"}, {"rad_vet/clean_pass_damp", "=0"},
+    {"rad_vet/clean_conv_est_f", "=false"}, {"rad_vet/clean_retry_budget", "=false"},
+    {"rad_vet/vet_gd_twin", "=false"},
+    // early files' names of clean_stag_fs_line
+    {"rad_vet/clean_stag_fs_pcr", "=true"}, {"rad_vet/clean_stag_fs_pcr_cs", "=true"},
     // old solver's diagnostics, multi-rate, coupling split, K1 FCT: removed
     {"rad_vet/dbg_energy_audit", "!"}, {"rad_vet/dbg_cs_metric_selftest", "!"},
     {"rad_vet/implicit_det_trace", "!"}, {"rad_vet/dbg_hydro_off", "!"},
@@ -509,21 +518,24 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
         if (t[1] == nullptr) break;
         // handled here: never reported as unread (a default-echo line: no message)
         ln.accessed = true;
-        if (ln.param_comment == ParameterInput::default_comment) break;
         const std::string c(t[1]);
+        // (a removed key's value counts also where an older code recorded its default)
+        if (ln.param_comment == ParameterInput::default_comment &&
+            !(c[0] == '=' && global_variable::restart_run)) break;
         if (c == "x") {
           CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
                      "rays, a debug hook removed or a retired study key); remove it "
                      "from the input");
         }
-        if (c[0] == '=' && v != c.substr(1) && !(c == "=false" && v == "0")) {
-          CleanFatal("<" + k + "> = " + v + ": removed from this build (only " +
-                     c.substr(1) + " is accepted)");
+        if (c[0] == '=' && !ParameterInput::SameValue(v, c.substr(1))) {
+          CleanFatal("<" + k + "> = " + v + ": the key was removed, the code runs " +
+                     c.substr(1) + " (name " + ln.param_name + "=" + c.substr(1) +
+                     " to continue so)");
         }
         if (c == "!" && v != "false" && v != "0" && v != "off") {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
-        if (c.empty() || c == "!" || c[0] == '=') none += " " + k;   // (accepted value)
+        if (c.empty() || c == "!") none += " " + k;   // (accepted value)
         if (c != "!" && c[0] != '=' && k.compare(0, 17, "rad_vet/implicit_") == 0) {
           drop.push_back(ln.param_name);
         }

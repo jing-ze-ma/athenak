@@ -268,15 +268,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   // time2_k1_stiff = s: in cells with relaxation rate k dt > s the exchange part of K1
   // moves to E (Time2FormStage)
   t2_k1stiff = pin->GetOrAddReal("rad_vet", "time2_k1_stiff", 0.0);
-  // time2_k1_redist: only 0 is accepted (old restart files may store 0.1)
-  if (pin->DoesParameterExist("rad_vet", "time2_k1_redist") &&
-      pin->GetReal("rad_vet", "time2_k1_redist") != 0.0) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_vet>/time2_k1_redist is removed; only 0 is accepted. Restart "
-              << "files of the old solver may store 0.1: name time2_k1_redist = 0"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // time2_face_fct: Zalesak limiter of the stage increment (Time2FaceFct); on for a fresh
   // run.  The clean solve stores the energy flux Phi that moved E (CleanWriteBack)
   t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct",

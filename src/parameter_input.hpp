@@ -93,6 +93,7 @@ class ParameterInput {
   static constexpr int kOriginCmdlineNew = 4;  // command line of a fresh start only
   void MarkAllAsRestart();
   void PrintNonDefault();
+  static bool SameValue(std::string a, std::string b);
   void ReportUnreadParameters();
   bool DoesBlockExist(std::string name);
   bool DoesParameterExist(std::string block, std::string name);

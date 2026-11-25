@@ -269,7 +269,6 @@ struct CleanArgs {
   bool vzero;                  // gas momentum frozen (cln_vzero, steady start)
   bool fd;                     // clean_stag_fkin: energy flux G + F^H - F
   bool gf;                     // clean_stag_gflux: low-order flux factors
-  bool cvr;                    // cubed sphere: clean_stag_csvec_radial
   bool fre;                    // clean_stag_freal: realisable comoving sb
   int fdg;                     // bracket: face slot of its lagged flux DG (-1: none)
   bool fs;                     // clean_stag_fsolve: face F of the F solve (CLF_N)
@@ -1536,7 +1535,7 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
         nr += n[r]*x.g(m,CLG_R+r,k,j,i);
       }
       for (int r = 0; r < 3; ++r)
-        n[r] -= (x.cvr && q > 0) ? nr*x.g(m,CLG_R+r,k,j,i) : 0.0;
+        n[r] -= (q > 0) ? nr*x.g(m,CLG_R+r,k,j,i) : 0.0;
       for (int r = 0; r < 3; ++r) {
         b[r] += c[2*q+s]*n[r];
         for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*n[r]*n[t];

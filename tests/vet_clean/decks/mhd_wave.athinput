@@ -45,8 +45,6 @@ rad_signal_speed = true
 
 <rad_vet>
 clean_closure = eddington
-clean_cs_lz_abs = 2
-clean_stag_csvec_radial = true
 c_light = 10
 e_floor = 1.0e-30
 kappa_p = 0.10000000000000001
