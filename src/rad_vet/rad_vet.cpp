@@ -95,6 +95,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       const std::vector<std::tuple<const char*, const char*, bool>> old = {
           {"scheme", "clean", true}, {"clean_layout", "staggered", true},
           {"clean_rays", "sc", crv}, {"be_legacy", "false", be},
+          {"implicit_enthalpy", "plm", true},
           {"vet_gd_rotate_stretch", "0.02", rot}};
       for (const auto &[k, v, need] : old) {
         if (!need || has(k)) continue;
@@ -163,11 +164,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // implicit_predictor (step unless named none): the stage solve starts from the
-    // predicted E (CleanFirstIterate)
-    cln_kpred = !(pin->DoesParameterExist("rad_vet","implicit_predictor") &&
-                  !pin->IsParameterDefaulted("rad_vet","implicit_predictor") &&
-                  pin->GetString("rad_vet","implicit_predictor") == "none");
     // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
     cln_optn = pin->GetOrAddInteger("rad_vet","clean_stag_opac_passes",3);
     // fschur where it applies: F lines exact across MeshBlocks
@@ -545,11 +541,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_r0rel = 0.0;
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
-  impl_pred = false;
   pred_ok = false;
   pred_dt = 0.0;
   vimp_now = false;
-  t2_enth_be = false;
   time_scheme = 0;
   t2_ok = false;
   t2_solve = 0;
@@ -928,9 +922,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // time2_fref_wacc: the exact reference-work payment also for the backward-Euler steps
-  // of a hesdirk2 run
-  fref_wacc_t2 = pin->GetOrAddBoolean("rad_vet", "time2_fref_wacc", true);
   // the hydro integrator's stage weights (driver.cpp), for fref_wacc
   {
     const std::string hi = pin->DoesParameterExist("time", "integrator") ?
@@ -1439,7 +1430,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   if (sph_geom) {SphericalS1Check(pin);}
   if (cs_geom) {
-    pin_cs_ = pin;
     CubedS1Init();
   }
 
@@ -1534,9 +1524,9 @@ void RadiationVet::SetX2FaceFlux(const DvceArray3D<Real> &flo,
 //! receives in the hydro stages (fref_wacc)
 
 bool RadiationVet::FrefWaccOn() const {
-  // time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (first step, a
+  // also the backward-Euler steps of a hesdirk2 run (first step, a
   // redo; not a helper solve)
-  const bool t2be = fref_wacc_t2 && (time_scheme == VET_TIME_HESDIRK2) &&
+  const bool t2be = (time_scheme == VET_TIME_HESDIRK2) &&
                     (!t2_ok || FrefWaccStage()) && !t2_inprobe;
   return fref_wsplit && ((time_scheme == VET_TIME_BE) || t2be);
 }

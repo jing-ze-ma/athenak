@@ -340,8 +340,6 @@ class BaseTypeOutput {
   // <rad_vet>/vet_rotate_avg: the averaging history, densely packed
   // slabs; empty without a complete history.  radvet::kVetRaRstMagic.
   HostArray5D<Real> outarray_vetr;
-  // implicit_gas_src = conservative(2): the cell-F slope csk1
-  HostArray5D<Real> outarray_vetk;
   HostArray5D<Real> outarray_ams;   // am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // per-cell pgen slabs
   HostArray5D<Real> outarray_fax;   // rad_vet applied face fluxes

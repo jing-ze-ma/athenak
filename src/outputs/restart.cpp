@@ -290,7 +290,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       }
     }
     // implicit_predictor = step: the stored previous-step increment (radvet::ipred)
-    if (pradvet->impl_pred && pradvet->pred_ok) {
+    if (pradvet->pred_ok) {
       const int npc = static_cast<int>(pradvet->ipred.extent(1));
       Kokkos::realloc(outarray_vetp, nmb, npc, nout3, nout2, nout1);
       Kokkos::deep_copy(outarray_vetp, Kokkos::subview(pradvet->ipred,
@@ -300,66 +300,59 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     // time_scheme = hesdirk2: the FSAL slope and what goes with it
     if (pradvet->Time2RstNch() > 0) {
       const int nct = pradvet->Time2RstNch();
-      if (pradvet->rst_pack_mb) {
-        // restart_pack_per_mb: one MeshBlock at a time (same bytes); the clean rays'
-        // intensities (the last nfv channels) are copied to the host directly
-        const int nfv = pradvet->cln_cssc ? 0 : pradvet->CleanRstNfv(), nc0 = nct - nfv;
-        // (the staging of a MeshBlock in pinned host memory, which the device writes
-        // directly: no device copy of its channels at a dump; where the host reads device
-        // memory (MI300A, CPU builds) the device array itself, packed in place: no
-        // staging, no host copy, no host memset)
-        constexpr bool um =
-            Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
-        // (independent I/O, synchronous: one MeshBlock's buffer, packed and written
-        // MeshBlock by MeshBlock in WriteOutputFile)
-        const bool st = um && nfv == 0 && !IOWrapper::collective;
-        const int nst = st ? 1 : nmb;
-        // (and, without ray intensities in the record, in windows of at most
-        // <job>/restart_window_mb and half of rad_vet's arena, dbuf)
-        const double ns = static_cast<double>(nout1)*nout2*nout3;
-        double nw = win_mb_*1048576.0/(sizeof(Real)*ns);
-        const double na = 0.5*pradvet->marena.extent(0)/ns;
-        if (na >= 1.0) nw = std::min(nw, na);
-        const int nwin = (st && pradvet->CleanRstNfv() == 0) ?
-            std::max(1, static_cast<int>(std::min(static_cast<double>(nct), nw))) : nct;
-        if (um) {
-          outarray_vett_d = dbuf("rst-vett-d", nst, nwin);
-          outarray_vett = HostArray5D<Real>(outarray_vett_d.data(), nst, nwin, nout3,
-                                            nout2,
-                                           nout1);
-        } else {
-          Kokkos::realloc(outarray_vett, nmb, nct, nout3, nout2, nout1);
-        }
-        Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-vett-mb",
-            um ? 0 : static_cast<size_t>(nc0)*nout3*nout2*nout1);
-        auto AL = Kokkos::ALL;
-        for (int m = 0; m < ((nst < nmb || nwin < nct) ? 0 : nmb); ++m) {
-          DvceArray5D<Real> tmp(um ? outarray_vett_d.data() + outarray_vett_d.stride(0)*m
-                                :
-                                pin.data(), 1, nc0, nout3, nout2, nout1);
-          pradvet->Time2RstPack(tmp, 1, m);
-          if (!um) {
-            Kokkos::deep_copy(Kokkos::subview(outarray_vett, m, std::make_pair(0, nc0),
-                                              AL,
-                                              AL, AL),
-                              Kokkos::subview(tmp, 0, AL, AL, AL, AL));
-          }
-          auto fv = Kokkos::subview(outarray_vett, m, std::make_pair(nc0, nct), AL, AL,
-                                    AL);
-          if (nfv > 0 && pradvet->CleanRstFv().extent_int(0) > m) {
-            Kokkos::deep_copy(fv, Kokkos::subview(pradvet->CleanRstFv(), m, AL, AL, AL,
-                                                  AL));
-          } else if (nfv > 0) {
-            Kokkos::deep_copy(fv, 0.0);
-          }
-        }
-        if (um) Kokkos::fence();
+      // one MeshBlock at a time (same bytes); the clean rays'
+      // intensities (the last nfv channels) are copied to the host directly
+      const int nfv = pradvet->cln_cssc ? 0 : pradvet->CleanRstNfv(), nc0 = nct - nfv;
+      // (the staging of a MeshBlock in pinned host memory, which the device writes
+      // directly: no device copy of its channels at a dump; where the host reads device
+      // memory (MI300A, CPU builds) the device array itself, packed in place: no
+      // staging, no host copy, no host memset)
+      constexpr bool um =
+          Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
+      // (independent I/O, synchronous: one MeshBlock's buffer, packed and written
+      // MeshBlock by MeshBlock in WriteOutputFile)
+      const bool st = um && nfv == 0 && !IOWrapper::collective;
+      const int nst = st ? 1 : nmb;
+      // (and, without ray intensities in the record, in windows of at most
+      // <job>/restart_window_mb and half of rad_vet's arena, dbuf)
+      const double ns = static_cast<double>(nout1)*nout2*nout3;
+      double nw = win_mb_*1048576.0/(sizeof(Real)*ns);
+      const double na = 0.5*pradvet->marena.extent(0)/ns;
+      if (na >= 1.0) nw = std::min(nw, na);
+      const int nwin = (st && pradvet->CleanRstNfv() == 0) ?
+          std::max(1, static_cast<int>(std::min(static_cast<double>(nct), nw))) : nct;
+      if (um) {
+        outarray_vett_d = dbuf("rst-vett-d", nst, nwin);
+        outarray_vett = HostArray5D<Real>(outarray_vett_d.data(), nst, nwin, nout3,
+                                          nout2,
+                                         nout1);
       } else {
-        DvceArray5D<Real> tmp("rst-vett", nmb, nct, nout3, nout2, nout1);
-        pradvet->Time2RstPack(tmp, nmb);
         Kokkos::realloc(outarray_vett, nmb, nct, nout3, nout2, nout1);
-        Kokkos::deep_copy(outarray_vett, tmp);
       }
+      Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-vett-mb",
+          um ? 0 : static_cast<size_t>(nc0)*nout3*nout2*nout1);
+      auto AL = Kokkos::ALL;
+      for (int m = 0; m < ((nst < nmb || nwin < nct) ? 0 : nmb); ++m) {
+        DvceArray5D<Real> tmp(um ? outarray_vett_d.data() + outarray_vett_d.stride(0)*m
+                              :
+                              pin.data(), 1, nc0, nout3, nout2, nout1);
+        pradvet->Time2RstPack(tmp, 1, m);
+        if (!um) {
+          Kokkos::deep_copy(Kokkos::subview(outarray_vett, m, std::make_pair(0, nc0),
+                                            AL,
+                                            AL, AL),
+                            Kokkos::subview(tmp, 0, AL, AL, AL, AL));
+        }
+        auto fv = Kokkos::subview(outarray_vett, m, std::make_pair(nc0, nct), AL, AL,
+                                  AL);
+        if (nfv > 0 && pradvet->CleanRstFv().extent_int(0) > m) {
+          Kokkos::deep_copy(fv, Kokkos::subview(pradvet->CleanRstFv(), m, AL, AL, AL,
+                                                AL));
+        } else if (nfv > 0) {
+          Kokkos::deep_copy(fv, 0.0);
+        }
+      }
+      if (um) Kokkos::fence();
     }
     // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last VET step
     if ((phydro != nullptr && phydro->rad_signal_speed) ||
@@ -372,13 +365,6 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       pack(outarray_vets, "rst-vets", one ? 1 : nmb, nrs, [&](DvceArray5D<Real> &t) {
         if (!one) pradvet->RssRstPack(t, nmb, rmode);
       });
-    }
-    // implicit_gas_src = conservative(2): the cell-F slope csk1
-    if (pradvet->CskRstNch() > 0) {
-      Kokkos::realloc(outarray_vetk, nmb, 3, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_vetk, Kokkos::subview(pradvet->csk1,
-                                                      std::make_pair(0,nmb),
-                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
     // vet_rotate_avg: the averaging history, densely packed slabs
     const int nra = pradvet->RotAvgRstNslab(nout1*nout2*nout3);
@@ -496,7 +482,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // <rad_vet> implicit_predictor = step: the number of ipred channels written (0 when no
   // increment is stored, and then not one byte), and its marked header -- int32 have,
   // int32 ncomp, Real pred_dt.  See radvet::kVetPredRstMagic.
-  const int npred = (pradvet != nullptr && pradvet->impl_pred && pradvet->pred_ok) ?
+  const int npred = (pradvet != nullptr && pradvet->pred_ok) ?
                     static_cast<int>(pradvet->ipred.extent(1)) : 0;
   char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
   {
@@ -572,16 +558,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {(nrss > 0) ? 1 : 0, static_cast<std::int32_t>(nrss),
                                  static_cast<std::int32_t>(rss_mode), 0};
     std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
-  }
-  // <rad_vet>/implicit_gas_src = conservative(2): csk1 + the flags,
-  // ncsk slabs behind the vet_gd_async ones (radvet::kVetCskRstMagic)
-  const bool wcsk = (pradvet != nullptr) && pradvet->CskRstHdr();
-  const int ncsk = wcsk ? pradvet->CskRstNch() : 0;
-  char csk_hdr[4*sizeof(std::int32_t)];
-  {
-    const std::int32_t hdr[4] = {wcsk ? 1 : 0, static_cast<std::int32_t>(ncsk),
-                                 (wcsk && pradvet->csk1_ok) ? 1 : 0, 0};
-    std::memcpy(&(csk_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   // <rad_vet>/vet_rotate_avg: the averaging history, nra slabs behind
   // even the csk ones (radvet::kVetRaRstMagic; RadiationVet::RotAvgRstHdr)
@@ -860,15 +836,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // the conservative cell-F slope header, same marked form, behind the signal-speed one
-    if (wcsk) {
-      IOWrapperSizeT nb = sizeof(csk_hdr);
-      resfile.Write_any_type(&(radvet::kVetCskRstMagic[0]),
-                             sizeof(radvet::kVetCskRstMagic),
-                             "byte", single_file_per_rank);
-      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
-      resfile.Write_any_type(&(csk_hdr[0]), nb, "byte", single_file_per_rank);
-    }
     // the vet_rotate_avg header, same marked form, behind the csk one
     if (nra > 0) {
       IOWrapperSizeT nb = sizeof(ra_hdr);
@@ -985,7 +952,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += (neint + (we_hyd ? 4 : 0))*cell_bytes;
   data_size += nck*cell_bytes;   // implicit-ck state
   data_size += nrss*cell_bytes;   // rad_signal_speed inputs
-  data_size += ncsk*cell_bytes;   // conservative csk1
   data_size += nra*cell_bytes;   // vet_rotate_avg history
   data_size += nams*cell_bytes;   // am_vector spin (+ amk1)
   data_size += npgs*cell_bytes;   // per-cell pgen slabs
@@ -1037,10 +1003,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nrss > 0) {
     step3size += sizeof(radvet::kVetRssRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(rss_hdr);
-  }
-  if (wcsk) {
-    step3size += sizeof(radvet::kVetCskRstMagic) + sizeof(IOWrapperSizeT) +
-        sizeof(csk_hdr);
   }
   if (nra > 0) {
     step3size += sizeof(radvet::kVetRaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
@@ -1604,8 +1566,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
               [&](DvceArray5D<Real> &t, int m, int) {
                 pradvet->RssRstPack(t, 1, pradvet->RssRstMode(), m);});
   // and the vet_gd_async pending source behind it (kVetVgdRstMagic)
-  // and the conservative cell-F slope behind it (kVetCskRstMagic)
-  write_group(outarray_vetk, ncsk, "rad_vet conservative cell-F slope");
   // and the vet_rotate_avg history behind it (kVetRaRstMagic)
   write_group(outarray_vetr, nra, "vet_rotate_avg history");
   // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
@@ -1631,7 +1591,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   outarray = HostArray5D<Real>();
   outarray_hyd = outarray_mhd = outarray_rad = outarray_vet = outarray_force =
       outarray_z4c = outarray_adm = outarray_ck = outarray_vetp = outarray_vett =
-      outarray_vets = outarray_vetr = outarray_vetk =
+      outarray_vets = outarray_vetr =
       outarray_ams = outarray_pgs = outarray_fax = outarray_x1e = outarray_wpv =
       HostArray5D<Real>();
   outarray_vett_d = DvceArray5D<Real>();

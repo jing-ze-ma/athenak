@@ -129,24 +129,15 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     t2_c31 = tb.c31;
     t2_c32 = tb.c32;
     if (t2_tab == 2) {
-      t2_gtm = pin->GetOrAddBoolean("rad_vet", "time2_gtime_mom", true);
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> time2_tableau = sdirk2: no explicit K1, Heun hydro"
-                  << (t2_gtm ? "" : ", time2_gtime_mom = false") << std::endl;
+                  << std::endl;
       }
-      // time2_gtime_slope: Time2GasTime's slope-limited exchange.  Default true (with
-      // time2_gtime_mom)
+      // time2_gtime_slope: Time2GasTime's slope-limited exchange.  Default true
       const bool nm = pin->DoesParameterExist("rad_vet", "time2_gtime_slope");
-      t2_gts = pin->GetOrAddBoolean("rad_vet", "time2_gtime_slope", t2_gtm &&
+      t2_gts = pin->GetOrAddBoolean("rad_vet", "time2_gtime_slope",
           recipe::Fix(pin, "rad_vet", "time2_gtime_slope", "true", "false"));
       recipe::OldStored(pin, "rad_vet", "time2_gtime_slope", "false", "true");
-      if (t2_gts && !t2_gtm) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/time2_gtime_slope = true needs "
-                  << "time2_gtime_mom = true (a restart file may store false): name "
-                  << "time2_gtime_mom=true, or time2_gtime_slope=false" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> time2_gtime_slope = " << (t2_gts ? "true" : "false")
                   << (nm ? "" : " (default)") << std::endl;
@@ -181,10 +172,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       }
     }
   }
-  // time2_enth_be: the backward-Euler solves of a hesdirk2 run take the stage solves'
-  // enthalpy face rule too (else the operator changes for one step: an O(dt) error)
-  t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
-      recipe::Fix(pin, "rad_vet", "time2_enth_be", "true", "false"));
   // a restart's time2_vet (alias time2_vet_col) = extrap2: the extrap2 channels of a file
   // of version < 4 (Time2RstNchWant)
   if (sph_geom && global_variable::restart_run) {
@@ -197,13 +184,10 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     t2_dbg_fail = pin->GetInteger("rad_vet", "time2_dbg_fail");
   }
 
-  // time2_face_fct: Zalesak limiter of the stage increment (Time2FaceFct); on for a fresh
-  // run.  The clean solve stores the energy flux Phi that moved E (CleanWriteBack)
-  t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct",
-      recipe::Fix(pin, "rad_vet", "time2_face_fct", "true", "false"));
+  // the stage increment's Zalesak limiter (Time2FaceFct): the clean solve stores the
+  // energy flux Phi that moved E (CleanWriteBack)
   t2_pfst = true;
   t2_ffct_emin = 0.1;   // (rad_vet.hpp)
-  t2_cfl_post = pin->GetOrAddBoolean("rad_vet", "time2_cfl_post", t2_cfl_post);
   t2_abe = pin->GetOrAddInteger("rad_vet", "time2_auto_be", t2_abe);
   if (t2_abe < 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -214,9 +198,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     std::cout << "<rad_vet> time2_auto_be=" << t2_abe << ": after a stage fallback the "
               << "next 1, 2, 4, ... " << t2_abe << " steps take the backward-Euler redo "
               << "path at once" << std::endl;
-  }
-  if (pin->DoesParameterExist("rad_vet", "restart_pack_per_mb")) {
-    rst_pack_mb = pin->GetBoolean("rad_vet", "restart_pack_per_mb");
   }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -251,8 +232,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
-    std::cout << "         time2_enth_be=" << (t2_enth_be ? "true" : "false")
-              << std::endl;
   }
 }
 
@@ -312,7 +291,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   auto ccl = pmy_pack->pcoord->cos_cell;
   const bool etg = ph->use_etotgrav, csk = cs_geom;
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
-  const bool gm = t2_gtm, gs = t2_gts, ps = t2_gtp;
+  const bool gs = t2_gts, ps = t2_gtp;
   auto k1_ = t2k1;
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -363,7 +342,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
       } else if (which == 2) {
         const Real d = u - (un + g*(us - un));   // (0 where the solve left it)
         u0_(m,n,k,j,i) = us + d;
-        hs_(m,n,k,j,i) = ((gm && n >= IM1 && n <= IM3) ? 1.0/g - 1.0 : e)*d;
+        hs_(m,n,k,j,i) = ((n >= IM1 && n <= IM3) ? 1.0/g - 1.0 : e)*d;
       } else {
         u0_(m,n,k,j,i) = u + us;
         if (ps) {hs_(m,n,k,j,i) = u;}   // (the register to restore)
@@ -371,11 +350,11 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
     }
     if (which == 2 && gs) {
       hs_(m,IEN,k,j,i) = xs;
-    } else if (which == 2 && (ps || gm)) {
+    } else if (which == 2) {
       // ps: (f - 1) d of the total energy less that of the kinetic; else IEN's with the
       // momentum's f
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i) + hs_(m,IDN,k,j,i);
-      const Real s = gm ? e*g/(1.0 - g) : 1.0;
+      const Real s = e*g/(1.0 - g);
       auto ke = [&](const Real q) {
         return CsKeMom(u0_(m,IM1,k,j,i) + q*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
                        q*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + q*hs_(m,IM3,k,j,i), c)/r;
@@ -480,7 +459,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
-  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}
+  Time2FaceFct(stage, c1, c2);
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? VET_T2S_STAGE1 : VET_T2S_STAGE2;
   t2_fail = false;
@@ -741,16 +720,14 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   int sa = ca, sb = cb;
   Real ncell = 0.0;
   int nround = 0;
-  // zalesak_halo_skip: exchange R only after a round that changed a cell within 2 ng of a
+  // exchange R only after a round that changed a cell within 2 ng of a
   // MeshBlock face; the first exchange always runs
   const int zd = 2*id.ng;
   const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
-  const bool zsk = zl_hskip;
   bool zfirst = true;
-  // zalesak_active: an R that fell is written with its sign bit set; the next round
+  // an R that fell is written with its sign bit set; the next round
   // evaluates only cells with such a face neighbour, the others keep |R|
-  const bool zac = zl_active;  // zalesak_active
-  // zalesak_active, no exchange: the face ghosts of the slot read next are those of the
+  // no exchange: the face ghosts of the slot read next are those of the
   // other slot
   auto fghost = [&](const int c, const int cf) {
     const int n1 = ie - is + 1, n2 = je - js + 1, n3 = ke - ks + 1;
@@ -784,14 +761,13 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   };
   for (int r = 0; r < 4096; ++r) {   // until none newly limited
     Real nv[2] = {0.0, 0.0};
-    // (zalesak_active: every cell in round 0)
-    const bool zsel = zac && r > 0;
+    const bool zsel = r > 0;   // (every cell in round 0)
     const int s0 = sa, s1 = sb;
     auto rnd = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                              Real &a, Real &ab) {
       const Real rc = fabs(iw_(m,s0,k,j,i));
       Real rn = rc;
-      bool act = !zsel;   // (zalesak_active: a face neighbour's R fell)
+      bool act = !zsel;   // (a face neighbour's R fell)
       for (int d = 0; d < 3 && !act; ++d) {
         if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
         const int dk = (d == 2), dj = (d == 1), di = (d == 0);
@@ -808,9 +784,9 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
           const Real q = w + po - pi + pl - wf;
           const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
           if (rq < rc) {
-            rn = zac ? -rq : rq;
+            rn = -rq;
             a += 1.0;
-            if (zsk && (i < is + zd || i > ie - zd ||
+            if ((i < is + zd || i > ie - zd ||
                         (zx2 && (j < js + zd || j > je - zd)) ||
                         (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
           }
@@ -831,20 +807,15 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     ncell += nn;
     nround = r + 1;
     std::swap(sa, sb);   // (the round's R is read next)
-    if (!zsk || zfirst || nv[1] > 0.0) {
+    if (zfirst || nv[1] > 0.0) {
       rhalo(sa);
-      if (!zac) {   // (the other slot keeps the same ghosts)
-        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sb,
-                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
-                          Kokkos::ALL, sa, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-      }
       zl_halos += 1.0;
       zfirst = false;
-    } else if (zac) {
+    } else {
       fghost(sa, sb);
     }
   }
-  if (zac) {   // (the last round changed nothing: |R| of its read slot, ghosts too)
+  {   // (the last round changed nothing: |R| of its read slot, ghosts too)
     auto r0 = Kokkos::subview(iw, Kokkos::ALL, sa, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
     auto r1 = Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
     par_for("vet_t2_ffct_abs", DevExeSpace(), 0, nmb1, 0, r0.extent_int(1) - 1, 0,
@@ -852,10 +823,6 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       r1(m,k,j,i) = fabs(r0(m,k,j,i));
     });
-  } else if (sa != ca) {   // (the last round changed nothing: the R of both slots)
-    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
-                      Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sa,
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   if (nround >= 4096) {
     ZalesakCapWarn("time2_face_fct", pmy_pack->pmesh->ncycle, t2_solve);
@@ -923,7 +890,7 @@ void RadiationVet::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   auto g1 = t2f1;
   auto iw_ = iw;
   auto ar = pmy_pack->pcoord->area.x1f;   // (the x1 face area of the clean fluxes)
-  const bool lim = t2_ffct && ok1;   // (the limiter's R in iw slot Time2FctSlot(0))
+  const bool lim = ok1;   // (the limiter's R in iw slot Time2FctSlot(0))
   const int sr = Time2FctSlot(0);
   const Real crp = chat/c_light, cc2 = two ? c2 : 0.0;
   par_for("cln_bndacc", DevExeSpace(), 0, nmb1, 0, 1, id.ks, id.ke, id.js, id.je,
@@ -1068,8 +1035,6 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
     });
     cln_lzc = c*cln_lzs1;   // (clean_cs_lz_abs = 2)
   }
-  const bool pred_save = impl_pred;
-  impl_pred = false;
   Mesh *pmesh = pmy_pack->pmesh;
   t2_inprobe = true;
   t2_solve = VET_T2S_STAGE1;
@@ -1082,7 +1047,6 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   pdrive->ExecuteTaskList(pmesh, "vet_after_stagen", 1);
   vgd_rot_ncpass += static_cast<double>(impl_itsum - its0);
   t2_inprobe = false;
-  impl_pred = pred_save;
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
@@ -1153,7 +1117,7 @@ int RadiationVet::Time2RstNchWant() {
   const bool sk = t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != VET_TIME_HESDIRK2) ? 0 :
-         VET_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? VET_T2_NVET : 0)
+         VET_T2_NK + (sk ? 0 : np) + (vet_sc ? VET_T2_NVET : 0)
          + ((t2_x2old && !sk) ? VET_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == VET_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == VET_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
@@ -1413,7 +1377,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     return;
   }
   if (h2) ch -= VET_T2_NK;
-  if (h2 && impl_pred && t2_rstv < 4) {
+  if (h2 && t2_rstv < 4) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
       skip();
@@ -1621,17 +1585,16 @@ void RadiationVet::Time2Report() {
             << ": stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
-  if (t2_ffct) {  // global sums
-    std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
-              << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
-              << t2_ffct_cells << " max rounds="
-              << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
-              << t2_ffct_left << " emptied (E < " << t2_ffct_emin << " E^n) cells="
-              << t2_ffct_nemp << " min E/E^n="
-              << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds << " R exchanges="
-              << zl_halos;
-    std::cout << ")";
-  }
+  // global sums
+  std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
+            << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
+            << t2_ffct_cells << " max rounds="
+            << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
+            << t2_ffct_left << " emptied (E < " << t2_ffct_emin << " E^n) cells="
+            << t2_ffct_nemp << " min E/E^n="
+            << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds << " R exchanges="
+            << zl_halos;
+  std::cout << ")";
   if (vgd_rot_slope == 3) {
     std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="
               << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass << " (frac "
