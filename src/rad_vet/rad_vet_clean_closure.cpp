@@ -1813,16 +1813,18 @@ void RadiationVet::CleanGdFaceSums() {
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, six, ke, je, is, ie};
   if (gl) {
     const int ng = indcs.ng;
-    // (cubed sphere: chunks of clean_halo_vars/4, the build's largest scratch)
-    const int nc = std::min(n, six ? std::max(cln_hmax/4, 1) : cln_hmax);
+    // (cubed sphere: the largest chunks cln_st, dead across a build, holds, else its own)
+    const size_t n3 = static_cast<size_t>(nmb1 + 1)*cs.extent_int(2)*cs.extent_int(3)*
+                      cs.extent_int(4);
+    const int nst = static_cast<int>(cln_st.span()/n3);
+    const int nc = std::min(n, (six && nst < cln_hmax) ? std::max(nst, cln_hmax/4)
+                                                       : cln_hmax);
     const int nt = std::max(ke - ks + 1, je - js + 1);
     // (persistent scratch; gl's unwritten rows stay zero, ch is written before read)
     cln_gdgl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, six ? 6 : 2, nt,
                                               std::max(cs.extent_int(4), je - js + 1));
     gi.gl = cln_gdgl;
-    // (six: aliases cln_st where it fits, dead across a build)
-    const bool ost = cln_st.span() >= static_cast<std::size_t>(nmb1 + 1)*nc*
-                     cs.extent_int(2)*cs.extent_int(3)*cs.extent_int(4);
+    const bool ost = (nst >= nc);   // (six: aliases cln_st)
     auto ch = (six && ost) ? DvceArray5D<Real>(cln_st.data(), nmb1 + 1, nc,
                              cs.extent_int(2), cs.extent_int(3), cs.extent_int(4))
             : six ? DvceArray5D<Real>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
