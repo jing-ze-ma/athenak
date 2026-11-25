@@ -81,15 +81,17 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(xx1f, nmb, ncells1+1);
     Kokkos::realloc(xx2f, nmb, ncells2+1);
     Kokkos::realloc(xx3f, nmb, ncells3+1);
-    Kokkos::realloc(dxedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
-    Kokkos::realloc(dxedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
-    Kokkos::realloc(dxedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
     Kokkos::realloc(dxface.x1f, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(dxface.x2f, nmb, ncells3, ncells2+1, ncells1);
     Kokkos::realloc(dxface.x3f, nmb, ncells3+1, ncells2, ncells1);
-    Kokkos::realloc(areaedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
-    Kokkos::realloc(areaedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
-    Kokkos::realloc(areaedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    if (pin->DoesBlockExist("mhd")) {   // the edges: CT and the current density only
+      Kokkos::realloc(dxedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+      Kokkos::realloc(dxedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+      Kokkos::realloc(dxedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+      Kokkos::realloc(areaedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+      Kokkos::realloc(areaedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+      Kokkos::realloc(areaedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    }
     Kokkos::realloc(x_ov_rD, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(y_ov_rC, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(z_ov_rE, nmb, ncells3, ncells2, ncells1);
@@ -579,6 +581,7 @@ void Coordinates::CoordGnomonicEquiangle() {
   auto dxedge_ = dxedge;
   auto dxface_ = dxface;
   auto areaedge_ = areaedge;
+  const bool edges = dxedge.x1e.extent_int(3) > 1;   // (MHD only)
   auto sin_cell_ = sin_cell;
   auto cos_cell_ = cos_cell;
   auto sin_face_xi_ = sin_face_xi;
@@ -686,20 +689,22 @@ void Coordinates::CoordGnomonicEquiangle() {
 
     // edge lengths for the CT update, from the same arcs as the adjoining face areas:
     // x1e radial, x2e along xi at an eta face, x3e along eta at a xi face
-    dxedge_.x1e(m,k,j,i) = r_r - r_l;
-    if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
-    if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
-    if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
+    if (edges) {
+      dxedge_.x1e(m,k,j,i) = r_r - r_l;
+      if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
+      if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
+      if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
 
-    dxedge_.x2e(m,k,j,i) = r_l * dth_xil;
-    if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * dth_xil;
-    if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * dth_xir;
-    if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * dth_xir;
+      dxedge_.x2e(m,k,j,i) = r_l * dth_xil;
+      if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * dth_xil;
+      if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * dth_xir;
+      if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * dth_xir;
 
-    dxedge_.x3e(m,k,j,i) = r_l * dth_etal;
-    if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * dth_etal;
-    if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * dth_etar;
-    if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * dth_etar;
+      dxedge_.x3e(m,k,j,i) = r_l * dth_etal;
+      if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * dth_etal;
+      if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * dth_etar;
+      if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * dth_etar;
+    }
 
     // dual mesh: edge-centred areas (areaedge) and centre-to-centre lengths (dxface) of
     // the loop joining the four cell centres around an edge, used by the current density.
@@ -732,14 +737,14 @@ void Coordinates::CoordGnomonicEquiangle() {
     if (i > 0) dxface_.x1f(m,k,j,i) = r_c - r_cm;
     if (j > 0) dxface_.x2f(m,k,j,i) = r_c * arc_xi(xm, x, y);
     if (k > 0) dxface_.x3f(m,k,j,i) = r_c * arc_eta(ym, y, x);
-    if (j > 0 && k > 0) {
+    if (edges && j > 0 && k > 0) {
       areaedge_.x1e(m,k,j,i) = SQR(r_c) * arc_xi(xm, x, yl) * arc_eta(ym, y, xl)
                               * sqrt(1.0 + SQR(xl) + SQR(yl)) / (Cl * Dl);
     }
-    if (i > 0 && k > 0) {
+    if (edges && i > 0 && k > 0) {
       areaedge_.x2e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_eta(ym, y, x);
     }
-    if (i > 0 && j > 0) {
+    if (edges && i > 0 && j > 0) {
       areaedge_.x3e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_xi(xm, x, y);
     }
 
@@ -1336,6 +1341,7 @@ void Coordinates::CoordSphericalPolar() {
   auto xx2f_ = xx2f;
   auto xx3f_ = xx3f;
   auto dxedge_ = dxedge;
+  const bool edges = dxedge.x1e.extent_int(3) > 1;   // (MHD only)
   auto x_ov_rD_ = x_ov_rD;
   auto y_ov_rC_ = y_ov_rC;
   auto z_ov_rE_ = z_ov_rE;
@@ -1469,23 +1475,25 @@ void Coordinates::CoordSphericalPolar() {
       }
     }
 
-    // --- radial edge lengths ---
-    dxedge_.x1e(m,k,j,i) = r_r - r_l;
-    if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
-    if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
-    if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
+    if (edges) {
+      // --- radial edge lengths ---
+      dxedge_.x1e(m,k,j,i) = r_r - r_l;
+      if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
+      if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
+      if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
 
-    // --- theta edge lengths ---
-    dxedge_.x2e(m,k,j,i) = r_l * (thetar-thetal);
-    if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
-    if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
-    if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
+      // --- theta edge lengths ---
+      dxedge_.x2e(m,k,j,i) = r_l * (thetar-thetal);
+      if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
+      if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
+      if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
 
-    // --- phi edge lengths ---
-    dxedge_.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
-    if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
-    if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
-    if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
+      // --- phi edge lengths ---
+      dxedge_.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
+      if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
+      if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
+      if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
+    }
 
     // --- radial faces ---
     area_.x1f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
@@ -1535,7 +1543,7 @@ void Coordinates::CoordSphericalPolar() {
     if (k > 0) {
       dxface_.x3f(m,k,j,i) = x1v_(m,i)*fabs(sin(x2v_(m,j)))*(x3v_(m,k)-x3v_(m,k-1));
     }
-    if (j > 0 && k > 0) {
+    if (edges && j > 0 && k > 0) {
       // The dual face around an r-edge spans theta from the centroid of cell j-1 to
       // that of cell j.  At a pole the two centroids are mirror images through the
       // axis, so |cos a - cos b| vanishes there (and J_r = circulation/area with it);
@@ -1548,11 +1556,11 @@ void Coordinates::CoordSphericalPolar() {
       const Real dcos = pole ? (2.0 - fabs(ca) - fabs(cb)) : fabs(ca - cb);
       areaedge_.x1e(m,k,j,i) = SQR(x1v_(m,i)) * dcos * (x3v_(m,k)-x3v_(m,k-1));
     }
-    if (k > 0 && i > 0) {
+    if (edges && k > 0 && i > 0) {
       areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1)))
                                * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
     }
-    if (i > 0 && j > 0) {
+    if (edges && i > 0 && j > 0) {
       areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1)))
                                * (x2v_(m,j)-x2v_(m,j-1));
     }
