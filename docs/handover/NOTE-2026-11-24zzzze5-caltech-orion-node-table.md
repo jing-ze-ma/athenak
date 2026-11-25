@@ -663,3 +663,11 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 13:42 02-16: ring_R1 -> ring_R3
 - 11-25 13:43 02-03: pg_m3 pg_m3 -> pg_m3
 - 11-25 13:43 02-11: pg_m3 pg_m3 -> pg_m3
+- 11-25 13:45 02-09: pg_m3 -> IDLE
+- 11-25 13:46 02-11: pg_m3 -> IDLE
+- 11-25 13:47 02-03: pg_m3 -> IDLE
+- 11-25 13:47 02-09: IDLE -> pg_m3
+- 11-25 13:47 02-11: IDLE -> pg_m3 pg_m3
+- 11-25 13:48 02-03: IDLE -> pg_m3 pg_p23 pg_p23 pg_p23
+- 11-25 13:48 02-09: pg_m3 -> pg_m3 pg_p23
+- 11-25 13:48 02-11: pg_m3 pg_m3 -> pg_m3 pg_m3 pg_p23
