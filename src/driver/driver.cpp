@@ -393,7 +393,8 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   {
     hydro::Hydro *phm = pmesh->pmb_pack->phydro;
     if (phm != nullptr && phm->pmlat != nullptr && phm->pmlat->on) {
-      const int nnu = phm->pmlat->CountNonUniform(phm->u0, IDN);
+      const int nnu = (res_flag && phm->pmlat->state_kept) ? 0 :
+                      phm->pmlat->CountNonUniform(phm->u0, IDN);
       auto *prm = pmesh->pmb_pack->pradvet;
       const int nnr = (prm != nullptr && phm->pmlat->rad) ?
                       phm->pmlat->CountNonUniform(prm->u0, 0) : 0;

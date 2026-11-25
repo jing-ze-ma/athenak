@@ -14,18 +14,31 @@
 //! (1) after every hydro stage update (RKUpdate + source terms + the conduction
 //! operators, before SendU) and after every write of the gas by the implicit
 //! radiation solve (RadiationVet::FluidRefresh), the conserved state of each group is
-//! replaced by its group value: rho, the total energy and the scalars by their
-//! VOLUME average; the momentum as a Cartesian vector field m_i = P/V + Omega x d_i
-//! (d_i = cell centre - group volume centroid) that keeps the group's linear momentum
-//! P = sum V_i m_i AND its angular momentum L = sum V_i x_i x m_i exactly (both in
-//! Cartesian components, x_i = x1v rhat at the cell centre, the arm of the code's L_z
-//! = sum V R m_phi); the
-//! energy E_i = e_bar + |m_i|^2/(2 rho_bar), e_bar so that sum V_i E_i is unchanged
-//! (falls back to Omega = 0 where the rotation part would take more than half of the
-//! thermal energy). The vector is moved between bases exactly: sp orthonormal
-//! (r, theta, phi); cs radial + COVARIANT on the unit panel tangents (raised with
-//! cos_cell). So every stage ends with group-uniform rho, e, P and a group-rigid
-//! velocity for r < r_c; the fluxes between the cells of a group cancel in the group
+//! replaced by its group value, <hydro>/merge_lat_mom =
+//!   radial (default of a fresh run): rho and the scalars by their VOLUME average, the
+//!   momentum by rho times the velocity v = V rhat + Omega x rhat (one radial velocity
+//!   and a rigid rotation about the origin, MlatModes) that keeps sum V m_r and the three
+//!   components of L = sum V x_i x m_i of the group (x_i = x1v rhat at the cell centre,
+//!   the arm of the code's L_z = sum V R m_phi), and a uniform specific internal energy
+//!   that keeps sum V E (with the cells' rho Phi). A spherically symmetric state (static,
+//!   radial flow, rigid rotation) is kept to round-off. Cartesian linear momentum is kept
+//!   to the truncation error of the curvilinear update only. Where a group of uniform
+//!   density needs x > 0 more kinetic + potential energy for those momenta than the cells
+//!   have (dense and thin cells, supersonic lateral motion), rho and the scalars keep the
+//!   share 1 - a of their contrast, a = e0/(e0 + x), e0 the thermal energy of the cells:
+//!   the energy of the kept momenta is convex in rho, so the group's thermal energy is
+//!   >= e0^2/(e0 + x) > 0, without dropping any momentum. A group whose cells have
+//!   e0 <= 0 before the merge is left to the C2P floors (nfb in MLATDIAG, amin the
+//!   smallest a). The CFL width of a group (3) shrinks to the cell's with its density
+//!   contrast (MlatWidth).
+//!   rigid (restarts without the key): rho, E and the scalars by their VOLUME average,
+//!   the momentum as a Cartesian field m_i = P/V + Omega x d_i (d_i = cell centre - group
+//!   centroid) that keeps sum V m_i and L, but drops Omega (L lost, nfb) where the
+//!   rotation would take more than half of the thermal energy, and turns a radial flow
+//!   into lateral velocities of the group's opening angle x v_r.
+//! Vectors are moved between bases exactly: sp orthonormal (r, theta, phi); cs radial +
+//! COVARIANT on the unit panel tangents (raised with cos_cell). So every stage ends with
+//! group values for r < r_c; the fluxes between the cells of a group cancel in the group
 //! sums, i.e. the group value is updated by its OUTER face fluxes only.
 //! (2) the x2 / x3 face states of the merged cells come from a GROUP-level limited
 //! linear reconstruction (group values of the two neighbouring groups, van Leer
@@ -49,11 +62,12 @@
 //! <hydro>/merge_lat_rc = r_1[,r_2,...] shell outer radii (increasing, code units)
 //! <hydro>/merge_lat_f = f_1[,f_2,...] lateral merge factor per shell (x1v < r_1:
 //! f_1, r_1 <= x1v < r_2: f_2, ...)
+//! <hydro>/merge_lat_mom = radial | rigid
 //! <hydro>/merge_lat_rad = false | true
 //! <hydro>/merge_lat_check = true (test) every average re-sums its groups: max relative
-//! change of M, E, |P|, |L| printed as MLATDIAG chk
+//! change of M, E, sum V m_r, P, L printed as MLATDIAG chk
 //! <hydro>/merge_lat_diag = N every N cycles rank 0 prints MLATDIAG: the global gas
-//! M, Etot(IEN), P (Cartesian), L (Cartesian) sums (may be
+//! M, Etot(IEN), P (Cartesian), L (Cartesian) sums, sum V |m|, sum V r |m| (may be
 //! named without merge_lat_rc: diagnostic of a fine run)
 
 #include <cstdint>
@@ -147,6 +161,62 @@ void MlatCoarsePLM(const Real qm, const Real qc, const Real qp, const int s, con
   qhi = qc + sl*(static_cast<Real>(s) + 0.5 - c0)*rf;
 }
 
+//! the velocity modes a merged group keeps (<hydro>/merge_lat_mom = radial), from the
+//! group direction c and two tangents t1, t2 (orthonormal): the uniform radial velocity
+//! and the three rigid rotations about the origin
+constexpr int kMlatModes = 4;
+KOKKOS_INLINE_FUNCTION
+void MlatModes(const Real *rh, const Real *c, const Real *t1, const Real *t2,
+               Real b[kMlatModes][3]) {
+  const Real *w[3] = {t2, t1, c};
+  for (int q = 0; q < 3; ++q) {
+    const int q1 = (q + 1)%3, q2 = (q + 2)%3;
+    b[0][q] = rh[q];
+    for (int a = 0; a < 3; ++a) {
+      b[a+1][q] = w[a][q1]*rh[q2] - w[a][q2]*rh[q1];
+    }
+  }
+}
+
+//! solves G w = c (symmetric positive definite, Cholesky; G is overwritten). The pivots
+//! are independent of the scale of each mode.
+KOKKOS_INLINE_FUNCTION
+bool MlatSolve(Real G[kMlatModes][kMlatModes], const Real *c, Real *w) {
+  for (int a = 0; a < kMlatModes; ++a) {
+    w[a] = c[a];
+    for (int b = 0; b <= a; ++b) {
+      Real s = G[a][b];
+      for (int q = 0; q < b; ++q) s -= G[a][q]*G[b][q];
+      if (a == b && !(s > 0.0)) return false;
+      G[a][b] = (a == b) ? sqrt(s) : s/G[b][b];
+    }
+    for (int q = 0; q < a; ++q) w[a] -= G[a][q]*w[q];
+    w[a] /= G[a][a];
+  }
+  for (int a = kMlatModes - 1; a >= 0; --a) {
+    for (int q = a + 1; q < kMlatModes; ++q) w[a] -= G[q][a]*w[q];
+    w[a] /= G[a][a];
+  }
+  return true;
+}
+
+//! lateral CFL width of a merged cell in units of the cell's: f for a group of uniform
+//! density, 1 where the group keeps its full density contrast
+KOKKOS_INLINE_FUNCTION
+Real MlatWidth(const DvceArray5D<Real> &w0, const int f, const int js, const int ks,
+               const int m, const int k, const int j, const int i) {
+  if (f <= 1) return 1.0;
+  const int jl = j - (j - js)%f, kl = k - (k - ks)%f;
+  Real lo = w0(m,IDN,k,j,i), hi = lo;
+  for (int kk = kl; kk < kl + f; ++kk) {
+    for (int jj = jl; jj < jl + f; ++jj) {
+      lo = fmin(lo, w0(m,IDN,kk,jj,i));
+      hi = fmax(hi, w0(m,IDN,kk,jj,i));
+    }
+  }
+  return static_cast<Real>(f)/(1.0 + (f - 1)*(hi - lo)/(hi + lo));
+}
+
 class MergeLat {
  public:
   MergeLat(MeshBlockPack *ppack, ParameterInput *pin);
@@ -158,12 +228,17 @@ class MergeLat {
   int fs[kMlatMaxShell];
   int fbig = 1;
   bool rad = false;
+  bool radial = false;      // <hydro>/merge_lat_mom = radial
+  bool state_kept = false;  // restart of this merge (merge_lat_state)
   int diag_every = 0;
   bool check = false;       // <hydro>/merge_lat_check: group-sum errors of every average
-  double chkerr[4] = {0.0, 0.0, 0.0, 0.0};   // max rel. errors M, E, P, L (MLATDIAG chk)
+  // max rel. errors M, E, sum V m_r, P, L (MLATDIAG chk)
+  double chkerr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  double amin = 1.0;        // smallest merged share of a group's density contrast
   // per (m, i) merge factor (1 = not merged), incl. the x1 ghosts
   DvceArray2D<int> fi;
   int imax_loc = -1;        // largest merged interior i on this rank (-1 none)
+  // rigid: groups whose rotation was dropped; radial: groups left without thermal energy
   std::int64_t ncall = 0, nfallback = 0;
 
   MergeLatGeo Geo();

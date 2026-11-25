@@ -211,6 +211,67 @@ def t_floorcap_spin(c):
 
 
 # ---------------------------------------------------------------------------------------
+# merged lateral cells (hydro/merge_lat_rc)
+
+MERGE_RAND = {'problem/pert_rand': 6, 'problem/v_rand': 0.5, 'problem/cs2': 1e-2,
+              'problem/gm': 0.0, 'hydro/dfloor': 1e-12, 'hydro/pfloor': 1e-16}
+
+
+def mlat(d):
+    """the MLATDIAG rows of a run (columns by name)"""
+    rx = (r'MLATDIAG \S+ cyc (\d+) t (\S+) dt (\S+) M (\S+) E (\S+) P (\S+) (\S+) (\S+) '
+          r'L (\S+) (\S+) (\S+) nfb (\d+) chk (\S+) (\S+) (\S+) (\S+) (\S+) amin (\S+) '
+          r'Pabs (\S+) Labs (\S+)')
+    a = np.array(re.findall(rx, open(os.path.join(d, 'run.log')).read()), dtype=float)
+    return dict(zip('cyc t dt M E Px Py Pz Lx Ly Lz nfb cM cE cPr cP cL amin Pabs Labs'.split(),
+                    a.T))
+
+
+def t_merge_lat(c):
+    """merged lateral groups (f = 4, 2) with hydro/merge_lat_mom = radial.  On sp and cs:
+    cell noise (density 1e6, supersonic velocities), 200 / 100 cycles: M and L_z drifts
+    (over M, sum V r |m|), and the largest change of any group's M, E, sum V m_r, L in one
+    average (chk); the same with a milder noise whose floors do not act: E drift; a radial
+    flow (spherical symmetry): largest lateral velocity.  rigid_*: the old operator on the
+    noise (it drops the rotation of nfb groups, L_z drifts: the deck exercises it).
+    sp noise: restart 60 = 30 + 30, a forced dt_retry (factor 1) and 1 vs 2 x 2
+    MeshBlocks bitwise.  rad: the rotating radiating shell merged (am_budget), restart."""
+    out = {}
+    for g, n in (('sp', 200), ('cs', 100)):
+        dk, o = 'merge_%s.athinput' % g, dict(MERGE_RAND, **{'time/nlim': n})
+        m = mlat(c.run(dk, g, o))
+        out[g + '_dM'] = rel_drift(m['M'])
+        out[g + '_dLz'] = float(np.abs(m['Lz'] - m['Lz'][0]).max()/m['Labs'][0])
+        out[g + '_chk'] = max(m[k][-1] for k in ('cM', 'cE', 'cPr', 'cL'))
+        out[g + '_amin'] = float(m['amin'].min())
+        m = mlat(c.run(dk, g + '_mild', {'time/nlim': n//2, 'problem/gm': 0.0,
+                                         'problem/pert_rand': 2, 'problem/v_rand': 0.3}))
+        out[g + '_dE'] = rel_drift(m['E'])
+        d = c.run(dk, g + '_vr', {'time/nlim': 40, 'problem/gm': 0.0, 'problem/rot': 0.0,
+                                  'problem/vr': 0.3})
+        out[g + '_vlat'] = max(float(np.abs(b[v]).max()) for _, b in
+                               vett.read_blocks(vett.bins(d, 'hydro_w')[-1])
+                               for v in ('vely', 'velz'))
+        m = mlat(c.run(dk, g + '_rigid', dict(o, **{'hydro/merge_lat_mom': 'rigid'})))
+        out[g + '_rigid_dLz'] = float(np.abs(m['Lz'] - m['Lz'][0]).max()/m['Labs'][0])
+    dk = 'merge_sp.athinput'
+    out['restart_maxdiff'] = restart_pair(c, dk, 60, 30, MERGE_RAND)['maxdiff']
+    o = dict(MERGE_RAND, **{'time/nlim': 30, 'time/dt_retry': 'true'})
+    a = c.run(dk, 'r_straight', o)
+    b = c.run(dk, 'r_retry1', dict(o, **{'time/dt_retry_force_cycle': 4,
+                                         'time/dt_retry_force_fac': 1.0}))
+    out['retry_maxdiff'] = vett.compare_dirs(a, b)[1]
+    b = c.run(dk, 'mb2x2', dict(o, **{'meshblock/nx2': 8, 'meshblock/nx3': 8}))
+    out['layout_maxdiff'] = max(vett._bin_diff(x, y)[0]
+                                for x, y in zip(vett.bins(a), vett.bins(b)))
+    o = {'mesh/nghost': 3, 'hydro/merge_lat_rc': '2.2,3.5', 'hydro/merge_lat_f': '4,2',
+         'hydro/merge_lat_mom': 'radial', 'time/nlim': 16, 'problem/gas_rot': 2e-2}
+    out.update({'rad_' + k: v for k, v in
+                am_budget(c.run('shell_sp.athinput', 'rad', o), 'sp').items()})
+    out['rad_restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 8, o)['maxdiff']
+    return out
+
+# ---------------------------------------------------------------------------------------
 # restart and dt_retry: bitwise
 
 def restart_pair(c, deck, n, nr, over=None):
@@ -1174,6 +1235,7 @@ TESTS = [  # name, function, in --quick
     ('conservation_lz', t_conservation_lz, False),
     ('floorcap_spin', t_floorcap_spin, False),
     ('floor_dt', t_floor_dt, False),
+    ('merge_lat', t_merge_lat, False),
     ('restart_sp', t_restart_sp, True),
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),

@@ -276,6 +276,34 @@
    "nonfinite": 0
   }
  },
+ "merge_lat": {
+  "_about": "merged lateral cells, merge_lat_mom = radial: drifts of the closed noisy shells, change of each group's M, E, sum V m_r, L per average, radial flow without lateral velocity, restart / dt_retry / layout bitwise; rigid_dLz: the old operator on the same decks must drift (dropped group rotations)",
+  "max": {
+   "sp_dM": 1e-13,
+   "sp_dLz": 1e-13,
+   "sp_chk": 1e-13,
+   "sp_dE": 1e-13,
+   "sp_vlat": 1e-13,
+   "cs_dM": 1e-13,
+   "cs_dLz": 1e-13,
+   "cs_chk": 1e-13,
+   "cs_dE": 1e-13,
+   "cs_vlat": 1e-13,
+   "rad_dE": 1e-13,
+   "rad_dM": 1e-13,
+   "rad_dLz": 1e-13
+  },
+  "min": {
+   "sp_rigid_dLz": 1e-08,
+   "cs_rigid_dLz": 1e-08
+  },
+  "equal": {
+   "restart_maxdiff": 0.0,
+   "retry_maxdiff": 0.0,
+   "layout_maxdiff": 0.0,
+   "rad_restart_maxdiff": 0.0
+  }
+ },
  "floor_dt": {
   "_about": "hydro/dt_floor_courant = 0.6 on the shell with floor gas: energy as conservation_sp, restart and forced dt_retry bitwise; dt_gain (mean dt with / without the key) reported",
   "max": {
