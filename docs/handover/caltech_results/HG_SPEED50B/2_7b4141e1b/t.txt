@@ -1,7 +1,10 @@
 | arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
 |---|---|---|---|---|---|---|---|---|
-Traceback (most recent call last):
-  File "/resnick/groups/carnegie_poc/jingze/b1_1124/sbab2.py", line 14, in <module>
-    f = glob.glob(S + a + '/*.user.hst'); g = glob.glob(S + a + '/*.hydro.hst'); H[a] = [[l for l in open(x) if l.strip() and l[0] != '#'] for x in (f + g)]
-NameError: name 'H' is not defined
-srun: error: hpc-sm-02-03: task 0: Exited with exit code 1
+| BASE1 | 28 | 3.5023 | 3.4278 | 3.307/4.221 | 90.000/90.000 | 31.5 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=151 s CW 0 FATAL 0 |
+| NEW1 | 28 | 3.3069 | 3.2294 | 3.109/4.023 | 90.000/90.000 | 31.5 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=141 s CW 0 FATAL 0 |
+| NEW2 | 28 | 3.4779 | 3.4050 | 3.286/4.183 | 90.000/90.000 | 31.5 | 0/0/0/0 | ended: Terminating on cycle limit CW 0 FATAL 0 (chain stopped by 25l,  |
+- base (both arms) mean 3.5023 median 3.4278; new mean 3.3924 median 3.3560; new / base mean 0.9686, median 0.9791; base arms 3.5023 vs nan, new arms 3.3069 vs 3.4779 (mean)
+- NEW1 user.hst against BASE1: 30 / 30 rows, printed-bitwise
+- NEW1 hydro.hst against BASE1: 30 / 30 rows, printed-bitwise
+- NEW2 user.hst against BASE1: 30 / 30 rows, printed-bitwise
+- NEW2 hydro.hst against BASE1: 30 / 30 rows, printed-bitwise

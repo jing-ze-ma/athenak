@@ -60,3 +60,15 @@ srun: error: hpc-sm-02-03: task 0: Exited with exit code 1
 - NEW2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
 - BASE2 user.hst against BASE1: 60 / 60 rows, printed-bitwise
 - BASE2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
+
+## HG 2_7b4141e1b partial table, corrected (the one posted before had only a Traceback: my script; the arms themselves are complete): 7b4141e1b against 6d20f1337, BASE1, NEW1, NEW2; BASE2 and pairs 3-5 not run (25l)
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+| BASE1 | 28 | 3.5023 | 3.4278 | 3.307/4.221 | 90.000/90.000 | 31.5 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=151 s CW 0 FATAL 0 |
+| NEW1 | 28 | 3.3069 | 3.2294 | 3.109/4.023 | 90.000/90.000 | 31.5 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=141 s CW 0 FATAL 0 |
+| NEW2 | 28 | 3.4779 | 3.4050 | 3.286/4.183 | 90.000/90.000 | 31.5 | 0/0/0/0 | ended: Terminating on cycle limit CW 0 FATAL 0 (chain stopped by 25l,  |
+- base (both arms) mean 3.5023 median 3.4278; new mean 3.3924 median 3.3560; new / base mean 0.9686, median 0.9791; base arms 3.5023 vs nan, new arms 3.3069 vs 3.4779 (mean)
+- NEW1 user.hst against BASE1: 30 / 30 rows, printed-bitwise
+- NEW1 hydro.hst against BASE1: 30 / 30 rows, printed-bitwise
+- NEW2 user.hst against BASE1: 30 / 30 rows, printed-bitwise
+- NEW2 hydro.hst against BASE1: 30 / 30 rows, printed-bitwise
