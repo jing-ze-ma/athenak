@@ -300,7 +300,6 @@ CleanArgs RadiationVet::CleanMakeArgs() {
             ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   x.ys = !x.cub && cln_ysum;
-  x.lzbf = !x.cub && cln_lzbf;
   x.lwb = x.cub && cln_latwb;
   x.yl = cln_yl;
   if (x.sph) {
