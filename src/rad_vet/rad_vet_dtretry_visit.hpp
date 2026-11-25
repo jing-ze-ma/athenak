@@ -300,8 +300,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("pred2_ok", pred2_ok);
   v.value("pred2_dt", pred2_dt);
   v.view("vet_prev", vet_prev);
-  v.view("vet_now", vet_now);
-  v.view("vet_opac", vet_opac);
   v.view("t2hs", t2hs);
   v.value("t2_gt", t2_gt);
   v.value("t2_gtm", t2_gtm);
@@ -384,7 +382,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("uflx.x2f", uflx.x2f);
   v.view("uflx.x3f", uflx.x3f);
   v.view("opac", opac);
-  v.view("ugas1", ugas1);
   v.dual("cnt", cnt);
   v.value("dtnew", dtnew);
   v.value("dt_sub", dt_sub);
@@ -871,7 +868,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_nexch", vgd_nexch);
   v.value("vgd_nbyte", vgd_nbyte);
   v.value("vgd_nclamp_all", vgd_nclamp_all);
-  v.value("vlat_src_ep", vlat_src_ep);
   v.value("vgd_nrb", vgd_nrb);
   v.value("vgd_trb", vgd_trb);
   v.value("vgd_csg", vgd_csg);
