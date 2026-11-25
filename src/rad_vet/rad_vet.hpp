@@ -1289,6 +1289,7 @@ class RadiationVet {
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
   bool cln_lzt = false;     // clean_cs_lz_tel
   bool cln_lzbf = false;    // clean_cs_lz_bnd_free
+  bool cln_latwb = false;   // clean_cs_lat_wb
   bool cln_thinf = false;   // clean_stag_thinf
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb

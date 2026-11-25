@@ -515,6 +515,14 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_cs_lz_bnd_free: no radiation stress torque through the cs radial boundaries
     if (cln_lzt) old("clean_cs_lz_bnd_free", "false");
     if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_bnd_free",nw);
+    // clean_cs_lat_wb (read only when named, default off): a spherically symmetric P gives
+    // the cs lateral faces no force (CleanStagCsLat)
+    cln_latwb = stag("clean_cs_lat_wb", false);
+    if (cln_latwb && cln_lza != 2) {
+      std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lat_wb needs the cubed sphere "
+                << "and clean_layout = staggered" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (cln_lzt && cln_lza != 2) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_tel needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
