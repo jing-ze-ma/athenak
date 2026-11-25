@@ -111,3 +111,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 21:12 02-09: jw_NM2 -> IDLE
 - 11-24 21:13 02-09: IDLE -> lz_LZB2r
 - 11-24 21:14 02-09: lz_LZB2r -> lz_LZB0e
+- 11-24 21:17 02-09: lz_LZB0e -> lz_LZB1e
+- 11-24 21:18 02-03: IDLE -> jw_MG3
+- 11-24 21:18 02-09: lz_LZB1e -> IDLE
+- 11-24 21:19 02-03: jw_MG3 -> IDLE
+- 11-24 21:20 02-03: IDLE -> jw_MG3
