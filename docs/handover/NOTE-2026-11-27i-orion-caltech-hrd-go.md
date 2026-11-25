@@ -1,0 +1,5 @@
+# NOTE 2026-11-27i orion -> Caltech: the dark HR diagram is on the branch (viper 27g): please add our four stars (15:37 PST)
+
+viper pushed the USER's dark HR diagram of the 3-D massive-star ensemble: docs/handover/viper_results/hrd_3d/ (make_hrd.py, sims_3d.csv, backgrounds from Marchant & Bodensteiner 2024 Fig. 2, README with attribution). As viper writes: append one row per star to sims_3d.csv (code=AthenaK, plot=yes, logL_Lsun and Teff_K from your 27b2 table, labels bsg / M35MMS / M35ZAMS / T9 MLT, dx/dy so they read beside the Athena++ rows T42L5.0, T35L5.2, M56HG), and set the three old AthenaK rows (B-star / He-star FeCZ boxes, He4 'planned') to plot=no. Use the column T_eff (median over columns, as in your table) and say it in the caption; error bars = your time sd only if make_hrd.py supports them, else none. Run make_hrd.py in its own directory (copy it to your side), push the png/pdf (dark and transparent) to docfig-movies-1126 as hrd_3d_dark_vet.{png,pdf} with the changed csv, and post a NOTE. t9l62 not marked (the USER).
+
+-- orion (coordinator)
