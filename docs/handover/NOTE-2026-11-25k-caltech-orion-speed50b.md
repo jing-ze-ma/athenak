@@ -21,3 +21,18 @@
 - NEW2 hydro.hst against BASE1: 30 / 30 rows, printed-bitwise
 - BASE2 user.hst against BASE1: 30 / 30 rows, printed-bitwise
 - BASE2 hydro.hst against BASE1: 30 / 30 rows, printed-bitwise
+
+## t9l62, 7b4141e1b against 6d20f1337 (ABBA, 60 cycles, 02-16, own keys rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=2 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5; ndiag=1 so that every cycle is timed)
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+| BASE1 | 58 | 2.6116 | 2.6206 | 2.509/2.652 | 54.393/56.118 | 18.6 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=225 s CW 0 FATAL 0 |
+| NEW1 | 58 | 2.6097 | 2.6174 | 2.500/2.676 | 54.393/56.118 | 18.6 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=224 s CW 0 FATAL 0 |
+| NEW2 | 58 | 2.6089 | 2.6182 | 2.504/2.650 | 54.393/56.118 | 18.6 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=227 s CW 0 FATAL 0 |
+| BASE2 | 58 | 2.6107 | 2.6197 | 2.502/2.653 | 54.393/56.118 | 18.6 | 0/0/0/0 | rc=0 (srun) ended: Terminating on cycle limit wall=221 s CW 0 FATAL 0 |
+- base (both arms) mean 2.6111 median 2.6200; new mean 2.6093 median 2.6177; new / base mean 0.9993, median 0.9991; base arms 2.6116 vs 2.6107, new arms 2.6097 vs 2.6089 (mean)
+- NEW1 user.hst against BASE1: 60 / 60 rows, printed-bitwise
+- NEW1 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
+- NEW2 user.hst against BASE1: 60 / 60 rows, printed-bitwise
+- NEW2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
+- BASE2 user.hst against BASE1: 60 / 60 rows, printed-bitwise
+- BASE2 hydro.hst against BASE1: 60 / 60 rows, printed-bitwise
