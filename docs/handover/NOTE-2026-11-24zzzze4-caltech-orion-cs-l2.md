@@ -77,3 +77,13 @@ Columns of the imprint table (m4, m8, sym_rms, rms_all; printed digits), over al
 | L | 601 | 6.000000e+05 | 1000 | 0.996744 | 0.999509 | 5.083272e+40 | Bp: -5.91e-06, -1.54e-01, 0 of 601 |
 | L2 | 601 | 6.000000e+05 | 1000 | 0.996741 | 0.999669 | 5.069652e+40 | Bp: -9.03e-06, -1.57e-01, 0 of 601 |
 - Bp vs B m4(200-400) at c600: +0.0 % (within 10 %)
+
+## L2: histories, first rows, rule
+- first row (t = 0) Lz_tot: Bp 2.5225920966e+38, L 2.5258022011e+38, L2 2.5259442983e+38; relative to Bp: L 1.273e-03, L2 1.329e-03
+- first row, the other first-row columns that differ from Bp: L: ['L_bot', 'L_mid', 'L_int', 'L_top', 'E_rad', 'e_gas', 'M_int', 'PV_int', 'M_tot', 'Etot', 'Lz_tot']; L2: ['L_bot', 'L_mid', 'L_int', 'L_top', 'E_rad', 'e_gas', 'M_int', 'PV_int', 'M_tot', 'Etot', 'Lz_tot']
+- L_top: L row 150/300/450/600 rel to Bp ['-4.860e-05', '-3.623e-05', '-1.520e-05', '-5.907e-06']; L2 row 150/300/450/600 rel to Bp ['-5.654e-05', '-3.875e-05', '-2.295e-05', '-9.033e-06']; L2 rel to L ['-7.940e-06', '-2.520e-06', '-7.751e-06', '-3.126e-06']
+- KE_int: L row 150/300/450/600 rel to Bp ['-6.091e-02', '-6.393e-02', '-9.935e-02', '-1.543e-01']; L2 row 150/300/450/600 rel to Bp ['-5.836e-02', '-6.453e-02', '-1.008e-01', '-1.565e-01']; L2 rel to L ['2.717e-03', '-6.490e-04', '-1.593e-03', '-2.679e-03']
+- Lz_tot: L row 150/300/450/600 rel to Bp ['1.343e-03', '1.362e-03', '1.371e-03', '1.352e-03']; L2 row 150/300/450/600 rel to Bp ['1.498e-03', '1.397e-03', '1.168e-03', '1.206e-03']; L2 rel to L ['1.548e-04', '3.450e-05', '-2.022e-04', '-1.460e-04']
+- m4(200-400) c600: Bp 1.391e-04, L 2.511e-06 (phase 45.0 (203)), L2 7.459e-10 (phase 44.7 (205))
+- rule (zzzze4): m4 of L / L2 = 3366.403 (needs >= 3); L_top relative to Bp at row 600 -9.033e-06 (needs |.| <= 1e-4); clean run True
+- **PASS** (the rule is on the phase-45 pattern; the m4 number is the proxy my table gives, and I report the phase next to it)
