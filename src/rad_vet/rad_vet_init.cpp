@@ -860,11 +860,12 @@ void RadiationVet::MemArenaBind() {
   if (ph != nullptr) {
     const int64_t os = off;
     off = 0;
-    bind(ph->wbq0);
     if (ph->rsolver_method != Hydro_RSolver::advect) {   // (it leaves IEN's fluxes zero)
       bind(ph->uflx.x2f);
       bind(ph->uflx.x3f);
     }
+    marena_hyd = off;
+    bind(ph->wbq0);
     bind(ph->utest);
     auto record = [&](DvceFaceFld5D<Real> *r) {
       if (r == nullptr) return;
@@ -875,7 +876,6 @@ void RadiationVet::MemArenaBind() {
     if (ph->pmlfs != ph->pseamfs) record(ph->pmlfs);
     if (ph->use_dfl) ph->DfloorFluxInit();
     record(ph->pdfl_fs);
-    marena_hyd = off;
     // (behind both: the conserved state before each conversion to primitives)
     off = std::max(off, os);
     bind(ph->dual.pre);
@@ -895,13 +895,26 @@ void RadiationVet::MemArenaBind() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::MemArenaHydro
-//! \brief the hydro's arrays over the intensities, zero at each flux stage as their own
-//! allocations are where nothing writes them (FOFC's trial reads faces beyond the sweeps)
+//! \brief the hydro's fluxes over the intensities, zero at each flux stage as their own
+//! allocations are where nothing writes them (FOFC's trial reads faces beyond the
+//! sweeps), and the well-balanced cache's outer radial ghosts
 
 void RadiationVet::MemArenaHydro() {
   if (marena_hyd == 0) return;
   auto h = Kokkos::subview(marena, std::make_pair(int64_t(0), marena_hyd));
   Kokkos::deep_copy(DevExeSpace(), h, 0.0);
+  // (the x1 sweep under use_fofc reads the well-balanced cache one cell beyond the cells
+  // BuildWBCache fills, is-1..ie+1: a zero background there, plain PLM)
+  auto c = pmy_pack->phydro->wbq0;
+  if (c.data() == nullptr || c.extent(1) < 15 || c.data() < marena.data() ||
+      c.data() >= marena.data() + marena.extent(0)) return;
+  const int is = pmy_pack->pmesh->mb_indcs.is, ie = pmy_pack->pmesh->mb_indcs.ie;
+  const int nx = is - 1;   // (cells per side)
+  par_for("vet_arena_wbq0", DevExeSpace(), 0, c.extent_int(0)-1, 0, 14, 0,
+          c.extent_int(2)-1, 0, c.extent_int(3)-1, 0, 2*nx-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int q) {
+    c(m,n,k,j,(q < nx) ? q : ie + 2 + q - nx) = 0.0;
+  });
 }
 
 //----------------------------------------------------------------------------------------

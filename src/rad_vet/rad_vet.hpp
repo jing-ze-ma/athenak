@@ -1802,7 +1802,7 @@ class RadiationVet {
   DvceArray1D<Real> marena;   // intensities, then (first checkpoint) solve scratch
   int64_t marena_sw = 0;      // Reals of the intensity arrays bound so far
   bool marena_bound = false;  // MemArenaBind done
-  int64_t marena_hyd = 0;     // Reals of the hydro's arrays at its start
+  int64_t marena_hyd = 0;     // Reals of the hydro's fluxes at its start
   void MemArenaHydro();       // zeroes those (Hydro::Fluxes)
   bool marena_k2 = false;     // t2k2, t2pf2 in it (zeroed in stage 1's CleanWriteBack)
   void MemArenaBind();        // the solver's and the hydro's scratch arrays over it
