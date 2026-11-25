@@ -1077,7 +1077,8 @@ class RadiationVet {
   void CleanAdvectiveCoefficients();
   void CleanFirstIterate();
   // (beta: CLW_BT, CLW_RE only; lat false: CLW_L holds E_k's lateral sums)
-  void CleanRightHandSide(const bool beta = false, const bool lat = true);
+  void CleanRightHandSide(const bool beta = false, const bool lat = true,
+                          const bool xdn = false);
   void CleanPreconditionerSetup();
   void CleanPrecondition(const int src, const int dst);
   CleanLevel CleanStagLevel(const int l);

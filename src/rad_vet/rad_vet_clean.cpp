@@ -1255,7 +1255,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       if (inl > 0) CleanStagXDonor(false, clos || opr || !cln_feedback,
                                    cln_xdfz > 0 && inl >= cln_xdfz);
       // after the xdonor: the lateral sums of E_k are its
-      CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
+      CleanRightHandSide(false, !(inl > 0 && cln_xd_on), inl > 0);
       // clean_xt_cons: the first iterate's T from the pass's gas row, then its RHS
       if (inl == 0 && cln_xtcons && cln_feedback) {
         CleanNewtonUpdate();
@@ -1712,7 +1712,8 @@ void RadiationVet::CleanStagXDonor(const bool first, const bool lat, const bool 
   if (lat) CleanStagCsLateral(CLW_EK);
   // hold (clean_stag_xdonor_freeze): keep C, q and the explicit part of the last pass
   cln_xdh = hold;
-  if (hold) {cln_xd_on = true; return;}
+  // (a later pass: each face's C in its CleanRightHandSide, cln_rhsaf)
+  if (hold || !first) {cln_xd_on = true; return;}
   CleanArgs x = CleanMakeArgs();   // x.xq = -1: the central cross flux
   const int xq = cln_xqs;
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -1729,14 +1730,8 @@ void RadiationVet::CleanStagXDonor(const bool first, const bool lat, const bool 
       const int j = (idx - m*n234 - k*n34)/n4, i = idx%n4;
       for (int q = 0; q < 3; ++q) fc(m,xq+q,k,j,i) = 0.0;
       if (k < ks || k > ke+dk || j < js || j > je+dj || i < is || i > ie+di) return;
-      const Real cn = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
-      const Real cp = fc(m,xq+3,k,j,i), d = cn - cp, dp = fc(m,xq+4,k,j,i);
-      // l < 0 where C turns back: step d/(1 - l), the fixed point of a mode C -> l C;
-      // continuous in l
-      const Real l = (d*dp < 0.0) ? d/dp : 0.0;
-      const Real cu = first ? cn : cp + d/(1.0 - l);
-      fc(m,xq+3,k,j,i) = cu;
-      fc(m,xq+4,k,j,i) = first ? 0.0 : cu - cp;
+      fc(m,xq+3,k,j,i) = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
+      fc(m,xq+4,k,j,i) = 0.0;
     });
   }
   cln_xd_on = true;
@@ -1966,7 +1961,7 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! beta = v/c (CLW_BT) and hc kP a T^4 (CLW_RE) for the face fluxes (eq. 57).
 
 #if VET_TU_PART(1)
-void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
+void RadiationVet::CleanRightHandSide(const bool beta, const bool lat, const bool xdn) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2045,6 +2040,15 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
       const CleanArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
       CleanDirCase(dir, [&](auto d) {
         constexpr int n = decltype(d)::value;
+        if (xsp && xdn) {   // clean_stag_xdonor: C of the iterate
+          const Real cp = x.fc[n](m,x.xq+3,k,j,i), dp = x.fc[n](m,x.xq+4,k,j,i);
+          const Real d = CleanFaceCross(*pxr, CLW_EK, n, m, k, j, i) - cp;
+          // l < 0 where C turns back: step d/(1 - l), the fixed point of a mode
+          // C -> l C; continuous in l
+          const Real l = (d*dp < 0.0) ? d/dp : 0.0, cu = cp + d/(1.0 - l);
+          x.fc[n](m,x.xq+3,k,j,i) = cu;
+          x.fc[n](m,x.xq+4,k,j,i) = cu - cp;
+        }
         if (xsp) CleanStagXSplit(x, *pxr, n, m, k, j, i);
         x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
         if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux<n>(xh, CLW_EK, n, m, k, j, i,
