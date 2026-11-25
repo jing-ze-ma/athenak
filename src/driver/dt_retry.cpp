@@ -446,8 +446,9 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     return;
   }
   fac_ = pin->GetOrAddReal("time", "dt_retry_fac", 0.5);
-  grow_ = pin->GetOrAddReal("time", "dt_retry_grow", 1.25);
-  ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", 10);
+  const bool fresh = !global_variable::restart_run;
+  grow_ = pin->GetOrAddReal("time", "dt_retry_grow", fresh ? 1.1 : 1.25);
+  ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", fresh ? 20 : 10);
   // <time>/dt_fixed is the driver's dt cap (read only when named); the grow
   // step and the recovery return the cap to it, never above it
   if (pin->DoesParameterExist("time", "dt_fixed")) {
