@@ -89,3 +89,50 @@ map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC
     first 5e3 s: 7.443e-02 -> 9.222e-02; e-fold first 5e3 s 2.430e+04, 0-3e4 s 5.198e+04, 5e4-1e5 s 5.777e+04, whole 1e5 s 6.438e+04 s; last peak k 14, last axis share 0.92
   r 0.76: band A rms 0e+00: 8.397e-02 (k 14, axis 0.92); 1e+04: 8.138e-02 (k 14, axis 0.82); 2e+04: 1.273e-01 (k 14, axis 0.93); 3e+04: 1.016e-01 (k 14, axis 0.84); 4e+04: 1.775e-01 (k 14, axis 0.92); 5e+04: 1.678e-01 (k 14, axis 0.93); 6e+04: 2.137e-01 (k 14, axis 0.89); 7e+04: 2.538e-01 (k 14, axis 0.94); 8e+04: 2.543e-01 (k 14, axis 0.88); 9e+04: 3.697e-01 (k 14, axis 0.94); 1e+05: 2.887e-01 (k 14, axis 0.90)
     first 5e3 s: 8.397e-02 -> 9.977e-02; e-fold first 5e3 s 3.020e+04, 0-3e4 s 7.522e+04, 5e4-1e5 s 7.634e+04, whole 1e5 s 6.581e+04 s; last peak k 14, last axis share 0.90
+
+## 27d: do the keys of R3 and R4 act?
+- R3 (time/cfl_number=0.15): 16500 hst rows against R0's 8253 for the same 1e5 s, mean dt half of R0's (it acts). R4 (clean_stag_upwind_central=false, clean_stag_central=false): both keys are FALSE by default and true in the stored deck, so the command-line value equals the default and the log's list of non-default keys simply omits them (no line); the run differs from R0 at once (below), so they act.
+
+### R4 against R0 (hst at equal t; v_r maps, rms of the difference over the rms of v_r, after the shell mean)
+hst rows R0 8253 R4 8253; |ARM/R0 - 1| at equal t (R0 interpolated linearly in t):
+  t 3.50009e+05: L_top 4.63e-09, KE_int 2.20e-13, KEr_int 1.76e-13, L_mid 4.15e-14, Etot 6.66e-16
+  t 3.50102e+05: L_top 1.50e-08, KE_int 2.74e-12, KEr_int 4.02e-12, L_mid 2.80e-13, Etot 2.41e-14
+  t 3.51000e+05: L_top 1.23e-07, KE_int 2.66e-09, KEr_int 1.01e-08, L_mid 2.55e-09, Etot 4.99e-13
+  t 3.59997e+05: L_top 1.89e-05, KE_int 5.30e-08, KEr_int 2.05e-08, L_mid 4.92e-09, Etot 7.96e-12
+  t 3.80005e+05: L_top 3.68e-07, KE_int 3.56e-06, KEr_int 7.80e-06, L_mid 4.37e-07, Etot 5.28e-11
+  t 4.00000e+05: L_top 3.54e-05, KE_int 1.67e-04, KEr_int 3.73e-04, L_mid 1.12e-05, Etot 2.34e-11
+  t 4.19994e+05: L_top 6.02e-05, KE_int 4.99e-04, KEr_int 3.03e-03, L_mid 7.40e-05, Etot 8.99e-09
+  t 4.46995e+05: L_top 7.72e-03, KE_int 1.36e-01, KEr_int 1.75e-01, L_mid 1.88e-03, Etot 3.35e-06
+  t 4.49990e+05: L_top 3.88e-03, KE_int 1.41e-01, KEr_int 1.66e-01, L_mid 9.11e-04, Etot 3.62e-06
+map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC: 0.74 0.80 0.87 0.90 0.93 0.95 0.98 1.00 1.03
+  t 3.5521e+05 / 3.5521e+05: 2.69e-07 (rms 9.87e-02); 9.73e-08 (rms 8.35e-02); 2.68e-07 (rms 8.90e-01); 3.44e-07 (rms 1.21e+01); 2.21e-07 (rms 3.22e+01); 2.98e-07 (rms 3.68e+01); 1.01e-05 (rms 2.49e+01); 7.46e-05 (rms 3.88e+01); 5.20e-03 (rms 3.87e+01)
+  t 3.5761e+05 / 3.5761e+05: 2.45e-07 (rms 1.14e-01); 1.77e-07 (rms 7.75e-02); 6.41e-07 (rms 8.31e-01); 5.01e-07 (rms 1.26e+01); 5.87e-07 (rms 3.23e+01); 8.93e-07 (rms 3.74e+01); 3.79e-05 (rms 2.55e+01); 1.21e-04 (rms 3.58e+01); 4.79e-03 (rms 4.56e+01)
+  t 3.6241e+05 / 3.6241e+05: 2.31e-07 (rms 1.23e-01); 2.28e-07 (rms 8.73e-02); 7.46e-07 (rms 1.23e+00); 2.87e-06 (rms 1.03e+01); 3.91e-06 (rms 3.18e+01); 4.25e-06 (rms 3.59e+01); 2.54e-05 (rms 2.36e+01); 3.01e-04 (rms 4.92e+01); 3.80e-03 (rms 4.94e+01)
+  t 3.6960e+05 / 3.6960e+05: 2.80e-07 (rms 1.06e-01); 5.59e-07 (rms 8.06e-02); 2.33e-06 (rms 9.44e-01); 2.41e-05 (rms 1.07e+01); 2.33e-05 (rms 3.24e+01); 2.68e-05 (rms 3.50e+01); 8.70e-05 (rms 2.36e+01); 5.13e-04 (rms 4.25e+01); 1.04e-02 (rms 3.15e+01)
+  t 3.8160e+05 / 3.8160e+05: 7.99e-07 (rms 1.55e-01); 7.91e-06 (rms 8.73e-02); 5.47e-05 (rms 1.19e+00); 1.95e-04 (rms 8.04e+00); 1.56e-04 (rms 2.96e+01); 1.34e-04 (rms 3.76e+01); 4.43e-04 (rms 2.43e+01); 3.91e-04 (rms 4.70e+01); 1.93e-03 (rms 1.51e+01)
+  t 4.0560e+05 / 4.0560e+05: 1.89e-04 (rms 1.82e-01); 1.63e-03 (rms 1.14e-01); 1.93e-02 (rms 7.82e-01); 5.76e-02 (rms 1.01e+01); 3.09e-02 (rms 3.05e+01); 1.58e-02 (rms 3.84e+01); 5.59e-02 (rms 2.57e+01); 3.90e-02 (rms 4.90e+01); 8.31e-02 (rms 3.81e+01)
+  t 4.2961e+05 / 4.2961e+05: 7.09e-04 (rms 3.57e-01); 2.22e-02 (rms 7.36e-02); 8.14e-02 (rms 8.56e-01); 4.77e-01 (rms 9.18e+00); 3.81e-01 (rms 3.28e+01); 3.81e-01 (rms 3.77e+01); 5.10e-01 (rms 2.64e+01); 5.35e-01 (rms 3.36e+01); 6.02e-01 (rms 2.84e+01)
+  t 4.5000e+05 / 4.5000e+05: 6.01e-03 (rms 4.91e-01); 1.52e-01 (rms 8.68e-02); 6.52e-01 (rms 1.00e+00); 1.01e+00 (rms 1.56e+01); 1.00e+00 (rms 3.15e+01); 1.09e+00 (rms 3.82e+01); 1.13e+00 (rms 2.22e+01); 9.84e-01 (rms 7.34e+01); 1.21e+00 (rms 4.08e+01)
+
+### R3 against R0 (hst at equal t; v_r maps, rms of the difference over the rms of v_r, after the shell mean)
+hst rows R0 8253 R3 16500; |ARM/R0 - 1| at equal t (R0 interpolated linearly in t):
+  t 3.50009e+05: L_top 0.00e+00, KE_int 0.00e+00, KEr_int 0.00e+00, L_mid 0.00e+00, Etot 0.00e+00
+  t 3.50100e+05: L_top 1.47e-05, KE_int 6.61e-06, KEr_int 1.05e-05, L_mid 2.77e-07, Etot 9.27e-11
+  t 3.51003e+05: L_top 3.07e-05, KE_int 3.75e-05, KEr_int 6.53e-05, L_mid 1.03e-06, Etot 6.57e-10
+  t 3.60001e+05: L_top 4.91e-05, KE_int 3.64e-05, KEr_int 5.08e-05, L_mid 2.73e-05, Etot 1.83e-09
+  t 3.80002e+05: L_top 1.92e-04, KE_int 1.80e-04, KEr_int 1.29e-04, L_mid 2.31e-05, Etot 2.93e-10
+  t 4.00003e+05: L_top 1.48e-03, KE_int 1.92e-03, KEr_int 1.07e-02, L_mid 8.89e-05, Etot 5.90e-08
+  t 4.19997e+05: L_top 2.70e-03, KE_int 1.64e-02, KEr_int 2.05e-02, L_mid 4.87e-03, Etot 1.17e-07
+  t 4.46998e+05: L_top 2.14e-03, KE_int 1.00e-01, KEr_int 1.55e-01, L_mid 1.71e-02, Etot 7.08e-07
+  t 4.49987e+05: L_top 6.97e-04, KE_int 1.08e-01, KEr_int 1.50e-01, L_mid 3.95e-03, Etot 2.95e-07
+map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC: 0.74 0.80 0.87 0.90 0.93 0.95 0.98 1.00 1.03
+  t 3.5521e+05 / 3.5520e+05: 6.64e-04 (rms 9.87e-02); 1.53e-03 (rms 8.35e-02); 1.61e-03 (rms 8.90e-01); 1.72e-03 (rms 1.21e+01); 1.41e-03 (rms 3.22e+01); 1.25e-03 (rms 3.68e+01); 2.37e-03 (rms 2.49e+01); 7.66e-03 (rms 3.88e+01); 3.20e-02 (rms 3.87e+01)
+  t 3.5761e+05 / 3.5761e+05: 6.44e-04 (rms 1.14e-01); 1.09e-03 (rms 7.75e-02); 2.04e-03 (rms 8.31e-01); 1.55e-03 (rms 1.26e+01); 1.40e-03 (rms 3.23e+01); 1.34e-03 (rms 3.74e+01); 3.83e-03 (rms 2.55e+01); 1.01e-02 (rms 3.58e+01); 5.03e-02 (rms 4.56e+01)
+  t 3.6241e+05 / 3.6240e+05: 1.56e-03 (rms 1.23e-01); 4.16e-03 (rms 8.73e-02); 2.99e-03 (rms 1.23e+00); 5.29e-03 (rms 1.03e+01); 4.02e-03 (rms 3.18e+01); 3.67e-03 (rms 3.59e+01); 9.00e-03 (rms 2.36e+01); 2.93e-02 (rms 4.92e+01); 1.20e-01 (rms 4.94e+01)
+  t 3.6960e+05 / 3.6960e+05: 1.46e-03 (rms 1.06e-01); 1.14e-03 (rms 8.06e-02); 1.78e-03 (rms 9.44e-01); 6.06e-03 (rms 1.07e+01); 3.80e-03 (rms 3.24e+01); 4.52e-03 (rms 3.50e+01); 6.53e-03 (rms 2.36e+01); 1.34e-02 (rms 4.25e+01); 8.93e-02 (rms 3.15e+01)
+  t 3.8160e+05 / 3.8160e+05: 1.70e-03 (rms 1.55e-01); 2.31e-03 (rms 8.73e-02); 3.90e-03 (rms 1.19e+00); 1.94e-02 (rms 8.04e+00); 2.24e-02 (rms 2.96e+01); 1.97e-02 (rms 3.76e+01); 2.85e-02 (rms 2.43e+01); 4.48e-02 (rms 4.70e+01); 5.64e-02 (rms 1.51e+01)
+  t 4.0560e+05 / 4.0560e+05: 3.97e-03 (rms 1.82e-01); 2.83e-02 (rms 1.14e-01); 1.97e-01 (rms 7.82e-01); 5.83e-01 (rms 1.01e+01); 3.77e-01 (rms 3.05e+01); 3.55e-01 (rms 3.84e+01); 5.45e-01 (rms 2.57e+01); 4.23e-01 (rms 4.90e+01); 5.72e-01 (rms 3.81e+01)
+  t 4.2961e+05 / 4.2961e+05: 1.21e-02 (rms 3.57e-01); 3.04e-01 (rms 7.36e-02); 6.01e-01 (rms 8.56e-01); 1.33e+00 (rms 9.18e+00); 1.13e+00 (rms 3.28e+01); 1.18e+00 (rms 3.77e+01); 1.28e+00 (rms 2.64e+01); 1.28e+00 (rms 3.36e+01); 1.46e+00 (rms 2.84e+01)
+  t 4.5000e+05 / 4.5000e+05: 1.86e-02 (rms 4.91e-01); 5.44e-01 (rms 8.68e-02); 9.53e-01 (rms 1.00e+00); 1.17e+00 (rms 1.56e+01); 1.35e+00 (rms 3.15e+01); 1.32e+00 (rms 3.82e+01); 1.24e+00 (rms 2.22e+01); 1.11e+00 (rms 7.34e+01); 1.20e+00 (rms 4.08e+01)
+
+- Reading: R4 starts at 1e-7 (hst) and 5e-3 at 1.03 R_ph,IC in the first dump (the advective face flux matters where the light streams, at the top), grows to order one in the convection zone by 4.3e5 to 4.5e5 s (KE_int 14 %); the ring at 0.74 R_ph,IC differs by 6e-3 at the end. R3 differs at once at 1e-3 everywhere (the time step), the convection zone decorrelates (order one from 4.06e5 s), KE_int 11 %; the ring at 0.74 differs by 1.9 % at the end. Both keys act, and as in R1 the ring at 0.74 stays the same while the zone above decorrelates.
