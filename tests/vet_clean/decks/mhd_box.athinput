@@ -1,0 +1,144 @@
+# Radiation-hydrodynamic wave along the diagonal of a periodic 3-D Cartesian box with <mhd>, a
+# uniform oblique field, Ohmic and ambipolar diffusion, FOFC.  Used by: mhd_vet.
+#
+# The <rad_vet> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = rw
+
+<mesh>
+layout_invariant = true
+nghost = 3
+nx1 = 16
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 16
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 16
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+layout_invariant_mode = tile
+layout_tile = 8
+
+<meshblock>
+nx1 = 16
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 8
+tlim = 1e30
+ndiag = 1000000
+dt_retry = true
+dt_retry_fac_t2 = 0.9
+dt_retry_grow = 1.1
+dt_retry_ngood = 20
+
+<mhd>
+eos = ideal
+reconstruct = plm
+rsolver = hlld
+gamma = 1.666666666666667
+rad_signal_speed = true
+fofc = true
+ohmic_resistivity = constant
+eta_ohm_const = 0.01
+ambipolar = constant
+eta_ad = 0.01
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+scheme = clean
+c_light = 10
+chat_over_c = 1.0
+closure = vet_sc
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 0.10000000000000001
+kappa_e = 0.10000000000000001
+kappa_f = 0.10000000000000001
+kappa_s = 0.0
+arad = 0.99999899999999997
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 3.9270160713661184
+implicit_maxit = 200
+implicit_lin_maxit = 400
+time_scheme = hesdirk2
+vet_gd_rotate_dt = 0
+vet_x1_ptol = 0
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 30
+clean_clos1_budget = true
+clean_bud_maxnorm = true
+clean_maxit = 200
+clean_wb_exch_local = true
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = radwave
+radwave_dir = xyz
+radwave_amp = 0.01
+radwave_eig = false
+vet_b0_1 = 0.5
+vet_b0_2 = 0.3
+vet_b0_3 = 0.2
+radwave_rho = 1.0
+radwave_t = 1.0
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 1.0e30
+
+<output2>
+file_type = bin
+bin_double = true
+variable = mhd_u_bcc
+dt = 1.0e30
+
+<output4>
+file_type = bin
+bin_double = true
+variable = mhd_divb
+dt = 1.0e30
+
+<output3>
+file_type = hst
+data_format = %24.16e
+dt = 1.0e-12

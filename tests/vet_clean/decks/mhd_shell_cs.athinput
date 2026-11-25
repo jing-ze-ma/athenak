@@ -1,0 +1,157 @@
+# Closed rotating absorbing + scattering shell with <mhd> on the cubed sphere (reflecting radial
+# walls), an azimuthal field about an inclined axis, Ohmic and ambipolar diffusion, FOFC.
+# Used by: mhd_vet.
+#
+# The <rad_vet> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = cs
+
+<mesh>
+layout_invariant = true
+nghost = 3
+nx1 = 16
+x1min = 1.0
+x1max = 3.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 16
+x2min = -1.0
+x2max = 1.0
+ix2_bc = panel
+ox2_bc = panel
+nx3 = 16
+x3min = -1.0
+x3max = 1.0
+ix3_bc = panel
+ox3_bc = panel
+use_cubed_sphere = true
+layout_invariant_mode = tile
+layout_tile = 8
+
+<meshblock>
+nx1 = 16
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 8
+tlim = 1e+30
+ndiag = 1000000
+dt_retry = true
+dt_retry_fac_t2 = 0.9
+dt_retry_grow = 1.1
+dt_retry_ngood = 20
+
+<mhd>
+eos = ideal
+reconstruct = plm
+rsolver = hlld
+gamma = 1.666666666666667
+rad_signal_speed = true
+fofc = true
+ohmic_resistivity = constant
+eta_ohm_const = 0.01
+ambipolar = constant
+eta_ad = 0.01
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+c_light = 10.0
+chat_over_c = 1.0
+closure = vet_col
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 1.0
+kappa_e = 1.0
+kappa_f = 0.0
+kappa_s = 20.0
+arad = 1.0
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 4.0
+implicit_bc_x1min = reflect
+implicit_bc_x1max = reflect
+implicit_ebath_x1min = 0.0
+implicit_ebath_x1max = 0.0
+time_scheme = hesdirk2
+scheme = clean
+clean_sphere_radius = 0.0
+vet_gd = true
+vet_gd_replace = true
+vet_gd_gl_nmu = 10
+vet_gd_gl_nphi = 12
+vet_gd_rotate_dt = 0
+vet_col_lat = true
+vet_gd_allow_clamp = false
+clean_clos1_budget = true
+clean_bud_maxnorm = true
+clean_maxit = 200
+clean_wb_exch_local = true
+vet_gd_gl_stagger = true
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = sph_shell
+gas_rho = 1.0
+gas_temp = 0.5
+e_out = 1.0
+e_amp = 1.0
+r0 = 2.0
+width = 0.3
+lat_amp = 0.5
+lat_l = 1
+lat_axis = vertex
+gas_rot = 0.3
+gas_vr = 0.2
+b_azi = 0.3
+b_azi_axis = 1,1,0
+user_hist = true
+am_hist = true
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 1.0e30
+
+<output2>
+file_type = bin
+bin_double = true
+variable = mhd_u_bcc
+dt = 1.0e30
+
+<output3>
+file_type = hst
+data_format = %24.16e
+dt = 1.0e-12
+
+<output4>
+file_type = bin
+bin_double = true
+variable = mhd_divb
+dt = 1.0e30
