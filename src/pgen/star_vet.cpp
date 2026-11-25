@@ -101,6 +101,7 @@
 #include "pgen/star_drive.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/eint_from_cons.hpp"
+#include "utils/imex_sdirk2.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/recipe.hpp"
 
@@ -255,18 +256,16 @@ Real star_ad_tau_ = 1500.0, star_ad_tl_ = 0.0;
 Real star_ad_dout_ = 0.0, star_ad_tout_ = 0.0, star_lsub_ = 0.0;
 int star_ad_cyc_ = -1;
 DvceArray1D<Real> star_fsub_;
-// problem/mlt_src_time (default stage on a fresh start, recorded; start on a
-// hesdirk2 run with another tableau, and a restart file without the key keeps start,
-// NOTE): start = the ramp w and the
-// adaptive esrc at the step start (1st order in time); stage = 2nd order: esrc at the
-// time of the implicit stages, t + dt (hesdirk2: c2 = c3 = 1, and the FSAL slope K1
-// carries this step's esrc into the next step's weight 1/2: the trapezoid of esrc over
-// the step), w(t + dt); adaptive: F_sub^n = F^{n-1} + a(t^n - t^{n-1}) ((tgt^{n-1} +
-// tgt^n)/2 - F^{n-1}) (exponential trapezoid; star_tgp_ = tgt^{n-1}, restart state behind
-// F_sub, hdr[1] = 1) and esrc from F^{n+1} = F^n + a(dt) (tgt^n - F^n) (star_fsrc_)
+// problem/mlt_src_time = stage (default; StarMltC) | start (the old form, 1st order in
+// time): the ramp w and the adaptive esrc at the time of each implicit stage, t + c dt,
+// c = a21 + g and 1 (hesdirk2 1, 1 with the FSAL slope K1 at 0; sdirk2 g, 1; the
+// backward-Euler solves 1), 2nd order: sum b c = 1/2, and the stiffly accurate last stage
+// has the source of t + dt.  adaptive: F_sub^n = F^{n-1} + a(t^n - t^{n-1})
+// ((tgt^{n-1} + tgt^n)/2 - F^{n-1}) (exponential trapezoid; star_tgp_ = tgt^{n-1}, restart
+// state behind F_sub, hdr[1] = 1) and the stage's F = F^n + a(c dt) (tgt^n - F^n)
 bool star_mtc_ = false;
 int star_tgp_ok_ = 0;
-DvceArray1D<Real> star_tgp_, star_fsrc_;
+DvceArray1D<Real> star_tgp_;
 DvceArray2D<Real> star_shs_;
 std::vector<Real> star_tap_, star_r2o_;
 char star_ad_file_[1024] = {0};
@@ -300,8 +299,13 @@ Real StarMltW(const Real t) {
   if (star_mrt_ <= 0.0 || t >= star_mrs_ + star_mrt_) return 0.0;
   return 0.5*(1.0 + cos(M_PI*(t - star_mrs_)/star_mrt_));
 }
-//! the time the step's MLT source is taken at (mlt_src_time)
-Real StarMltTc(const Mesh *pm) {return star_mtc_ ? pm->time + pm->dt : pm->time;}
+//! the stage time of the MLT source, c in t + c dt (mlt_src_time), of the hydro stage bdt
+Real StarMltC(const Mesh *pm, const Real bdt) {
+  if (!star_mtc_) return 0.0;
+  const auto *pvet = pm->pmb_pack->pradvet;
+  return (pvet->time_scheme == radvet::VET_TIME_HESDIRK2 && pvet->t2_tab != 0 &&
+          bdt == pvet->fref_hbeta[0]*pm->dt) ? pvet->t2_a21 + imex_sdirk2::Gamma() : 1.0;
+}
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -571,7 +575,7 @@ void StarGravity(Mesh *pm, const Real bdt);
 void StarWallFlux(Mesh *pm);
 void StarBC(Mesh *pm);
 void StarHist(HistoryData *pdata, Mesh *pm);
-void StarApplyMltW(Mesh *pm, const Real w);
+void StarApplyMltW(Mesh *pm, const Real w, const Real h);
 void StarAdaptiveUpdate(Mesh *pm);
 std::vector<char> StarAdaptiveRstWrite();
 void StarFinal(ParameterInput *pin, Mesh *pm);
@@ -2724,18 +2728,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     star_ad_ = (mc == "adaptive" || mc == "pressure");
     star_adp_ = (mc == "pressure");
-    const bool tab2 = pvet->time_scheme == radvet::VET_TIME_HESDIRK2 && pvet->t2_tab != 0;
-    StarOldDefault(pin, "mlt_src_time", "start");
-    const std::string tc = pin->GetOrAddString("problem","mlt_src_time",
-        (!global_variable::restart_run && !tab2) ? "stage" : "start");
+    if (star_mlt_) {
+      recipe::Fix(pin, "problem", "mlt_src_time", "stage", "start");
+      recipe::OldStored(pin, "problem", "mlt_src_time", "start", "stage");
+    }
+    const std::string tc = pin->GetOrAddString("problem","mlt_src_time","stage");
     if (tc != "start" && tc != "stage") {
       StarFatal("problem/mlt_src_time must be start|stage", __LINE__);
     }
     star_mtc_ = (tc == "stage");
-    if (star_mtc_ && tab2) {
-      StarFatal("problem/mlt_src_time = stage needs the hesdirk2 tableau (stage times "
-                "t + dt)", __LINE__);
-    }
   }
   // problem/star_ad_dead_skip (default true; acts only under mesh/layout_invariant)
   star_ad_dskip_ = true;
@@ -2759,10 +2760,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int nfc = n1m1 + 2;
     Kokkos::realloc(star_fsub_, nfc);
     Kokkos::deep_copy(star_fsub_, star_fm_);
-    if (star_mtc_) {
-      Kokkos::realloc(star_tgp_, nfc);
-      Kokkos::realloc(star_fsrc_, nfc);
-    }
+    if (star_mtc_) Kokkos::realloc(star_tgp_, nfc);
     Kokkos::realloc(star_shs_, nfc, 8);
     if (star_adp_) {
       // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column,
@@ -2844,7 +2842,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "file, the first update takes tgt^n for both ends" << std::endl;
       }
     }
-    if (star_mtc_) Kokkos::deep_copy(star_fsrc_, star_fsub_);
     {
       auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), star_fsub_);
       star_lsub_ = 0.0;
@@ -2857,7 +2854,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (!restart) star_ad_tout_ = 0.0;
     }
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
-    StarApplyMltW(pmy_mesh_, StarMltW(pmy_mesh_->time));
+    StarApplyMltW(pmy_mesh_, StarMltW(pmy_mesh_->time), 0.0);
     if (global_variable::my_rank == 0) {
       std::cout << "star_vet: mlt_closure = " << (star_adp_ ? "pressure" : "adaptive")
                 << ", relax time " << star_ad_tau_
@@ -2868,7 +2865,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (star_mlt_) {
     const Real w = StarMltW(pmy_mesh_->time);
-    if (w != star_mw_) StarApplyMltW(pmy_mesh_, w);
+    if (w != star_mw_) StarApplyMltW(pmy_mesh_, w, 0.0);
     if (global_variable::my_rank == 0) {
       std::cout << "star_vet: mlt ramp start = " << star_mrs_ << ", time = " << star_mrt_
                 << ", w(t = " << pmy_mesh_->time << ") = " << star_mw_
@@ -3659,25 +3656,24 @@ void StarGravity(Mesh *pm, const Real bdt) {
   auto wbq0 = ph->wbq0;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
-  // the adaptive closure: once per cycle, at its first stage (before any VET solve of
-  // the cycle); it re-applies w(t) itself
+  // the adaptive closure: F_sub once per cycle, at its first stage (before any VET solve
+  // of the cycle), esrc every stage (StarMltC)
+  const Real tc = StarMltC(pm, bdt)*pm->dt;
+  const Real wc = StarMltW(pm->time + tc);
+  const bool ad = star_ad_ && (pm->ncycle != star_ad_cyc_);
   // the closure is skipped once the ramp has ended (w(t) = 0 AND w = 0 already applied
   // to esrc): F_sub then enters nothing (esrc = w F_sub deposit, history slot 21 =
   // w L_sub), so F_sub and its clock stay FROZEN at their last values (also in the
   // restart files), except when a problem/mlt_closure_dout profile is due (diagnostic
   // cadence kept: the update runs and writes its lines)
-  if (star_ad_ && pm->ncycle != star_ad_cyc_) {
+  if (ad) {
     star_ad_cyc_ = pm->ncycle;
-    const bool off = (star_mrs_ >= 0.0 && StarMltW(StarMltTc(pm)) == 0.0 &&
-                      star_mw_ == 0.0);
+    const bool off = (star_mrs_ >= 0.0 && wc == 0.0 && star_mw_ == 0.0);
     const bool dout = (star_ad_dout_ > 0.0 && pm->time >= star_ad_tout_);
     if (!off || dout) StarAdaptiveUpdate(pm);
   }
-  // the frozen-MLT ramp: w at the step's start (mlt_src_time = stage: t + dt) time,
-  // the same on every stage
-  if (star_mlt_ && star_mrs_ >= 0.0) {
-    const Real w = StarMltW(StarMltTc(pm));
-    if (w != star_mw_) StarApplyMltW(pm, w);
+  if (star_mlt_ && (wc != star_mw_ || (star_ad_ && wc > 0.0 && (ad || star_mtc_)))) {
+    StarApplyMltW(pm, wc, tc);
   }
   // F6 localisation (<rad_vet>/dbg_energy_tally, output only): sum IEN V
   // after each part of this source and the hydro energy flux through the x1 boundary
@@ -4505,16 +4501,18 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
 //! \fn void StarApplyMltW()
 //! \brief rebuild <rad_vet>/esrc = w (frozen MLT deposit) + the star_esrc_const test
 //! source, with exactly the operations of the start-up kernels (w = 1: bitwise the same
-//! esrc).
+//! esrc).  h: the time past F_sub's (mlt_src_time = stage: c dt).
 
-void StarApplyMltW(Mesh *pm, const Real w) {
+void StarApplyMltW(Mesh *pm, const Real w, const Real h) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto es = pmbp->pradvet->esrc;
-  auto fmd = star_ad_ ? (star_mtc_ ? star_fsrc_ : star_fsub_) : star_fm_;
+  auto fmd = star_ad_ ? star_fsub_ : star_fm_;
+  auto ftg = (star_ad_ && star_mtc_) ? star_tgp_ : fmd;
+  const Real a = 1.0 - exp(-h/star_ad_tau_);
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto &x1v = pmbp->pcoord->x1v;
@@ -4523,7 +4521,9 @@ void StarApplyMltW(Mesh *pm, const Real w) {
   auto fbd = star_fb_;
   par_for("star_esrc_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real e = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
+    const Real fl = fmd(i) + a*(ftg(i) - fmd(i));
+    const Real fr = fmd(i+1) + a*(ftg(i+1) - fmd(i+1));
+    Real e = -(area1(m,k,j,i+1)*fr - area1(m,k,j,i)*fl)/volume(m,k,j,i);
     if (bh) {
       const Real eb = -(area1(m,k,j,i+1)*fbd(i+1) - area1(m,k,j,i)*fbd(i))
                       /volume(m,k,j,i);
@@ -4541,7 +4541,7 @@ void StarApplyMltW(Mesh *pm, const Real w) {
 //! \fn void StarAdaptiveUpdate()
 //! \brief the adaptive shell-mean deficit closure (star_ad_): shell sums (deterministic:
 //! one thread per radial index, serial over the columns; MPI sum), the target, the
-//! relaxation F_sub += (1 - exp(-(t - t_last)/tau)) (target - F_sub), clip >= 0, esrc.
+//! relaxation F_sub += (1 - exp(-(t - t_last)/tau)) (target - F_sub), clip >= 0.
 
 // the rank-ordered sum of a host array over all ranks (MPI_Allgather, then
 // the ranks summed 0, 1, ... in that order on every rank).  An MPI_Allreduce(MPI_SUM)
@@ -4741,16 +4741,6 @@ void StarAdaptiveUpdate(Mesh *pm) {
     star_lsub_ = std::max(star_lsub_, hf(i)*star_r2o_[i]);
   }
   Kokkos::deep_copy(star_fsub_, hf);
-  if (star_mtc_) {   // esrc from F^{n+1}
-    const Real am = 1.0 - exp(-pm->dt/star_ad_tau_);
-    auto hm = Kokkos::create_mirror_view(star_fsrc_);
-    for (int i=0; i<nfc; ++i) {
-      const Real f = hf(i) + am*(hp(i) - hf(i));
-      hm(i) = (f > 0.0) ? f : 0.0;
-    }
-    Kokkos::deep_copy(star_fsrc_, hm);
-  }
-  StarApplyMltW(pm, StarMltW(StarMltTc(pm)));
   // profiles (problem/mlt_closure_dout > 0): rank 0 appends, per output, three lines
   // "t <kind> values over the faces is..ie+1" in units of L_in: fsub (w A F_sub),
   // lrad, lconv; and one "t fmlt" line (A F_MLT) at the first output
@@ -4764,7 +4754,7 @@ void StarAdaptiveUpdate(Mesh *pm) {
         fprintf(fp, "%.10e %s", t, kind[q]);
         for (int i=is; i<=ie+1; ++i) {
           Real v = 0.0;
-          if (q == 0) v = star_mw_*hf(i)*hsh(i,1);
+          if (q == 0) v = StarMltW(t)*hf(i)*hsh(i,1);
           if (q == 1) v = lrad[i];
           if (q == 2) v = lcf[i];
           if (q == 3) v = hm(i)*hsh(i,1);
@@ -5674,7 +5664,6 @@ void StarFinal(ParameterInput *pin, Mesh *pm) {
   star_fm_ = DvceArray1D<Real>();
   star_fsub_ = DvceArray1D<Real>();
   star_tgp_ = DvceArray1D<Real>();
-  star_fsrc_ = DvceArray1D<Real>();
   star_shs_ = DvceArray2D<Real>();
   star_shp_ = DvceArray2D<Real>();
   star_be_ = DvceArray1D<Real>();

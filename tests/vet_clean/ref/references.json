@@ -438,6 +438,18 @@
    "warnings": 0
   }
  },
+ "mlt_time": {
+  "_about": "energy the solves add from a frozen MLT flux with a cosine ramp, against the exact integral (4, 8, 16 steps). Measured: stage 8.0e-3, 1.1e-3, 1.6e-4 (order 2.81; second order plus vanishing end slopes), start 7.1e-2, 3.7e-2, 1.9e-2 (order 0.98): the start arm documents what the test detects (order_start <= 1.3).",
+  "min": {
+   "order": 1.7
+  },
+  "max": {
+   "order_start": 1.3
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
  "wb_star": {
   "_about": "a report, not a criterion (as momentum_box): the velocities of the unseeded BSG column after 20 cycles in the stars' well-balance mode; not bounded. Measured: v_in 3.1e-3, v_all 0.68 (photosphere and floor gas), lat_mid 1.4e-11; the static envelope of wb_sp / wb_cs (1e-8) has no counterpart here, see README",
   "equal": {
