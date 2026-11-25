@@ -440,3 +440,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 04:08 02-03: b_mhdwb -> suitemhd
 - 11-25 04:08 02-09: IDLE -> b_s7_1d10
 - 11-25 04:09 02-03: suitemhd -> IDLE
+- 11-25 04:14 02-03: IDLE -> s7_BASE1
+- 11-25 04:14 02-09: b_s7_1d10 -> s7_BASE1
+- 11-25 04:15 02-16: fwp_t9mlt_NX300 -> IDLE
+- 11-25 04:16 02-03: s7_BASE1 -> s7_NEW1
+- 11-25 04:16 02-09: s7_BASE1 -> s7_NEW1
+- 11-25 04:16 02-16: IDLE -> kt7s_t9l62_base_6
+- 11-25 04:17 02-16: kt7s_t9l62_base_6 -> kt7s_t9l62_1d10_6
