@@ -71,3 +71,106 @@
 - t9l62 C50: t9l62.hydro_w.00049.bin t9l62.vet.00049.bin in b1_1124/rc/t9l62/C50/bin
 - t9mlt R50: t9l62.hydro_w.00025.bin t9l62.vet.00025.bin in b1_1124/rc/t9mlt/R50/bin
 - t9mlt C50: t9l62.hydro_w.00025.bin t9l62.vet.00025.bin in b1_1124/rc/t9mlt/C50/bin
+
+## Branch clean-up (zzzzj6 item 3)
+- The t9mlt arm and the continuity table are done; none of my tests still needs a fetch from a caltech-* branch on GitHub. My local worktrees keep their objects. I deleted nothing. Branches: 144; with a local worktree at their tip: 97 (they would not be lost by deleting the branch).
+```
+caltech-c2-d4ae795a4  wt/c2
+caltech-c3-ce559f800  wt/c3
+caltech-c4-a000d803c  wt/c4
+caltech-c4speed-d979d5268  wt/c4speed
+caltech-fofcflag-86f90f362  wt/fofcflag
+caltech-idortchk-29046c3f2  wt/wt_cpu
+caltech-latwb2-c01bc242f  wt/latwb2
+caltech-latwb-83663792f  wt/latwb
+caltech-lzleak-0b8ff1caa  wt/lzleak
+caltech-rel-a-c880e2703  wt/rela
+caltech-rel-b-c8a0fc099  wt/relb
+caltech-rel-e-03e874599  wt/rele2
+caltech-rel-e-08c48ac10  wt/rele
+caltech-rel-f-b09a7b3c1  wt/relf
+caltech-runs/beamfix12  wt/bfx12
+caltech-runs/beamfix13  wt/bfx13
+caltech-runs/beamfix16  wt/bfx16
+caltech-runs/beamfix21  wt/bfx21
+caltech-runs/beamfix7  wt/bfx7
+caltech-runs/beamfixc20  wt/bfxc20
+caltech-runs/beamfixc  wt/bfxc
+caltech-runs/beamfixf  wt/bfxf
+caltech-runs/beamfixg  wt/bfxg
+caltech-runs/beamfix  wt/bfx
+caltech-runs/conserv-ctl2  wt/conserv-ctl2
+caltech-runs/conserv-ctl  wt/conserv-ctl
+caltech-runs/conserv-tie  wt/conserv-tie
+caltech-runs/convdiag  wt/convdiag
+caltech-runs/conv  wt/conv
+caltech-runs/eleak  wt/eleak2
+caltech-runs/emawb  wt/emawb
+caltech-runs/geom-ca  wt/geom-ca
+caltech-runs/geom-fm2  wt/geom-fm2
+caltech-runs/h200-p4  wt/h200-p4
+caltech-runs/h200spd  wt/h2c wt/h2k wt/h2m
+caltech-runs/h200  wt/h200 wt/h200mb2
+caltech-runs/icbal  wt/icbal wt/icbaln
+caltech-runs/kern-fw  wt/kfw
+caltech-runs/ksplitdiag  wt/ksplitdiag
+caltech-runs/ksplit  wt/ksplit7
+caltech-runs/lag20  wt/lag20
+caltech-runs/lean2  wt/lean2
+caltech-runs/lean  wt/lean
+caltech-runs/lzbook  wt/lzbook
+caltech-runs/lzcs2  wt/lzcs2
+caltech-runs/lzcs-tel  wt/lzcstel
+caltech-runs/lzcs  wt/lzcs
+caltech-runs/lztel2-study  wt/lztel2s
+caltech-runs/lztel2  wt/lztel2
+caltech-runs/lztel3-fixstudy  wt/lztel3f
+caltech-runs/lztel3-study  wt/lztel3s
+caltech-runs/lztel3  wt/lztel3
+caltech-runs/lztel  wt/lztel
+caltech-runs/pcsym  wt/pcsym
+caltech-runs/realf  wt/realf
+caltech-runs/realz2  wt/rz2
+caltech-runs/realz3  wt/rz3b
+caltech-runs/realz  wt/realz2
+caltech-runs/spd2b  wt/spd2b
+caltech-runs/speedhead  wt/speedhead
+caltech-runs/thinf  wt/thinf
+caltech-runs/tie-check  wt/tie-check
+caltech-runs/tie-prof  wt/tie-prof
+caltech-runs/v201b  wt/v201b
+caltech-runs/v201d  wt/v201d
+caltech-runs/v201e  wt/v201e
+caltech-runs/v201  wt/v201
+caltech-runs/v202  wt/v202
+caltech-runs/v204c  wt/v204c
+caltech-runs/v204  wt/v204
+caltech-runs/v20b  wt/v20b
+caltech-runs/v20f  wt/v20f
+caltech-runs/v20g2  wt/v20g2
+caltech-runs/v20g3  wt/v20g3
+caltech-runs/v20g  wt/v20g
+caltech-runs/v20j  wt/v20j
+caltech-runs/v20l  wt/v20l
+caltech-runs/v20m  wt/v20m
+caltech-runs/v20nk  wt/v20nk
+caltech-runs/v20n  wt/v20n
+caltech-runs/xcap  wt/xcap
+caltech-runs/xpos2  wt/xpos2
+caltech-runs/xpos  wt/xpos2
+caltech-runs/xtloc  wt/xtloc
+caltech-sdocell-883d79d97  wt/sdocell
+caltech-sdomom-373e2cc1c  wt/sdomom
+caltech-sdorder2-09d1e4df4  wt/sdo2
+caltech-sdorder3-95813cf85  wt/sdo3
+caltech-sdorder5-10bf5513c  wt/sdorder5
+caltech-sdorder-a840d7e92  wt/rel38f
+caltech-sdosdo-53290b5af  wt/sdosdo
+caltech-speed24-e7b2eea39  wt/speed24
+caltech-starname-4a26282a6  wt/star
+caltech-t9hot-compton-f8e55fee7  wt/wt_cpu_c
+caltech-test-fwbx  wt/v204n
+caltech-thinfcs-87af1d65c  wt/thinfcs
+caltech-zamsfast-3b44a361d  wt/v203
+```
+- Not fetched by me since: 47 further caltech-* branches have no local worktree of mine: caltech-dflfix-5b6159ad0 caltech-halfday-83b71abed caltech-ia11-bd9553537 caltech-ia121-21e176c67 caltech-ia121-fa59bffd6 caltech-ia122-465aff485 caltech-ia123rc1-da92efe70 caltech-ia123rc1-wd-8197e0c4f caltech-ia123rc2-5b493acfa caltech-ia123rc3-af836f5a3 caltech-ia123rc3-fcapspin-6f2973dc8 caltech-ia123rc4v-262affd6f caltech-ia9-77551e823 caltech-m35fast-13679216a caltech-prod-462210d51 caltech-prod-bf4f917d4 caltech-rel-d-78cf8880b caltech-release-38f3d3c95 caltech-rel-e-f62c8879e caltech-runs/beamreal caltech-runs/c3c caltech-runs/c3h caltech-runs/joint3 caltech-runs/joint4d caltech-runs/rsgdie caltech-runs/stall2 caltech-runs/stall2v3 caltech-runs/v203 caltech-runs/v204n caltech-runs/v2
