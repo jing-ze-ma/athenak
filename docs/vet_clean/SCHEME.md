@@ -102,10 +102,10 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 |---|---|
 | energy (gas + radiation) | exact; floors are paid from the radiation |
 | mass | exact |
-| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger; a fix is in progress) |
+| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger), exact there too with `clean_stag_fcone_lz` + `clean_lz_spin` |
 | linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
-| well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
+| well-balance | equilibrium envelopes stay at rest to below 1e-8 of the sound speed |
 | order | successive orders of the finest pair: 1.8 (time ladder of deck D), 1.9-2.3 (grid + time ladder of a linear wave); 2 also where the gas-radiation exchange is stiff (`order_stiff`) |
 | radiation-acoustic waves | phase speed and damping right in every trapping regime |
 | diffusion limit | the right diffusion coefficient at any cell optical depth (asymptotic preserving) |
@@ -171,10 +171,11 @@ test output).
 
 - Spherical polar, production keys: the face-flux realisability cut (`clean_stag_fcone`)
   removes momentum the gas does not take, and its $L_z$ goes into the ledger. On the test shell
-  this happens on the first cycles of a fresh start and amounts to about 7e-7 of the gas
+  this happens on the first cycles of a fresh start and amounts to about 6e-7 of the gas
   $L_z$; the ledger is constant afterwards.
-  With `clean_stag_fcone_gas = true` the gas takes the cut's momentum and $L_z$ is exact
-  without a ledger (6e-16); this is not the production setting.
+  With `clean_stag_fcone_gas = true`, or with `clean_stag_fcone_lz` and `clean_lz_spin`
+  (test `conservation_lz`), the gas takes the cut's $L_z$, which is then exact without a
+  ledger (1e-15); neither is the production setting.
 - Cubed sphere: the ledger stays at round-off (1e-17), so gas + radiation $L_z$ is conserved
   without one. Here the radiation's $L_z$ is that of the face momenta; the larger `dLz_gr`
   the test prints (6e-5) uses the cell-centred flux vector and is a diagnostic mismatch, not
@@ -202,7 +203,7 @@ physical sources. Three things change gas + radiation momentum without being giv
 Their sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line; what the primitive
 recovery takes per step, signed, by cause: `CLEAN FLOORMOM`, test `floor_momentum`), but there
 is no ledger of the total. In a periodic Cartesian box at small amplitude, where none of
-them acts, momentum is conserved to 5e-17; in a violent stress test the well-balancing
+them acts, momentum is conserved to round-off (1e-16); in a violent stress test the well-balancing
 residual changes it by about 6e-7 and the production cut by up to a few 1e-3 per cycle. On
 spherical-polar and cubed-sphere meshes Cartesian momentum is not a discrete invariant (the
 momenta live in local bases), so only $L_z$ and the radial budget are meaningful there.
@@ -251,8 +252,8 @@ also carries the cells' face half ranges (`CleanCellHalf`). The K-set
 window (`vet_rotate_avg` without the EMA) has no such form: its window changes the closure of
 a static state at every turn.
 
-Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured about 5e-9 and 1e-9; with
-the rotating sets `_rot` 4.7e-9 and 9e-10).
+Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured 6e-9 and 5e-10; with
+the rotating sets `_rot` 6e-9 and 7e-9).
 `wb_cs` withholds the static radiation force and cannot see a spurious one on the cubed
 sphere; `shell_force_cs` (`clean_cs_lat_wb`) does.
 
@@ -264,7 +265,7 @@ The face terms are second order in space by design. What the tests measure:
   grid): the successive orders are 1.57, 1.61, 1.84 (E), 1.50, 1.52, 1.81 (F_r) and 1.34,
   1.43, 1.83 (T), below 2 on the whole ladder. The finest pair differs by 3.15e-5 (E),
   1.68e-4 (F_r) and 6.9e-6 (T). The loss is attributed to the weight 1/(1 + z), z = c dt/dx,
-  of the stage-2 closure line (an earlier study, not re-measured on this release).
+  of the stage-2 closure line (not measured on this release).
 - Grid and time step together, a linear radiation-hydro wave (N = 16 ... 128): the orders are
   2.12, 2.26 (E) and 1.48, 1.95 (v); the finest pair differs by 4.36e-3 (E) and 9.81e-3 (v).
 
@@ -285,7 +286,7 @@ A small sound wave in gas + radiation is damped by the radiation and, where the 
 trapped, travels at the mixture sound speed. The scheme reproduces the analytic root of the
 linear gas + moment system (with its own closure and exchange) from the free-streaming
 ($x = 0.01$) through the intermediate ($x = 0.1$, 1) to the trapped limit ($x = 100$), at
-cfl 0.3 and the larger dt that `rad_signal_speed_diff` gives in thin gas (2.8 x at $x = 0.01$).
+cfl 0.3 and the larger dt that `rad_signal_speed_diff` gives in thin gas (2.7 x at $x = 0.01$).
 
 Test: `radwave` (phase speed within 3e-3, damping within 5e-3 per radian, no growth).
 
@@ -296,11 +297,10 @@ far from isotropic keeps its direction: crossing beams pass through each other, 
 behind an opaque cloud leaves a sharp shadow, and the field around an emitting cylinder
 follows exact transport (an M1 closure merges crossing beams and fills shadows). Each beam
 of the test, 4 cells wide, stays straight at its angle but carries 1.19 x the exact energy
-(before the ray-hole fix 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells; the cap of the streaming share at its edges),
-while its energy flux equals the injected flux to 6e-8. Around
+(the cap of the streaming share at its edges), while its energy flux equals the injected flux to 6e-8. Around
 the cylinder E and the energy flux Phi are within 1.1 % and 1.2 % of exact transport; the face
-momentum F there is about 20 % above it (an earlier study with other keys attributed this to
-the harmonic face opacity at the sharp edge; not re-measured here).
+momentum F there is about 20 % above it (likely the
+harmonic face opacity at the sharp edge; not measured).
 
 Test: `idort_beams` (L1 of E and the beam energy within 5 % of 0.1772 and 1.193), `idort_shadow`, `idort_shadow_gl` (L1
 0.014 and 0.013), `idort_cylinder` (E and Phi outside 0.011 and 0.012), `nlte_eps1e-1`, `nlte_eps1e-4` (J
@@ -344,8 +344,8 @@ trapped in a moving gas moves with it and a uniform medium at the coupling's fix
 stays there.
 
 Test: `advect_pulse` (a diffusing pulse advected at v against the same pulse at rest shifted by
-v t: L1 <= 3e-3, measured 7e-4), `advect_uniform` (a uniform medium at 0.01 c: T changes by
-<= 1e-5, measured 1.4e-6).
+v t: L1 <= 3e-3, measured 8e-4), `advect_uniform` (a uniform medium at 0.01 c: T changes by
+<= 1e-5, measured 5e-10).
 
 ### Phi mirror symmetry on narrow wedges
 
@@ -364,10 +364,10 @@ from both sides, its other side being the exact equatorial mirror of this side
 removes the one-frame seam face's net $F_\theta$ (the 2.5e-2 mirror error of the 20-deg deck).
 
 Test: `wedge_sym` (a spherically symmetric shell on 3.7 and 7.3 deg wedges with the key and a
-20 deg wedge without it: $|\sum F_\phi|/\sum|F_r| \le 10^{-8}$, measured 2e-12 to 2e-9; the
+20 deg wedge without it: $|\sum F_\phi|/\sum|F_r| \le 10^{-8}$, measured 2e-11 to 3e-9; the
 narrow wedge without the key stops with the FATAL; the shell made theta-periodic stops with
 the FATAL without `vet_gd_theta_seam_sym`; with it the mean $F_\theta$ is <= 1e-8 of
-$\sum|F_r|$ after 8 cycles, measured 1.6e-14).
+$\sum|F_r|$ after 8 cycles, measured at round-off).
 
 ### Restart and dt retry: bitwise
 
@@ -384,13 +384,13 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
 - **Same binary, same layout:** bitwise from run to run.
 - **MPI rank count:** bitwise. With `<mesh>/layout_invariant = true` (default) every global
   or shell sum goes through an exact binned accumulator, so it does not depend on the order
-  of its terms. Not part of the suite.
+  of its terms. Test: `mpi_ranks` (1 and 2 ranks).
 - **MeshBlock layout, tile mode** (`layout_invariant_mode = tile`, `layout_tile = N`): the
   sums and the multigrid act on fixed N x N lateral tiles. Layouts made of whole tiles are
   bitwise identical when there is one MeshBlock along x1 and, if the theta boundaries are ray
   walls (mirror or vacuum), one MeshBlock along x2, as in the production templates. Splitting
   across such walls gives a round-off difference (below 1e-13 of the largest
-  value after 8 cycles, CPU, 89b05b1c7).
+  value after 8 cycles, CPU).
 - **Block mode** (default): the result depends on the MeshBlock size at the solver
   tolerance, because the preconditioner is MeshBlock-local.
 

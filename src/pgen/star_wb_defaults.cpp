@@ -7,8 +7,8 @@
 //! \brief recipe::PgenEarlyDefaults of the
 //! star_vet and ry_per_accretor builds (src/CMakeLists.txt links this file for those
 //! two problems; deep_hot_jupiter_rt has its own, every other pgen the no-op
-//! early_defaults_none.cpp).  The x1 well-balanced reconstruction of every star_vet (HG,
-//! RSG, R136a1) and accretor production deck, as the dhj G4 default:
+//! early_defaults_none.cpp).  The x1 well-balanced reconstruction of every star_vet
+//! and accretor production deck:
 //!   <fluid>/wellbalance_dynamic = true, <fluid>/wb_x1 = true, <fluid>/wb_option =
 //! polytropic on the cubed sphere or the spherical-polar mesh.  Rules as every recipe
 //! default: only when recipe::NewDefaults(pin) (fresh start, or <job>/recipe = prod1019);
@@ -16,8 +16,6 @@
 //! is recorded (GetOrAdd) so the run's restarts carry it; each decision is logged in the
 //! start-up defaults block.  A restart whose input lacks a key keeps the old default
 //! (off). <fluid>/wb_rmax is NOT defaulted (per-deck radius; 0 = WB everywhere).
-//! (<rad_vet>/vet_rotate_advance, the other P12 key, is a rad_vet default:
-//! RadiationVet::VetRotInit.)
 
 #include <string>
 

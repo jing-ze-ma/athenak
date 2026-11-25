@@ -134,7 +134,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("dtr_ncut", dtr_ncut);
   v.value("dtr_maxcut", dtr_maxcut);
   v.value("dtr_redo", dtr_redo);
-  v.view("ktd", ktd);
   v.value("marshak_q", marshak_q);
   v.value("ibc_x1min", ibc_x1min);
   v.value("ibc_x1max", ibc_x1max);
@@ -193,7 +192,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("thsw_c1", thsw_c1);
   v.value("thsw_h0", thsw_h0);
   v.value("thsw_h1", thsw_h1);
-  v.view("ifw", ifw);
   v.value("impl_beam_fs", impl_beam_fs);
   v.value("impl_beam_hr", impl_beam_hr);
   v.value("impl_hr_sf", impl_hr_sf);
@@ -201,10 +199,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("hsf_nsf", hsf_nsf);
   v.value("hr_q", hr_q);
   v.view("vgd_hr", vgd_hr);
-  v.view("vgd_hrt", vgd_hrt);
   v.view("vgd_pin_cnt", vgd_pin_cnt);
-  v.view("ifw2", ifw2);
-  v.view("ifw3", ifw3);
   v.value("impl_gas_src_cons", impl_gas_src_cons);
   v.view("csk1", csk1);
   v.value("csk1_ok", csk1_ok);
@@ -231,10 +226,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("onep_prb", onep_prb);
   v.value("impl_pord", impl_pord);
   v.value("impl_prec", impl_prec);
-  v.view("gc_part", gc_part);
-  v.view("gc_x", gc_x);
-  v.view("gf_gh", gf_gh);
-  v.view("gf_okd", gf_okd);
   v.value("bcg_r0rel", bcg_r0rel);
   v.view("lay_part", lay_part);
   v.view("lay_part_h", lay_part_h);
@@ -717,7 +708,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vlat_icut", vlat_icut);
   v.value("vlat_cut_thin", vlat_cut_thin);
   v.value("vlat_ready", vlat_ready);
-  v.value("vlat_nbuild", vlat_nbuild);
   v.value("vlat_time", vlat_time);
   v.value("vlat_ncall", vlat_ncall);
   v.value("vlat_nclamp", vlat_nclamp);
@@ -726,7 +716,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vlat_cnt", vlat_cnt);
   v.value("vgd_on", vgd_on);
   v.value("vgd_tan", vgd_tan);
-  v.view("cs_qf", cs_qf);
   v.value("vgd_replace", vgd_replace);
   v.value("vgd_n", vgd_n);
   v.value("vgd_ls", vgd_ls);
@@ -885,7 +874,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vlat_src_ep", vlat_src_ep);
   v.value("vgd_nrb", vgd_nrb);
   v.value("vgd_trb", vgd_trb);
-  v.view("vgd_hr_c", vgd_hr_c);
   v.value("vgd_csg", vgd_csg);
   v.value("vgd_csn", vgd_csn);
   v.view("vgd_csr", vgd_csr);
@@ -958,7 +946,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_shl[]", vgd_shl[q0_]);}
   v.value("vgd_shn", vgd_shn);
   v.value("vgd_shl_alpha", vgd_shl_alpha);
-  v.view("vcol_hr", vcol_hr);
   v.value("vgd_hle", vgd_hle);
   v.value("vgd_hl_bytes", vgd_hl_bytes);
   v.value("vgd_hl_cap", vgd_hl_cap);
@@ -1109,7 +1096,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
 //   cln_hdl : CleanHaloList (cell lists made at first use, kept)
-//   vtan_x2t_src : const Real *
 //   pbval_ea : MeshBoundaryValuesCC *
 //   pbval_vs : MeshBoundaryValuesCC *
 //   pin_rot_ : ParameterInput *

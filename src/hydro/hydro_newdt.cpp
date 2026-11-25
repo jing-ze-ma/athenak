@@ -149,7 +149,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // rad_signal_speed_inertia: the relativistic sound speed of gas + radiation, the
   // radiation enthalpy w_r = (E + P_dd)/c^2 in the inertia (Mihalas & Mihalas 1984, sect.
   // 101): c_eq^2 -> c_eq^2/(1 + w_r/rho), at most c^2/3 + c_g^2 where the radiation
-  // dominates (a floored cell beside a bright field: 127 c without it, t9l62 IA9 6705)
+  // dominates (a floored cell beside a bright field)
   // rad_signal_speed_diff: the taper is the grid-scale TRAPPING criterion instead of the
   // optical depth.  A radiation-pressure perturbation of wavenumber k = pi/h diffuses
   // away at the rate c_hat k^2/(3 rho kappa_T) and the wave oscillates at c_eq k: it

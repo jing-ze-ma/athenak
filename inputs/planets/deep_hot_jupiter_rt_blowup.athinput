@@ -273,8 +273,8 @@ ck_star_teff = 6000.0            # host T_eff; the stellar spectrum is a blackbo
 # only right when the run is launched from the repository root. Give absolute paths when
 # running out of a run directory or via -d. The tables are not in git: see
 # data/exo_fms_ck/PROVENANCE.md for where to fetch them.
-ck_table     = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
-ck_data_dir  = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
+ck_table     = data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir  = data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
 
 # One-shot dump of a single radial column (level pressures, temperatures, net longwave
 # flux and shortwave heating) the first time the correlated-k source term runs, for

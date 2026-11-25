@@ -155,7 +155,7 @@ bool star_wbwin_ = false;
 bool star_binf_ = false, star_bout_ = false;
 // the initial column's rho, eint at r_in (scales of the table ghosts)
 Real star_drv_d0_ = 1.0, star_drv_e0_ = 1.0;
-// bsg-arm2: problem/star_bc_outer = hse (star_bhse_): the top ghosts are the HYDROSTATIC
+// problem/star_bc_outer = hse (star_bhse_): the top ghosts are the HYDROSTATIC
 // continuation of the last active cell (StarBC); star_bc_hse_gmax clamps the Eddington
 // factor used there, star_bc_hse_tgrad continues T along the interior's dT/dPhi_eff
 // (polytropic WB walk) instead of holding it (isothermal).  problem/star_sponge_mode =
@@ -163,7 +163,7 @@ Real star_drv_d0_ = 1.0, star_drv_e0_ = 1.0;
 // problem/star_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
 // every cell with rho < star_sponge_dmax (the floor gas above the photosphere, which can
 // not be hydrostatic and falls freely)
-// problem/star_sponge_form (default lawson on a fresh start, USER 11-21, recorded; a
+// problem/star_sponge_form (default lawson on a fresh start, recorded; a
 // restart file without the key keeps exp, NOTE): exp = u0 *= exp(-bdt rate w)
 // after each RK stage (1st order in time); lawson = the integrating-factor form of the
 // SSP-RK stages (exact for the decay, 2nd order, weights >= 0): the stage's u^n part
@@ -246,15 +246,15 @@ bool star_adp_ = false;
 // bitwise):
 // under mesh/layout_invariant the per-shell serial sums of StarAdaptiveUpdate (a thread
 // per radial index over every column, with the EOS pressure) are overwritten by the
-// order-independent repro::ShellSums: skip them (A100 small RSG/HG: 34-36 ms per cycle)
+// order-independent repro::ShellSums: skip them
 bool star_ad_dskip_ = false;
 std::vector<Real> star_plnp_, star_pfm_, star_ftot_;
 DvceArray2D<Real> star_shp_;
-Real star_ad_tau_ = 1500.0, star_ad_taper_ = 0.01, star_ad_tl_ = 0.0;
+Real star_ad_tau_ = 1500.0, star_ad_tl_ = 0.0;
 Real star_ad_dout_ = 0.0, star_ad_tout_ = 0.0, star_lsub_ = 0.0;
 int star_ad_cyc_ = -1;
 DvceArray1D<Real> star_fsub_;
-// problem/mlt_src_time (default stage on a fresh start, USER 11-21, recorded; start on a
+// problem/mlt_src_time (default stage on a fresh start, recorded; start on a
 // hesdirk2 run with another tableau, and a restart file without the key keeps start,
 // NOTE): start = the ramp w and the
 // adaptive esrc at the step start (1st order in time); stage = 2nd order: esrc at the
@@ -706,7 +706,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   star_mlt_ = pin->GetOrAddBoolean("problem","mlt_flux_frozen",false);
   if (star_mlt_ && ncols != 5) {
     StarFatal("problem/mlt_flux_frozen = true needs star_ic_cols = 5 and the 7-column "
-              "file of make_ic_he_presn_m1.py mlt", __LINE__);
+              "IC file (columns 6, 7: T, F_MLT/F)", __LINE__);
   }
   // ONE MeshBlock along x1 (the margins below, the history's face picks and the balanced
   // IC read the radial grid of block 0)
@@ -1270,8 +1270,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // solve of the march starts from the node below.  The old guess, the last pass's rho
     // at the node, is the floor once a node fell to it; the secant then misses the root
     // there, the node stays on the floor: a one-cell rho cliff with phi ~ 20-60 whose
-    // cell alternates between passes (R136, RSG: not converged in 200 passes, the result
-    // roundoff-dependent, CPU != GPU).  With w < 1, not converged in
+    // cell alternates between passes (not converged, the result
+    // roundoff-dependent).  With w < 1, not converged in
     // star_ic_rad_atm_maxit passes (fresh default 1000) is fatal.
     {
       const std::string afm = pin->GetOrAddString("problem","star_ic_rad_atm_force",
@@ -2555,13 +2555,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Both keys default to auto.  A number is used as given, mlt_ramp_start = -1 = no ramp.
   // auto on a FRESH start (mlt_flux_frozen only, else no ramp): start = 0, time = the
   // convective saturation time t_sat = mlt_ramp_nefold/(mlt_ramp_sigma_frac sigma_max)
-  // (defaults 10.5 = ln(v_MLT/v_seed), measured on the Caltech RSG E run, and 0.61 =
-  // sigma_eff/
-  // sigma_max: Caltech's measured RSG E e-fold ~10 d at 0.995 R_ph against THIS code's
-  // sigma_max (G m(r) gravity, code cells; 1/6.11 d); their 0.74 was against a fixed-GM
-  // sigma_max (1/7.35 d); read only when a ramp key is auto), sigma_max from the IC
-  // column (StarN2Compute).  TODO: code the star_seed amplitude -> v_seed mapping for
-  // n_efold.  The
+  // (defaults 10.5 = ln(v_MLT/v_seed) and 0.61 = sigma_eff/sigma_max, measured on a red
+  // supergiant; read only when a ramp key is auto), sigma_max from the IC column
+  // (StarN2Compute).  The
   // mass-weighted median 1/sigma (StarN2Median) is printed for reference.  Computed once
   // and kept in the restart file (kStarRmpTag), which a
   // restart reuses (never recomputed).  A restart (or star_ic_remap_file start) with auto
@@ -2889,14 +2885,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the inner wall face sees the exact mirror of the interior-side state
   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
   // mass flux to round-off.  Measured: it does not change the first-cell force
-  // (-2.1e-3 rho g at 640 zones, first order in dx, gate 1a), which is not the wall flux.
-  // problem/star_bc_inner (he-wind-bc): wall (default: the closed wall above) | inflow:
+  // (-2.1e-3 rho g at 640 zones, first order in dx), which is not the wall flux.
+  // problem/star_bc_inner: wall (default: the closed wall above) | inflow:
   // the ghosts hold the (balanced) initial column at fixed rho and eint, UNSCALED, with
   // v_r copied from the first active cell (zero gradient), so mass may enter or leave;
   // no wall-face correction.  problem/star_bc_outer: noinflow (default) | outflow: the
   // ghosts continue the edge cell as a constant-velocity wind, rho ~ r^-2, the edge's
   // specific internal energy (the no-inflow face correction of star_wall_zero_flux stays)
-  // | hse (bsg-arm2): the ghosts are the edge cell walked outward in hydrostatic balance
+  // | hse: the ghosts are the edge cell walked outward in hydrostatic balance
   // with the effective gravity of the code's own forces (see StarBC), T held (or
   // continued along the interior's dT/dPhi_eff with star_bc_hse_tgrad), v_r copied where
   // it points out and zero where it points in, v_t copied (box_convection bc_mode_top 4).
@@ -4537,10 +4533,8 @@ void StarApplyMltW(Mesh *pm, const Real w) {
 
 // the rank-ordered sum of a host array over all ranks (MPI_Allgather, then
 // the ranks summed 0, 1, ... in that order on every rank).  An MPI_Allreduce(MPI_SUM)
-// does not fix the order in which the ranks' doubles are added: with HCOLL (Caltech
-// hpcx) the order changed with the communication history, so a restart -- same state,
-// fewer earlier collectives -- got F_sub a round-off different from the straight run's
-// some 40 cycles after the restart (RSG E, deck A, 1 x 4 H200), and the run drifted.
+// does not fix the order in which the ranks' doubles are added: with HCOLL the order
+// changes with the communication history, and a restart is not bitwise.
 // Same pattern as IcrDetSum / vet_gd_twin_det.
 void StarDetSum(Real *v, const int n) {
 #if MPI_PARALLEL_ENABLED
@@ -4766,7 +4760,7 @@ void StarAdaptiveUpdate(Mesh *pm) {
         }
         fprintf(fp, "\n");
       }
-      // STAGE CS3 (gate (c)): the shell-mean radiation energy density per CELL is..ie
+      // the shell-mean radiation energy density per CELL is..ie
       // (code units, not normalised; a trailing 0 keeps the face count)
       fprintf(fp, "%.10e emean", t);
       for (int i=is; i<=ie; ++i) {fprintf(fp, " %.6e", hsh(i,5)/hsh(i,2));}

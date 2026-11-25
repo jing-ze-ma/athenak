@@ -315,7 +315,7 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
   target_compile_definitions(athena PRIVATE ATHENA_CUDA_BODY_GLOBAL=512)
 endif()
 # -D Athena_EXTRA_DEFS="A=1;B=2": extra compile definitions (build-time tuning knobs such as
-# ATHENA_CLEAN_FOR_MB or ATHENA_CUDA_BODY_GLOBAL; h200-1120)
+# ATHENA_CLEAN_FOR_MB or ATHENA_CUDA_BODY_GLOBAL)
 if (DEFINED Athena_EXTRA_DEFS AND NOT "${Athena_EXTRA_DEFS}" STREQUAL "")
   target_compile_definitions(athena PRIVATE ${Athena_EXTRA_DEFS})
 endif()
@@ -329,8 +329,7 @@ if (${PROBLEM} STREQUAL "star_vet")
 endif()
 
 # -D Athena_VET_VGD_NMAX=<n> raises the vet_gd direction cap (default 432 in
-# rad_vet.hpp; it sizes a per-thread buffer of VetGdWall, so a large cap is a CPU /
-# diagnostic build: 480 = GL 20x24 needs it)
+# rad_vet.hpp): more directions than that stop with a FATAL
 if (DEFINED Athena_M1_VGD_NMAX AND NOT DEFINED Athena_VET_VGD_NMAX)   # (the old name)
   set(Athena_VET_VGD_NMAX ${Athena_M1_VGD_NMAX})
 endif()

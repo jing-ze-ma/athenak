@@ -178,7 +178,7 @@ constexpr int M1_VGD_HRNX = 9;
 #ifdef M1_VGD_NMAX_BUILD
 constexpr int M1_VGD_NMAX = M1_VGD_NMAX_BUILD;   // cmake -D Athena_M1_VGD_NMAX
 #else
-constexpr int M1_VGD_NMAX = 432;   // vet_gd: max directions (sizes buf[] in VetGdWall)
+constexpr int M1_VGD_NMAX = 432;   // vet_gd: max directions
 #endif
 // components of opac, all stored as rho*kappa (inverse length)
 constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
@@ -262,10 +262,6 @@ constexpr int M1_CNT_ITMAX  = 2;   // largest iteration count of any one cell
 constexpr int M1_CNT_NFAIL  = 3;   // cells that hit maxit without reaching the tolerance
 constexpr int M1_CNT_NBRAK  = 4;   // cells for which no bracket [T_lo, T_hi] was found
 constexpr int M1_NCNT = 5;
-
-// bracketed-Newton controls
-constexpr int  M1_MAXIT = 100;
-constexpr Real M1_RTOL  = 1.0e-12;
 
 //----------------------------------------------------------------------------------------
 //! \struct RadiationVetTaskIDs
@@ -486,7 +482,6 @@ class RadiationVet {
   Real pos_un_drop = 0.0;
   int dtr_ncut = 0, dtr_maxcut = 8;   // DtRetry cuts of this cycle, limit
   bool dtr_redo = false;   // this cycle's failed step is redone (clean: solved strictly)
-  DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   Real marshak_q{};             // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min{}, ibc_x1max{}; // M1_IBC_*
   // implicit_bc_x2min|x2max|x3min|x3max: auto (periodic on a periodic mesh, else
@@ -613,10 +608,9 @@ class RadiationVet {
   // curvilinear meshes); implicit_thin_recon = js (M1ThinJs: ratios from the face mean
   // of H+-); implicit_thin_bq = lin (outer Marshak q from the face-extrapolated H+);
   // implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh (vet_sc), j: the cell J
-  DvceArray5D<Real> ifw;        // per-x1-face work array, M1_NIFW components
   // implicit_flux_faces = all: berthon | blend on every face of the multi-D solve
-  // (Cartesian and sp lateral; sp radial keeps its own). ifw2/ifw3: AL/HCL/HCR of the
-  // x2/x3 faces; a transverse face's central part keeps 1 - AL through thx2/thx3.
+  // (Cartesian and sp lateral; sp radial keeps its own): a transverse face's central
+  // part keeps 1 - AL through thx2/thx3.
   bool impl_beam_fs = false;    // implicit_flux_beam = fs: |f| = |H|/J of vet_sc
   // implicit_flux_beam = halfrange: F = (1 - w) F_central + w c (r+_L E_L + r-_R E_R),
   // r+- = H+-/J the half-range ratios along the normal, w = exp(-(tau_f/tau0)^2)
@@ -630,11 +624,10 @@ class RadiationVet {
   // the isotropic half-range shape (+-1/4) (M1HrExcess)
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // per-column outer q from h+_1 (vcol_q)
-  DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
+  DvceArray5D<Real> vgd_hr;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
   // with implicit_thin_switch = fs* or implicit_thin_corr vgd_hr has M1_VGD_HRNX
   // components: + C1, eps, J
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_cnt;
-  DvceArray5D<Real> ifw2, ifw3;
   // implicit_gas_src = matched (term-by-term deposit) | conservative: the gas takes minus
   // the radiation's own source, dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_f Z_f, with
   // F_c the stored cell flux and Z_f the face's transport part
@@ -649,8 +642,6 @@ class RadiationVet {
     return (CskRstHdr() && csk1_ok && csk1.extent_int(0) > 0) ? 3 : 0;
   }
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass
-  // time2_enth_be: this (non-stage) solve takes the stage a_f rule
-  bool T2EnthBe() const;
 
   // ---- implicit transverse (x2/x3) coupling
   int impl_solver{};            // M1_ISOLV_*: line_jacobi | bicgstab
@@ -681,12 +672,6 @@ class RadiationVet {
                                 // red-black transverse line Gauss-Seidel (block-local),
                                 // 2 its forward half, 3 mg (rbgs_fwd + block-local
                                 // semicoarsening), 4 mg_gc (mg + global coarse space)
-  // implicit_precond = mg_gc: global coarse space of per-x1-layer (x2,x3)-band means
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_part;  // (m,lb,q,c,i) band sums
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_x;     // (gi*nb + b) x_g
-  // implicit_precond = mg_gf: global coarse space of the lowest (x2,x3) Fourier modes
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gf_gh;   // (gi*nm + q) multi-rank
-  DvceArray1D<int> gf_okd;          // (q) the mode-q factorisation is usable
   Real bcg_r0rel{};             // max|b - A x0|/max|b| of the last BiCGStab call
   DvceArray1D<Real> lay_part;   // layout_invariant_mode = block: per-MeshBlock
                                 // partials of M1LayReduce (sized on first use)
@@ -810,8 +795,6 @@ class RadiationVet {
   void Time2Restore(Driver *pdrive);
 
   bool t2_inprobe = false;      // inside a helper solve (Time2RotCorrect)
-  void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
-  void Time2VetExtrapolate();
   // closure = vet_col under hesdirk2, time2_vet_col: lag (D^n) | predict (one build at
   // U^n + dt K1) | rebuild (predict for stage 1, a build at Y1 for stage 2) | extrap
   // (diagnostic: D^n + r (D^n - D^{n-1}), not in the restart)
@@ -852,11 +835,6 @@ class RadiationVet {
   DvceArray4D<Real> t2pth;      // (m,k,j,i) theta of the current build
   DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
   DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
-  void Time2VetColAt(int which);    // vet_col build at 1 = U^n + dt K1, 2 = Y1
-  void Time2VetColSaveY1();         // end of the stage-1 solve: E, T of Y1 (rebuild)
-  void Time2PredTheta(const Real dt, const Real gdt, const bool dbg);
-  void Time2PredDebugSc();
-  void Time2VetColExtrap();
   // old files (version < 4) carry time2_vet_col = extrap2 channels: read past
   static constexpr int M1_X2_NCH = 24;
   void Time2Report();
@@ -1034,8 +1012,6 @@ class RadiationVet {
   // half-range ratios
   DvceArray3D<Real> cs_cn2, cs_cn3;
   void CubedS1Init();
-  //! seam average of the stored face state f0x2/f0x3
-  void CubedSeamFaceAverage();
   bool cs_seam_avg_on = true;
   ParameterInput *pin_cs_ = nullptr;
   //! print the timers and positivity totals of the implicit transport
@@ -1572,10 +1548,6 @@ class RadiationVet {
   int vlat_odm = 2;
   bool vlat_now = false;       // the term is on in this step (positivity fallback)
   Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
-  // operator form active (a zero D_r,lat leaves the operator untouched)
-  bool VlatOp() const {
-    return vlat_now && !vlat_lagfb && (vlat_odm == 2) && (vlat_odmax > 0.0);
-  }
   // vet_col_lat_posfix = lag: at a positivity trigger the lateral terms leave the
   // operator (M-matrix form) but stay as the lagged Picard term; a second trigger in the
   // step drops them (vlat_nfall)
@@ -1585,14 +1557,10 @@ class RadiationVet {
   bool fbl_any = false;
   DvceArray5D<Real> vlat_tt_loc;
   DvceArray5D<Real> VlatTT() const {return fbl_any ? vlat_tt_loc : tau_ten;}
-  // theta of each x2 row for M1SphTan (x2v; the source cell's theta in periodic ghost
-  // rows), built on first use
-  const Real *vtan_x2t_src = nullptr;
   int vlat_icut = 0;           // first shell of the sweep (CleanRayCut)
   Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
                                // this (0 off)
   bool vlat_ready = false;     // VetLatInit done
-  int vlat_nbuild = 0;         // builds done
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
@@ -1604,8 +1572,6 @@ class RadiationVet {
   void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
-  void VetLatDump();
-
 
   // ---- vet_gd (rad_vet_vetgd.cpp): Eddington tensor from an SC sweep along globally
   // fixed (Cartesian) HEALPix directions, through the vet_col_lat interface (sets
@@ -1614,9 +1580,8 @@ class RadiationVet {
   // HEALPix nside of a set that names none (12 nside^2 directions)
   static constexpr int vgd_nside = 3;
   // vet_gd_tangential: sp the lagged M1SphTan term; cs Q in LAT4, LAT5 about the cell
-  // tangent frame cs_qf (m, 6, k, j incl. ghosts; M1CsQab)
+  // tangent frame (M1CsQab)
   bool vgd_tan = true;
-  DvceArray4D<Real> cs_qf;
   bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
                                // first gd shell, q from the gd top cell)
   int vgd_n = 0;
@@ -1760,7 +1725,6 @@ class RadiationVet {
   int RotAvgRstNslab(const int ncell) const;
   int RotAvgRstI0() const;     // first written radial cell
   void RotAvgRstHdr(int64_t *h) const;
-  void RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb);
   void RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc);
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
   bool RotAvgRstCheck();
@@ -1933,13 +1897,7 @@ class RadiationVet {
   Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;
   bool vlat_src_ep = false;
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
-  void VetGdIterRebuild();
-  // cs half-range data at the start of a solve (|H|/J, seam ghosts)
-  void VetGdCsHrPrep();
-  void VetGdSpHrHalo();   // sp ghosts of vgd_hr
   MeshBoundaryValuesCC *pbval_hr = nullptr;
-  DvceArray5D<Real> vgd_hr_c;
-  void VetGdRealDiag();
   void VetGdHaloInit();
   // vet_gd on the cubed sphere (rad_vet_vetgd_cs.cpp): a block's band is its own panel's
   // index space with the four neighbour panels' strips unfolded at the edges; each band
@@ -2067,7 +2025,6 @@ class RadiationVet {
   DvceArray1D<int> vgd_shl[2];
   int vgd_shn[2] = {0, 0};
   Real vgd_shl_alpha = -3.0;
-  DvceArray5D<Real> vcol_hr;     // (m, 3, k, j, i): vet_col h+_r, h-_r, f_K (unclamped)
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;
@@ -2237,7 +2194,6 @@ class RadiationVet {
   void VetGdTabPoll();
   void VetGdBuild();
   void VetGdSweep();
-  void VetGdWall(const int i0, const int i1);
   void VetGdMoments();
   // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;

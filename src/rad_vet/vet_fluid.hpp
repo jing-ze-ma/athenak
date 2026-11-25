@@ -71,15 +71,6 @@ struct FluidRef {
     pcond = p->pcond;
     pvisc = p->pvisc;
   }
-  // swap the owner's u0/u1 handles (and these copies): evaluate U^n with a u0 reader
-  void SwapU01() {
-    if (pm != nullptr) {
-      std::swap(pm->u0, pm->u1);
-    } else if (ph != nullptr) {
-      std::swap(ph->u0, ph->u1);
-    }
-    std::swap(u0, u1);
-  }
   void EnableWBEffectivePotential() {
     if (pm != nullptr) {
       pm->EnableWBEffectivePotential();

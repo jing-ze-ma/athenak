@@ -854,8 +854,8 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // m1_lat = the closure tensor the implicit operator reads (VlatTT()):
     // m1_tt0 = slot 0 (vet_col f_K), m1_lat0..5 = the vet_col_lat slots (sp: D_rr - f_K,
     // D_rt, D_rp, D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2; cs: D_rr - f_K, the
-    // Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cs_qf frame), the cell unit
-    // vector m1_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of the
+    // Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cell tangent frame), the
+    // cell unit vector m1_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of the
     // current vet_gd formal solution about that vector (m1_jg, m1_hg; E units).  Derived.
     if (variable.compare("vet_lat") == 0) {
       out_params.contains_derived = true;

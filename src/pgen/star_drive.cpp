@@ -605,7 +605,7 @@ void RestartApply(Mesh *pm) {
   bool have = false;
   if (rst_have_) {
     const std::size_t nexp = 1 + 2*kNL + 7 + 2*static_cast<std::size_t>(nx1_);
-    // the first version's trailer (caf4fe6bb) has no Ebnd pair: those start at 0
+    // the first version's trailer has no Ebnd pair: those start at 0
     if ((rst_.size() != nexp && rst_.size() != nexp + 4) ||
         static_cast<int>(rst_[0]) != nx1_) {
       Fatal("the restart file's HSDRV001 trailer does not match this radial grid");
