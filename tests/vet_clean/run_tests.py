@@ -183,6 +183,22 @@ def t_mpi_ranks(c):
     return out
 
 
+def t_large_step(c):
+    """the closed rotating scattering shell of conservation_sp, c dt/dx ~ 200 (implicit_cfl
+    226.9, 32 x 8 x 8 cells), to t = 60: the gas the radiation pushes must be that of the
+    refined grid / smaller step (KE_r 8.0e-4, min rho 96 on 128 cells or dt/2, dt-converged;
+    the momentum a face flux gives the gas over one long step).  KE_r: kinetic energy of
+    v_r; rho_min: the smallest density of the last dump (start 100); dEgas: the gas's energy
+    change (from the work of the radiation force) relative to its start."""
+    d = c.run('shell_sp.athinput', 'run', {'time/nlim': 100000, 'time/tlim': 60.0,
+                                           'output1/dt': -1, 'output2/dt': 60.0})
+    lab, h = vett.read_hst(os.path.join(d, 'sp.hydro.hst'))
+    e = h[:, lab.index('tot-E')]
+    m = vett.last_bin(d, 'hydro_u')
+    return {'KE_r': float(h[-1, lab.index('1-KE')]), 'rho_min': float(m['dens'].min()),
+            'dEgas': float((e[-1] - e[0])/e[0])}
+
+
 def t_floor_dt(c):
     """hydro/dt_floor_courant = 0.6 on the rotating shell with floor gas (floorcap_rho = 100,
     the cells that thin below the IC density, as floorcap_spin): floor gas takes dt <= C /
@@ -1981,6 +1997,7 @@ TESTS = [  # name, function, in --quick
     ('momentum_box', t_momentum_box, True),
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
+    ('large_step', t_large_step, True),
     ('floor_pay', t_floor_pay, True),
     ('floor_momentum', t_floor_momentum, True),
     ('ceiling_metric', t_ceiling_metric, True),
@@ -2071,7 +2088,7 @@ def main():
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
                    '(star_smoke, star_cs_ring, ray_cut_slab, wb_star; without it they are skipped)')
-    p.add_argument('--quick', action='store_true', help='the short subset (24 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (25 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')
