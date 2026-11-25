@@ -108,7 +108,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     extern Real dt_floor_courant_key;
     if (pin->DoesBlockExist("rad_vet") ||
         pin->DoesParameterExist("hydro","dt_floor_courant")) {
-      dt_floor_courant_key = pin->GetOrAddReal("hydro","dt_floor_courant",0.0);
+      // (default with floorcap_rho: 0.6)
+      const bool fcap = pin->DoesParameterExist("rad_vet","floorcap_rho") &&
+          pin->GetReal("rad_vet","floorcap_rho") > 0.0 &&
+          recipe::Fix(pin, "hydro", "dt_floor_courant", "0.6", "0");
+      dt_floor_courant_key = pin->GetOrAddReal("hydro","dt_floor_courant",
+                                               fcap ? 0.6 : 0.0);
     }
   }
   // P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
