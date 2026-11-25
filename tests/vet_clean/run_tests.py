@@ -510,17 +510,18 @@ def radwave_fit(d, amp):
 
 
 def t_radwave(c):
-    """linear radiation-acoustic wave (64 x 4 cells, amplitude 1e-6, the exact eigenmode,
-    2 periods, cfl 0.3): phase speed and damping rate against the analytic root, from the
-    optically thin (x = 0.01) to the trapped (x = 100) regime; 'thin_old' runs without
+    """linear radiation-acoustic wave (80 x 4 cells, amplitude 1e-3, the exact eigenmode,
+    2 periods, cfl 0.3; the thin wave decays by e^-9, so at 1e-6 it ends below the solver
+    tolerance): phase speed and damping rate against the analytic root, from the optically
+    thin (x = 0.01 on 64 cells) to the trapped (x = 100) regime; 'thin_old' runs without
     hydro/rad_signal_speed_diff, for the time-step gain; '*_phase' with
     hydro/rad_signal_speed_phase (in-phase weight 1 - exp(-x^2))."""
-    cl, n, amp = 1.0e3, 64, 1.0e-6
+    cl, n, amp = 1.0e3, 80, 1.0e-3
     out = {'err_cph': [], 'err_damp': [], 'damp': [], 'warnings': 0}
     dt = {}
     for tag, prat, x, diff in RADWAVE:
         ceq = vett.radwave_root(prat, 1.0, cl)[3]
-        kap = x*cl*n/ceq                     # tau_cell = kappa h = x c / c_eq
+        kap = x*cl*64/ceq                    # tau_cell = kappa h = x c / c_eq on 64 cells
         w, ar, eig, _ = vett.radwave_root(prat, kap, cl)
         tl = 2.0*2.0*np.pi/w.real
         o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 0.3, 'time/tlim': tl,
