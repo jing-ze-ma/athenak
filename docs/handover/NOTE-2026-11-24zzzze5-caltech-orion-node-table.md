@@ -497,3 +497,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 05:15 02-03: IDLE for 10 min
 - 11-25 05:15 02-09: IDLE for 10 min
 - 11-25 05:20 02-16: b_n2suite b_next2 b_skip -> b_next2 b_skip
+- 11-25 05:22 02-16: b_next2 b_skip -> g_GATE_skip
+- 11-25 05:23 02-03: IDLE -> n2_ABBA_BASE1
+- 11-25 05:23 02-09: IDLE -> n2_ABBA_BASE1
+- 11-25 05:23 02-16: g_GATE_skip -> suiten20 suiten22 suiten23
