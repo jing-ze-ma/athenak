@@ -1533,7 +1533,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // interact; <hydro>/eos_radiation is already refused by the module itself.
   m1_on_ = (pmbp->pradvet != nullptr);
   if (m1_on_) {
-    radvet::RadiationVet *pm1 = pmbp->pradvet;
+    radvet::RadiationVet *pvet = pmbp->pradvet;
     std::string bad;
     if (pin->GetOrAddBoolean("problem", "rt_two_stream", false)) {
       bad += "\n  problem/rt_two_stream";
@@ -1568,16 +1568,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "the same grid" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
+    pvet->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
     // (b) the units of that lookup, cross-checked against <units>
     // eos.temp_cgs, not Units::temperature_cgs(): the general EOS divides mu back out
     // (general_hyd.cpp:55), and it is the EOS's own code temperature the lookup gets.
     const Real tcgs = eos.temp_cgs;
     const Real dcgs = (pmbp->punit != nullptr) ? pmbp->punit->density_cgs() : 1.0;
-    if (std::fabs(pm1->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
-        std::fabs(pm1->otab.dunit/dcgs - 1.0) > 1.0e-5) {
+    if (std::fabs(pvet->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
+        std::fabs(pvet->otab.dunit/dcgs - 1.0) > 1.0e-5) {
       std::cout << "### FATAL ERROR in box_convection: <rad_vet>/temp_unit_kelvin = "
-                << pm1->otab.tunit << ", rho_unit_cgs = " << pm1->otab.dunit
+                << pvet->otab.tunit << ", rho_unit_cgs = " << pvet->otab.dunit
                 << " but this run's units are (" << tcgs << ", " << dcgs << ")"
                 << std::endl;
       std::exit(EXIT_FAILURE);
@@ -1606,8 +1606,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // one reader): Conduction::BuildRadWeights may then skip its sweep when it proves
     // every blend weight 0 (bitwise the same weights; tests_m1/runs_4j_accmerge)
     pc->rad_tauf_unread = !(vdamp_tau_ > 0.0);
-    m1_cl_ = pm1->c_light;
-    m1_efl_ = pm1->e_floor;
+    m1_cl_ = pvet->c_light;
+    m1_efl_ = pvet->e_floor;
     {
       std::string tb = pin->GetOrAddString("problem", "vet_top_bc", "vacuum");
       if (tb.compare("vacuum") == 0) {
@@ -1628,7 +1628,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // column arrays, not from u0, which makes it identical on a restart.  The
     // wb_arad_file profile that Phi_eff integrates is built independently (by
     // bench/m1_stage2/ic/build_ic.py) and the two are compared below.
-    if (pm1->force_ref == radvet::VET_FREF_WB_ARAD) {
+    if (pvet->force_ref == radvet::VET_FREF_WB_ARAD) {
       if (!wb_phi_eff_) {
         std::cout << "### FATAL ERROR in box_convection: <rad_vet>/force_reference = "
                   << "wb_arad needs problem/wb_phi_eff = true -- the residual is only "
@@ -1641,7 +1641,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       auto cd_dv = cd.d_view, ct_dv = ct.d_view;
       const Real zlo_a = zlo, dzf_a = dzf, fin_a = m1_fin_, cl_a = m1_cl_;
       const int nf_a = nfine;
-      radvet::VetOpacTab ot = pm1->otab;
+      radvet::VetOpacTab ot = pvet->otab;
       par_for("boxconv_m1aref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
@@ -1657,8 +1657,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       });
       // BoxConvSrcs gives the reference work (split); set before SetForceReference,
       // which resolves force_reference_work = auto
-      pm1->fref_wsplit_ok = pfl->use_wellbalance_dynamic;
-      pm1->SetForceReference(m1_aref_);
+      pvet->fref_wsplit_ok = pfl->use_wellbalance_dynamic;
+      pvet->SetForceReference(m1_aref_);
       // how far the file-driven Phi_eff profile is from this one
       Real amax = 0.0;
       {
@@ -2903,7 +2903,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
     radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
     auto *pfl = &flr_;
-    radvet::RadiationVet *pm1 = pmbp->pradvet;
+    radvet::RadiationVet *pvet = pmbp->pradvet;
     pdata->nhist = 8;
     pdata->label[0] = "F1top";
     pdata->label[1] = "F1mid";
@@ -2918,7 +2918,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     pdata->label[6] = "V1mid";
     pdata->label[7] = "KEcol";
     for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = 0.0;
-    if (pm1 == nullptr) return;
+    if (pvet == nullptr) return;
     auto &indcs = pm->mb_indcs;
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
@@ -2943,8 +2943,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
     auto &size = pmbp->pmb->mb_size;
     auto &u0 = pfl->u0;
-    auto ru0 = pm1->u0;
-    auto rop = pm1->opac;
+    auto ru0 = pvet->u0;
+    auto rop = pvet->opac;
     DvceArray4D<Real> phicc = pfl->phicc0;
     // m1-mhd: |B|^2/2 out of the conserved energy under <mhd> (hydro: never read)
     const bool mhdb = mhd_;
@@ -2955,8 +2955,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
     auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
     const bool etotgrav = etotgrav_;
-    const Real ctc = pm1->c_light/pm1->chat;
-    const Real clm1 = pm1->c_light;
+    const Real ctc = pvet->c_light/pvet->chat;
+    const Real clm1 = pvet->c_light;
     const Real inc = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*
                           static_cast<Real>(pm->mesh_indcs.nx3));
     array_sum::GlobalSum sum_m1;
@@ -3002,8 +3002,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
       lmax = (v > lmax) ? v : lmax;
     }, Kokkos::Max<Real>(vmx));
     Real fres = 0.0;
-    if (pm1->force_ref == radvet::VET_FREF_WB_ARAD) {
-      auto aref = pm1->arad_ref;
+    if (pvet->force_ref == radvet::VET_FREF_WB_ARAD) {
+      auto aref = pvet->arad_ref;
       const Real g0l = g0_;
       Kokkos::parallel_reduce("boxconv_m1fres",
       Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},

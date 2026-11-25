@@ -101,7 +101,7 @@ void RhseHist(HistoryData *pdata, Mesh *pm);
 
 void ProblemGenerator::RadiationVetRhse(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  radvet::RadiationVet *pm1 = pmbp->pradvet;
+  radvet::RadiationVet *pvet = pmbp->pradvet;
   hydro::Hydro *ph = pmbp->phydro;
   if (ph == nullptr || !ph->peos->eos_data.is_ideal) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -139,9 +139,9 @@ void ProblemGenerator::RadiationVetRhse(ParameterInput *pin, const bool restart)
     }
   }
 
-  const Real cl = pm1->c_light, ar = pm1->arad, kap = pm1->kappa_f + pm1->kappa_s;
+  const Real cl = pvet->c_light, ar = pvet->arad, kap = pvet->kappa_f + pvet->kappa_s;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
-  const bool teq = (pm1->kappa_p > 0.0);
+  const bool teq = (pvet->kappa_p > 0.0);
   const Real a = pmy_mesh_->mesh_size.x1min, b = pmy_mesh_->mesh_size.x1max;
   const bool sph = rh_sph;
   const Real g = rh_g, gm = rh_gm, ef = rh_eddf;
@@ -156,9 +156,9 @@ void ProblemGenerator::RadiationVetRhse(ParameterInput *pin, const bool restart)
   auto &size = pmbp->pmb->mb_size;
   const int is = indcs.is, nx1 = indcs.nx1;
   auto uh = ph->u0;
-  auto u0 = pm1->u0;
-  const Real efl = pm1->e_floor;
-  pm1->iebath_x1min = RhseEdd(sph, a, a, b, rho0, t0, g, gm, ef, f0, kap, cl);
+  auto u0 = pvet->u0;
+  const Real efl = pvet->e_floor;
+  pvet->iebath_x1min = RhseEdd(sph, a, a, b, rho0, t0, g, gm, ef, f0, kap, cl);
   if (restart) return;
   par_for("rhse_ic", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

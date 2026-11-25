@@ -388,10 +388,10 @@ void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
     for (int i = 0; i < nx1_; ++i) {dm += ddm_[i];}
     gdm = a_.gcode*dm;
   }
-  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
-  const Real ebi = ebd_ ? pm1->ebnd_acc_in : 0.0;
-  const Real ebo = ebd_ ? pm1->ebnd_acc_out : 0.0;
-  const Real esa = ebd_ ? pm1->ebnd_acc_src : 0.0;
+  radvet::RadiationVet *pvet = pm->pmb_pack->pradvet;
+  const Real ebi = ebd_ ? pvet->ebnd_acc_in : 0.0;
+  const Real ebo = ebd_ ? pvet->ebnd_acc_out : 0.0;
+  const Real esa = ebd_ ? pvet->ebnd_acc_src : 0.0;
   std::fprintf(fp, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e "
                "%.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", pm->ncycle, pm->time,
                mt, et, led_[0], led_[1], led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
@@ -412,7 +412,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   const bool hinf = pin->DoesParameterExist("problem","star_bc_inner_table");
   const bool hlive = pin->DoesParameterExist("problem","star_gm_live") &&
                      pin->GetBoolean("problem","star_gm_live");
-  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
+  radvet::RadiationVet *pvet = pm->pmb_pack->pradvet;
   bool led = hinf || hlive;
   if (pin->DoesParameterExist("problem","star_drive_ledger")) {
     led = pin->GetBoolean("problem","star_drive_ledger");
@@ -496,10 +496,10 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   }
   // The scheme's own x1-face radiation energy (Ebnd, split), so the
   // Marshak top loss is in the ledger
-  ebd_ = (pm1 != nullptr);
+  ebd_ = (pvet != nullptr);
   if (ebd_) {
-    pm1->ebnd_on = true;
-    pm1->ebnd_split = true;
+    pvet->ebnd_on = true;
+    pvet->ebnd_split = true;
   }
   // the inner face area of the whole mesh (Erad ledger)
   {
@@ -587,11 +587,11 @@ void RstAppend(std::vector<char> *out) {
   p.push_back(dmint_);
   for (int i = 0; i < nx1_; ++i) {p.push_back(ref_ ? rhoref_[i] : 0.0);}
   for (int i = 0; i < nx1_; ++i) {p.push_back(ref_ ? ddm_[i] : 0.0);}
-  radvet::RadiationVet *pm1 = (pmesh_ != nullptr) ? pmesh_->pmb_pack->pradvet : nullptr;
-  p.push_back(ebd_ ? pm1->ebnd_acc_in : 0.0);
-  p.push_back(ebd_ ? pm1->ebnd_acc_out : 0.0);
-  p.push_back(ebd_ ? pm1->ebnd_acc_src : 0.0);
-  p.push_back(ebd_ ? pm1->ebnd_s3 : 0.0);   // the esrc inside the next step's K1
+  radvet::RadiationVet *pvet = (pmesh_ != nullptr) ? pmesh_->pmb_pack->pradvet : nullptr;
+  p.push_back(ebd_ ? pvet->ebnd_acc_in : 0.0);
+  p.push_back(ebd_ ? pvet->ebnd_acc_out : 0.0);
+  p.push_back(ebd_ ? pvet->ebnd_acc_src : 0.0);
+  p.push_back(ebd_ ? pvet->ebnd_s3 : 0.0);   // the esrc inside the next step's K1
   const Real rn = static_cast<Real>(p.size());
   const std::size_t o = out->size();
   out->resize(o + (p.size() + 1)*sizeof(Real) + sizeof(kTag));
@@ -626,13 +626,13 @@ void RestartApply(Mesh *pm) {
     o += nx1_;
     if (rst_.size() == nexp + 4) {
       if (ebd_) {
-        radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
-        pm1->ebnd_acc_in = rst_[o];
-        pm1->ebnd_acc_out = rst_[o + 1];
-        pm1->ebnd_acc = pm1->ebnd_acc_in - pm1->ebnd_acc_out;
-        pm1->ebnd_acc_src = rst_[o + 2];
-        pm1->ebnd_s3 = rst_[o + 3];
-        pm1->ebnd_s3_ok = true;
+        radvet::RadiationVet *pvet = pm->pmb_pack->pradvet;
+        pvet->ebnd_acc_in = rst_[o];
+        pvet->ebnd_acc_out = rst_[o + 1];
+        pvet->ebnd_acc = pvet->ebnd_acc_in - pvet->ebnd_acc_out;
+        pvet->ebnd_acc_src = rst_[o + 2];
+        pvet->ebnd_s3 = rst_[o + 3];
+        pvet->ebnd_s3_ok = true;
       }
     }
     have = true;
