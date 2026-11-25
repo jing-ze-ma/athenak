@@ -496,3 +496,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 05:05 02-09: hgo6 -> IDLE
 - 11-25 05:15 02-03: IDLE for 10 min
 - 11-25 05:15 02-09: IDLE for 10 min
+- 11-25 05:20 02-16: b_n2suite b_next2 b_skip -> b_next2 b_skip
