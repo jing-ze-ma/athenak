@@ -314,7 +314,7 @@ non-equilibrium diffusion). The gas-radiation exchange is L-stable: at time step
 relaxation times the gas reaches the exact equilibrium temperature with the total energy
 conserved.
 
-Test: `idort_radshock_m2`, `idort_radshock_m5` (L1 of rho, v, T_gas, T_rad 2.4e-4 to 2.0e-3,
+Test: `idort_radshock_m2`, `idort_radshock_m5` (L1 of rho, v, T_gas, T_rad 2.1e-4 to 1.7e-3,
 each within 5 % of the reference), `idort_thermal_eq2` (error of T within 5 % of 2e-3 after
 5 steps, energy drift <= 1e-13), `thermal_eq`; `radshock`, `radshock_m5` (the same shocks
 with the production closure: L1 of rho and T_rad about 0.5 % and 1 %, within 5 % of the
