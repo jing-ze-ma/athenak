@@ -66,3 +66,72 @@
 - top cell (shell mean) NX300 c29300: rho 6.1525e-14, v_r 2.0800e+03, tau (cell centre) 1.9985e-04
 - top cell (shell mean) NX300 c29400: rho 6.1525e-14, v_r 1.9669e+03, tau (cell centre) 1.9981e-04
 - top cell (shell mean) NX300 c29427: rho 6.1525e-14, v_r 1.9786e+03, tau (cell centre) 1.9981e-04
+
+## m35mms (11-25 03:19): rst m35mms_m35mms.00004.rst (the 25b pair's hard link, c22144), prototype 6aa3ab0f against next 9bebf6a3, 300 cycles, 02-09; own keys: rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=4 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5; R_ph by rph.py; dumps at global cycles that are multiples of 100 and the end
+- FW300: 2026-11-25 03:19:35 rc=0 (srun) ended: Terminating on cycle limit wall=352 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- NX300: 2026-11-25 02:36:59 rc=0 (srun) ended: Terminating on cycle limit wall=347 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+| arm | rows | s/cyc (elapsed prints) | dt min/mean/max | its (sum/cycle), solves | CW/FATAL/inf/DT_RETRY | fallback/BE |
+|---|---|---|---|---|---|---|
+| FW300 | 300 | 1.0435 (c22200-22400) | 12.0066/12.0068/12.0071 | 54.7, 9.11 | 0/0/0/0 | 0.000000e+00/0.000000e+00 |
+| NX300 | 300 | 1.0262 (c22200-22400) | 12.0066/12.0068/12.0071 | 55.2, 9.10 | 0/0/0/0 | 0.000000e+00/0.000000e+00 |
+
+| row | t (prototype) | L_top/L_in | rel L_top, L_bot, L_mid, L_int, KE, M_tot, Etot, dt (prototype / next - 1) |
+|---|---|---|---|
+| 0 | 2.592125e+05 | 1.013163 | -5.43e-07, 3.81e-10, -6.14e-13, -3.41e-02, 1.25e-07, 6.66e-16, 2.28e-13, 0.00e+00 |
+| 9 | 2.593205e+05 | 1.013736 | 7.00e-07, 3.68e-09, -6.39e-12, -3.23e-02, 1.40e-06, -6.22e-15, 6.58e-12, 4.12e-11 |
+| 49 | 2.598008e+05 | 1.014394 | -4.48e-05, -1.45e-09, 1.78e-11, -2.79e-02, 7.76e-06, 1.33e-15, 4.75e-11, -3.02e-11 |
+| 99 | 2.604012e+05 | 1.014555 | -6.44e-06, 4.51e-09, -2.50e-10, -3.10e-02, 1.28e-05, -5.55e-16, 1.28e-10, 3.95e-11 |
+| 199 | 2.616019e+05 | 1.016087 | -4.03e-05, 4.34e-09, -5.83e-08, -2.47e-02, 2.34e-05, -3.33e-16, 3.71e-10, 2.96e-11 |
+| 299 | 2.628025e+05 | 1.009928 | -6.65e-06, -9.34e-09, -6.97e-07, -3.26e-03, 3.53e-05, 2.22e-15, 7.39e-10, 1.91e-11 |
+| 299 | 2.628025e+05 | 1.009928 | -6.65e-06, -9.34e-09, -6.97e-07, -3.26e-03, 3.53e-05, 2.22e-15, 7.39e-10, 1.91e-11 |
+- L_top: max |prototype / next - 1| over 300 rows 1.140e-04
+- L_bot: max |prototype / next - 1| over 300 rows 3.848e-08
+- L_mid: max |prototype / next - 1| over 300 rows 6.969e-07
+- L_int: max |prototype / next - 1| over 300 rows 3.414e-02
+- KE_int: max |prototype / next - 1| over 300 rows 3.526e-05
+
+| dump | cycle | t | R_A (mean tau 2/3) | R_A / first production dump before - 1 | T_A [K] | R_M (median column) | T_M [K] |
+|---|---|---|---|---|---|---|---|
+| production before | 21989 | 2.574120e+05 | 9.583064e+11 | 3.61e-03 | 35908.10 | 9.488446e+11 | 35095.35 |
+| production before | 22144 | 2.592000e+05 | 9.548562e+11 | 0.00e+00 | 36130.73 | 9.461009e+11 | 34870.73 |
+| FW300 | 22200 | 2.598730e+05 | 9.533899e+11 | -1.54e-03 | 35883.25 | 9.448261e+11 | 34805.55 |
+| FW300 | 22300 | 2.610740e+05 | 9.511163e+11 | -3.92e-03 | 35943.85 | 9.438555e+11 | 35023.04 |
+| FW300 | 22400 | 2.622740e+05 | 9.516203e+11 | -3.39e-03 | 35925.43 | 9.443215e+11 | 35028.03 |
+| FW300 | 22444 | 2.628030e+05 | 9.516405e+11 | -3.37e-03 | 35897.38 | 9.448090e+11 | 35062.34 |
+| NX300 | 22200 | 2.598730e+05 | 9.533919e+11 | -1.53e-03 | 36135.07 | 9.448271e+11 | 35056.57 |
+| NX300 | 22300 | 2.610740e+05 | 9.511234e+11 | -3.91e-03 | 36264.79 | 9.438694e+11 | 35420.74 |
+| NX300 | 22400 | 2.622740e+05 | 9.516319e+11 | -3.38e-03 | 36086.03 | 9.443365e+11 | 35371.07 |
+| NX300 | 22444 | 2.628030e+05 | 9.516561e+11 | -3.35e-03 | 35985.03 | 9.448206e+11 | 35356.92 |
+| production after | 22294 | 2.610020e+05 | 9.511148e+11 | -3.92e-03 | 36275.66 | 9.438859e+11 | 35417.45 |
+| production after | 22444 | 2.628030e+05 | 9.516561e+11 | -3.35e-03 | 35985.65 | 9.448203e+11 | 35353.79 |
+| production after | 22594 | 2.646040e+05 | 9.511638e+11 | -3.87e-03 | 35972.37 | 9.462867e+11 | 35181.01 |
+
+- FW300: CLEAN FCONE lines 184 (faces sum 1510, max 29 per line, cycles with a cut 121); FCONE_LZ lines 0; CLEAN FCS/bound lines: ['CLEAN FALLBACK', 'CLEAN FCONE', 'CLEAN FLOORMOM', 'CLEAN FWB', 'CLEAN LZB', 'CLEAN MCAP', 'CLEAN OLDVEC', 'CLEAN XT']; clamped lateral reads (all ranks, end) 0.000000e+00; CLEAN WARNING 0
+- FW300: top mass loss Mdot_top mean 5.2557e-04 (first 1.0115e-04, last 3.1362e-04, min 8.0050e-05, max 4.6713e-03); cumulative M_tot change -1.554e-15; L_mid / L_midE - 1: mean -1.018e-12 max abs 1.029e-10; L_intE/L_int - 1 mean 3.167e-03
+- NX300: CLEAN FCONE lines 0 (faces sum 0, max 0 per line, cycles with a cut 0); FCONE_LZ lines 0; CLEAN FCS/bound lines: ['CLEAN FALLBACK', 'CLEAN FLOORMOM']; clamped lateral reads (all ranks, end) 0.000000e+00; CLEAN WARNING 0
+- NX300: top mass loss Mdot_top mean 6.3687e-03 (first 1.0228e-04, last 4.3068e-03, min 8.7175e-05, max 6.6191e-02); cumulative M_tot change -3.220e-15; L_mid / L_midE - 1: mean -4.577e-13 max abs 6.759e-11; L_intE/L_int - 1 mean -2.173e-02
+- L_midE prototype - next: max |diff| / max |next| 6.969e-07, at the last row -6.969e-07
+- Mdot_top prototype - next: max |diff| / max |next| 9.649e-01, at the last row -6.033e-02
+- E_rad prototype - next: max |diff| / max |next| 2.948e-09, at the last row 2.948e-09
+- e_gas prototype - next: max |diff| / max |next| 2.318e-10, at the last row 2.318e-10
+- Lz_tot prototype - next: max |diff| / max |next| 3.939e-10, at the last row -2.352e-10
+- FW300: L_top / L_in first 1.013163, last 1.009928, mean of the last 100 rows 1.013347
+- NX300: L_top / L_in first 1.013164, last 1.009934, mean of the last 100 rows 1.013356
+- FW300 CLEAN FCONE lines 184; first: CLEAN FCONE cycle 22144 t2s 3 faces 6 momentum cut sum |dF| V/c^2 1.945872e+20 | last: CLEAN FCONE cycle 22440 t2s 3 faces 6 momentum cut sum |dF| V/c^2 6.185857e+18
+- FW300 CLEAN FWB lines 600; first: CLEAN FWB cycle 22144 t2s 2 faces 17132717 radiation momentum sum |dp| 7.699544e+26 x1 faces sum dp -1.958855e+25 | last: CLEAN FWB cycle 22443 t2s 3 faces 17277873 radiation momentum sum |dp| 6.802293e+26 x1 faces sum dp -3.231758e+24
+- NX300 CLEAN FCONE lines 0; first: - | last: -
+- NX300 CLEAN FWB lines 0; first: - | last: -
+- mass-weighted shell-mean v_r [cm/s] of the last dump (c22444 FW300 / c22444 NX300): r: FW300 | NX300
+  6.7509e+11: -1.646e+00 | -1.646e+00; 6.9838e+11: -9.478e+01 | -9.478e+01; 7.2344e+11: -1.438e+02 | -1.438e+02; 7.4941e+11: -7.538e+00 | -7.538e+00; 7.7631e+11: 1.738e+03 | 1.738e+03; 8.0309e+11: 8.125e+03 | 8.125e+03; 8.3191e+11: 1.220e+04 | 1.220e+04; 8.6177e+11: 5.289e+04 | 5.290e+04; 8.9270e+11: 1.317e+05 | 1.317e+05; 9.2349e+11: 1.345e+05 | 1.346e+05; 9.5664e+11: 6.150e+05 | 6.277e+05; 9.9098e+11: -8.101e+06 | -8.307e+06; 1.0265e+12: -4.279e+06 | -4.282e+06; 1.0634e+12: 1.190e+01 | -1.180e+02
+- L_int / L_intE and L_mid / L_midE, Mdot_top at rows (0-based) 0, 1, 5, 20, 100, 299:
+  - FW300: r0 Li 0.993262 Lm 1.000000 Mdot 1.011e-04; r1 Li 0.993642 Lm 1.000000 Mdot 1.021e-04; r5 Li 0.993817 Lm 1.000000 Mdot 9.010e-05; r20 Li 0.994822 Lm 1.000000 Mdot 1.014e-04; r100 Li 0.996834 Lm 1.000000 Mdot 9.506e-05; r299 Li 0.998153 Lm 1.000000 Mdot 3.136e-04
+  - NX300: r0 Li 1.028366 Lm 1.000000 Mdot 1.023e-04; r1 Li 1.027791 Lm 1.000000 Mdot 1.017e-04; r5 Li 1.027503 Lm 1.000000 Mdot 9.490e-05; r20 Li 1.026659 Lm 1.000000 Mdot 1.048e-04; r100 Li 1.029151 Lm 1.000000 Mdot 9.422e-05; r299 Li 1.001500 Lm 1.000000 Mdot 4.307e-03
+- FW300 CLEAN FCONE per 50 cycles (from c22144; mean faces per stage, mean cut): 0-49: 7, 5.337e+19; 50-99: 8, 2.771e+19; 100-149: 7, 4.728e+20; 150-199: 10, 1.009e+21; 200-249: 6, 6.206e+19; 250-299: 8, 1.583e+20
+- top cell (shell mean) FW300 c22200: rho 1.0000e-17, v_r 5.2483e+01, tau (cell centre) 2.5031e-09
+- top cell (shell mean) FW300 c22300: rho 1.0000e-17, v_r 6.5563e+01, tau (cell centre) 2.5030e-09
+- top cell (shell mean) FW300 c22400: rho 1.0000e-17, v_r 3.7714e+01, tau (cell centre) 2.5028e-09
+- top cell (shell mean) FW300 c22444: rho 1.0000e-17, v_r 1.1899e+01, tau (cell centre) 2.5027e-09
+- top cell (shell mean) NX300 c22200: rho 1.0000e-17, v_r -1.5944e+01, tau (cell centre) 2.5031e-09
+- top cell (shell mean) NX300 c22300: rho 1.0000e-17, v_r -5.6259e+00, tau (cell centre) 2.5030e-09
+- top cell (shell mean) NX300 c22400: rho 1.0000e-17, v_r -1.0577e+02, tau (cell centre) 2.5028e-09
+- top cell (shell mean) NX300 c22444: rho 1.0000e-17, v_r -1.1795e+02, tau (cell centre) 2.5027e-09
