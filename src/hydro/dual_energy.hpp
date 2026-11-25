@@ -110,16 +110,27 @@ struct DualEnergy {
   void Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
             DvceArray5D<Real> &wder, DvceArray4D<Real> &wtemp, const EOS_Data &eos);
   void Report(MeshBlockPack *pp);
+  // TEST (SDORDER), env SDO_MOM = N: momentum the inversion's floors removed, per
+  // conversion (tag) and cause, printed every N cycles (MomReport, at the step's end)
+  static constexpr int kmt = 7, kmc = 4, kmn = 10;
+  int mtag = 6;         // 2 which = 2 (U* + d), 3 after stage 2, 4 / 5 the flux state
+                        // (which = 3; 5: the register is restored after it), 6 other
+  Real mom[kmt][kmc][kmn] = {};
+  void MomPost(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
+               const DvceArray5D<Real> &w0, const EOS_Data &eos);
+  void MomReport(MeshBlockPack *pp);
   void Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0, const DvceArray5D<Real> &w0);
   // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment and counts go
   // (Mark, at the step's start before the checkpoint, reports first: a report closes the
   // steps before, and a retried attempt, which does not mark, reports nothing again)
   void Mark(MeshBlockPack *pp) {
     Report(pp);
+    MomReport(pp);
     for (int n = 0; n < DC_NCNT; ++n) hck[n] = hc[n];
   }
   void Discard() {
     for (int n = 0; n < DC_NCNT; ++n) hc[n] = hck[n];
+    for (auto &t : mom) {for (auto &c : t) {for (Real &x : c) x = 0.0;}}
     if (pay && init) Kokkos::deep_copy(payv, 0.0);
   }
 };

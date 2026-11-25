@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -20,6 +21,7 @@
 #include "coordinates/coordinates.hpp"
 #include "eos/eos.hpp"
 #include "eos/general_c2p_hyd.hpp"
+#include "hydro/hydro.hpp"
 #include "hydro/dual_energy.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -303,6 +305,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   hc[b + DC_SKIP_DE] += s[14];
   hc[b + DC_SKIP_DM] += s[15];
   if (worst && (pp->pmesh->ncycle % report) == 0) Worst(pp, u0, w0);
+  MomPost(pp, u0, w0, eos);
   armed = false;
   if (on) valid = true;
 }
@@ -376,6 +379,153 @@ void DualEnergy::Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
               hp(0) - k0[0] - k0[1] - k0[2], hv(10), k0[0], k0[1], k0[2], k1[0], k1[1],
               k1[2], ph);
   std::fflush(stdout);
+}
+
+//----------------------------------------------------------------------------------------
+// TEST (SDORDER), not for merge: env SDO_MOM = N.  Per conversion tag and cause (0 density
+// floor: rho changed; 1 ceiling: |v| > vceil; 2 floor_from_ekin: E fixed, momentum
+// changed; 3 other): the active cells and the volume sums of dp_r, |dp_r|, dp_th,
+// |dp_th|, KE removed, eint gained, dL_z, |p_pol| before, dE.  Spherical polar momenta.
+
+struct SdoCause {   // the cause of a changed cell (-1: the momentum is untouched)
+  DvceArray5D<Real> u, p;
+  Real vc;
+  KOKKOS_INLINE_FUNCTION
+  int operator()(const int m, const int k, const int j, const int i) const {
+    if (u(m,IM1,k,j,i) == p(m,2,k,j,i) && u(m,IM2,k,j,i) == p(m,3,k,j,i) &&
+        u(m,IM3,k,j,i) == p(m,4,k,j,i)) return -1;
+    const Real d = p(m,1,k,j,i);
+    if (u(m,IDN,k,j,i) != d) return 0;
+    const Real msq = SQR(p(m,2,k,j,i)) + SQR(p(m,3,k,j,i)) + SQR(p(m,4,k,j,i));
+    if (vc > 0.0 && msq > SQR(vc*d)) return 1;
+    return (u(m,IEN,k,j,i) == p(m,0,k,j,i)) ? 2 : 3;
+  }
+};
+
+static int SdoMom() {
+  static const char *e = std::getenv("SDO_MOM");
+  return (e == nullptr) ? 0 : std::atoi(e);
+}
+
+void DualEnergy::MomPost(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
+                         const DvceArray5D<Real> &w0, const EOS_Data &eos) {
+  if (SdoMom() <= 0) return;
+  if (!pp->pmesh->use_spherical_polar) Fatal("SDO_MOM: spherical polar only");
+  auto &indcs = pp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nji = nx2*nx1, nkji = nx3*nji, nt = u0.extent_int(0)*nkji;
+  auto vol_ = pp->pcoord->volume;
+  auto x1v_ = pp->pcoord->x1v, x2v_ = pp->pcoord->x2v, x3v_ = pp->pcoord->x3v;
+  auto pre_ = pre;
+  const Real vc = eos.vceil;
+  const int tag = armed ? ((wst < 1.0) ? 0 : 1) : mtag;
+  const SdoCause cause{u0, pre_, vc};
+  for (int c = 0; c < kmc; ++c) {
+    Real s[kmn] = {};
+    Kokkos::parallel_reduce("sdo_mom", Kokkos::RangePolicy<>(DevExeSpace(), 0, nt),
+    KOKKOS_LAMBDA(const int &idx, Real &s0, Real &s1, Real &s2, Real &s3, Real &s4,
+                  Real &s5, Real &s6, Real &s7, Real &s8, Real &s9) {
+      const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+      const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+      if (cause(m, k, j, i) != c) return;
+      const Real v = vol_(m,k,j,i), p1 = pre_(m,2,k,j,i), p2 = pre_(m,3,k,j,i);
+      const Real p3 = pre_(m,4,k,j,i), q1 = u0(m,IM1,k,j,i), q2 = u0(m,IM2,k,j,i);
+      const Real q3 = u0(m,IM3,k,j,i);
+      const Real k0 = 0.5*(p1*p1 + p2*p2 + p3*p3)/fmax(pre_(m,1,k,j,i), 1.0e-300);
+      const Real k1 = 0.5*(q1*q1 + q2*q2 + q3*q3)/u0(m,IDN,k,j,i);
+      s0 += 1.0;
+      s1 += (q1 - p1)*v;
+      s2 += fabs(q1 - p1)*v;
+      s3 += (q2 - p2)*v;
+      s4 += fabs(q2 - p2)*v;
+      s5 += (k0 - k1)*v;
+      s6 += (w0(m,IEN,k,j,i) - (pre_(m,0,k,j,i) - k0))*v;
+      s7 += (q3 - p3)*x1v_(m,i)*sin(x2v_(m,j))*v;
+      s8 += sqrt(p1*p1 + p2*p2)*v;
+      s9 += (u0(m,IEN,k,j,i) - pre_(m,0,k,j,i))*v;
+    }, Kokkos::Sum<Real>(s[0]), Kokkos::Sum<Real>(s[1]), Kokkos::Sum<Real>(s[2]),
+       Kokkos::Sum<Real>(s[3]), Kokkos::Sum<Real>(s[4]), Kokkos::Sum<Real>(s[5]),
+       Kokkos::Sum<Real>(s[6]), Kokkos::Sum<Real>(s[7]), Kokkos::Sum<Real>(s[8]),
+       Kokkos::Sum<Real>(s[9]));
+    for (int n = 0; n < kmn; ++n) mom[tag][c][n] += s[n];
+  }
+  // this rank's floor_from_ekin cell of the largest |dp_pol| V
+  using ML = Kokkos::MaxLoc<Real, int>;
+  ML::value_type mx;
+  Kokkos::parallel_reduce("sdo_mom_mx", Kokkos::RangePolicy<>(DevExeSpace(), 0, nt),
+  KOKKOS_LAMBDA(const int &idx, ML::value_type &v) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+    if (cause(m, k, j, i) != 2) return;
+    const Real dp = sqrt(SQR(u0(m,IM1,k,j,i) - pre_(m,2,k,j,i)) +
+                         SQR(u0(m,IM2,k,j,i) - pre_(m,3,k,j,i)))*vol_(m,k,j,i);
+    if (dp > v.val) {v.val = dp; v.loc = idx;}
+  }, ML(mx));
+  if (!(mx.val > 0.0) || (pp->pmesh->ncycle % SdoMom()) != 0) return;
+  const int m = mx.loc/nkji, k = (mx.loc - m*nkji)/nji + ks;
+  const int j = (mx.loc - m*nkji - (k - ks)*nji)/nx1 + js, i = mx.loc%nx1 + is;
+  DvceArray1D<Real> cv("sdo_mom_c", 14);
+  par_for("sdo_mom_g", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+    for (int n = 0; n < 5; ++n) {cv(n) = pre_(m,n,k,j,i); cv(5+n) = u0(m,n,k,j,i);}
+    cv(10) = w0(m,IEN,k,j,i);
+    cv(11) = x1v_(m,i); cv(12) = x2v_(m,j); cv(13) = x3v_(m,k);
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cv);
+  std::printf("SDOMOM worst cycle %d tag %d rank %d gid %d kji %d %d %d r %.6e th %.6e "
+              "ph %.6e dpV %.4e rho %.4e E %.6e M %.4e %.4e %.4e -> %.4e %.4e %.4e eint "
+              "%.4e -> %.4e\n", pp->pmesh->ncycle, tag, global_variable::my_rank,
+              pp->pmb->mb_gid.h_view(m), k, j, i, h(11), h(12), h(13), mx.val, h(1), h(0),
+              h(2), h(3), h(4), h(5+IM1), h(5+IM2), h(5+IM3),
+              h(0) - 0.5*(SQR(h(2)) + SQR(h(3)) + SQR(h(4)))/h(1), h(10));
+  std::fflush(stdout);
+}
+
+void DualEnergy::MomReport(MeshBlockPack *pp) {
+  if (SdoMom() <= 0 || pp->phydro == nullptr) return;
+  const int cyc = pp->pmesh->ncycle - 1;   // (the step that has just ended)
+  auto &indcs = pp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  auto u0 = pp->phydro->u0;
+  const int nji = nx2*nx1, nkji = nx3*nji, nt = u0.extent_int(0)*nkji;
+  auto vol_ = pp->pcoord->volume;
+  Real t[5] = {};
+  Kokkos::parallel_reduce("sdo_mom_t", Kokkos::RangePolicy<>(DevExeSpace(), 0, nt),
+  KOKKOS_LAMBDA(const int &idx, Real &a, Real &b, Real &c, Real &d, Real &e) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+    const Real v = vol_(m,k,j,i), p1 = u0(m,IM1,k,j,i), p2 = u0(m,IM2,k,j,i);
+    a += p1*v;
+    b += p2*v;
+    c += sqrt(p1*p1 + p2*p2)*v;
+    d += 0.5*(p1*p1 + p2*p2)/u0(m,IDN,k,j,i)*v;
+    e += u0(m,IDN,k,j,i)*v;
+  }, Kokkos::Sum<Real>(t[0]), Kokkos::Sum<Real>(t[1]), Kokkos::Sum<Real>(t[2]),
+     Kokkos::Sum<Real>(t[3]), Kokkos::Sum<Real>(t[4]));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, t, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mom, kmt*kmc*kmn, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0 && (cyc % SdoMom()) == 0) {
+    const char *tn[kmt] = {"update1", "update2", "which2", "post2", "flux3", "flux3r",
+                           "other"};
+    const char *cn[kmc] = {"dfloor", "vceil", "ekin", "other"};
+    std::printf("SDOMOM total cycle %d dt %.6e p_r %.10e p_th %.10e |p_pol| %.10e KE_pol "
+                "%.10e M %.10e\n", cyc, pp->pmesh->dt, t[0], t[1], t[2], t[3], t[4]);
+    for (int a = 0; a < kmt; ++a) {
+      for (int c = 0; c < kmc; ++c) {
+        const Real *s = mom[a][c];
+        if (s[0] == 0.0) continue;
+        std::printf("SDOMOM sum cycle %d %s %s cells %.0f dp_r %.6e |dp_r| %.6e "
+                    "dp_th %.6e |dp_th| %.6e dKE %.6e deint %.6e dLz %.6e |p_pol|pre %.6e dE %.6e\n",
+                    cyc, tn[a], cn[c], s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
+                    s[8], s[9]);
+      }
+    }
+    std::fflush(stdout);
+  }
+  for (auto &a : mom) {for (auto &c : a) {for (Real &x : c) x = 0.0;}}
 }
 
 //----------------------------------------------------------------------------------------

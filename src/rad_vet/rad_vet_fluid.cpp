@@ -66,7 +66,9 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
   eint_ledger::Mark(pmy_pack->pmesh, "vet_post");
   // skip on a failed solve (dt_retry discards it; inf/NaN would poison the counters)
   if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
+  if (pmy_pack->phydro != nullptr) pmy_pack->phydro->dual.mtag = (t2_gt == 2) ? 2 : 3;
   FluidRefresh(pdrive);
+  if (pmy_pack->phydro != nullptr) pmy_pack->phydro->dual.mtag = 6;   // TEST (SDORDER)
   eint_ledger::Mark(pmy_pack->pmesh, "vet_c2p");
   TmrMark(9);
   return TaskStatus::complete;

@@ -531,7 +531,9 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   if (which != 3) return;
   const bool dpay = ph->dual.pay;
   if (gs) {ph->dual.pay = false;}
+  ph->dual.mtag = gs ? 5 : 4;   // TEST (SDORDER)
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
+  ph->dual.mtag = 6;
   ph->dual.pay = dpay;
   // u0 back to U* + d in the ghosts too, with the neighbour's f d (exchanged; 0 at the
   // physical boundaries): a ghost is then its neighbour's cell bitwise, so the stage-2
