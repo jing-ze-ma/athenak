@@ -53,7 +53,7 @@ Dumps and hst only, read-only; no run, no twin. Band = k256 16-40 (0.0625-0.156 
 
 ## Addendum (11-25, dump search complete; supersedes the remark in section 4)
 - The search for every m35mms hydro_w dump (to depth 6 under the group directory) finished: 67 directories, all with the same grid nx 336 x 256 x 256, theta 1.39626-1.74533, phi 0-0.34907. **No m35mms dump at another lateral resolution, and no half-wedge, exists**, so section 4 stands and is complete on that point.
-- Six further sets I had not analysed (ring rms at 0.74 R_ph,IC, same band, against prod_c1 at the same time; section 4 did not list them):
+- Eight further sets (two i1_ runs, six m35fast arms) I had not analysed (ring rms at 0.74 R_ph,IC, same band, against prod_c1 at the same time; section 4 did not list them):
 | run | dumps | ring rms [km/s] (prod_c1) | axis share, cells per wavelength |
 |---|---|---|---|
 | prod_fresh_1121b/i1_m35mms (j3 a5257b7ee) | 9, 0 to 8.64e4 s | 1.1e-6 (3.5e-6) at 8.64e4 | 0.23 |
