@@ -37,3 +37,5 @@
 - (11-24 16:27) check c500: m35mms: cycle 550, s/cyc 0.6517 (c250-550), t 7.1085e+03 dt 12.01 L_top/L_in 1.00002 L_bot/L_in 1.00009, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
 
 - (11-24 16:30) check c1500: m35zams: cycle 1690, s/cyc 0.2973 (c1630-1690), t 5.9064e+03 dt 3.481 L_top/L_in 1.00006 L_bot/L_in 1.00002, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+- (11-24 16:32) check c2000: m35zams: cycle 2150, s/cyc 0.2775 (c2090-2150), t 7.4900e+03 dt 3.481 L_top/L_in 1.00025 L_bot/L_in 1.00002, floor_pay(sum) 0.00e+00, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
