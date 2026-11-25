@@ -575,8 +575,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       if (cln_xte > 0) cln_xtcons = true;
     }
     if (cln_ucp && cln_xte != 1) {   // CLW_PD: the work's q
-      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central needs clean_xt_exact = "
-                << "cons" << std::endl;
+      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central = true needs "
+                << "clean_xt_exact = cons, not '" << pin->GetString("rad_vet",
+                "clean_xt_exact") << "' (a restart file may store it): name "
+                << "clean_xt_exact=cons, or clean_stag_central=false" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_xtnorm = stag("clean_xt_norm", false) || cln_xte == 2;

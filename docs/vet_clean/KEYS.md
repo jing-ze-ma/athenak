@@ -34,7 +34,8 @@ stored in the restart file, not the code default.** If the file does not hold th
 a key that corrects the scheme takes the fresh default, with a `### NOTE: ... the fix applies`
 (name the old value to keep the old behaviour), and a stored old value of `merge_lat_mom`,
 `fofc_flag_exchange`, `clean_cs_lat_wb`, `time2_gtime_slope` or `time2_gtime_pos` prints a
-`### NOTE` with the name to switch; the other keys take their restart default.
+`### NOTE` with the name to switch; the other keys take their restart default. A restart from
+a file of an older scheme should name every key of the production deck (RUN.md, Restarts).
 
 Example: a restart file had stored `time2_k1_stiff = 1.0` from an earlier deck. The code
 default is 0 (off), but the restart ran with 1.0, because the new deck did not name the key.
