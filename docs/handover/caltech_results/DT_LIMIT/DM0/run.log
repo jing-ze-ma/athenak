@@ -1,0 +1,2 @@
+2026-11-24 17:33:49 start DM0 hpc-sm-01-17 BIN md5=30d01765970051212176cc2eb81ea034 ARGS: -r /resnick/groups/carnegie_poc/jingze/b1_1124/dt/DM0/in.rst time/cfl_number=0.3 output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 job/final_restart=false hydro/dt_report=5 time/nlim=25
+2026-11-24 17:34:34 rc=0 (srun) ended: Terminating on cycle limit wall=45 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean st
