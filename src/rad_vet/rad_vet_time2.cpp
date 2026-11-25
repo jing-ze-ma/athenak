@@ -418,6 +418,110 @@ bool RadiationVet::Time2Active() {
 }
 
 //----------------------------------------------------------------------------------------
+// TEST (SDORDER), not for merge: env SDO_CELL = eps.  SdoCell: this rank's active cell of
+// the smallest gas eint among n states (st = 0 u0, 1 U^n, 2 U*, 3 S, 4 Y, 5 U* + d); where
+// it is <= eps the cell's states are printed (rho, M, E, eint, KE, E_rad), st 0 also its
+// 5^3 box.  which = 2 entry: u = Y, us = U* (hs), un = U^n; other calls: u alone.
+
+struct SdoEint {   // the state c of a cell into q and its eint (c: 0 u, 1 U^n, 2 U*, 3 S, 5)
+  DvceArray5D<Real> u, un, us;
+  DvceArray4D<Real> phi;
+  DvceArray3D<Real> ccl;
+  bool all, etg, csk;
+  Real g;
+  KOKKOS_INLINE_FUNCTION
+  Real operator()(const int c, const int m, const int k, const int j, const int i,
+                  Real *q) const {
+    for (int n = 0; n < 5; ++n) {
+      const Real y = u(m,n,k,j,i);
+      const Real a = all ? un(m,n,k,j,i) : 0.0, b = all ? us(m,n,k,j,i) : 0.0;
+      const Real sn = a + g*(b - a);
+      q[n] = (c == 1) ? a : ((c == 2) ? b : ((c == 3) ? sn : ((c == 5) ? b + (y - sn) :
+             y)));
+    }
+    const Real x = csk ? ccl(m,k,j) : 0.0;
+    return q[IEN] - CsKeMom(q[IM1], q[IM2], q[IM3], x)/q[IDN] -
+           (etg ? q[IDN]*phi(m,k,j,i) : 0.0);
+  }
+};
+
+void SdoCell(MeshBlockPack *pp, const char *tag, DvceArray5D<Real> u, DvceArray5D<Real> un,
+             DvceArray5D<Real> us, DvceArray5D<Real> er, const bool all, const Real g,
+             const bool etg, DvceArray4D<Real> phi, const bool csk,
+             DvceArray3D<Real> ccl) {
+  static const char *ev = std::getenv("SDO_CELL");
+  if (ev == nullptr) return;
+  const Real eps = std::atof(ev);
+  auto &id = pp->pmesh->mb_indcs;
+  const int is = id.is, js = id.js, ks = id.ks;
+  const int nx1 = id.nx1, nx2 = id.nx2, nx3 = id.nx3;
+  const int nmb = u.extent_int(0), nji = nx2*nx1, nkji = nx3*nji;
+  // the eint of the state c: 0 u, 1 U^n, 2 U*, 3 S, 5 U* + d
+  using ML = Kokkos::MinLoc<Real, int>;
+  ML::value_type mn;
+  const SdoEint e_of{u, un, us, phi, ccl, all, etg, csk, g};
+  const int cmin = all ? 5 : 0;
+  Kokkos::parallel_reduce("sdo_cell", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int &idx, ML::value_type &v) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+    Real q[5];
+    const Real e = e_of(cmin, m, k, j, i, q);
+    if (e < v.val) {v.val = e; v.loc = idx;}
+  }, ML(mn));
+  Real nc = 0.0;
+  Kokkos::parallel_reduce("sdo_cell_n", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int &idx, Real &n) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js, i = idx%nx1 + is;
+    Real q[5];
+    if (!(e_of(cmin, m, k, j, i, q) > 0.0)) n += 1.0;
+  }, Kokkos::Sum<Real>(nc));
+  if (!(mn.val <= eps)) return;
+  const int m = mn.loc/nkji, k = (mn.loc - m*nkji)/nji + ks;
+  const int j = (mn.loc - m*nkji - (k - ks)*nji)/nx1 + js, i = mn.loc%nx1 + is;
+  DvceArray1D<Real> cv("sdo_cv", 6*7), bx("sdo_bx", 125*7);
+  par_for("sdo_cell_g", DevExeSpace(), 0, 5, KOKKOS_LAMBDA(const int c) {
+    Real q[5];
+    const int s = (c == 0 && all) ? 4 : c;   // (slot 0: u)
+    const Real e = e_of(s, m, k, j, i, q);
+    for (int n = 0; n < 5; ++n) cv(7*c + n) = q[n];
+    cv(7*c + 5) = e;
+    cv(7*c + 6) = er(m,M1_E,k,j,i);
+  });
+  par_for("sdo_cell_b", DevExeSpace(), 0, 124, KOKKOS_LAMBDA(const int b) {
+    const int di = b%5 - 2, dj = (b/5)%5 - 2, dk = b/25 - 2;
+    Real q[5];
+    const Real e = e_of(0, m, k + dk, j + dj, i + di, q);
+    for (int n = 0; n < 5; ++n) bx(7*b + n) = q[n];
+    bx(7*b + 5) = e;
+    bx(7*b + 6) = er(m,M1_E,k+dk,j+dj,i+di);
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cv);
+  auto hb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), bx);
+  auto hx = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x1v);
+  auto hy = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x2v);
+  auto hz = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x3v);
+  const bool cs = pp->pmesh->use_cubed_sphere;
+  std::printf("SDOCELL %s cycle %d rank %d gid %d kji %d %d %d r %.8e th %.8e ph %.8e "
+              "cells<=0 %.0f min eint %.6e\n", tag, pp->pmesh->ncycle,
+              global_variable::my_rank, pp->pmb->mb_gid.h_view(m), k, j, i,
+              cs ? 0.0 : hx(m,i), cs ? 0.0 : hy(m,j), cs ? 0.0 : hz(m,k), nc, mn.val);
+  const char *nm[6] = {"u0(Y or u)", "U^n", "U*", "S", "Y", "U*+d"};
+  for (int c = 0; c < (all ? 6 : 1); ++c) {
+    const Real *q = &h(7*c);
+    std::printf("SDOCELL   %-10s rho %.8e M %.8e %.8e %.8e E %.8e eint %.8e Erad %.8e\n",
+                nm[c], q[0], q[1], q[2], q[3], q[4], q[5], q[6]);
+  }
+  for (int b = 0; b < 125; ++b) {
+    const Real *q = &hb(7*b);
+    std::printf("SDOBOX %d %d %d rho %.6e M %.6e %.6e %.6e E %.6e eint %.6e Erad %.6e\n",
+                b/25 - 2, (b/5)%5 - 2, b%5 - 2, q[0], q[1], q[2], q[3], q[4], q[5], q[6]);
+  }
+  std::fflush(stdout);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2GasTime
 //! \brief time2_tableau = sdirk2: one time per stage for gas and radiation, which keeps
 //! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 with the Heun hydro.
@@ -463,6 +567,8 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
   const bool gm = t2_gtm, gs = t2_gts;
   auto k1_ = t2k1;
+  if (which == 2) SdoCell(pmy_pack, "which2", u0_, u1_, hs_, this->u0, true, g, etg, phc, csk, ccl);
+  if (which == 3) SdoCell(pmy_pack, "which3-entry", u0_, u1_, hs_, this->u0, false, g, etg, phc, csk, ccl);
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = 0.0, xs = 0.0;

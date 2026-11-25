@@ -48,6 +48,10 @@ namespace radvet {
 //! leave stale ghosts (restrict, exchange, BCs as InitBoundaryValuesAndPrimitives).
 
 TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
+  SdoCell(pmy_pack, (t2_gt == 1) ? "stage1-Y" : "stage2-postsolve", pmy_pack->phydro->u0,
+          pmy_pack->phydro->u0, pmy_pack->phydro->u0, u0, false, 0.0,
+          pmy_pack->phydro->use_etotgrav, pmy_pack->phydro->phicc0, cs_geom,
+          pmy_pack->pcoord->cos_cell);
   Time2GasTime(pdrive, 2);   // sdirk2: the gas of the stage-1 solve at t^{n+1}
   // <hydro>/merge_lat_rad: radiation E, F of merged lateral groups -> group values
   {

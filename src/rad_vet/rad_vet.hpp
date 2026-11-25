@@ -297,6 +297,11 @@ struct RadiationVetTaskIDs {
 //! \class RadiationVet
 //! \brief the grey M1 / VET radiation module
 
+void SdoCell(MeshBlockPack *pp, const char *tag, DvceArray5D<Real> u, DvceArray5D<Real> un,
+             DvceArray5D<Real> us, DvceArray5D<Real> er, const bool all, const Real g,
+             const bool etg, DvceArray4D<Real> phi, const bool csk,
+             DvceArray3D<Real> ccl);   // TEST (SDORDER)
+
 class RadiationVet {
  public:
   RadiationVet(MeshBlockPack *ppack, ParameterInput *pin);
