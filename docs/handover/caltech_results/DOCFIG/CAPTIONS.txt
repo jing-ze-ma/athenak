@@ -10,8 +10,8 @@ doc_strip.png - the five stars side by side: v_r (top) and T_eff (bottom) at the
 
 Movies (H.264, yuv420p, 1200 px wide, 24 fps, 10 s, no audio; limits fixed over the whole movie; same panels as the figures; every movie starts at t = 0, nothing cut):
 mov_bsg.mp4 - t = 0-57.0 d, all 115 dumps (12 h apart), 6.0 h on one node of 4 H200.
-mov_m35mms.mp4 - t = 0-10.0 d, every 2nd of 481 dumps (1800 s apart), 19.9 h on one node. Surface and envelope only.
-mov_m35zams.mp4 - t = 0-10.0 d, every 2nd of 481 dumps (1800 s apart), 20.1 h on one node.
+mov_m35mms.mp4 - t = 0-10.0 d, all 481 dumps (30 min apart) at 12 dumps per s = 40 s, 30 frames per s; frames interpolated (cross-faded between dumps), 19.9 h on one node. Surface and envelope only.
+mov_m35zams.mp4 - t = 0-10.0 d, all 481 dumps (30 min apart) at 12 dumps per s = 40 s, 30 frames per s; frames interpolated (cross-faded between dumps), 20.1 h on one node.
 mov_t9l62.mp4 - t = 0-26.5 d, all 213 dumps (3 h apart), 18.6 h on one node up to the last dump. T_eff limits fitted to the cool later part (6.5-12.5 10^3 K): the first days, when the star is hotter, are saturated. Surface and envelope only.
 mov_t9mlt.mp4 - t = 0-21.5 d, all 173 dumps (3 h apart), 16.0 h on one node up to the last dump. Surface and envelope only.
 Posters: mov_<star>_poster.png = last frame. Wall times: sacct step times (NOTE 2026-11-26o) for the finished runs; for t9l62 and t9mlt the log `elapsed` values up to the dump shown.
