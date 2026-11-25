@@ -45,7 +45,8 @@ class Ctx:
         shutil.rmtree(self.dir, ignore_errors=True)
         os.makedirs(self.dir)
 
-    def run(self, deck, sub, over=None, args=(), restart=None, ranks=1, timeout=3600):
+    def run(self, deck, sub, over=None, args=(), restart=None, ranks=1, timeout=3600,
+            env_add=None):
         """Run deck (a file in decks/) with block/key overrides in DIR/sub; returns the
         run directory.  restart = a restart file to continue from instead.  The --keys
         overrides go into every fresh run (the test's own overrides win); a restart takes
@@ -62,7 +63,7 @@ class Ctx:
             argv = ['-i', 'in.athinput']
         rc, wall, log = vett.run(self.exe, d, argv + list(args), ranks=ranks,
                                 threads=self.threads, mpirun=self.mpirun,
-                                timeout=timeout)
+                                timeout=timeout, env_add=env_add)
         if rc != 0:
             raise RuntimeError('%s: return code %s (see %s/run.log)' % (sub, rc, d))
         return d
@@ -1677,9 +1678,11 @@ def t_star_cs_ring(c):
         for tag in ('leg', 'r6', 'r3'):
             os.makedirs(os.path.join(c.dir, tag), exist_ok=True)
             os.symlink(STAR_DATA, os.path.join(c.dir, tag, 'star3d_data'))
-        d = c.run(deck, 'leg', o, ranks=6)
+        hw = {'GPU_MAX_HW_QUEUES': '2'}   # (HIP: more than 2 ranks per GPU stop without it)
+        d = c.run(deck, 'leg', o, ranks=6, env_add=hw)
         rst = os.path.abspath(sorted(vett.glob_rst(d))[-1])
-        r = {n: c.run('', 'r%d' % n, {'time/nlim': 3}, restart=rst, ranks=n)
+        r = {n: c.run('', 'r%d' % n, {'time/nlim': 3}, restart=rst, ranks=n,
+                             env_add=hw)
              for n in (6, 3)}
         for x in (d, *r.values()):   # (large)
             for p in vett.glob_rst(x):
