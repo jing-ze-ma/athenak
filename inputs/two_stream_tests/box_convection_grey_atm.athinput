@@ -36,7 +36,7 @@ problem = grey plane-parallel atmosphere, two-stream RT validation
 basename = grey_atm
 
 <mesh>
-nghost = 2
+nghost = 3
 nx1    = 256
 x1min  = 0.0
 x1max  = 9.0971904e8
