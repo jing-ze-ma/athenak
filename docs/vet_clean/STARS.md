@@ -140,20 +140,25 @@ Checks:
 
 | deck | L_in | L_top at the end | L_top / L_in at the end | L_top / L_in over the second half |
 |---|---|---|---|---|
-| sp | 4.651e37 (wedge) | 4.83e37 | 1.039 | 0.958 - 1.066 |
+| sp (over 4.9-9.8 d; measured before the last changes) | 4.651e37 (wedge) | 4.83e37 | 1.039 | 0.958 - 1.066 |
 | cs | 6.837e38 | 6.74e38 | 0.986 | 0.986 - 0.997 |
 
 What the curves look like (the notebook plots them):
 
 - sp: at t = 0, `L_top` is 1600 `L_in`, because the radiation of the initial isothermal
   atmosphere (E = a T^4, F = 0 above the photosphere) streams out. It falls to about
-  1.4 `L_in` within 10 cycles and to within 5 % of `L_in` after about 0.3 d. After that it
-  oscillates around `L_in` by up to 10 % (0.96 - 1.07 over the second half). `L_bot`
-  swings between -1.4 and +2.2 `L_in` over the first 100 cycles while the inner wall
-  adjusts, then stays within 10 % of `L_in` (0.94 - 1.05 over the second half).
+  1.4 `L_in` within 10 cycles; its mean over 0.5-1 d is 1.060 `L_in`, and over 2-3 d it
+  ranges from 0.855 to 1.148 `L_in`. The numbers of the table refer to 4.9-9.8 d; after
+  about 8 d the model's iron-bump layer (N^2 < 0, growth time 0.5-0.6 d) starts convecting,
+  seeded by the 5 % noise of the start (inferred), and `L_top` is still rising at 12.2 d
+  (1.12 `L_in`), so the deck ends at 9.8 d. `L_bot` swings between -1.4 and +2.2 `L_in`
+  over the first 100 cycles while the inner wall adjusts, then stays within 10 % of `L_in` (0.94 - 1.05 over the second half).
 - cs: `L_top / L_in` starts at 0.987, peaks at 1.10 after about 0.1 d and relaxes back to
   0.986 - 0.997 over the second week. `L_bot / L_in` stays within 3 % of 1, and within
   2e-4 of 1 after the first day.
+
+The photosphere velocities of the sp deck are affected by the gap of the profile between
+r = 3.36e12 and 3.65e12 cm (cells 133-159 of the radial grid).
 
 A run that departs from these values by much more than the oscillation amplitude, or
 that prints `CLEAN WARNING` lines, is worth a closer look ([OUTPUTS.md](OUTPUTS.md)).
