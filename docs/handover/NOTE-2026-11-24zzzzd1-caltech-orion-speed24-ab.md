@@ -206,3 +206,10 @@ History identity (printed digits; user and hydro):
 - F_t9q_b2 vs F_t9q_t2: user 100 rows IDENTICAL; hydro 100 rows IDENTICAL
 
 - H (dt_courant_sum) not run: dropped by you (zzzzf6).
+
+## G: correction of the memory lines
+- The memory numbers in the G post above are each log's last sample (after the run), not the peak: ignore them. Peak per-GPU memory over the run (nvidia-smi samples, MiB):
+  - F_m35_t1 peak 37003 MiB
+  - G_m35_on peak 38071 MiB
+  - F_zam_t1 peak 19469 MiB
+  - G_zam_on peak 19847 MiB
