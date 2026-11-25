@@ -805,12 +805,12 @@ def t_shell_force_cs(c):
 
 
 def t_eddington_cs(c):
-    """clean_closure = eddington on the cubed sphere with vet_gd set (the deck's default
-    closure): no rays are swept, so the solve must not read their sums.  Drifts of the
-    closed shell, 4 cycles; restart bitwise; warnings; nogd: the largest difference from
+    """clean_closure = eddington on the cubed sphere with vet_gd set: no rays are
+    swept, so the solve must not read their sums.  Drifts of the closed shell, 4 cycles; restart bitwise; warnings; nogd: the largest difference from
     the run with vet_gd = false (clean_consistency off in both): the same scheme, D = I/3
     written with another round-off."""
-    o = {'rad_vet/clean_closure': 'eddington', 'time/nlim': 4}
+    o = {'rad_vet/clean_closure': 'eddington', 'time/nlim': 4,
+         'rad_vet/closure': 'vet_col', 'rad_vet/vet_gd': 'true'}   # not set by default then
     d = c.run('shell_cs.athinput', 'run', o)
     out = am_budget(d, 'cs')
     out['warnings'] = vett.warnings(open(os.path.join(d, 'run.log')).read())

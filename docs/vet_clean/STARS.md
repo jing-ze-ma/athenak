@@ -1,6 +1,6 @@
 # 3-D star tests: spherical polar and cubed sphere
 
-Two small, complete 3-D star decks that use the production scheme keys. Each one runs
+Two small, complete 3-D star decks that use the production scheme (the defaults). Each one runs
 in 8 (sp) and 12 (cs) minutes on 4 MI300A APUs, and it starts on one CPU node, where a few cycles show
 that the setup works. Use them to check a new build or machine before you start a production
 run, and as starting points for your own star decks.

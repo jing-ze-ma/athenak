@@ -31,7 +31,6 @@ nx3 = 16
 
 <time>
 evolution = dynamic
-integrator = rk2
 cfl_number = 0.3
 nlim = 200
 tlim = 1e30
@@ -39,7 +38,6 @@ ndiag = 1000000
 
 <hydro>
 eos = ideal
-reconstruct = plm
 rsolver = hllc
 gamma = 1.666666666666667
 fofc = true
