@@ -251,6 +251,18 @@
    "rad": 0.0002
   }
  },
+ "eddington_cs": {
+  "max": {
+   "dE": 1e-13,
+   "dM": 1e-13,
+   "dLz": 1e-13,
+   "nogd": 1e-10,
+   "warnings": 0
+  },
+  "equal": {
+   "restart_maxdiff": 0.0
+  }
+ },
  "momentum_box": {
   "_about": "a report: dP_max / dP_cyc are recorded, not bounded; the test passes when the run completes with finite dP and no CLEAN WARNING",
   "equal": {
