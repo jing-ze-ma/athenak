@@ -2523,7 +2523,6 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
 #else
   (void) i;
   (void) ws;
-  (void) mode;
   return false;
 #endif
 }
