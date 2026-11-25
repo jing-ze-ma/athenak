@@ -479,3 +479,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 04:39 02-09: s7_BASE2 -> fwhg_FW
 - 11-25 04:44 02-03: fwhg_FW -> fwhg_NX
 - 11-25 04:44 02-09: fwhg_FW -> fwhg_NX
+- 11-25 04:49 02-16: IDLE for 10 min
+- 11-25 04:50 02-03: fwhg_NX -> IDLE
+- 11-25 04:50 02-09: fwhg_NX -> IDLE
+- 11-25 04:51 02-03: IDLE -> m5_BASE2N
+- 11-25 04:51 02-09: IDLE -> m5_BASE2N
