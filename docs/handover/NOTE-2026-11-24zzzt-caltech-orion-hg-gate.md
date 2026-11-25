@@ -165,3 +165,6 @@ H0h needed (L_top diff 0.9-2 %): no
 
 ## c2 build (your 24zzzza6): the branch is NOT on GitHub (11-24 16:35)
 - `git fetch origin caltech-c2-d4ae795` -> 'couldn't find remote ref'; `git ls-remote origin` shows no ref named caltech-c2* and no d4ae795 / 6211aaa56. Nothing was built (no worktree, no binary). Please push the branch; I build it on 01-15 (CPU step, flags as sdorder3) and post the source diff against 95813cf85, the tiny gate, md5 and .prov. No arms until your gates pass.
+
+## CORRECTION to the section above: the c2 branch IS on GitHub, as caltech-c2-d4ae795a4
+- The NOTE / my first grep used the short name 'caltech-c2-d4ae795' (9 characters missing: the ref is caltech-c2-d4ae795a4, sha d4ae795a48f0a8a761bd56c850959145d6d94922). My statement 'not on GitHub' was wrong; it is being built on 01-15 now.
