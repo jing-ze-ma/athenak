@@ -1089,6 +1089,8 @@ void RadiationVet::CleanRingMoments() {
   for (int p = 0; p < nr; ++p) full = full && slot[p] >= 0;
   const bool shift = cln_rok && b == cln_rb + 1 && cln_rpb == cln_rb;
   const bool fill = (!cln_rok || b != cln_rb) && !shift && full;
+  // (the pending Delta is read again only after this build has rewritten it)
+  cln_rpfree = cln_ring == 1 && slot[nk] >= 0 && !shift;
   // moments of each swept set (ray_min tested on the mixture); cubed-sphere sc rays: the
   // union's directions first
   if (cln_cssc) CleanScUnion2();
@@ -1169,6 +1171,7 @@ void RadiationVet::CleanRingMoments() {
     });
   }
   if (vgd_on) VetGdPost();
+  cln_rpfree = false;
   cln_fvd = dfull;
   cln_raymin = ray_min;
   // (jump: the next set only at the build that closes the block; its weight is s = 0)
@@ -1822,13 +1825,17 @@ void RadiationVet::CleanGdFaceSums() {
     cln_gdgl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, six ? 6 : 2, nt,
                                               std::max(cs.extent_int(4), je - js + 1));
     gi.gl = cln_gdgl;
-    // (six: aliases cln_st where it fits, dead across a build)
-    const bool ost = cln_st.span() >= static_cast<std::size_t>(nmb1 + 1)*nc*
-                     cs.extent_int(2)*cs.extent_int(3)*cs.extent_int(4);
-    auto ch = (six && ost) ? DvceArray5D<Real>(cln_st.data(), nmb1 + 1, nc,
-                             cs.extent_int(2), cs.extent_int(3), cs.extent_int(4))
-            : six ? DvceArray5D<Real>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
-                                      cs.extent_int(3), cs.extent_int(4))
+    // (over the ring's Delta, or (six) cln_st off the arena, where it fits: dead here)
+    const std::size_t nch = static_cast<std::size_t>(nmb1 + 1)*nc*cs.extent_int(2)*
+                            cs.extent_int(3)*cs.extent_int(4);
+    const bool orp = cln_rpfree && cln_rpd.span() >= nch;
+    const bool ost = six && cln_st.span() >= nch && !MemArenaIn(cln_st.data());
+    auto ch = (orp || ost) ? DvceArray5D<Real>(orp ? cln_rpd.data() : cln_st.data(),
+                             nmb1 + 1, nc, cs.extent_int(2), cs.extent_int(3),
+                             cs.extent_int(4))
+            : (six || cln_ring == 1) ?
+              DvceArray5D<Real>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
+                                cs.extent_int(3), cs.extent_int(4))
                   : ScratchView<DvceArray5D<Real>>("cln_gd_ch", nmb1 + 1, nc,
                                                    cs.extent_int(2), cs.extent_int(3),
                                                    cs.extent_int(4));
