@@ -17,3 +17,10 @@
   - LZB0: MLATDIAG lines 0
 - r(c) = dLz_tot + int Lz_hflx dt (trapezoid on the hst rows). No verdict here: the numbers are yours to read against the rule (LZ1 is the HG arm).
 - Files: caltech_results/BSG_LZB/.
+
+## rel-e (08c48ac10) LZ arms, bsg, 02-09: 2-rank check first (11-24 21:14)
+- LZB2r (2 ranks, keys on, 3 cycles from bsg3d.00004.rst, c14605; 8-min step limit): 2026-11-24 21:14:05 rc=0 (srun; 143/137 = time limit or kill) ended: Terminating on cycle limit wall=41 s CW 0 FATAL 0 inf 0 DT_RETRY 0 stage fallback 0
+- log: ### NOTE: parameter 'clean_stag_fcone_lz' in block 'rad_vet' is absent from the restart's input: added from the command line (= true)
+- log: ### NOTE: parameter 'clean_lz_spin' in block 'rad_vet' is absent from the restart's input: added from the command line (= true)
+- log:   rad_vet/floorcap_lz_spin = true (default false) restart
+- It ran through: no deadlock on 2 ranks. LZB0e / LZB1e follow.
