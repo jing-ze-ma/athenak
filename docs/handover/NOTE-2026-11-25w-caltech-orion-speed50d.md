@@ -18,3 +18,13 @@
 - NEW2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
 - BASE2 user.hst against BASE1: 26 / 26 rows, printed-bitwise
 - BASE2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
+
+## sp stars (4 ranks, 02-16; 25b rsts; kernel timer; order per star base 79c1cabef, 1d10fc373, 6 then 26 cycles; own keys as production)
+- t9l62 base_6: 2026-11-25 04:16:40 rc=0 ended: Terminating on cycle limit wall=81 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- t9l62 1d10_6: 2026-11-25 04:18:07 rc=0 ended: Terminating on cycle limit wall=86 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- t9l62 base_26: 2026-11-25 04:20:28 rc=0 ended: Terminating on cycle limit wall=141 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
+- t9l62 1d10_26: 2026-11-25 04:22:44 rc=0 ended: Terminating on cycle limit wall=136 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
+- m35mms base_6: 2026-11-25 04:23:21 rc=0 ended: Terminating on cycle limit wall=36 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- m35mms 1d10_6: 2026-11-25 04:23:57 rc=0 ended: Terminating on cycle limit wall=35 s CW 0 FATAL 0 kt files 4; user.hst 6 rows vs KT base: printed-bitwise (6 common); hydro.hst 6 rows vs KT base: printed-bitwise (6 common)
+- m35mms base_26: 2026-11-25 04:24:56 rc=0 ended: Terminating on cycle limit wall=58 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
+- m35mms 1d10_26: 2026-11-25 04:25:55 rc=0 ended: Terminating on cycle limit wall=58 s CW 0 FATAL 0 kt files 4; user.hst 26 rows vs KT base: printed-bitwise (26 common); hydro.hst 26 rows vs KT base: printed-bitwise (26 common)
