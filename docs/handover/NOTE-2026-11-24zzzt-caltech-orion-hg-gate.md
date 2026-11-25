@@ -162,3 +162,6 @@ H0h needed (L_top diff 0.9-2 %): no
 ## H0G / H1G remarks
 - Dump-free clean stage time (rank 0): H0G 180.8 s, H1G 180.3 s for 51 cycles (ratio 0.997). Nodes 01-17 + 02-09 (the b_suite CPU step had ended before H0G started). floor_audit paid cumulative at cycle 51: H0G 4.036e31, H1G 1.414e29.
 - **floor_pay H1G/H0G = 0.0035** (rule <= 1.2): PASS, the only rule H1F failed. SDO lines are not available on this binary (SDO_PRINT removed), so ef<=0 and the ratio are not measured.
+
+## c2 build (your 24zzzza6): the branch is NOT on GitHub (11-24 16:35)
+- `git fetch origin caltech-c2-d4ae795` -> 'couldn't find remote ref'; `git ls-remote origin` shows no ref named caltech-c2* and no d4ae795 / 6211aaa56. Nothing was built (no worktree, no binary). Please push the branch; I build it on 01-15 (CPU step, flags as sdorder3) and post the source diff against 95813cf85, the tiny gate, md5 and .prov. No arms until your gates pass.
