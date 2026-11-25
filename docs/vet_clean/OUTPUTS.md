@@ -93,9 +93,9 @@ Definitions used in the table:
 | 14 | V_int | sum V, r <= r_int | cm^3 |
 | 15 | M_tot | sum rho V, whole mesh | g |
 | 16 | Mdot_top | outflow part of the hydro mass flux at the outer face, sum max(f_rho, 0) A (flux of the last hydro stage, not the step average) | g/s |
-| 17 | Mdot_bot | hydro mass flux at the inner face, sum f_rho A (positive = upward, into the mesh); 0 with the closed wall (its flux is set to 0 before the update) | g/s |
+| 17 | Mdot_bot | hydro mass flux at the inner face, sum f_rho A (positive = upward, into the mesh); 0 with the closed wall (`StarWallFlux` sets its flux to 0 before the update) | g/s |
 | 18 | Etot | sum (U_E + E) V: gas total energy (internal + kinetic + rho Phi_grav) plus radiation energy. With closed walls its rate is L_in - L_top. | erg |
-| 19 | Min_top | inflow part at the outer face, sum min(f_rho, 0) A (<= 0); the flux removed before the update (`StarWallFlux`) | g/s |
+| 19 | Min_top | inflow part at the outer face, sum min(f_rho, 0) A (<= 0): the mass flux that `StarWallFlux` removed at its call, before `dfloor_flux_limit`. 0 also where a face without mass flux passes L_z and E (see the note below) | g/s |
 | 20 | v1sq_wall | mean v_r^2 over the first active radial cells of the whole mesh | cm^2/s^2 |
 | 21 | Picard | **Always 0** under `scheme = clean`; the clean solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
 | 22 | P_esrc | power that the explicit radiation source term puts into E, sum (chat/c) esrc V, at the state of this row. 0 in the decks (no frozen MLT deposit, no test source). | erg/s |
@@ -173,9 +173,16 @@ floors created in the step. They are **not** in the history file.
   of `dfloor_keep_velocity` (`dfloor_ke`), unpaid floor energy (CLEAN WARNING), and energy
   created by the radiation E floor (`energy created` in the `vet-positivity` line,
   `vet_pos_un` in the event log).
-- Known open item: once gas starts to fall in through the top boundary (Min_top != 0,
-  M_hflx < 0), the outer boundary's removal of that inflow moves energy that E_hflx does not
-  record. In bsg this gives rE of a few 1e-6 L_in dt per cycle from that point on.
+- `star_wall_zero_flux` (`StarWallFlux`) closes the top faces whose mass flux is inflow or
+  exactly 0 when it is called, after the Riemann and FOFC fluxes. `dfloor_flux_limit` runs
+  later, in `Hydro::RKUpdate`: a top face that it makes (nearly) massless stays open to the
+  diffusive L_z and E of FOFC's flux. That flux is booked in E_hflx and Lz_hflx and conserved,
+  but it is not carried by gas. In bsg (100 cycles, Caltech) Min_top is 0, Lz_hflx dt is
+  1.96e35 per cycle and the L_z residual 1.57e31 rms per cycle (round-off); this history is
+  bitwise that of `star_wall_zero_flux = false`.
+- Earlier versions took the removed inflow back after the update, and rE in bsg was a few
+  1e-6 L_in dt per cycle once gas fell in through the top. The flux is now 0 before the
+  update; rE with inflow was not measured again on bsg.
 
 Python (numpy) script that prints the residuals:
 

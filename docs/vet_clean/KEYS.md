@@ -158,6 +158,7 @@ from a file written before these keys must name both on the command line.
 | `rad_vet/implicit_flux_x1max` | Incoming bath at the outer Marshak face (0 = vacuum). | 0 | all: `0.0` | `rad_vet/rad_vet_init.cpp` (`ImplicitInit`) |
 | `rad_vet/clean_bc` | Open x1 end: `halfrange` (the end cell's ray half-range flux) or `marshak`. | `halfrange` | all: `halfrange` | `rad_vet/rad_vet.cpp` (constructor) |
 | `mesh/ix1_bc` ... `ox3_bc` | Hydro boundaries (the templates: `user` in x1, `periodic` in theta and phi). | required | see the decks | `mesh/mesh.cpp` |
+| `problem/star_wall_zero_flux` | star_vet (hydro): the inner x1 wall's mass, transverse-momentum, energy and scalar fluxes are 0 before the update (not with `star_bc_inner = inflow`); so are the top's where the mass flux is inflow or exactly 0 at that point. `dfloor_flux_limit` acts later: a top face that it makes massless stays open to FOFC's diffusive L_z and E (booked, conserved). | true | all: `true` | `pgen/star_vet.cpp` (`StarWallFlux`) |
 
 Transverse Marshak faces are not supported by the ray sweep (FATAL).
 

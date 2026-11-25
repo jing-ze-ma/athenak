@@ -103,6 +103,12 @@ restart such a file with nothing named: name every key of the production deck (t
 [KEYS.md](KEYS.md), "Keys that must always be named"), read the NOTEs and check the start of
 the log before you let it run on.
 
+**`<job>/recipe` is removed.** A deck, command line or restart file that names it stops with a
+FATAL; the fresh defaults are the only default set. A deck cannot remove a key that a restart
+file stores, so such a file cannot be restarted. The headers of the production restart files
+on viper (RSG, HG, HG262, R136) and of the five runs at Caltech were checked: none holds the
+key; those on Raven were not checked (maintenance).
+
 ### Time step and retries
 
 `time/dt_retry = true` (production) lets a step that fails its checks (no convergence, a

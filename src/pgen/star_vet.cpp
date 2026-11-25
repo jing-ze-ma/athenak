@@ -3928,8 +3928,10 @@ void StarGravity(Mesh *pm, const Real bdt) {
 //! \brief star_wall_zero_flux (user_hydro_flux_func): the scaled-profile ghosts are not a
 //! mirror image of the edge cell, so the Riemann flux through a "closed" x1 wall carries
 //! mass.  The inner wall's fluxes are set to 0, the pressure (IM1) flux stays; the outer
-//! face keeps OUTFLOW and loses only inflow (no mass enters).  Before the update: the
-//! source terms and am_transport see the closed wall (L_z exact), as do the scalars.
+//! face keeps OUTFLOW and is closed only where its mass flux is inflow or exactly 0 here.
+//! Before the update: the source terms and am_transport see that flux (L_z exact), as do
+//! the scalars.  dfloor_flux_limit runs later (Hydro::RKUpdate): a top face that it makes
+//! massless stays open to FOFC's diffusive L_z and E (booked in Lz_hflx / E_hflx).
 
 void StarWallFlux(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
