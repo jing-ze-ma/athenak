@@ -1,0 +1,18 @@
+TAG=PRFT_t9q BIN md5=601f709cb98bf3632f981d79bb9fe5ac RST=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/t9l62/rst_keep/t9l62.stop1124b.rst N0=2553 NC=12 HOLDER=7333072 NODE=hpc-sm-01-17 NR=4 NSYS=/central/software9/spack/opt/spack/linux-rhel9-x86_64/none-none/cuda-12.9.0-pfmzfdvwn2ncjn636jynsuo5dhjimwiy/bin/nsys (NVIDIA Nsight Systems version 2025.1.3.140-251335620677v0) KEYS=-i /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_t9l62.athinput rad_vet/time2_gtime_slope=true rad_vet/clean_stag_thinf=true rad_vet/clean_stag_lat_sums=true rad_vet/clean_stag_tie_gid=true rad_vet/clean_stag_opac_drag=true rad_vet/vet_gd_allow_clamp=false hydro/vceil=3.0e8 rad_vet/clean_pc_sweep=rb rad_vet/clean_stag_mg_levels=2 time/cfl_number=0.3 rad_vet/clean_conv_max=1e-5 rad_vet/clean_verbose=2 hydro/dt_report=0 output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30
+run rc=0 (srun) ended: Terminating on cycle limit wall=113 s CW 0 FATAL 0
+main loop time (before the final outputs) = 26.7354
+nsys_r0.sqlite: cycles 11 wall 2017.7 ms/cyc  busy 1936.0  kernel sum 1936.0  launches 5373/cyc  keys 130
+  ms/cyc     %   n/cyc    us/l  reg  blk     grid lmem  label | key
+  463.95  24.0     646   718.2  130  128    16128    0   | radvet::RadiationVet::VetGdSweep#1
+nsys_r0.sqlite: cycles 11 wall 2017.7 ms/cyc  GPU idle 55.3 ms/cyc (2.7 %)  gaps 6364/cyc
+idle by host activity (ms/cyc): MPI 13.2  sync 10.3  memcpy-api(part) 10.0  MPI(part) 7.4  sync(part) 4.5  launch(part) 4.4  launch 2.1  memcpy-api 1.4  cuda-other 1.1  cuda-other(part) 0.6  host-compute 0.1
+idle by gap size   (ms/cyc, n/cyc): <10us 13.6 (5032)  10-100us 23.6 (1306)  0.1-1ms 6.1 (23)  >1ms 12.1 (2)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 625, 0.9, 0.71  2: 74, 0.0, 0.16  8: 21, 7743.6, 3.70  10: 2021, 5378.6, 50.65
+host time in (ms/cyc, overlapping GPU work or not): sync 1813.1  MPI 266.3
+largest gaps (us, host activity, previous kernel -> next):
+    15830.8 memcpy-api(part) M -> M
+     8627.7 MPI(part)      M -> M
+     7056.2 memcpy-api(part) M -> M
+     6955.4 memcpy-api(part) M -> M
+     6586.6 memcpy-api(part) M -> M
+     6561.8 memcpy-api(part) M -> M

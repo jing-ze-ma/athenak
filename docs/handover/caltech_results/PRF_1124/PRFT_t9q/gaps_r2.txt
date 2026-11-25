@@ -1,0 +1,21 @@
+nsys_r2.sqlite: cycles 11 wall 2017.7 ms/cyc  GPU idle 55.4 ms/cyc (2.7 %)  gaps 6444/cyc
+idle by host activity (ms/cyc): MPI 17.5  sync 9.5  memcpy-api(part) 9.0  sync(part) 5.1  launch(part) 4.8  MPI(part) 3.5  launch 2.7  memcpy-api 1.5  cuda-other 1.0  cuda-other(part) 0.7  host-compute 0.1
+idle by gap size   (ms/cyc, n/cyc): <10us 14.2 (4932)  10-100us 25.5 (1495)  0.1-1ms 4.0 (15)  >1ms 11.7 (2)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 625, 0.9, 0.72  2: 74, 0.0, 0.16  8: 21, 7743.6, 3.71  10: 2021, 5371.8, 50.41
+host time in (ms/cyc, overlapping GPU work or not): sync 1807.8  MPI 298.6
+largest gaps (us, host activity, previous kernel -> next):
+    15842.1 memcpy-api(part) M -> M
+     8623.2 MPI            M -> M
+     6528.8 sync(part)     M -> M
+     6452.0 memcpy-api(part) M -> M
+     6434.1 memcpy-api(part) M -> M
+     6242.8 MPI            M -> M
+     6171.0 memcpy-api(part) M -> M
+     6065.2 memcpy-api(part) M -> M
+     6051.8 memcpy-api(part) M -> M
+     6017.2 memcpy-api(part) M -> M
+     5956.1 memcpy-api(part) M -> M
+     5924.7 memcpy-api(part) M -> M
+     5913.8 memcpy-api(part) M -> M
+     4500.5 MPI            M -> M
+     4117.1 MPI            M -> M
