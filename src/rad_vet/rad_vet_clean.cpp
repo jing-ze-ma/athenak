@@ -624,10 +624,11 @@ void RadiationVet::CleanInit() {
   }
   if (cln_extrap > 0) {
     // a restart may have read t^n and the end of the last step
-    if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
-    if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
-    Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
-    if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
+    const int ns = cln_s.extent_int(1);
+    if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, ns, n3, n2, n1);
+    if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, ns, n3, n2, n1);
+    if (!CleanExtrapSx()) Kokkos::realloc(cln_mp, nmb, ns, n3, n2, n1);
+    if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, ns, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;
   if (pm->multilevel || chat != c_light) {

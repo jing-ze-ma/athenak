@@ -1053,6 +1053,7 @@ class RadiationVet {
   void CleanPredictState(const bool use_k1);
   void CleanRayMoments(DvceArray5D<Real> dst, const bool solve = true);
   void CleanClosureExtrap();
+  bool CleanExtrapSx() const {return cln_extrap == 3 && t2_tab != 0;}
   void CleanClosureAfterSolve();
   void CleanClosureIterate();
   void CleanStageOpacity();
