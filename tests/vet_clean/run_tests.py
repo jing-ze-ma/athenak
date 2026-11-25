@@ -839,6 +839,16 @@ def t_floor_pay(c):
     out['worst_bitwise'] = all(open(os.path.join(d, f), 'rb').read() ==
                                open(os.path.join(dw, f), 'rb').read()
                                for f in ('sp.user.hst', 'sp.hydro.hst'))
+    # floor_from_ekin holds cells at e(rho, tfloor) to round-off: FOFC's flag of such a
+    # cell and of its ghost image must agree across the phi wrap (fofc_flag_exchange)
+    d = c.run('shell_sp.athinput', 'ekin_floor', dict(g, **{
+        'hydro/tfloor': 1.00001e-4, 'hydro/floor_pay': 'rad_column', 'time/nlim': 100,
+        'time/tlim': 1e9, 'hydro/floor_pay_skip': 'true',
+        'hydro/dfloor_flux_limit': 'true', 'hydro/floor_from_ekin': 'true'}))
+    u = os.path.join(d, 'sp.user.hst')
+    e = hst_col(u, 'Eg') + hst_col(u, 'Er')
+    out['ekin_floor_dE'] = rel_drift(e)
+    out['ekin_floor_dM'] = rel_drift(hst_col(os.path.join(d, 'sp.hydro.hst'), 'mass'))
     d = c.run('shell_sp.athinput', 'ekin', dict(g, **{
         'time/nlim': 16, 'hydro/floor_from_ekin': 'true', 'hydro/vceil': 1.2e-2}))
     out.update({'ekin_' + k: v for k, v in am_budget(d, 'sp').items() if k != 'dLz_gr'})

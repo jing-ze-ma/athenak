@@ -279,6 +279,8 @@
  "floor_pay": {
   "_about": "dE from t = 0 (the initial floor energy is paid before the t = 0 output; dE0, the t = 0 -> 1 step, is reported); ekin_*: hydro/floor_from_ekin with vceil 1.2e-2 (energy, mass, L_z as conservation_sp); worst_*: the same run with hydro/floor_audit_worst prints and stays bitwise",
   "max": {
+   "ekin_floor_dE": 1e-13,
+   "ekin_floor_dM": 1e-13,
    "dE": 1e-13,
    "ekin_dE": 1e-13,
    "ekin_dM": 1e-13,
