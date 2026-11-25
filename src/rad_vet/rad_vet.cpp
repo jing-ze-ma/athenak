@@ -612,19 +612,21 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_vimp = false;
     }
-    // clean_clos1_budget (default false: the strict norm): a pass whose iterate the next
+    // clean_clos1_budget (default; false: the strict norm): a pass whose iterate the next
     // pass takes the closure of in the budget's norm, to 0.1 clean_conv_max, the floor of
     // the passes after it at the budget's ceiling (a step dt_retry redoes strictly, as
     // its budget)
-    cln_c1b = pin->GetOrAddBoolean("rad_vet","clean_clos1_budget",false);
+    cln_c1b = pin->GetOrAddBoolean("rad_vet","clean_clos1_budget",
+                                   fix("clean_clos1_budget", "true", "false"));
     // clean_vel_settled (default false: every pass): the velocity update (its F solve)
     // only in a pass that can end the solve, one whose E change settled; the others leave
     // v, F to the next pass (the same fixed point)
     cln_vset = pin->GetOrAddBoolean("rad_vet","clean_vel_settled",false);
-    // clean_bud_maxnorm (default false: the L2 norm): the budget passes' linear test and
+    // clean_bud_maxnorm (default; false: the L2 norm): the budget passes' linear test and
     // Eisenstat-Walker |r0| in the max norm over the cells, the norm of the pass's own
     // test (CleanNewtonUpdate)
-    cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",false);
+    cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",
+                                   fix("clean_bud_maxnorm", "true", "false"));
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
