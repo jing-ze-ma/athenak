@@ -4,7 +4,7 @@ import numpy as np
 import pyfastchem
 import os
 D = os.environ.get('FASTCHEM_INPUT',
-                   '/viper/ptmp2/jinma/ckhitemp_0925/fastchem_input').rstrip('/') + '/'
+                   'fastchem_input').rstrip('/') + '/'
 IR = ['H2O1', 'H1O1', 'C1O1', 'Fe1H1', 'O1Ti1',
       'O1V1', 'H1Si1', 'Ca1H1', 'H1Mg1', 'O1Si1']
 OPT = ['Fe', 'Ti', 'Cr', 'Mg', 'Si', 'Ca', 'Na', 'K', 'O1Ti1', 'O1V1', 'Fe1H1']

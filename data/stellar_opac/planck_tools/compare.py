@@ -43,8 +43,7 @@ def at(lT, lD, K, t, d):
 
 def main():
     print('=== (1) TOPS Rosseland vs repo OPLIB Rosseland, GS98 X=0.7 Z=0.014 ===')
-    rT, rD, rK = read_repo('/viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/'
-                           'rosseland_gs98_x0.7_z0.014.txt')
+    rT, rD, rK = read_repo('../rosseland_gs98_x0.7_z0.014.txt')
     tT, tD, tK = read_repo('rosseland_tops_gs98_x0.7_z0.014.txt')
     # overlap where BOTH are data: logT 3.80..7.05 and logR = lrho-3lT+18 in -8..1
     TT, DD = np.meshgrid(rT, rD, indexing='ij')

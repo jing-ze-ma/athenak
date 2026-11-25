@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""(tools/ic_star copy of Viper lbv_1008/agcar/tables_ext/scripts/saha_es.py; only change: X via .get)
-LTE (Saha) electron-scattering opacity kappa_es = sigma_T n_e / rho [cm^2/g] for the TOPS
+"""LTE (Saha) electron-scattering opacity kappa_es = sigma_T n_e / rho [cm^2/g] for the TOPS
 mixture (number fractions read from tables/mixture_x0.36_z0.02.txt).
 
 Species: H (13.598 eV), He I/II (24.587, 54.418 eV), and the 19 metals of the TOPS mixture
@@ -75,7 +74,7 @@ class Saha:
 
 
 if __name__ == '__main__':
-    s = Saha('/viper/ptmp2/jinma/lbv_1008/agcar/tables/mixture_x0.36_z0.02.txt')
+    s = Saha('mixture_x0.36_z0.02.txt')
     print('X from mixture %.4f, mbar/m_u %.4f, full-ionisation 0.2(1+X)-ish:' % (
         s.X, s.mbar/MU), s.kes(1e7, 1e-10))
     for T in (3000, 4000, 5000, 5800, 7000, 1e4, 2e4, 5e4):

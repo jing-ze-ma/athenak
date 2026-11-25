@@ -1,4 +1,4 @@
-"""Mode 'mesa' of the standard IC (tools/ic_star; USER decision 10-15, option A).
+"""Mode 'mesa' of the standard IC (tools/ic_star).
 
 When a MESA profile exists the STRUCTURE is MESA's, the microphysics ours:
   * T(P): MESA's ln T as a function of ln P_tot (PCHIP), i.e. MESA's actual gradient

@@ -3,7 +3,7 @@ import numpy as np
 import pyfastchem
 import os
 D = os.environ.get('FASTCHEM_INPUT',
-                   '/viper/ptmp2/jinma/ckhitemp_0925/fastchem_input').rstrip('/') + '/'
+                   'fastchem_input').rstrip('/') + '/'
 
 
 def run(T, P):

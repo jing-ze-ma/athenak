@@ -12,8 +12,7 @@ outside MESA's log R = log rho - 3 log T + 18 range ([-8, 1]) the recipe table i
 over 0.5 dex of log R at the low-R edge.  Type2 (C/O-enhanced) tables are NOT used: for the He
 giant X 9.5e-4 (Type2 full off at X >= 1e-3) and dZ = Z - Zbase ~0 make MESA's frac_Type2 ~0;
 specify only for stars where that holds (the build logs the Type2 check inputs).
-Within MESA's own track this reproduces the MESA profile's opacity column to 4-10 %
-(RESULTS sect. 11)."""
+Within MESA's own track this reproduces the MESA profile's opacity column to 4-10 %."""
 import hashlib
 import json
 import os

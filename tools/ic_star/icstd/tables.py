@@ -1,9 +1,7 @@
 """Opacity (ext2) and general-EOS tables by ONE recipe for any composition, cached by a
 composition hash (tools/ic_star).
 
-OPACITY = the AG Car E1 'ext2' recipe (Viper lbv_1008/agcar/tables_ext/scripts/build_ext.py
-fergR, 10-09), generalised only in the composition inputs (= the bsg_newsetup_1015
-build_ext_bsg.py generalisation):
+OPACITY = the AG Car E1 'ext2' recipe, generalised only in the composition inputs:
   * HIGH T: LANL TOPS/ATOMIC Rosseland + Planck for the mixture (number fractions; GS98 metals
     scaled to Z via data/stellar_opac/planck_tools/mixspec.py, or a custom mixture string),
     T 0.0005-1 keV (48 T), 'hi' file rho 1e-14..1 (71 points), optional 'lo' file rho

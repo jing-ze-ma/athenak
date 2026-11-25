@@ -30,7 +30,7 @@ import bin_convert                                    # noqa: E402
 import dumps                                          # noqa: E402
 import eoslib                                         # noqa: E402
 
-ROOT = os.environ.get('SOLEOS_ROOT', '/orion/u/jinma/ATHENAK/soleos')
+ROOT = os.environ.get('SOLEOS_ROOT', 'soleos')
 GRID = os.path.join(ROOT, 'tools', 'eos_grid.bin')
 
 # colour limits, kept at the values run/plot_tau_surface.py used so the ideal maps look

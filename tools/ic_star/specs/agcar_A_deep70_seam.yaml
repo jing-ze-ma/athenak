@@ -17,13 +17,13 @@ opacity:
   # the column (10-08 icA build) was integrated with the PLAIN TOPS table; the deck names the
   # standard ext2 pair built by the recipe (E1 runs rc_1009 rosseland_ext2 b28e97c5 +
   # planck_ext2orion 493f9d01: the ext2 data with a bitwise TOPS patch / Orion stitch)
-  ic_rosseland: /raven/ptmp/jinma/agcar_1008/files/rosseland_tops_gs98_x0.36_z0.02.txt
-  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/agcar_x0.36_z0.02_hi.dat
-  tops_lo: /raven/ptmp/jinma/ic_star_cache/raw/tops/agcar_x0.36_z0.02_lo.dat
+  ic_rosseland: DATA/rosseland_tops_gs98_x0.36_z0.02.txt
+  tops_hi: ic_star_cache/raw/tops/agcar_x0.36_z0.02_hi.dat
+  tops_lo: ic_star_cache/raw/tops/agcar_x0.36_z0.02_lo.dat
 eos:
   # the dump the column was built with (agcar/geos/eos, b5e87701; range -21..-2, 3.6..6.6);
   # make_star_ic.py --eos-check regenerates it by the recipe
-  dump: /raven/ptmp/jinma/agcar_1008/shakeB_ana/eos_dump.txt
+  dump: DATA/eos_dump.txt
   logd_max: -2.0
   logt_max: 6.6
 mlt:                    # the 10-08 builder (make_ic_agcar_ge.py): NOT the MESA defaults
@@ -51,4 +51,4 @@ background:
 taper: {enable: true}
 seam:
   enable: true
-  deck: /raven/ptmp/jinma/overlap_1015/decks/e1_prod_rol2u.athinput
+  deck: DATA/e1_prod_rol2u.athinput

@@ -24,7 +24,7 @@ g++ -O2 -I<athenak>/src -o eos_dump eos_dump.cpp
 The scripts expect a run tree
 
 ```
-$SOLEOS_ROOT/            default /orion/u/jinma/ATHENAK/soleos
+$SOLEOS_ROOT/            default soleos
   <run>/bin/sun.hydro_w.*.bin
   <run>/sun.hydro.hst
   tools/eos_grid.bin     the table dumped by eos_dump

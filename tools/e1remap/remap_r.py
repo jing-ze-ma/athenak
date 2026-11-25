@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""remap_r.py (s3grid-1017): AthenaK restart (star_vet + rad_vet, general EOS, spherical polar, ONE MeshBlock radially)
+"""remap_r.py: AthenaK restart (star_vet + rad_vet, general EOS, spherical polar, ONE MeshBlock radially)
 -> the same state on a NEW RADIAL GRID (same x1min/x1max, same lateral grid) as a problem/star_ic_remap_file start
 (pgen star_vet, e1remap-1014 path; file format of remap_e1w.py).
 
@@ -87,7 +87,7 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ('prst', 'pgrid', 'crst', 'cgrid', 'deck', 'outdir'):
         ap.add_argument(k)
-    ap.add_argument('--name', default='s3grid_remap')
+    ap.add_argument('--name', default='remap')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     log = open(os.path.join(a.outdir, a.name + '.remap.txt'), 'w')
@@ -209,14 +209,14 @@ def main():
         lines.insert(bi + 1, '%-24s = %s   # %s' % (key, val, cmt))
         return '\n'.join(lines)
     d = dk_txt
-    d = setkey(d, 'time', 'start_time', repr(t), 's3grid-1017: = parent rst time (checked bitwise by the pgen)')
-    d = setkey(d, 'problem', 'star_ic_remap_file', os.path.abspath(fn), 's3grid-1017 remap_r.py: md5 ' + md5)
+    d = setkey(d, 'time', 'start_time', repr(t), '= parent rst time (checked bitwise by the pgen)')
+    d = setkey(d, 'problem', 'star_ic_remap_file', os.path.abspath(fn), 'remap_r.py: md5 ' + md5)
     for blk in sorted(b for b in set(k.split('/')[0] for k in dk) if b.startswith('output')):
         odt = float(dk[blk + '/dt'])
         nlast = math.floor(t / odt + 1e-9)
         g = (nlast + 1) * odt
-        d = setkey(d, blk, 'last_time', repr(g - 2 * odt), 's3grid-1017: next scheduled output at %.6e' % g)
-        d = setkey(d, blk, 'file_number', str(nlast), 's3grid-1017: parent numbering (dump n at ~n x dt)')
+        d = setkey(d, blk, 'last_time', repr(g - 2 * odt), 'next scheduled output at %.6e' % g)
+        d = setkey(d, blk, 'file_number', str(nlast), 'parent numbering (dump n at ~n x dt)')
     dfn = os.path.join(a.outdir, a.name + '.athinput')
     open(dfn, 'w').write(d)
     P('  wrote deck %s md5 %s' % (dfn, hashlib.md5(d.encode()).hexdigest()))

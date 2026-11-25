@@ -63,17 +63,17 @@ DAY = 86400.0
 BAR = 1.0e6
 P0 = 250.0*BAR                 # the pgen's anchor pressure at r = ap (hard-coded there)
 
-# the reference (current) dhj planet: sparc_0925/sparc.athinput and its IC
+# the reference dhj planet and its IC (DATA/: files you supply)
 REF = dict(grav=942.0, ap=9.44e9, x1max=2.0556e10, teq=2500.0, omega=2.06e-5,
-           profile='/viper/ptmp2/jinma/ckrce_0925/ckrce_nq2_B.txt',
-           npz='/viper/ptmp2/jinma/ckrce_0925/ckrce_nq2_B.npz',
-           eos='/viper/ptmp2/jinma/deepconv_0925/dump/eos_table.txt',
+           profile='DATA/ckrce_nq2_B.txt',
+           npz='DATA/ckrce_nq2_B.npz',
+           eos='DATA/eos_table.txt',
            sparc_nx1=66,
            sparc_c=[-0.248682, -1.290656, -1.933528, 17.707345, -66.701191, 89.639593,
                     -30.359120, -11.805760],
            prod_c=[0.418017, 4.818585, -84.625150, 397.754052, -955.667782, 1270.732651,
                    -887.750373, 254.765233])
-TEMPLATE = '/viper/ptmp2/jinma/radres_0924/meas.npz'
+TEMPLATE = 'DATA/meas.npz'
 
 
 # ------------------------------------------------------------------------------ EOS
