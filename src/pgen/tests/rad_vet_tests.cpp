@@ -133,12 +133,13 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
                        test.compare("marshak") == 0 || test.compare("thick_pulse") == 0 ||
                        test.compare("tophat") == 0 || test.compare("radwave") == 0 ||
                        test.compare("advect_uniform") == 0 ||
-                       test.compare("sph_shell") == 0);
+                       test.compare("sph_shell") == 0 || test.compare("rhse") == 0);
   if (pmbp->pmhd != nullptr && !mhd_ok) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/vet_test = '" << test << "' is hydro only; with <mhd> "
       << "only beam, pulse1d, equil, marshak, thick_pulse, tophat, "
-      << "radwave and advect_uniform (and the box_convection pgen) are supported"
+      << "radwave, advect_uniform, sph_shell and rhse (and the box_convection pgen) are "
+      << "supported"
       << std::endl;
     std::exit(EXIT_FAILURE);
   }

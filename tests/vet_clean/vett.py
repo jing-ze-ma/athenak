@@ -347,6 +347,62 @@ def radwave_root(prat, kappa, c, nmu=4, nphi=8, gamma=5.0/3.0):
     return om[i], ar, eig, cmix
 
 
+def radmhd_root(prat, kappa, c, mode, theta=0.25*np.pi, b0=None, eta=0.0, ead=0.0,
+                gamma=5.0/3.0):
+    """Linear radiation-MHD wave of wavelength 1 (rho = T = 1, ideal gas, P_rad/P_gas =
+    prat, grey absorption kappa, true c, Eddington closure, field b0 (default: the sound
+    speed of gas + radiation) at the angle theta to k in the (n, t) plane, Ohmic eta and
+    ambipolar ead), exp(i(kx - w t)): the gas + induction + moment system with the comoving
+    F0 = F - (4/3) E0 v and the radiation's inertia (the lab F's time derivative).  mode
+    fast | slow (rho, v_n, v_t, B_t, T, E, F0) or alfven (v_s, B_s; radiation inert).
+    Returns (omega, arad, eig, b0, left): eig = the <problem>/radwave_eig_* keys, left = the
+    left eigenvector, left . (those amplitudes) = e^{-i omega t}."""
+    k, ar, g1 = 2.0*np.pi, 3.0*prat, gamma - 1.0
+    e0, b, ik, m = ar, 4.0*ar, 1j*k, 4.0*ar/3.0
+    ptot = 1.0 + e0/3.0
+    bet = 1.0/ptot
+    cm = np.sqrt((bet + (4.0 - 3.0*bet)**2*g1/(bet + 12.0*g1*(1.0 - bet)))*ptot)
+    b0 = cm if b0 is None else b0
+    bn, bt, ea = b0*np.cos(theta), b0*np.sin(theta), ead*b0*b0
+
+    def ms(a):   # (slow, fast) speeds for the sound speed a
+        s = a*a + b0*b0
+        return [np.sqrt(0.5*(s + h*np.sqrt(s*s - 4.0*a*a*bn*bn))) for h in (-1.0, 1.0)]
+    if mode == 'alfven':
+        L = np.array([[0, ik*bn], [ik*bn, -(eta + ea*np.cos(theta)**2)*k*k]], dtype=complex)
+    else:
+        L = np.zeros((7, 7), dtype=complex)   # d/dt (rho, vn, vt, Bt, T, E, F0) = L (...)
+        L[0, 1] = -ik
+        L[1, 0], L[1, 4], L[1, 3], L[1, 6] = -ik, -ik, -ik*bt, kappa/c
+        L[2, 3] = ik*bn/(1.0 + m/c**2)
+        L[3, 1], L[3, 2], L[3, 3] = -ik*bt, ik*bn, -(eta + ea)*k*k
+        L[4, 1], L[4, 4], L[4, 5] = -ik*g1, -g1*c*kappa*b, g1*c*kappa
+        L[5, 1], L[5, 4], L[5, 5], L[5, 6] = -ik*m, c*kappa*b, -c*kappa, -ik
+        L[6, 5], L[6, 6] = -ik*c*c/3.0, -c*kappa
+        L[6] -= m*L[1]
+    lam, V = np.linalg.eig(L)
+    om = 1j*lam
+    if mode == 'alfven':
+        i = int(np.argmax(om.real))
+    else:
+        q = int(mode == 'fast')
+        lo, hi = 0.97*ms(1.0)[q], 1.03*ms(cm)[q]
+        i = int(np.argmin([np.inf if x.real <= 0 else
+                           max(lo - x.real/k, x.real/k - hi, 0.0) + 1e-9*abs(x.imag)
+                           for x in om]))
+    v, left = V[:, i]/V[0, i], np.linalg.inv(V)[i]*V[0, i]
+    if mode == 'alfven':
+        a = dict(v=0j, t=0j, e=0j, f=0j, vs=v[0], bs=v[1], fs=m*v[0]/(c*e0))
+    else:
+        a = dict(v=v[1], t=v[4], e=v[5]/e0, f=(v[6] + m*v[1])/(c*e0), vt=v[2], bt=v[3],
+                 ft=m*v[2]/(c*e0))
+    eig = {'radwave_eig_d': 0.0} if mode == 'alfven' else {}
+    for n, x in a.items():
+        eig['radwave_eig_%s_re' % n] = float(x.real)
+        eig['radwave_eig_%s_im' % n] = float(x.imag)
+    return om[i], ar, eig, b0, left
+
+
 def lm_fit(res, p, nit=200):
     """Levenberg-Marquardt: the p minimising |res(p)|^2 (finite-difference Jacobian)."""
     p, lam = np.asarray(p, dtype=float), 1e-3

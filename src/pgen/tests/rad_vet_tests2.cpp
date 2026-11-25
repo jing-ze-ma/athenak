@@ -734,6 +734,28 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       const Real fre = pin->GetReal("problem","radwave_eig_f_re");
       const Real fim = pin->GetReal("problem","radwave_eig_f_im");
       const Real ce0 = cl*er0;
+      // (<mhd>, read only when named) the magnetosonic and Alfven modes: the transverse
+      // amplitudes along t (zhat x n, the x1-x2 plane) and s = n x t, dv_q = A
+      // Re[vq^ e^{i phi}], dB_q = A Re[bq^ e^{i phi}], F_q/(c E0) = A Re[fq^ e^{i phi}]
+      // (radwave_eig_{vt,bt,ft,vs,bs,fs}_{re,im}), dB the discrete curl of A_s = i bt/k,
+      // A_t = -i bs/k on the edges; radwave_eig_d (default 1) scales drho (0: Alfven)
+      auto ekey = [&](const char *q, const char *c) {
+        const std::string nm = std::string("radwave_eig_") + q + c;
+        return pin->DoesParameterExist("problem",nm) ? pin->GetReal("problem",nm) : 0.0;
+      };
+      const Real tv[2][4] = {{ekey("vt","_re"), ekey("vt","_im"), ekey("ft","_re"),
+                              ekey("ft","_im")},
+                             {ekey("vs","_re"), ekey("vs","_im"), ekey("fs","_re"),
+                              ekey("fs","_im")}};
+      const Real btr = ekey("bt","_re"), bti = ekey("bt","_im");
+      const Real bsr = ekey("bs","_re"), bsi = ekey("bs","_im");
+      const Real ad = pin->DoesParameterExist("problem","radwave_eig_d") ?
+                      pin->GetReal("problem","radwave_eig_d") : 1.0;
+      const Real hp = sqrt(nx*nx + ny*ny);
+      const Real tq[2][3] = {{(hp > 0.0) ? -ny/hp : 1.0, (hp > 0.0) ? nx/hp : 0.0, 0.0},
+                             {(hp > 0.0) ? -nz*nx/hp : 0.0, (hp > 0.0) ? -nz*ny/hp : 1.0,
+                              hp}};
+      const bool mwv = mhdw && (btr != 0.0 || bti != 0.0 || bsr != 0.0 || bsi != 0.0);
       // <problem>/radwave_v0 (tests_m1/runs_3s_space2): a uniform background drift along
       // the wave vector, with the matching lab flux (4/3) v0 E.  Read only when named.
       const bool drift = pin->DoesParameterExist("problem","radwave_v0");
@@ -746,7 +768,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         Real x3v = (nx3 > 1) ? CellCenterX(k-ks, nx3, sz.x3min, sz.x3max) : 0.0;
         Real ph = kx*x1v + ky*x2v + kz*x3v;
         Real cp = cos(ph), sp = sin(ph);
-        Real d = d0*(1.0 + amp*cp);
+        Real d = d0*(1.0 + amp*ad*cp);
         Real tt = t0*(1.0 + amp*(tre*cp - tim*sp));
         Real vv = amp*(vre*cp - vim*sp);
         if (drift) {vv += v0;}
@@ -756,16 +778,63 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         uh(m,IM3,k,j,i) = d*vv*nz;
         uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
         if (mhdw) uh(m,IEN,k,j,i) += ebw;
+        Real fq[2];
+        for (int q = 0; q < 2; ++q) {
+          const Real vq = amp*(tv[q][0]*cp - tv[q][1]*sp);
+          fq[q] = amp*ce0*(tv[q][2]*cp - tv[q][3]*sp);
+          uh(m,IM1,k,j,i) += d*vq*tq[q][0];
+          uh(m,IM2,k,j,i) += d*vq*tq[q][1];
+          uh(m,IM3,k,j,i) += d*vq*tq[q][2];
+          uh(m,IEN,k,j,i) += 0.5*d*vq*vq;
+        }
         Real ff = amp*ce0*(fre*cp - fim*sp);
         u0(m,radvet::VET_E,k,j,i) = fmax(er0*(1.0 + amp*(ere*cp - eim*sp)), efl);
         if (drift) {
           ff += (4.0/3.0)*v0*(u0(m,radvet::VET_E,k,j,i) - er0)
                 + (4.0/3.0)*v0*er0;
         }
-        u0(m,radvet::VET_F1,k,j,i) = ff*nx;
-        u0(m,radvet::VET_F2,k,j,i) = ff*ny;
-        u0(m,radvet::VET_F3,k,j,i) = ff*nz;
+        u0(m,radvet::VET_F1,k,j,i) = ff*nx + fq[0]*tq[0][0] + fq[1]*tq[1][0];
+        u0(m,radvet::VET_F2,k,j,i) = ff*ny + fq[0]*tq[0][1] + fq[1]*tq[1][1];
+        u0(m,radvet::VET_F3,k,j,i) = ff*nz + fq[0]*tq[0][2] + fq[1]*tq[1][2];
       });
+      if (mwv) {
+        auto b0 = pmbp->pmhd->b0;
+        auto b1f = b0.x1f, b2f = b0.x2f, b3f = b0.x3f;
+        par_for("vet_radwave_b", DevExeSpace(), 0,nmb1,0,n3,0,n2,0,n1,
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          auto &sz = size.d_view(m);
+          const Real xl = LeftEdgeX(i-is, nx1, sz.x1min, sz.x1max);
+          const Real xc = CellCenterX(i-is, nx1, sz.x1min, sz.x1max);
+          const Real yl = LeftEdgeX(j-js, nx2, sz.x2min, sz.x2max);
+          const Real yc = CellCenterX(j-js, nx2, sz.x2min, sz.x2max);
+          const Real zl = LeftEdgeX(k-ks, nx3, sz.x3min, sz.x3max);
+          const Real zc = CellCenterX(k-ks, nx3, sz.x3min, sz.x3max);
+          const Real d1 = sz.dx1, d2 = sz.dx2, d3 = sz.dx3;
+          // component c of A at (x1, x2, x3)
+          auto av = [&](const int c, const Real x1, const Real x2, const Real x3) {
+            const Real ph = kx*x1 + ky*x2 + kz*x3, cp = cos(ph), sp = sin(ph);
+            return amp/kmag*(-(btr*sp + bti*cp)*tq[1][c] + (bsr*sp + bsi*cp)*tq[0][c]);
+          };
+          if (j < n2 && k < n3) {
+            b1f(m,k,j,i) += (av(2, xl, yl + d2, zc) - av(2, xl, yl, zc))/d2 -
+                            (av(1, xl, yc, zl + d3) - av(1, xl, yc, zl))/d3;
+          }
+          if (i < n1 && k < n3) {
+            b2f(m,k,j,i) += (av(0, xc, yl, zl + d3) - av(0, xc, yl, zl))/d3 -
+                            (av(2, xl + d1, yl, zc) - av(2, xl, yl, zc))/d1;
+          }
+          if (i < n1 && j < n2) {
+            b3f(m,k,j,i) += (av(1, xl + d1, yc, zl) - av(1, xl, yc, zl))/d1 -
+                            (av(0, xc, yl + d2, zl) - av(0, xc, yl, zl))/d2;
+          }
+        });
+        par_for("vet_radwave_be", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          uh(m,IEN,k,j,i) += 0.5*(SQR(0.5*(b1f(m,k,j,i) + b1f(m,k,j,i+1))) +
+                                  SQR(0.5*(b2f(m,k,j,i) + b2f(m,k,j+1,i))) +
+                                  SQR(0.5*(b3f(m,k,j,i) + b3f(m,k+1,j,i)))) - ebw;
+        });
+      }
       // the comoving face fluxes of the implicit transport (allocated only there)
       const Real f0re = ce0*fre - (4.0/3.0)*er0*vre;
       const Real f0im = ce0*fim - (4.0/3.0)*er0*vim;
@@ -792,6 +861,11 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
           }
           Real ph = kx*x1v + ky*x2v + kz*x3v;
           ff0(m,k,j,i) = nd*amp*(f0re*cos(ph) - f0im*sin(ph));
+          for (int q = 0; q < 2; ++q) {
+            ff0(m,k,j,i) += tq[q][dir]*amp*(
+                (ce0*tv[q][2] - (4.0/3.0)*er0*tv[q][0])*cos(ph) -
+                (ce0*tv[q][3] - (4.0/3.0)*er0*tv[q][1])*sin(ph));
+          }
         });
       }
       return;
