@@ -1221,6 +1221,29 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanSumExact
+//! \brief CleanSums' s0 by the exact accumulator (utils/repro_sum.hpp): no round-off of
+//! the sum, the same for every layout and rank count
+
+template <typename F>
+Real CleanSumExact(MeshBlockPack *pp, const char *name, const F &f) {
+  auto &indcs = pp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nji = indcs.nx2*nx1, nkji = indcs.nx3*nji;
+  repro::ReproVal<1> v;
+  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          pp->nmb_thispack*nkji),
+  KOKKOS_LAMBDA(const int idx, repro::ReproVal<1> &a) {
+    const int m = idx/nkji, k = (idx%nkji)/nji, j = (idx%nji)/nx1;
+    Real s0 = 0.0, s1 = 0.0;
+    f(m, k+ks, j+js, idx%nx1 + is, s0, s1);
+    a.s[0].Add(s0);
+  }, repro::ReproRed<1, Kokkos::HostSpace>(v));
+  repro::AllMerge(v.s, 1);
+  return v.s[0].Value();
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::CleanSumCells
 //! \brief the sum of a over the active cells (CleanSums)
 
@@ -1247,7 +1270,7 @@ Real RadiationVet::CleanLzTotal() {
   auto f2 = f0x2, f3 = f0x3;
   const bool tel = cln_lzt;
   const Real ic2 = 1.0/(x.c*x.c);
-  const Real s = CleanSums(pmy_pack, "cln_lztot", 1,
+  const Real s = CleanSumExact(pmy_pack, "cln_lztot",
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     Real p[3] = {0.0, 0.0, 0.0};
     if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
@@ -1268,7 +1291,7 @@ Real RadiationVet::CleanLzTotal() {
       }
     }
     s0 += v*r*p[2] + lr;
-  })[0];
+  });
   return s + (cln_lzbook ? cln_lzl + cln_lzp : 0.0);
 }
 
