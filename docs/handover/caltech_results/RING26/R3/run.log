@@ -1,0 +1,2 @@
+2026-11-25 13:42:26 start R3 node hpc-sm-02-16 keys: time/cfl_number=0.15 common: time/tlim=4.5e5 output2/dt=2400 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30
+2026-11-25 14:55:24 rc=0 ended: Terminating on time limit wall=4378 s CW 0 FATAL 0 inf 0 DT_RETRY 0
