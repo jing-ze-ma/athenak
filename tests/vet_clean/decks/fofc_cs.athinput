@@ -1,0 +1,67 @@
+# Rotating shell with a strong azimuthal density pattern on the cubed sphere (reflecting
+# radial walls), no gravity, no radiation: FOFC replaces fluxes.  Used by: fofc_layout_cs.
+
+<job>
+basename = mc
+
+<mesh>
+nghost = 3
+nx1 = 24
+x1min = 1.0
+x1max = 4.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 16
+x2min = -1.0
+x2max = 1.0
+ix2_bc = panel
+ox2_bc = panel
+nx3 = 16
+x3min = -1.0
+x3max = 1.0
+ix3_bc = panel
+ox3_bc = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1 = 24
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.8
+nlim = 8
+tlim = 1e30
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+fofc = true
+dfloor = 0.5
+am_transport = true
+
+<problem>
+pgen_name = am_wb
+user_srcs = true
+user_hist = true
+gm = 0.0
+cs2 = 0.5
+rho0 = 1.0
+rot = 1.0
+pert = 0.75
+
+<output1>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 1.0e30
+
+<output2>
+file_type = hst
+data_format = %24.16e
+dt = 1.0e-12

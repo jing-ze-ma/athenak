@@ -101,6 +101,23 @@
    "dLz_fofc": 1e-13
   }
  },
+ "fofc_layout_cs": {
+  "equal": {
+   "maxdiff_mb22": 0.0,
+   "maxdiff_r2": 0.0,
+   "maxdiff_r2mb22": 0.0,
+   "maxdiff_restart": 0.0,
+   "maxdiff_retry": 0.0
+  },
+  "min": {
+   "fo_fofc": 1
+  },
+  "max": {
+   "dE": 1e-13,
+   "dM": 1e-13,
+   "dLz": 1e-13
+  }
+ },
  "order_time": {
   "last": true,
   "min": {

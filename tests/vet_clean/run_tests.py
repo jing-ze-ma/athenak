@@ -403,6 +403,37 @@ def t_layout_tile(c):
     return out
 
 
+def t_fofc_layout_cs(c):
+    """FOFC on the cubed sphere (a hydro shell): one MeshBlock per panel vs 2 x 2 (_mb22),
+    2 along r (_r2) and 2 x 2 x 2 (_r2mb22): identical, with the flags of the same-panel
+    ghosts taken from their owner (hydro/fofc_flag_exchange); restart (4 + 4 cycles) and a
+    forced dt_retry with factor 1 of the 2 x 2 run: identical; its E and L_z drifts (the
+    density floor acts: its mass).  dM: the drift of a fast shell where only the energy
+    floor acts."""
+    mb = {'meshblock/nx2': 8, 'meshblock/nx3': 8}
+    r2 = {'meshblock/nx1': 12}
+    deck = 'fofc_cs.athinput'
+
+    def diff(x, y):
+        return max(vett._bin_diff(p, q)[0] for p, q in zip(vett.bins(x), vett.bins(y)))
+    a = c.run(deck, 'mb1', {})
+    b = c.run(deck, 'mb22', dict(mb, **{'output9/file_type': 'log', 'output9/dcycle': 2}))
+    out = dict(maxdiff_mb22=diff(a, b), maxdiff_r2=diff(a, c.run(deck, 'r2', dict(r2))),
+               maxdiff_r2mb22=diff(a, c.run(deck, 'r2mb22', dict(mb, **r2))))
+    lg = open(os.path.join(b, 'run.log')).read()
+    out['fo_fofc'] = float(re.findall(r'FOFC first-order cell-stages=(\S+)', lg)[-1])
+    out['maxdiff_restart'] = restart_pair(c, deck, 8, 4, mb)['maxdiff']
+    o = dict(mb, **{'time/dt_retry': 'true'})
+    g = c.run(deck, 'retry1', dict(o, **{'time/dt_retry_force_cycle': 4,
+                                         'time/dt_retry_force_fac': 1.0}))
+    out['maxdiff_retry'] = diff(c.run(deck, 'retry0', o), g)
+    m = c.run(deck, 'mass', dict(mb, **{'hydro/dfloor': 1e-12, 'problem/cs2': 0.03,
+                                        'problem/rot': 4.0}))
+    for k, d, col in (('dE', b, 'Etot'), ('dLz', b, 'Lz'), ('dM', m, 'M')):
+        out[k] = rel_drift(hst_col(os.path.join(d, 'mc.user.hst'), col))
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # order of accuracy
 
@@ -1279,6 +1310,7 @@ TESTS = [  # name, function, in --quick
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),
     ('layout_tile', t_layout_tile, True),
+    ('fofc_layout_cs', t_fofc_layout_cs, True),
     ('order_time', t_order_time, True),
     ('order_stiff', t_order_stiff, False),
     ('order_space', t_order_space, False),
