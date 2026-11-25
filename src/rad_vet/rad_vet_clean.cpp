@@ -378,7 +378,10 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // ImplicitSolve's acceptance, posfix and KE cap: none
     {"rad_vet/time2_k1_reset", "!"},   // K1 reset of held cells: removed
     {"rad_vet/time2_k1_*", nullptr}, {"rad_vet/time2_face_fct*", nullptr},
-    {"time/dt_retry_t2_be", nullptr}, {"time/dt_retry_max", ""},
+    {"time/dt_retry_max", ""},
+    // a rejected stage: always the backward-Euler redo of the cycle at its dt
+    {"rad_vet/time2_reject", ""}, {"time/dt_retry_t2_be", "=0"},
+    {"time/dt_retry_fac_t2", ""}, {"time/dt_retry_t2be_now", ""},
     {"rad_vet/time2_accept_fallback", ""}, {"rad_vet/time2_posfix*", ""},
     {"rad_vet/time2_inc_kecap", ""}, {"rad_vet/time2_pred_cap", ""},
     // implicit solve's position limiters, Zalesak round cap and x2 vet fields: none
@@ -1459,14 +1462,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
     t2_fail = (nit < 0) || (nneg > 0 && !flr) || (cln_feedback && cln_neint > 0) ||
               (t2_solve == VET_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail) ||
               ffl;
-    // time2_reject = retry: redo the cycle at a smaller dt instead of the backward-Euler
-    // redo; after dt_retry_t2_be such cuts, the redo
-    const bool rt = t2_fail && t2_reject == 1 && dtr_on && !t2_inprobe;
-    if (rt && !dtr_t2be) {
-      if (!dtr_fail) {dtr_why = 5; dtr_resid = -1.0;}
-      dtr_fail = true;
-    }
-    if (rt && dtr_t2be) dtr_t2hit = true;
     if (cln_lzbook && cln_feedback && t2_solve == VET_T2S_STAGE2 && !t2_fail) {
       CleanLzBook(0.0, false);   // the accepted stage 2's L_z, pending until here
     }

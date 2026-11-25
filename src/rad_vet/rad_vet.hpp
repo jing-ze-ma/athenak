@@ -340,13 +340,9 @@ class RadiationVet {
   // would stop the run raises dtr_fail with reason dtr_why instead
   bool dtr_on = false;
   bool dtr_fail = false;
-  // 1 NON-CONVERGED, 2 DIVERGED, 3 DIVERGED (masked), 4 eint<=0, 5 time2_reject
+  // 1 NON-CONVERGED, 2 DIVERGED, 3 DIVERGED (masked), 4 eint<=0
   int dtr_why = 0;
   Real dtr_resid = 0.0;
-  // dt_retry_t2_be cuts did not cure a time2_reject: redo the hesdirk2 stage with
-  // backward Euler instead of another retry
-  bool dtr_t2be = false;
-  bool dtr_t2hit = false;    // this attempt took that backward-Euler redo
   template <class V> void DtRetryVisit(V &v);   // rad_vet_dtretry_visit.hpp (generated)
   void DtRetryQuiesce(bool restoring);          // no host thread writes while restoring
   void DtRetryAfterRestore();                   // make the async prefetch state safe
@@ -714,9 +710,6 @@ class RadiationVet {
   int t2_solve{};               // what the next ImplicitSolve does (VET_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // debug time2_dbg_fail: fail stage 1 at this cycle
-  // time2_reject = be | retry: a non-admissible stage raises the dt_retry flag instead
-  // of the backward-Euler redo
-  int t2_reject = 0;            // 0 be, 1 retry
   // time2_k1_stiff = s: move the exchange part of K1 in cells with k dt > s (0 = off)
   Real t2_k1stiff = 0.0;
   Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank)

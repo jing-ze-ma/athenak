@@ -456,21 +456,6 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_fixed")) {
     fix_ = pin->GetReal("time", "dt_fixed");
   }
-  // <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
-  // retry raised by <rad_vet>/time2_reject = retry (default: dt_retry_fac)
-  if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
-    t2_fac_ = pin->GetReal("time", "dt_retry_fac_t2");
-  }
-  // <time>/dt_retry_t2_be (default 0): a cycle that has taken this
-  // many time2_reject cuts redoes a further non-admissible hesdirk2 stage with backward
-  // Euler (as time2_reject = be) instead of cutting again; < 0 = never.  0 = BE redo at
-  // the cycle dt, no cut
-  t2_be_ = pin->GetOrAddInteger("time", "dt_retry_t2_be", t2_be_);
-  // the armed state of the straight run (a restart file's dump; written only once set)
-  if (pin->DoesParameterExist("time", "dt_retry_t2be_now")) {
-    t2streak_ = pin->GetBoolean("time", "dt_retry_t2be_now");
-  }
-  pk->pradvet->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
   pk->pradvet->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
   // clean: the minimal list without the Views the clean scheme (<rad_vet>/scheme =
@@ -628,10 +613,6 @@ void DtRetry::Build(Mesh *pm) {
 void DtRetry::Save(Mesh *pm) {
   if (!on) return;
   if (!built_) {Build(pm);}
-  // the cycle's own dt, cap and good-cycle count (the dt_retry_t2_be redo)
-  dt0_ = pm->dt;
-  cap0_ = pm->dt_cap;
-  ngood0_ = ngood_;
   Kokkos::Timer t;
   pm->pmb_pack->pradvet->DtRetryQuiesce(false);
   pm->pmb_pack->pradvet->MemArenaSeal();   // no rebind after a checkpoint
@@ -686,11 +667,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   const int why = vet->dtr_why;
   const Real res = vet->dtr_resid;
   const Real dto = pm->dt;
-  // the FIRST cut of a cycle raised by time2_reject (why 5) may take its own,
-  // gentler factor; further cuts of the same cycle take dt_retry_fac (ncut_ is counted
-  // below, so ncut_ == 0 here is the first cut)
-  const Real f = (why == 9) ? force_fac_
-                 : ((why == 5 && t2_fac_ > 0.0 && ncut_ == 0) ? t2_fac_ : fac_);
+  const Real f = (why == 9) ? force_fac_ : fac_;
   ncut_ += 1;
   nretry_ += 1;
   if (ncut_ > maxcut_) {
@@ -730,36 +707,9 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   vet->dtr_ncut = ncut_;
   // (a failed step, not a forced one)
   if (why != 9 || force_redo_) vet->dtr_redo = true;
-  // once this cycle took the backward-Euler redo, it keeps it: a failed
-  // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
-  // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the
-  // loop run12's stream-on smoke died in: BE at dt0 / stage at dt0/2, dt_retry_max)
-  if (t2be_cyc_) {vet->dtr_t2be = true;}
   vet->dtr_fail = false;
   vet->dtr_why = 0;
   vet->dtr_resid = 0.0;
-  // a time2_reject that dt_retry_t2_be cuts did not cure is not a dt problem:
-  // the cycle is taken again at its OWN dt (and cap) with the stage rejection armed to
-  // take the backward-Euler redo, as time2_reject = be (no dt is lost to it)
-  const bool t2fb = (why == 5) && (t2_be_ >= 0) && (nt2cut_ >= t2_be_) && !vet->dtr_t2be;
-  if (why == 5) {nt2cut_ += 1;}
-  if (t2fb) {
-    vet->dtr_t2be = true;
-    t2be_cyc_ = true;
-    pm->dt_cap = cap0_;
-    ngood_ = ngood0_;
-    pm->dt = dt0_;
-    if (global_variable::my_rank == 0) {
-      std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
-                << " -> " << dt0_ << " reason=time2_reject resid=";
-      if (std::isfinite(res)) {std::cout << res;} else {std::cout << "nonfinite";}
-      std::cout << " cut " << ncut_ << " (not cured by " << t2_be_
-                << " cuts: the cycle dt with the backward-Euler redo, dt_retry_t2_be)"
-                << std::endl;
-    }
-    (void) pd;
-    return true;
-  }
   if (poison_ > 0 && why == 9) {
     // dt_retry_views = all: in every View the failed attempt changed that the minimal
     // list does NOT checkpoint, the elements the attempt wrote go to NaN after the
@@ -797,7 +747,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   // (7: the Driver's floor_pay_retry)
   static const char *whys[] = {"?", "NON-CONVERGED", "resid>implicit_resid_fatal",
                                "masked_resid>implicit_resid_fatal_masked", "eint<=0",
-                               "time2_reject", "vkick", "floor_pay_unpaid", "efloor_column",
+                               "?", "vkick", "floor_pay_unpaid", "efloor_column",
                                "forced"};
   if (global_variable::my_rank == 0) {
     std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
@@ -816,16 +766,6 @@ void DtRetry::Accept(Mesh *pm) {
   ncut_ = 0;
   pm->pmb_pack->pradvet->dtr_ncut = 0;
   pm->pmb_pack->pradvet->dtr_redo = false;
-  // a cycle that took the backward-Euler redo of time2_reject = retry arms the
-  // next cycle to take it at once (a rejection that persists from cycle to cycle costs as
-  // much as time2_reject = be); the first cycle without a rejection disarms it
-  auto *vet = pm->pmb_pack->pradvet;
-  if (vet->dtr_t2hit) {nt2be_ += 1;}
-  t2streak_ = vet->dtr_t2hit;
-  vet->dtr_t2hit = false;
-  nt2cut_ = 0;
-  t2be_cyc_ = false;
-  vet->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
   if (pm->dt_cap > 0.0 && pm->dt_cap != fix_) {
     ngood_ += 1;
     if (ngood_ > ngood_req_) {pm->dt_cap *= grow_;}
@@ -850,10 +790,6 @@ void DtRetry::AfterNewDt(Mesh *pm, ParameterInput *pin) {
     pin->SetReal("time", "dt_retry_cap", pm->dt_cap);
     pin->SetInteger("time", "dt_retry_ngood_now", ngood_);
   }
-  // the armed state, once a backward-Euler redo of time2_reject = retry was taken
-  if (t2streak_ || pin->DoesParameterExist("time", "dt_retry_t2be_now")) {
-    pin->SetBoolean("time", "dt_retry_t2be_now", t2streak_);
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -867,10 +803,6 @@ void DtRetry::Report(Mesh *pm) {
   if (host_ || ns > 0) {
     std::cout << "<time> dt_retry: " << ns << " View copies skipped (unwritten since the "
               << "last copy, dt_retry_host; not written in the cycle, SetSkip)" << std::endl;
-  }
-  if (nt2be_ > 0) {
-    std::cout << "<time> dt_retry: " << nt2be_ << " cycles took the backward-Euler redo "
-              << "(time2_reject = retry, dt_retry_t2_be " << t2_be_ << ")" << std::endl;
   }
 }
 
