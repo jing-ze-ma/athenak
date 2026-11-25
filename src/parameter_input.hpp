@@ -83,13 +83,14 @@ class ParameterInput {
   void CheckBlockNames();
   void LoadFromStream(std::istream &is);
   void LoadFromFile(IOWrapper &input, bool single_file_per_rank=false);
-  void ModifyFromCmdline(int argc, char *argv[], bool add_absent = false);
+  void ModifyFromCmdline(int argc, char *argv[], bool restart = false);
   void ParameterDump(std::ostream& os);
   // origin of a line's value, for ReportUnreadParameters()
   static constexpr int kOriginCode = 0;     // added by GetOrAdd*/Set* (always accessed)
   static constexpr int kOriginFile = 1;     // input file (-i)
   static constexpr int kOriginCmdline = 2;  // command line block/name=value
   static constexpr int kOriginRestart = 3;  // parameter header of a restart file (-r)
+  static constexpr int kOriginCmdlineNew = 4;  // command line of a fresh start only
   void MarkAllAsRestart();
   void PrintNonDefault();
   void ReportUnreadParameters();

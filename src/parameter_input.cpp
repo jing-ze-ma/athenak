@@ -434,16 +434,15 @@ void ParameterInput::AddParameter(InputBlock *pb, std::string name, std::string 
 }
 
 //----------------------------------------------------------------------------------------
-//! void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent)
+//! void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool restart)
 //  \brief parse commandline for changes to input parameters
 // Note this function is very forgiving (no warnings!) if there is an error in format
-// add_absent (main.cpp: true on a restart): a block/name=value whose NAME is absent
-// from an existing block is added, as if the input file had it (a restart's embedded
-// input predates every key read only when named), with a note on rank 0.  Without it
-// (fresh start) an unknown name stays FATAL (typo guard).  An unknown BLOCK is FATAL
-// either way.  Keys that exist are replaced exactly as before.
+// A block/name=value whose NAME is absent from an existing block is added, as if the
+// input file had it, with a note on rank 0.  On a fresh start (restart = false) one that
+// the code never reads is FATAL (typo guard, ReportUnreadParameters).  An unknown BLOCK
+// is FATAL either way.  Keys that exist are replaced.
 
-void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) {
+void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool restart) {
   std::string input_text, block,name, value;
   InputBlock *pb;
   InputLine *pl;
@@ -475,21 +474,16 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
 
     // get pointer to node with same parameter name in linked list of InputLines
     pl = pb->GetPtrToLine(name);
-    if (pl == nullptr && add_absent) {
-      AddParameter(pb, name, value, "# added on the command line of a restart");
-      pb->GetPtrToLine(name)->origin = kOriginCmdline;
+    if (pl == nullptr) {
+      AddParameter(pb, name, value, restart ? "# added on the command line of a restart"
+                                            : "# added on the command line");
+      pb->GetPtrToLine(name)->origin = restart ? kOriginCmdline : kOriginCmdlineNew;
       if (global_variable::my_rank == 0) {
         std::cout << "### NOTE: parameter '" << name << "' in block '" << block
-                  << "' is absent from the restart's input: added from the command "
-                  << "line (= " << value << ")" << std::endl;
+                  << "' is absent from the " << (restart ? "restart's " : "") << "input: "
+                  << "added from the command line (= " << value << ")" << std::endl;
       }
       continue;
-    }
-    if (pl == nullptr) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "Parameter '" << name << "' in block '" << block
-                << "' on command line not found" << std::endl;
-      std::exit(EXIT_FAILURE);
     }
     pl->param_value.assign(value);   // replace existing value
     pl->origin = kOriginCmdline;
@@ -963,7 +957,7 @@ void ParameterInput::PrintNonDefault() {
     const bool num = !a.empty() && !b.empty() && *ea == 0 && *eb == 0;
     return num ? (x == y) : (a == b);
   };
-  static const char *org[] = {"code", "file", "cmdline", "restart"};
+  static const char *org[] = {"code", "file", "cmdline", "restart", "cmdline"};
   std::cout << "--- keys that differ from the default (file | cmdline | restart) ---"
             << std::endl;
   int n = 0;
@@ -993,18 +987,21 @@ void ParameterInput::PrintNonDefault() {
 //  free-form <comment> block are never reported.  Collective with MPI: a key counts as
 //  read if ANY rank read it.  The line order of file/command-line keys is the same on
 //  every rank (keys added by the code are appended after them, and skipped here).
-//  Diagnostic only: no value, dump, or restart content is changed.
+//  FATAL for a key that only the command line of a fresh start names; else diagnostic
+//  only: no value, dump, or restart content is changed.
 
 void ParameterInput::ReportUnreadParameters() {
   std::vector<int> unread;
   std::vector<std::string> names;
+  std::vector<bool> added;   // fresh start: on the command line only
   for (auto &b : block) {
     if (b.block_name.compare("comment") == 0) continue;
     for (auto &l : b.line) {
-      if (l.origin != kOriginFile && l.origin != kOriginCmdline) continue;
+      if (l.origin == kOriginCode || l.origin == kOriginRestart) continue;
       unread.push_back(l.accessed ? 0 : 1);
       names.push_back(b.block_name + "/" + l.param_name + " = " + l.param_value
-                      + (l.origin == kOriginCmdline ? "  (command line)" : ""));
+                      + (l.origin == kOriginFile ? "" : "  (command line)"));
+      added.push_back(l.origin == kOriginCmdlineNew);
     }
   }
 #if MPI_PARALLEL_ENABLED
@@ -1022,13 +1019,22 @@ void ParameterInput::ReportUnreadParameters() {
     MPI_Allreduce(MPI_IN_PLACE, unread.data(), n, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
   }
 #endif
-  if (global_variable::my_rank != 0) return;
-  int nun = 0;
-  for (int u : unread) nun += u;
-  if (nun == 0) return;
-  std::cout << "### WARNING: " << nun << " input parameter(s) were never read by the "
-            << "code (typo, or a key AthenaK does not have?):" << std::endl;
+  int nun = 0, nfatal = 0;
   for (std::size_t i = 0; i < unread.size(); ++i) {
-    if (unread[i]) std::cout << "###   " << names[i] << std::endl;
+    nun += unread[i];
+    if (unread[i] && added[i]) nfatal += 1;
   }
+  if (nun == 0) return;
+  if (global_variable::my_rank == 0) {
+    std::cout << "### " << (nfatal > 0 ? "FATAL ERROR" : "WARNING") << ": " << nun
+              << " input parameter(s) were never read by the code (typo, or a key "
+              << "AthenaK does not have?):" << std::endl;
+    for (std::size_t i = 0; i < unread.size(); ++i) {
+      if (unread[i]) std::cout << "###   " << names[i] << std::endl;
+    }
+    if (nfatal > 0) {
+      std::cout << "### a key that only the command line names must be read" << std::endl;
+    }
+  }
+  if (nfatal > 0) std::exit(EXIT_FAILURE);
 }
