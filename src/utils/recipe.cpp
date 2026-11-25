@@ -79,6 +79,7 @@ void CleanDefaults(ParameterInput *pin) {
         " (the default of a fresh clean VET run)");
   };
   add("time", "evolution", "dynamic");
+  add("time", "integrator", "rk2");
   add("mesh", "nghost", "3");
   if (pin->DoesBlockExist("hydro") && pin->GetString("time", "evolution") == "dynamic") {
     add("hydro", "rsolver", "hllc");

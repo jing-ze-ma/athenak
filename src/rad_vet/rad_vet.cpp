@@ -128,7 +128,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     bool nck[3];
     for (int n = 0; n < 3; ++n) nck[n] = pin->DoesParameterExist("rad_vet", ck[n]);
     cln_maxnl = pin->GetOrAddInteger("rad_vet","clean_maxnl",200);
-    cln_maxit = pin->GetOrAddInteger("rad_vet","clean_maxit",800);
+    cln_maxit = pin->GetOrAddInteger("rad_vet","clean_maxit",nw ? 200 : 800);
     cln_bmax = pin->GetOrAddReal("rad_vet","clean_conv_max",1.0e-5);
     const Real cv[3] = {static_cast<Real>(cln_maxnl), static_cast<Real>(cln_maxit),
                         cln_bmax};
