@@ -12,6 +12,8 @@
 //! - T. Miyoshi & K. Kusano, "A multi-state HLL approximate Riemann solver for ideal
 //!   MHD", JCP, 208, 315 (2005)
 
+#include "hlle_mhd_singlestate.hpp"
+
 namespace mhd {
 
 #define HLLD_SMALL_NUMBER 1.0e-4
@@ -171,6 +173,9 @@ void HLLD(TeamMember_t const &member, const EOS_Data &eos,
       // eqn (43) of Miyoshi & Kusano
       ulst.d = ul.d * sdl * sdml_inv;
       urst.d = ur.d * sdr * sdmr_inv;
+      // no star state where a fast wave is lost to round-off (S_i = u_i: rho* = 0) or
+      // the contact leaves the fan (rho* < 0): the HLL flux
+      const bool star = (ulst.d > 0.0) && (urst.d > 0.0);
       Real ulst_d_inv = 1.0/ulst.d;
       Real urst_d_inv = 1.0/urst.d;
       Real sqrtdl = sqrt(ulst.d);
@@ -337,6 +342,8 @@ void HLLD(TeamMember_t const &member, const EOS_Data &eos,
         flxi.e  = fr.e;
         flxi.by = fr.by;
         flxi.bz = fr.bz;
+      } else if (!star) {
+        HLLFluxOfStates(ul, ur, fl, fr, spd[0], spd[4], flxi);
       } else if (spd[1] >= 0.0) {
         // return Fl*
         flxi.d = fl.d  + ulst.d;

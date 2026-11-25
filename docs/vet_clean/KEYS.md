@@ -5,9 +5,8 @@ boundaries, opacities and units, the layout mode, and output. The production val
 of the star templates in `inputs/stars/` (`star_bsg`, `star_m35mms`, `star_t9l62`:
 3-D spherical-polar wedges, one MeshBlock along x1, fixed rays, problem generator
 `star_vet`). Solver internals and keys without effect are listed only by name in the
-appendix. A full sphere with poles or a stretched theta under `vet_gd`, and radiation with
-`<mhd>`, are in the code but no deck or test covers them
-([SCHEME.md](SCHEME.md), "In the code but not tested").
+appendix. A full sphere with poles or a stretched theta under `vet_gd` are in the
+code but no deck or test covers them ([SCHEME.md](SCHEME.md), "In the code but not tested").
 
 Columns: **default** is the value the code uses when the key is absent; **production** is
 the value in the templates (`all:` when the three agree); **read in** is the file and
@@ -183,7 +182,8 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `hydro/floor_from_ekin` | (hydro only.) General-EOS hydro: the primitive recovery keeps E; the velocity ceiling's kinetic energy becomes heat, and a kinetic-energy-dominated cell below e(rho, tfloor) pays the deficit from its own r and theta kinetic energy where that covers it. The phi momentum (L_z) is never scaled (where the phi part alone exceeds `vceil`, the r / theta part goes to 0 and |v| = |v_phi| may stay above `vceil`; Cartesian phi_hat = (-y, x)/R); cells it cannot pay take the floors as before (paid by `floor_pay`). Removes r / theta momentum there (booked: `CLEAN FLOORMOM`). FATAL with another EOS or `dual_energy`. | false (recorded) | not named | `eos/eos.cpp` (constructor) |
 | `hydro/dfloor_flux_limit` | (hydro only.) Scale back the outflow of a nearly empty cell so its density stays above the floor (both neighbours see the same flux); the cell's momentum but its L_z part is scaled by the same factor, E fixed (the kinetic energy becomes heat). | false (recorded) | all: `true` | `hydro/hydro.cpp` |
 | `hydro/fofc`, `fofc_retest` | First-order flux correction: a trial update from the fluxes flags every cell where a floor or the velocity ceiling would act, and its faces take the first-order LLF flux (both neighbours see the same flux: E, mass, momentum and L_z exact). `fofc_retest` re-tests the flagged cells with the metric-correct internal energy (needs `eos = general`). Needs `nghost >= 3` with `plm`. The cell-stages replaced are counted (`FOFC first-order cell-stages`, the run total). | false / false | all: `true` / `true` | `hydro/hydro_fofc.cpp` |
-| `hydro/fofc_flag_exchange` | (hydro only.) Every mesh with more than one MeshBlock (cubed sphere: per panel) and a periodic wrap of spherical polar, no refinement, no shearing box: the FOFC flags of the face ghosts (block edge, periodic wrap) are the owner's, so the two sides of a face carry the same replaced flux (mass and energy exact) (one exchange per stage), so the answer does not depend on the MeshBlock layout where a panel seam meets a MeshBlock edge. | true, also on a restart whose file lacks it (a NOTE in the log; name `fofc_flag_exchange=false` to keep the old) | - | `hydro/hydro_fofc.cpp` |
+| `hydro/fofc_flag_exchange`, `mhd/fofc_flag_exchange` | Every mesh with more than one MeshBlock (cubed sphere: per panel) and a periodic wrap of spherical polar, no refinement, no shearing box: the FOFC flags of the face ghosts (block edge, periodic wrap) are the owner's, so the two sides of a face carry the same replaced flux (mass and energy exact) (one exchange per stage), so the answer does not depend on the MeshBlock layout where a panel seam meets a MeshBlock edge. | true, also on a restart whose file lacks it (a NOTE in the log; name `fofc_flag_exchange=false` to keep the old) | - | `hydro/hydro_fofc.cpp` |
+| `mhd/cs_seam_emf_exchange` | Cubed sphere, GS07 corner EMF (`emf_scheme = gs07`, the only one with `fofc`), more than one MeshBlock per panel: the upwind sides of the corner EMF read the shared seam mass flux in the same-panel ghost rows too (one exchange per stage), so the answer does not depend on the MeshBlock layout (round-off instead of 1e-6 ... 2e-3); conservation and div B are exact either way. | true (a restart file without it: true, with the NOTE) | - | `mhd/mhd_cs_seam.cpp` |
 
 ## Layout and reproducibility
 

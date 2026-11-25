@@ -235,6 +235,9 @@ class MHD {
   // dump holds the flags accumulated since the previous dump of it. Not carried in
   // restart files.
   DvceArray4D<Real> fofc_cnt;
+  // <mhd>/fofc_flag_exchange (utils/fofc_flags.hpp, default true)
+  MeshBoundaryValuesCC *pbval_fofc = nullptr;
+  DvceArray5D<Real> fofc_x;
   FofcReport fofc_rep;     // <mhd>/fofc_report (diagnostic, read only when named)
   // <mhd>/fofc_rsolver = llf (default) | hlle -- which SINGLE-STATE solver the
   // first-order fallback uses. LLF is the most diffusive and the traditional FOFC
@@ -273,6 +276,11 @@ class MHD {
   void CsSeamFaceStates();
   void UctSeamOwnSide();
   void CsVertexEmf3();
+  // <mhd>/cs_seam_emf_exchange (cubed sphere, GS07 corner EMF, more than one MeshBlock;
+  // default true): CornerE's upwind sides see the shared seam mass flux in ghost rows too
+  bool cs_seam_emf_x = false;
+  void CsSeamEmfXInit(ParameterInput *pin);
+  void CsSeamEmfX();
   void SeamXRecord();
   void CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
                     const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_);

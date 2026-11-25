@@ -610,17 +610,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
-    const bool fofc_fx = use_fofc && fofc_flags::Needed(ppack->pmesh);
-    if (fofc_fx) {
-      recipe::OldStored(pin, "hydro", "fofc_flag_exchange", "false", "true");
-    }
-    if (fofc_fx && pin->GetOrAddBoolean("hydro", "fofc_flag_exchange",
-            (global_variable::restart_run || recipe::NewDefaults(pin)) &&
-            recipe::Fix(pin, "hydro", "fofc_flag_exchange", "true", "false"))) {
-      pbval_fofc = new MeshBoundaryValuesCC(ppack, pin, false);
-      pbval_fofc->SetVectorPairs(1, {});   // (the flag is a scalar)
-      pbval_fofc->InitializeBuffers(1);
-    }
+    if (use_fofc) {pbval_fofc = fofc_flags::Init(ppack, pin, "hydro");}
     rec("dfloor_flux_limit", use_dfl);
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);

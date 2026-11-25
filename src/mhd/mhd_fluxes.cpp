@@ -101,18 +101,22 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   const bool hll = hll_in ||
                    ((lb_beta > 0.0) && CSLowBetaFires(pl, pr, bxi, bl(iby,i), bl(ibz,i),
                                                       br(iby,i), br(ibz,i), lb_beta));
+  const Real sm0 = ((sr - vr)*(rr*vr) - (sl - vl)*(rl*vl) + (ptl - ptr))/
+                   ((sr - vr)*rr - (sl - vl)*rl);
+  // the solver's test of the star states (hlld_mhd.hpp): the HLL flux without them
+  const bool star = (rl*(sl - vl)/(sl - sm0) > 0.0) && (rr*(sr - vr)/(sr - sm0) > 0.0);
   Real al, dlc, drc;
   if (sl >= 0.0) {          // F = F^L
     al = 1.0; dlc = 0.0; drc = 0.0;
   } else if (sr <= 0.0) {   // F = F^R
     al = 0.0; dlc = 0.0; drc = 0.0;
-  } else if (hll) {         // MD21 eq. 30
+  } else if (hll || !star) {   // MD21 eq. 30
     al  = sr/(sr - sl);
     dlc = -sr*sl/(sr - sl);
     drc = dlc;
   } else {
     const Real sdl = sl - vl, sdr = sr - vr;
-    const Real sm = (sdr*(rr*vr) - sdl*(rl*vl) + (ptl - ptr))/(sdr*rr - sdl*rl);
+    const Real sm = sm0;
     const Real sdml = sl - sm, sdmr = sr - sm;
     const Real ptst = 0.5*((ptr + rr*sdr*(sm - vr)) + (ptl + rl*sdl*(sm - vl)));
     const Real denl = rl*sdl*sdml - bxsq;

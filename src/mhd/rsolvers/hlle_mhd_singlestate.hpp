@@ -27,6 +27,24 @@
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
+//! \fn void HLLFluxOfStates
+//! \brief the HLL flux of the two states and their fluxes, sl < 0 < sr (hlld_mhd.hpp and
+//! lhlld_mhd.hpp: a face without star states, rho* > 0 failing on a side).
+
+KOKKOS_INLINE_FUNCTION
+void HLLFluxOfStates(const MHDCons1D &ul, const MHDCons1D &ur, const MHDCons1D &fl,
+                     const MHDCons1D &fr, const Real sl, const Real sr, MHDCons1D &f) {
+  const Real al = sr/(sr - sl), ar = -sl/(sr - sl), d = sl*sr/(sr - sl);
+  f.d  = al*fl.d  + ar*fr.d  + d*(ur.d  - ul.d);
+  f.mx = al*fl.mx + ar*fr.mx + d*(ur.mx - ul.mx);
+  f.my = al*fl.my + ar*fr.my + d*(ur.my - ul.my);
+  f.mz = al*fl.mz + ar*fr.mz + d*(ur.mz - ul.mz);
+  f.e  = al*fl.e  + ar*fr.e  + d*(ur.e  - ul.e);
+  f.by = al*fl.by + ar*fr.by + d*(ur.by - ul.by);
+  f.bz = al*fl.bz + ar*fr.bz + d*(ur.bz - ul.bz);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleStateHLLEFluxes
 //! \brief the shared algebra, once the pressures and fast speeds are known.
 

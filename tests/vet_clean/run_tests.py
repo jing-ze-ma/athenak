@@ -11,6 +11,7 @@ ref/references.json; see README.md for what each test checks and why.
 """
 import argparse
 import concurrent.futures as cf
+import copy
 import glob
 import json
 import os
@@ -662,6 +663,95 @@ def t_mhd_equil(c):
         except RuntimeError:
             log = open(os.path.join(c.dir, s, 'run.log')).read()
             out['fatal'] += int(s in log and 'hydro only' in log)
+    return out
+
+
+def divb_max(d):
+    """largest |div B| of the dumps of a run"""
+    return float(max(np.abs(vett.read_bin(f)['divb']).max()
+                     for f in vett.bins(d, 'mhd_divb')))
+
+
+MHD_SP = {'mesh/use_cubed_sphere': 'false', 'mesh/use_spherical_polar': 'true',
+          'mesh/x2min': 0.6, 'mesh/x2max': 2.2, 'mesh/x3min': 0.0,
+          'mesh/x3max': 2.0943951023931953, 'mesh/ix2_bc': 'reflect',
+          'mesh/ox2_bc': 'reflect', 'mesh/ix3_bc': 'periodic', 'mesh/ox3_bc': 'periodic'}
+MHD_CT = {'mesh/use_cubed_sphere': 'false', 'mhd/am_transport': 'false',
+          'mesh/x1min': 0.0, 'mesh/x1max': 1.5, 'mesh/x2min': 0.0, 'mesh/x3min': 0.0,
+          'problem/bnoise': 0.01}
+MHD_CT.update({'mesh/%sx%d_bc' % (s, n): 'periodic' for s in 'io' for n in (1, 2, 3)})
+
+
+def t_mhd_layout(c):
+    """<mhd> with FOFC (the density floor acts), Ohmic and ambipolar diffusion and the GS07
+    EMF on the cubed sphere, a spherical-polar wedge and a Cartesian box, 8 cycles: one
+    MeshBlock (per panel) vs 2 along x1 (_r2) and 2 x 2 (_mb22), 2 MPI ranks and restart
+    (4 + 4 cycles) of the 2 x 2 run; E and L_z (box: momentum) drifts and div B."""
+    mb = {'meshblock/nx2': 8, 'meshblock/nx3': 8}
+    deck = 'mhd_noise.athinput'
+    out = {}
+
+    def diff(x, y):
+        return max(vett._bin_diff(p, q)[0]
+                   for p, q in zip(vett.bins(x, 'mhd_w_bcc'), vett.bins(y, 'mhd_w_bcc')))
+    for g, o in (('cs', {}), ('sp', MHD_SP), ('ct', MHD_CT)):
+        a = c.run(deck, g, o)
+        b = c.run(deck, g + '_mb22', dict(o, **mb))
+        out[g + '_r2'] = diff(a, c.run(deck, g + '_r2', dict(o, **{'meshblock/nx1': 12})))
+        out[g + '_mb22'] = diff(a, b)
+        out[g + '_ranks'] = diff(b, c.run(deck, g + '_mpi', dict(o, **mb), ranks=2))
+        os.makedirs(os.path.join(c.dir, g + '_rst'), exist_ok=True)
+        sub = copy.copy(c)
+        sub.dir = os.path.join(c.dir, g + '_rst')
+        out[g + '_restart'] = restart_pair(sub, deck, 8, 4, dict(o, **mb))['maxdiff']
+        u = os.path.join(b, 'mn.user.hst')
+        out[g + '_dE'] = rel_drift(hst_col(u, 'Etot'))
+        p, m = hst_col(u, 'Lz'), hst_col(u, 'M')
+        out[g + '_dLz'] = float(np.abs(p - p[0]).max()/max(abs(p[0]), abs(m[0])))
+        out[g + '_divb'] = divb_max(b)
+        lg = [l.split() for l in open(os.path.join(b, 'mn.log')) if l[0] != '#']
+        out[g + '_fofc'] = sum(int(l[7]) for l in lg)
+    return out
+
+
+def t_mhd_vet(c):
+    """<mhd> + <rad_vet> with Ohmic and ambipolar diffusion and FOFC, 8 cycles: closed
+    shells on the cubed sphere and spherical polar, a periodic Cartesian box.  Energy (gas +
+    magnetic + radiation; moved: the radiation's change), mass and L_z drifts, div B; a second MeshBlock layout, 2 MPI
+    ranks, restart (4 + 4 cycles) and a forced dt_retry with factor 1."""
+    mb = {'meshblock/nx3': 8}
+    out = {'warnings': 0}
+
+    def diff(x, y):
+        return max(vett._bin_diff(p, q)[0] for p, q in zip(vett.bins(x), vett.bins(y)))
+    for g, deck, o in (('cs', 'mhd_shell_cs.athinput', dict(mb, **{'meshblock/nx2': 8})),
+                       ('sp', 'mhd_shell_sp.athinput', mb), ('ct', 'mhd_box.athinput', mb)):
+        a = c.run(deck, g)
+        b = c.run(deck, g + '_mb', o)
+        r = c.run(deck, g + '_mpi', o, ranks=2)
+        t = c.run(deck, g + '_retry', {'time/dt_retry_force_cycle': 4,
+                                       'time/dt_retry_force_fac': 1.0})
+        out.update({g + '_layout': diff(a, b), g + '_ranks': diff(b, r),
+                    g + '_retry': diff(a, t), g + '_divb': divb_max(a)})
+        sub = copy.copy(c)
+        sub.dir = os.path.join(c.dir, g + '_rst')
+        os.makedirs(sub.dir, exist_ok=True)
+        out[g + '_restart'] = restart_pair(sub, deck, 8, 4)['maxdiff']
+        base = {'ct': 'rw'}.get(g, g)
+        out[g + '_dM'] = rel_drift(hst_col(os.path.join(a, base + '.mhd.hst'), 'mass'))
+        if g == 'ct':
+            er = np.array([vett.read_bin(q)['vet_e'].mean() for q in vett.bins(a, 'vet')])
+            e = er + np.array([vett.read_bin(p)['ener'].mean()
+                               for p in vett.bins(a, 'mhd_u_bcc')])
+        else:
+            u = os.path.join(a, base + '.user.hst')
+            er = hst_col(u, 'Er')
+            e = hst_col(u, 'Eg') + er
+            lz = hst_col(u, 'Lz_tot')[1:]
+            out[g + '_dLz'] = float(np.abs(lz - lz[0]).max()/np.abs(hst_col(u, 'Lgz')).max())
+        out[g + '_dE'], out[g + '_moved'] = rel_drift(e), rel_drift(er)
+        out['warnings'] += sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
+                               for d in (a, b, r, t))
     return out
 
 
@@ -1590,6 +1680,8 @@ TESTS = [  # name, function, in --quick
     ('nlte_eps1e-4', t_nlte_eps1e_4, False),
     ('thermal_eq', t_thermal_eq, False),
     ('mhd_equil', t_mhd_equil, True),
+    ('mhd_layout', t_mhd_layout, True),
+    ('mhd_vet', t_mhd_vet, False),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
     ('shell_force_cs', t_shell_force_cs, False),
@@ -1685,7 +1777,7 @@ def main():
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
                    '(star_smoke, wb_star; without it they are skipped)')
-    p.add_argument('--quick', action='store_true', help='the short subset (21 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (22 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')

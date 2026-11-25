@@ -62,6 +62,8 @@
 
 #include "utils/cb_sensor.hpp"
 
+#include "hlle_mhd_singlestate.hpp"
+
 namespace mhd {
 
 #ifndef HLLD_SMALL_NUMBER
@@ -277,6 +279,9 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // eqn (43) of Miyoshi & Kusano
       ulst.d = ul.d * sdl * sdml_inv;
       urst.d = ur.d * sdr * sdmr_inv;
+      // no star state where a fast wave is lost to round-off (S_i = u_i: rho* = 0) or
+      // the contact leaves the fan (rho* < 0): the HLL flux
+      const bool star = (ulst.d > 0.0) && (urst.d > 0.0);
       Real ulst_d_inv = 1.0/ulst.d;
       Real urst_d_inv = 1.0/urst.d;
       Real sqrtdl = sqrt(ulst.d);
@@ -450,6 +455,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
         flxi.e  = fr.e;
         flxi.by = fr.by;
         flxi.bz = fr.bz;
+      } else if (!star) {
+        HLLFluxOfStates(ul, ur, fl, fr, spd[0], spd[4], flxi);
       } else if (spd[1] >= 0.0) {
         // return Fl*
         flxi.d = fl.d  + ulst.d;
@@ -507,7 +514,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // not touch (mx is copied, and the e correction of eqn. 63 is p_T*-free).
       // Outside [S_L,S_R] the flux is the upwind one and there is nothing to correct.
       // dpt = 0.0 when phi = 1, so this leaves HLLD bitwise unchanged there.
-      if ((spd[0] < 0.0) && (spd[4] > 0.0)) {
+      if (star && (spd[0] < 0.0) && (spd[4] > 0.0)) {
         Real wpt = (spd[2] >= 0.0) ? spd[0]*sdml_inv : spd[4]*sdmr_inv;
         flxi.mx += dpt;
         flxi.e  += wpt*dpt*spd[2];
@@ -517,7 +524,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // (default on, EOS_Data::lhlld_emf_eta_pos).  eta_face ~ (|S_M| + du/2) dx/2 for
       // the HLLD B_t flux; on a converging face with -du > 2|S_M| it is negative, and
       // the minimal extra flux -(1/2) max(0, -(|S_M| + du/2)) dB_t brings it to 0.
-      if (eos.lhlld_emf_eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {
+      if (star && eos.lhlld_emf_eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {
         Real ceta = fmax(0.0, -(fabs(spd[2]) + 0.5*(wr_ivx - wl_ivx)));
         if (ceta > 0.0) {
           Real dfby = -0.5*ceta*(ur.by - ul.by);

@@ -22,6 +22,9 @@
 //! hashed Cartesian velocity of that size per component; vr, v_r = vr sin(pi (r -
 //! x1min)/(x1max - x1min)); vx, a uniform velocity along x; vortex = beta, the isentropic
 //! vortex (axis z, centre vortex_x, vortex_y, radius vortex_w; needs gm = 0).
+//! With <mhd> the field is the discrete curl of A = bnoise s(x) along x1 (rhat) on the x1
+//! edges (problem/bnoise): B_1 = 0 and div B = 0 to round-off. <mhd> also runs on a
+//! Cartesian mesh (gm = 0; periodic, unit box: s has its period; the basis is x, y, z).
 //! With <hydro>/wellbalance_static the same profile is the static background (u0wb, w0wb,
 //! w0facewb; radial faces at x1f, lateral faces at the cell-centre radius) and gravity
 //! acts on rho - rho_background (as wb_atm).  ix1_bc / ox1_bc = user hold the ghosts at
@@ -42,6 +45,7 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "outputs/outputs.hpp"
 #include "pgen/pgen.hpp"
 
@@ -89,18 +93,19 @@ void AmWbHistory(HistoryData *pdata, Mesh *pm);
 
 void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->phydro == nullptr ||
-      !(pmy_mesh_->use_cubed_sphere || pmy_mesh_->use_spherical_polar)) {
+  const bool mhd = pmbp->pmhd != nullptr;
+  const bool cart = !(pmy_mesh_->use_cubed_sphere || pmy_mesh_->use_spherical_polar);
+  if ((pmbp->phydro == nullptr && !mhd) || (cart && !mhd)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "am_wb needs <hydro> on the cubed sphere or spherical polar"
-              << std::endl;
+              << ", or <mhd>" << std::endl;
     exit(EXIT_FAILURE);
   }
   amwb.gm = pin->GetOrAddReal("problem", "gm", 1.0);
   amwb.cs2 = pin->GetOrAddReal("problem", "cs2", 0.5);
   amwb.rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
-  amwb.rin = pin->GetReal("mesh", "x1min");
-  amwb.gamma = pmbp->phydro->peos->eos_data.gamma;
+  amwb.rin = cart ? 1.0 : pin->GetReal("mesh", "x1min");
+  amwb.gamma = (mhd ? pmbp->pmhd->peos : pmbp->phydro->peos)->eos_data.gamma;
   user_srcs_func = AmWbGravity;
   user_bcs_func = AmWbBCs;
   user_hist_func = AmWbHistory;
@@ -123,20 +128,31 @@ void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
   auto &indcs = pmy_mesh_->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
-  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const bool csm = pmy_mesh_->use_cubed_sphere;
   auto &size = pmbp->pmb->mb_size;
   auto &pan = pmbp->pmb->mb_panel;
   auto x1v = pmbp->pcoord->x1v;
   auto x2v = pmbp->pcoord->x2v;
   auto x3v = pmbp->pcoord->x3v;
-  auto u0 = pmbp->phydro->u0;
+  auto u0 = mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   par_for("am_wb_ic", DevExeSpace(), 0, pmbp->nmb_thispack-1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real rh[3], ta[3], tb[3], c;
-    AmWbDir(csm, size.d_view(m), csm ? pan.d_view(m) : 0, js, ks, nx2, nx3,
-            csm ? 0.0 : x2v(m,j), csm ? 0.0 : x3v(m,k), k, j, rh, ta, tb, c);
-    const Real r = x1v(m,i);
+    Real r;
+    if (cart) {   // (the x, y, z basis; r = 1, rh = the position in the noise)
+      const auto &z = size.d_view(m);
+      r = 1.0;
+      rh[0] = CellCenterX(i-is, nx1, z.x1min, z.x1max);
+      rh[1] = CellCenterX(j-js, nx2, z.x2min, z.x2max);
+      rh[2] = CellCenterX(k-ks, nx3, z.x3min, z.x3max);
+      for (int n = 0; n < 3; ++n) {ta[n] = (n == 1); tb[n] = (n == 2);}
+    } else {
+      AmWbDir(csm, size.d_view(m), csm ? pan.d_view(m) : 0, js, ks, nx2, nx3,
+              csm ? 0.0 : x2v(m,j), csm ? 0.0 : x3v(m,k), k, j, rh, ta, tb, c);
+      r = x1v(m,i);
+    }
+    const Real e1[3] = {cart ? 1.0 : rh[0], cart ? 0.0 : rh[1], cart ? 0.0 : rh[2]};
     const Real st2 = rh[0]*rh[0] + rh[1]*rh[1];
     const Real ph = atan2(rh[1], rh[0]);
     Real rho = AmWbRho(a, r);
@@ -145,7 +161,7 @@ void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
     // v = Omega z x x (Cartesian), covariant on the cell basis
     const Real vx = -rot*r*rh[1], vy = rot*r*rh[0];
     u0(m,IDN,k,j,i) = rho;
-    u0(m,IM1,k,j,i) = 0.0;
+    u0(m,IM1,k,j,i) = cart ? rho*vx : 0.0;
     u0(m,IM2,k,j,i) = rho*(vx*ta[0] + vy*ta[1]);
     u0(m,IM3,k,j,i) = rho*(vx*tb[0] + vy*tb[1]);
     u0(m,IEN,k,j,i) = pr/gm1 + 0.5*rho*(vx*vx + vy*vy);
@@ -164,16 +180,65 @@ void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
       const Real h = sin(r*(12.9898*rh[0] + 78.233*rh[1] + 37.719*rh[2]) + s)*43758.5453;
       return h - floor(h);
     };
-    const Real vrad = vr*sin(M_PI*(r - a.rin)/(rout - a.rin));
-    for (int n = 0; n < 3; ++n) v[n] += vrad*rh[n] + vrand*(2.0*hash(1.0 + n) - 1.0);
+    const Real vrad = cart ? vr : vr*sin(M_PI*(r - a.rin)/(rout - a.rin));
+    for (int n = 0; n < 3; ++n) v[n] += vrad*e1[n] + vrand*(2.0*hash(1.0 + n) - 1.0);
     rho *= pow(10.0, drand*(hash(0.0) - 0.5));
     u0(m,IDN,k,j,i) = rho;
-    u0(m,IM1,k,j,i) = rho*(v[0]*rh[0] + v[1]*rh[1] + v[2]*rh[2]);
+    u0(m,IM1,k,j,i) = rho*(v[0]*e1[0] + v[1]*e1[1] + v[2]*e1[2]);
     u0(m,IM2,k,j,i) = rho*(v[0]*ta[0] + v[1]*ta[1] + v[2]*ta[2]);
     u0(m,IM3,k,j,i) = rho*(v[0]*tb[0] + v[1]*tb[1] + v[2]*tb[2]);
     u0(m,IEN,k,j,i) = p/gm1 + 0.5*rho*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
   });
 
+  if (mhd) {
+    const Real bn = key("bnoise", 0.0);
+    auto b0 = pmbp->pmhd->b0;
+    auto dl = pmbp->pcoord->dxedge.x1e;
+    auto a2 = pmbp->pcoord->area.x2f, a3 = pmbp->pcoord->area.x3f;
+    auto cc = pmbp->pcoord->cos_cell;
+    auto x2f = pmbp->pcoord->xx2f, x3f = pmbp->pcoord->xx3f;
+    const Real t0 = pmy_mesh_->mesh_size.x2min, t1 = pmy_mesh_->mesh_size.x2max;
+    const Real nphi = 4.0*M_PI/(pmy_mesh_->mesh_size.x3max - pmy_mesh_->mesh_size.x3min);
+    par_for("am_wb_b", DevExeSpace(), 0, pmbp->nmb_thispack-1, ks, ke+1, js, je+1, is,
+            ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const auto &sz = size.d_view(m);
+      auto circ = [&](const int kk, const int jj) {   // A dl along the x1 edge
+        const Real y2 = LeftEdgeX(jj-js, nx2, sz.x2min, sz.x2max);
+        const Real y3 = LeftEdgeX(kk-ks, nx3, sz.x3min, sz.x3max);
+        if (cart) {
+          const Real y1 = CellCenterX(i-is, nx1, sz.x1min, sz.x1max);
+          return bn*sz.dx1*sin(4.0*M_PI*y2 + 2.0*M_PI*y1)*sin(6.0*M_PI*y3 + 1.0);
+        }
+        Real q[3] = {sin(x2f(m,jj))*cos(x3f(m,kk)), sin(x2f(m,jj))*sin(x3f(m,kk)),
+                     cos(x2f(m,jj))};
+        if (csm) cubed_sphere::PanelToCart(pan.d_view(m), 0.25*M_PI*y2, 0.25*M_PI*y3, q);
+        Real w = 1.0;   // (a theta wedge with walls: no field through them)
+        if (!csm) w = SQR(sin(M_PI*(x2f(m,jj) - t0)/(t1 - t0)));
+        const Real p3 = csm ? sin(9.0*q[0] + 3.0*x1v(m,i))*sin(8.0*q[1] + 1.0)*
+                              sin(7.0*q[2] + 2.0)
+                            : sin(nphi*x3f(m,kk) + 3.0*x1v(m,i))*sin(7.0*q[2] + 2.0);
+        return bn*w*dl(m,kk,jj,i)*p3;
+      };
+      const Real s2 = cart ? sz.dx1*sz.dx3 : a2(m,k,j,i);
+      const Real s3 = cart ? sz.dx1*sz.dx2 : a3(m,k,j,i);
+      if (j <= je && k <= ke) b0.x1f(m,k,j,i) = 0.0;
+      if (i > ie) return;
+      if (k <= ke) b0.x2f(m,k,j,i) = (s2 > 0.0) ? (circ(k+1,j) - circ(k,j))/s2 : 0.0;
+      if (j <= je) b0.x3f(m,k,j,i) = (circ(k,j) - circ(k,j+1))/s3;
+    });
+    par_for("am_wb_em", DevExeSpace(), 0, pmbp->nmb_thispack-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real b2 = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+      const Real b3 = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+      if (csm) {
+        const Real c = cc(m,k,j);
+        b2 = (b2 + c*b3)/sqrt(1.0 - c*c);
+      }
+      u0(m,IEN,k,j,i) += 0.5*(b2*b2 + b3*b3);
+    });
+    return;
+  }
   if (!pmbp->phydro->use_wellbalance_static) return;
   // static background over the full arrays (ghosts included)
   const int n1m1 = indcs.nx1 + 2*indcs.ng - 1;
@@ -216,6 +281,7 @@ void ProblemGenerator::AmWb(ParameterInput *pin, const bool restart) {
 void AmWbGravity(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
+  if (pmbp->pmhd != nullptr) return;   // (gm = 0)
   auto u0 = pmbp->phydro->u0;
   auto w0 = pmbp->phydro->w0;
   auto w0wb = pmbp->phydro->w0wb;
@@ -277,7 +343,7 @@ void AmWbHistory(HistoryData *pdata, Mesh *pm) {
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const bool csm = pm->use_cubed_sphere;
-  auto u0 = pmbp->phydro->u0;
+  auto u0 = pmbp->pmhd != nullptr ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   auto vol = pmbp->pcoord->volume;
   auto x1v = pmbp->pcoord->x1v;
   auto x2v = pmbp->pcoord->x2v;
@@ -285,6 +351,7 @@ void AmWbHistory(HistoryData *pdata, Mesh *pm) {
   auto &size = pmbp->pmb->mb_size;
   auto &pan = pmbp->pmb->mb_panel;
   const Real gm = amwb.gm;
+  const bool cart = !(csm || pm->use_spherical_polar);
   const Real rlo = 1.1*pm->mesh_size.x1min, rhi = 0.9*pm->mesh_size.x1max;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   const int nmkji = pmbp->nmb_thispack*nkji;
@@ -298,6 +365,14 @@ void AmWbHistory(HistoryData *pdata, Mesh *pm) {
     k += ks; j += js; i += is;
     array_sum::GlobalSum hv;
     for (int n = 0; n < NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+    if (cart) {   // M, E and the momentum in place of L
+      const auto &z = size.d_view(m);
+      const Real dv = z.dx1*z.dx2*z.dx3;
+      for (int q = 0; q < 2; ++q) hv.the_array[q] = dv*u0(m,q == 0 ? IDN : IEN,k,j,i);
+      for (int q = 0; q < 3; ++q) hv.the_array[2+q] = dv*u0(m,IM1+q,k,j,i);
+      mb_sum += hv;
+      return;
+    }
     Real rh[3], ta[3], tb[3], c;
     AmWbDir(csm, size.d_view(m), csm ? pan.d_view(m) : 0, js, ks, nx2, nx3,
             csm ? 0.0 : x2v(m,j), csm ? 0.0 : x3v(m,k), k, j, rh, ta, tb, c);
