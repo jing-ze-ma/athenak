@@ -1,13 +1,13 @@
 # 3-D star tests: spherical polar and cubed sphere
 
 Two small, complete 3-D star decks that use the production scheme keys. Each one runs
-in about 15 minutes on 4 A100 GPUs, and it starts on one CPU node, where a few cycles show
+in 8 (sp) and 12 (cs) minutes on 4 MI300A APUs, and it starts on one CPU node, where a few cycles show
 that the setup works. Use them to check a new build or machine before you start a production
 run, and as starting points for your own star decks.
 
 | deck | mesh | star | cells | MeshBlocks | run |
 |---|---|---|---|---|---|
-| `inputs/stars/star3d_sp.athinput` | spherical-polar wedge: r 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic lateral walls) | blue supergiant envelope (the BSG production deck at 1/4 of its lateral resolution) | 256 x 64 x 64 = 1.0 M | 16 of 256 x 16 x 16 | 4000 cycles, 9.8 d |
+| `inputs/stars/star3d_sp.athinput` | spherical-polar wedge: r 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic lateral walls) | blue supergiant envelope (the BSG production deck at 1/4 of its lateral resolution) | 256 x 64 x 64 = 1.0 M | 16 of 256 x 16 x 16 | 2786 cycles, 9.8 d |
 | `inputs/stars/star3d_cs.athinput` | cubed sphere, full sphere: r 25-2530 Rsun (stretched; photosphere at 834 Rsun), 6 faces x 32 x 32 | red supergiant (20.5 Msun, MESA profile from a 22 Msun model; the RSG production deck at 1/4 of its lateral resolution) | 548 x 32 x 32 x 6 = 3.4 M | 24 of 548 x 16 x 16 | 1200 cycles, 13.9 d |
 
 Both decks start fresh from a 1-D profile. On the first cycle the code relaxes the
@@ -96,15 +96,15 @@ For a run over several nodes of A100s with InfiniBand (e.g. MPCDF Raven), also s
 between nodes fails with `ib_mlx5 ... Local protection error`. With `put_ppln`, two nodes were bitwise
 from run to run.
 
-Measured on one node of 4 A100-40GB (MPCDF Raven, `gcc/13 cuda/12.6 openmpi_gpu/5.0`):
+Measured on 4 MI300A APUs (two nodes of MPCDF Viper, `gcc/16 rocm/7.2 openmpi_gpu/5.0`):
 
 | deck | wall time | per cycle | simulated time | output |
 |---|---|---|---|---|
-| sp | 13.9 min (832 s) | 0.21 s | 4000 cycles, 9.8 d (dt about 260 s) | 6 dumps of hydro_w + vet, 0.6 GB |
-| cs | 13.3 min (797 s) | 0.65 s | 1200 cycles, 13.9 d (dt 1000 s) | 6 dumps of hydro_w + vet, 1.9 GB |
+| sp | 8.0 min (479 s) | 0.17 s | 2786 cycles, 9.8 d (dt 320 s until 8 d, then down to 174 s) | 4 dumps of hydro_w + vet, 0.4 GB |
+| cs | 11.9 min (713 s) | 0.59 s | 1200 cycles, 13.9 d (dt 1000 s) | 6 dumps of hydro_w + vet, 1.9 GB |
 
-To make a run shorter or longer, change `time/nlim` (or give `time/nlim=N` on the command
-line). Dumps are written every 1000 cycles (sp) or 300 cycles (cs), set by `output2/dcycle`
+To make a run shorter, change `time/nlim` (or give `time/nlim=N` on the command line); the sp deck
+ends at `time/tlim` (9.8 d), which a longer run must raise too. Dumps are written every 1000 cycles (sp) or 300 cycles (cs), set by `output2/dcycle`
 and `output3/dcycle`, and the history every cycle.
 
 ## 3. What to look at
@@ -125,8 +125,8 @@ Checks:
 2. `grep -c 'CLEAN WARNING' run_sp.log` gives 0 (the same for cs).
 3. The steady start converged (log line `clean_init steady: converged after N passes`).
    The line `clean_init steady pass 1: ... = ...` is a fingerprint of the binary, and a
-   new machine or compiler should reproduce it to a few digits: sp `9.025e-09`, cs
-   `1.218e-07` (the same on CPU and A100). On the RSG the steady-start residual stalls
+   new machine or compiler should reproduce it to a few digits: sp `8.220e-11`, cs
+   `1.140e-07` (the same on CPU and MI300A). On the RSG the steady-start residual stalls
    near 1.1e-7 of max E. The default tolerance 1e-8 is then never reached, and the start
    ends after 40 passes with a `CLEAN WARNING`, so the cs deck accepts 2e-7. Do not use a
    large pseudo time step (`clean_init_dtfac = 1e6`, as in the BSG deck) on the RSG. It
@@ -140,22 +140,22 @@ Checks:
 
 | deck | L_in | L_top at the end | L_top / L_in at the end | L_top / L_in over the second half |
 |---|---|---|---|---|
-| sp (over 4.9-9.8 d; measured before the last changes) | 4.651e37 (wedge) | 4.83e37 | 1.039 | 0.958 - 1.066 |
+| sp (over 4.9-9.8 d) | 4.651e37 (wedge) | 4.81e37 | 1.035 | 0.958 - 1.066 |
 | cs | 6.837e38 | 6.74e38 | 0.986 | 0.986 - 0.997 |
 
 What the curves look like (the notebook plots them):
 
 - sp: at t = 0, `L_top` is 1600 `L_in`, because the radiation of the initial isothermal
   atmosphere (E = a T^4, F = 0 above the photosphere) streams out. It falls to about
-  1.4 `L_in` within 10 cycles; its mean over 0.5-1 d is 1.060 `L_in`, and over 2-3 d it
+  1.3 `L_in` within 10 cycles; its mean over 0.5-1 d is 1.060 `L_in`, and over 2-3 d it
   ranges from 0.855 to 1.148 `L_in`. The numbers of the table refer to 4.9-9.8 d; after
   about 8 d the model's iron-bump layer (N^2 < 0, growth time 0.5-0.6 d) starts convecting,
   seeded by the 5 % noise of the start (inferred), and `L_top` is still rising at 12.2 d
-  (1.12 `L_in`), so the deck ends at 9.8 d. `L_bot` swings between -1.4 and +2.2 `L_in`
-  over the first 100 cycles while the inner wall adjusts, then stays within 10 % of `L_in` (0.94 - 1.05 over the second half).
+  (1.12 `L_in`, in a 12.2 d run), so the deck ends at 9.8 d. `L_bot` stays between 0.87 and 1.25 `L_in`
+  over the first 100 cycles while the inner wall adjusts, and within 0.9 % of `L_in` after the first day (1.004 - 1.008 over 4.9-9.8 d).
 - cs: `L_top / L_in` starts at 0.987, peaks at 1.10 after about 0.1 d and relaxes back to
-  0.986 - 0.997 over the second week. `L_bot / L_in` stays within 3 % of 1, and within
-  2e-4 of 1 after the first day.
+  0.986 - 0.997 over the second week. `L_bot / L_in` stays within 0.4 % of 1, and within
+  1.4e-3 of 1 after the first day (4e-4 over 4.9-13.9 d).
 
 The photosphere velocities of the sp deck are affected by the gap of the profile between
 r = 3.36e12 and 3.65e12 cm (cells 133-159 of the radial grid).
@@ -182,7 +182,7 @@ STAR3D_SP=run_sp STAR3D_CS=run_cs jupyter nbconvert --to notebook --execute \
   $ATHENAK/docs/vet_clean/notebooks/star3d.ipynb --output star3d_run.ipynb --output-dir .
 ```
 
-The notebook in the repository was executed on the 4-A100 runs above.
+The notebook in the repository was executed on the 4-MI300A runs above.
 
 ## 5. From the test to a production run
 

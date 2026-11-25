@@ -40,3 +40,19 @@ def verdict(test, res):
     for b in bad:
         print('   <- ' + b)
     return not bad
+
+
+def style():
+    """the AREPO-IDORT Zenodo style (record 15032138: mesa2.mplstyle), at the site's size: 100 dpi and
+    12-16 pt labels on two- or three-panel figures"""
+    import matplotlib
+    try:
+        import idort_style
+        idort_style.use()
+    except (ImportError, OSError):   # without the style files: matplotlib's own style
+        return
+    matplotlib.rcParams.update({'figure.dpi': 100, 'savefig.dpi': 100, 'font.size': 14,
+                                'axes.titlesize': 15, 'axes.labelsize': 16, 'legend.fontsize': 11,
+                                'xtick.labelsize': 13, 'ytick.labelsize': 13, 'lines.linewidth': 1.8,
+                                'xtick.major.size': 6, 'xtick.minor.size': 3.5,
+                                'ytick.major.size': 6, 'ytick.minor.size': 3.5})

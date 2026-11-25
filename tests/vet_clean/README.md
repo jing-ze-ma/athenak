@@ -87,9 +87,9 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
 - **Beams.** The 4-cell beams stay straight, at their angle and 0.8 cells wider at half maximum
   than the exact ones, but carry 1.19 x the exact energy (`lum_top`): the cap of the streaming
   share at the beam edges. They cross and go on: the field differs from the sum of the two
-  single-beam fields by more than 0.05 E_b only in 48 of the 256 rows, around the crossings
-  (1.6 % of the energy; the largest E is 1.13 x the exact). The excess falls as the beam
-  widens: 1.79, 1.39, 1.20, 1.09 x at 1, 2, 4, 8 cells (L1 0.78, 0.39, 0.20, 0.11).
+  single-beam fields by more than 0.05 E_b only in 40 of the 256 rows, around the crossings
+  (1.3 % of the energy; the largest E is 1.13 x the exact). The excess falls as the beam
+  widens: 1.76, 1.38, 1.19, 1.09 x at 1, 2, 4, 8 cells (L1 0.71, 0.35, 0.18, 0.093).
   Both are regression references. The energy flux through every row equals the injected flux
   to 6e-8 (`flux_err`).
 - **Cylinder flux.** E outside the cylinder is within 1.1 % of exact transport and the
