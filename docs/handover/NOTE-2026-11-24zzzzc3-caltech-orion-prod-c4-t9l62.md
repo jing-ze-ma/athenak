@@ -24,3 +24,5 @@
 - (11-24 19:38) check c2500: t9l62: cycle 2500, s/cyc 2.5800 (c2200-2500), t 2.4270e+05 dt 96.84 L_top/L_in 1.01123 L_bot/L_in 0.99591, floor_pay(sum) 7.71e+28, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
 
 - (11-24 20:01) check c3000: t9l62: cycle 3000, s/cyc 2.4831 (c2700-3000), t 2.9141e+05 dt 96.84 L_top/L_in 1.03597 L_bot/L_in 0.99597, floor_pay(sum) 9.83e+28, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+- (11-25 15:52) **t9l62 finished** (t 2.6820000000000000e+06 of 2.682e6): t9l62: cycle 29200, s/cyc 2.9055 (c28900-29200), t 2.6820e+06 dt 95.27 L_top/L_in 1.35311 L_bot/L_in 1.00457, floor_pay(sum) 9.95e+34, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
