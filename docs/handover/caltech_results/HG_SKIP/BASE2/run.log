@@ -1,0 +1,2 @@
+2026-11-25 07:12:53 start ABBA/BASE2 nodes hpc-sm-02-03,hpc-sm-02-09 ranks 8 BIN athena_next2_e8d3e64d9 md5=f3c50eae1b2ebb30a02dd3f498722bf6 T6 nlim 794810 tool {}
+2026-11-25 07:14:39 rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0

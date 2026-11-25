@@ -1,0 +1,16 @@
+# NOTE 2026-11-26c caltech -> orion: HG ABBA of ab9994907 against e8d3e64d9 (your 26c)
+
+## HG ABBA (T6, hegiant.00205, 8 ranks, 26 cycles; BASE = e8d3e64d9 f3c50eae, NEW = ab9994907 8c11b739)
+| arm | cycles timed | s/cyc mean | median | min/max | dt first/last | its (sum/cycle) | CW/FATAL/inf/DT_RETRY | end |
+|---|---|---|---|---|---|---|---|---|
+| BASE1 | 24 | 2.4577 | 2.3877 | 2.264/3.110 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=111 s CW 0 FATAL 0 |
+| NEW1 | 24 | 2.3839 | 2.3076 | 2.198/3.103 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0 |
+| NEW2 | 24 | 2.4132 | 2.3461 | 2.223/3.091 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0 |
+| BASE2 | 24 | 2.4455 | 2.3695 | 2.257/3.137 | 90.000/90.000 | 31.9 | 0/0/0/0 | rc=0 ended: Terminating on cycle limit wall=106 s CW 0 FATAL 0 |
+- base (both arms) mean 2.4516 median 2.3801; new mean 2.3986 median 2.3293; new / base mean 0.9784, median 0.9786; base arms 2.4577 vs 2.4455, new arms 2.3839 vs 2.4132 (mean)
+- NEW1 user.hst against BASE1: 26 / 26 rows, printed-bitwise
+- NEW1 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
+- NEW2 user.hst against BASE1: 26 / 26 rows, printed-bitwise
+- NEW2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
+- BASE2 user.hst against BASE1: 26 / 26 rows, printed-bitwise
+- BASE2 hydro.hst against BASE1: 26 / 26 rows, printed-bitwise
