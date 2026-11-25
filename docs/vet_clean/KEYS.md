@@ -219,7 +219,7 @@ Scheme options pinned by the templates (in brackets the templates' values):
 
 - `clean_stag_upwind_central` (true), `clean_stag_central` (true): central advective flux within the TVD bound.
 - `clean_face_hctau` (true), `clean_face_jse` (true), `clean_face_opac` (`harmonic`): face values of the rays' flux, half ranges and opacity.
-- `clean_stag_thinf` (true on the spherical-polar stars, false on `star3d_cs`), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
+- `clean_stag_thinf` (true), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
 - `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (1: 3-D spherical polar with periodic phi only): well-balanced face rows, cone limit |F| <= cE, ring projection.
 - `clean_stag_fcone_gas` (false): the cone cut's momentum is not given to the gas.
 - `clean_cs_lat_wb` (default true on the cubed sphere, also on a restart whose file lacks it, with a NOTE in the log: name `clean_cs_lat_wb=false` to keep the old; cubed sphere only, else FATAL): a spherically symmetric radiation pressure pushes the gas along r alone, the same in every cell of a shell. Lateral faces: their cells' lateral stress sums are projected perpendicular to each cell's radial direction (without it a constant lateral force of O(dtheta^2) of the radial one, at every radius, with the cube's symmetry: the interior m = 4 pattern). Radial faces: the normal stress takes the hydro's area r^2 Omega instead of the vector area r^2 |S| (without it a smaller panel pattern of the radial force). Test `shell_force_cs`.
