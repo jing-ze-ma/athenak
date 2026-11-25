@@ -2629,11 +2629,24 @@ void RadiationVet::CleanStagBracket() {
   const bool hct = cln_hctau;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
+  // clean_stag_thinf: R, what the rays hold of the cell: its J and its faces' fluxes
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = rat ? iw_(m,M1_IW_EN,k,j,i) : x.cs(m,CLN_J,k,j,i);
+    if (!thf) return;
+    Real r = fmax(x.cs(m,CLN_JR,k,j,i), 0.0);
+    for (int n = 0; n < x.nf; ++n) {
+      const int c = (n == 0) ? CLN_FX : ((n == 1) ? CLN_F2 : CLN_F3);
+      for (int sd = 0; sd < 2; ++sd) {
+        const int kf = k + sd*(n == 2), jf = j + sd*(n == 1), iff = i + sd*(n == 0);
+        if (sd > 0 && CleanBoundaryFace(x, n, m, kf, jf, iff)) continue;
+        const bool up = x.cub && n > 0 && ((n == 1) ? jf > x.je : kf > x.ke);
+        r = fmax(r, fabs(up ? x.cs(m,CLN_FH+4*(n-1),k,j,i) : x.cs(m,c,kf,jf,iff)));
+      }
+    }
+    x.w(m,CLW_Y,k,j,i) = r;
   });
-  CleanGhostFill(cln_w, CLW_Z, 1);
+  CleanGhostFill(cln_w, thf ? CLW_Y : CLW_Z, thf ? 2 : 1);
   CleanStagCsLateral(CLW_Z);
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   const bool hrm = cln_hface;
@@ -2701,9 +2714,12 @@ void RadiationVet::CleanStagBracket() {
       }
       // clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
       // tilted into the face half ranges in proportion to their sizes (the shrinking one
-      // at most to 0), per J of the donor (at least clean_ray_min E_old), g+ in [0, 1],
-      // g- in [-1, 0]: the thin share w c (g+ E_L + g- E_R) is within [-c E_R, c E_L],
-      // realisable by construction, no DG.  A flux the cap cuts is carried by a higher E.
+      // at most to 0), per J of the donor (at least min(clean_ray_min E_old, R)), g+ in
+      // [0, 1], g- in [-1, 0]: the thin share w c (g+ E_L + g- E_R) is within [-c E_R,
+      // c E_L], realisable by construction, no DG.  A flux the cap cuts is carried by a
+      // higher E (a diagonal beam's side cells: J ~ 0, R ~ E).  In a ray hole (R <<
+      // clean_ray_min E_old) E streams along the rays' own direction: per clean_ray_min
+      // E_old, g -> 0 as J -> 0, so E would stay, its flux independent of it.
       if (thf) {
         const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
         const Real dd = fy - (hl + hr), fr = hl + hr + dd, s = hl - hr;
@@ -2713,8 +2729,9 @@ void RadiationVet::CleanStagBracket() {
         const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
         const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-        const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0),
-                   gm = fmax(hm/fmax(jr, rmn*er), -1.0);
+        const Real dl = fmax(jl, fmin(rmn*el, x.w(m,CLW_Y,k-dk,j-dj,i-di)));
+        const Real dr = fmax(jr, fmin(rmn*er, x.w(m,CLW_Y,k,j,i)));
+        const Real gp = fmin(hp/dl, 1.0), gm = fmax(hm/dr, -1.0);
         if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = gp;
         if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = gm;
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
