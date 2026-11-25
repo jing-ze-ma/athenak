@@ -84,6 +84,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
                             pin->GetString("time","integrator") : "rk2";
   const bool h2ok = !pmh->use_polar_boundary &&
                     (integ.compare("rk2") == 0);
+  recipe::Old(pin, "rad_vet", "time_scheme", "be");
   (void) pin->GetOrAddString("rad_vet","time_scheme",
                              (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
   // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted;
@@ -207,6 +208,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_vet>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
   // implicit_enthalpy: reconstruction of the face enthalpy flux a_f E_f
+  recipe::Old(pin, "rad_vet", "implicit_enthalpy", "upwind");
   const bool enth_up = global_variable::restart_run;
   const std::string sen = pin->GetOrAddString("rad_vet","implicit_enthalpy",
                                               enth_up ? "upwind" : "plm");
@@ -278,6 +280,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     ts_ok = (tsn.compare("be") == 0) || (tsn.compare("hesdirk2") == 0);
   }
   const bool ldef = ts_ok && !global_variable::restart_run;
+  recipe::Old(pin, "rad_vet", "implicit_predictor_order", "1");
   impl_pord = pin->GetOrAddInteger("rad_vet","implicit_predictor_order",
                                    (ldef && impl_pred) ? 2 : 1);
   if (impl_pord != 1 && impl_pord != 2) {
@@ -308,6 +311,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   {
     const bool gsdef = !global_variable::restart_run && fl_on && coupling &&
                        gas_feedback;
+    recipe::Old(pin, "rad_vet", "implicit_gas_src", "matched");
     const std::string gs = pin->GetOrAddString("rad_vet","implicit_gas_src",
                                                gsdef ? "conservative2" : "matched");
     if (gs.compare("matched") == 0) {

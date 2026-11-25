@@ -48,6 +48,13 @@ bool Fix(ParameterInput *pin, const std::string &block, const std::string &key,
   return true;
 }
 
+void Old(ParameterInput *pin, const std::string &block, const std::string &key,
+         const std::string &old) {
+  if (!global_variable::restart_run || pin->DoesParameterExist(block, key)) return;
+  Log("<" + block + ">/" + key + " = " + old + " (restart file without it: the old "
+      "default kept)");
+}
+
 void OldStored(ParameterInput *pin, const std::string &block, const std::string &key,
                const std::string &old, const std::string &value) {
   if (!global_variable::restart_run || global_variable::my_rank != 0 ||
