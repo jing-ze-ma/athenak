@@ -169,3 +169,7 @@ mlx5_5 4: ACTIVE 400 Gb/sec (4X NDR) InfiniBand
 - T4 (put_zcopy) and T5 (PROTO_ENABLE=n) run at 30 s/cycle (10x) and hit the 10-minute limit; they are not hangs (the log advances), results bitwise for the 20 cycles done.
 - T2 (GPU Direct = yes) and T1 (= no): no difference beyond the noise (3.31, 3.36). nvidia_peermem is loaded on 02-03. This UCX has no RCACHE_ENABLE key to flip as it is "try"; T7 (RCACHE_MAX_REGIONS=100000, was inf) and T8 (MEMTYPE_CACHE=n): within the noise.
 - No production launcher was touched; the settings are in these steps only.
+
+### Correction of the correction
+- My explanation of the rails count above is wrong: 12 = the 6 HCA names counted twice (ls and ibstat -l of 02-03), not both nodes. And the number of InfiniBand rails per node is 4, not 6 (states of 02-09 in info.txt): mlx5_2, 3, 4, 5 are InfiniBand NDR 400 Gb/s ACTIVE; mlx5_0 is Ethernet 25 Gb/s, mlx5_1 is Ethernet, DOWN. GPU-to-HCA affinity is PXB (one HCA per GPU) in the topo table.
+- So T6 / T6r asked for 12 rails with 4 real ones; the result is the one measured (2.776 / 2.773 s). A rails = 4 arm was not run.
