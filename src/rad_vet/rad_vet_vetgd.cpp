@@ -5900,8 +5900,8 @@ void RadiationVet::VetGdBuild() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSweepPost
-//! \brief sweep part of a gd build with the current tables (sweep(s), fused moments)
-//! and VetGdPost; also the snapshot sweeps of other sets
+//! \brief sweep part of a gd build with the current tables (sweep, moments -> tau_ten LAT
+//! slots, the operator bound of D_r,lat) and VetGdPost
 
 void RadiationVet::VetGdSweepPost() {
   Kokkos::Timer tm;
@@ -5911,24 +5911,25 @@ void RadiationVet::VetGdSweepPost() {
   tm.reset();
   VetGdSweep();
   Kokkos::fence();
-  VetGdIpcCheck();
   vgd_tswp += tm.seconds();
-  vlat_ncall += 1.0;
-  VetGdPost();
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdPost
-//! \brief after a sweep: moments -> tau_ten LAT slots (+ the operator bound of
-//! D_r,lat), the clamp check over all ranks, the debug dump
-
-void RadiationVet::VetGdPost() {
-  Kokkos::Timer tm;
+  tm.reset();
   // the clean scheme on the cubed sphere reads the intensities (CleanClosureFromGd)
   if (!vgd_csg) {VetGdMoments();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();
+  VetGdPost();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::VetGdPost
+//! \brief after the sweep(s) of a build (also clean_rot_ring's): the GPU halo's error
+//! flag, the clamp check over all ranks
+
+void RadiationVet::VetGdPost() {
+  Kokkos::fence();
+  VetGdIpcCheck();
+  vlat_ncall += 1.0;
   // persistent pinned buffer
   if (vgd_pin_cnt.extent(0) != vlat_cnt.extent(0)) {
     vgd_pin_cnt = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("vet_vgd_pin_cnt",

@@ -822,6 +822,25 @@ def t_eddington_cs(c):
     return out
 
 
+def t_ray_clamp(c):
+    """a cubed-sphere shell of 4 radial cells, whose near-tangent rays reach beyond the
+    lateral band: with vet_gd_allow_clamp = false it must stop (fatal), with the fixed
+    set, and with the rotating one through clean_rot_ring (its sweeps made no such check)."""
+    o = {'mesh/nx1': 4, 'meshblock/nx1': 4, 'time/nlim': 2}
+    ring = {'rad_vet/vet_gd_rotate_dt': 0.5, 'rad_vet/vet_rotate_avg': 4,
+            'rad_vet/vet_gd_rotate_xfade': 'true', 'rad_vet/vet_gd_rotate_align': 'true',
+            'rad_vet/clean_rot_ring': 'live'}
+    out = {}
+    for tag, q in (('fixed', {}), ('ring', ring)):
+        try:
+            c.run('shell_cs.athinput', tag, dict(o, **q))
+            out['fatal_' + tag] = 0
+        except RuntimeError:
+            log = open(os.path.join(c.dir, tag, 'run.log')).read()
+            out['fatal_' + tag] = int('FATAL' in log and 'clamped lateral reads' in log)
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # radiation-acoustic waves in every trapping regime
 
@@ -1686,6 +1705,7 @@ TESTS = [  # name, function, in --quick
     ('wb_cs', t_wb_cs, False),
     ('shell_force_cs', t_shell_force_cs, False),
     ('eddington_cs', t_eddington_cs, True),
+    ('ray_clamp', t_ray_clamp, True),
     ('momentum_box', t_momentum_box, True),
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
@@ -1777,7 +1797,7 @@ def main():
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
     p.add_argument('--star-exe', default='', help='a binary built with -D PROBLEM=star_vet '
                    '(star_smoke, wb_star; without it they are skipped)')
-    p.add_argument('--quick', action='store_true', help='the short subset (22 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (23 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')

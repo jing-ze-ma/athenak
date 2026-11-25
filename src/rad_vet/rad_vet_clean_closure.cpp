@@ -1165,6 +1165,7 @@ void RadiationVet::CleanRingMoments() {
       }
     });
   }
+  if (vgd_on) VetGdPost();
   cln_fvd = dfull;
   cln_raymin = ray_min;
   // (jump: the next set only at the build that closes the block; its weight is s = 0)
