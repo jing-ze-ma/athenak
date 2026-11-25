@@ -85,3 +85,5 @@ c1: first dt < 11.9 at t 5.3398e+04; T2: 5.3410e+04
 - T2 after this point, for the projection: dt 8.6-12.0 with mean ~10.6, s/cyc 1.0-1.25 (t 6e4-8e4), see zzzz4.
 
 - (11-24 22:23) **bsg finished** (t 4.9248000000000000e+06 of 4.9248e6): bsg: cycle 29650, s/cyc 0.7227 (c29350-29650), t 4.9248e+06 dt 163.6 L_top/L_in 1.00774 L_bot/L_in 1.00597, floor_pay(sum) 5.94e+17, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+- (11-25 12:15) **m35mms finished** (t 8.6400000000000000e+05 of 8.64e5): m35mms: cycle 73250, s/cyc 0.9436 (c72950-73250), t 8.6400e+05 dt 5.353 L_top/L_in 1.02089 L_bot/L_in 1.00070, floor_pay(sum) 1.54e+25, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
