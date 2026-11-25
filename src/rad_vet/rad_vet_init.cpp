@@ -806,8 +806,9 @@ void RadiationVet::MemArenaSeal() {
 //! after cln_w the solver's (matrix rows, lateral sums, multigrid levels, write-back
 //! scratch), and over both, from the start, the hydro's flux-stage arrays (dead across
 //! the radiation stage: x2, x3 fluxes, FOFC's trial state, the well-balanced cache, the
-//! seam and block-end records).  The history reads uflx.x1f, so it stays.  Behind both:
-//! DualEnergy's pre-conversion state, used within Hydro::ConToPrim, and K2 (t2k2, t2pf2)
+//! seam, block-end and dfloor_flux_limit records).  The history reads uflx.x1f: kept.
+//! Behind both: DualEnergy's pre-conversion state, used within Hydro::ConToPrim, and K2
+//! (t2k2, t2pf2)
 
 void RadiationVet::MemArenaBind() {
   const Real *a0 = marena.data();
@@ -870,6 +871,8 @@ void RadiationVet::MemArenaBind() {
     };
     record(ph->pseamfs);
     if (ph->pmlfs != ph->pseamfs) record(ph->pmlfs);
+    if (ph->use_dfl) ph->DfloorFluxInit();
+    record(ph->pdfl_fs);
     marena_hyd = off;
     // (behind both: the conserved state before each conversion to primitives)
     off = std::max(off, os);

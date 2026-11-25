@@ -461,6 +461,7 @@ class Hydro {
   DvceArray5D<Real> dfl_th, dfl_thc;
   DvceFaceFld5D<Real> *pdfl_fs = nullptr;   // cubed sphere: the seam record
   DvceArray1D<int> dfl_sm;                  // cubed sphere: the seam faces of each block
+  void DfloorFluxInit();
   void DfloorFluxLimit(Driver *d, int stage);
   void DflMomentum();
 
