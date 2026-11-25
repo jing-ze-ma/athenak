@@ -59,3 +59,9 @@ m4/hrl.hydro_w.bin cycle 794835 t = 765.053 d
    100-200    8.843e+00  7.288e+00  3.435e+00  8.443e+00
    200-400    4.913e-02  3.351e-02  2.273e+00  5.941e+00
 ```
+
+## HRL restart check 25 + rst + 26 vs 51 (same binary and keys)
+- HRLa: 2026-11-24 20:01:25 rc=0 (srun) ended: Terminating on cycle limit wall=213 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- HRLb: 2026-11-24 20:10:26 rc=0 (srun) ended: Terminating on cycle limit wall=154 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 
+- user.hst: HRL 51 rows, HRLa 25 rows (0 not printed-identical, first t -), HRLb 26 rows (0, first t -) -> BITWISE (printed)
+- hydro.hst: HRL 51 rows, HRLa 25 rows (0 not printed-identical, first t -), HRLb 26 rows (0, first t -) -> BITWISE (printed)
