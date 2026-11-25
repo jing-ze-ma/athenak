@@ -301,6 +301,7 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   x.ys = !x.cub && cln_ysum;
   x.lwb = x.cub && cln_latwb;
+  x.fwe = cln_fwe;
   x.yl = cln_yl;
   if (x.sph) {
     auto *pc = pmy_pack->pcoord;
@@ -1251,7 +1252,17 @@ Real CleanSumExact(MeshBlockPack *pp, const char *name, const F &f) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::CleanSumCells
-//! \brief the sum of a over the active cells (CleanSums)
+//! \brief the sum of a over the active cells (CleanSums); 2: of a and of b, one reduction
+
+std::array<Real, 2> RadiationVet::CleanSumCells2(const DvceArray4D<Real> &a,
+                                                 const DvceArray4D<Real> &b) {
+  auto a_ = a, b_ = b;
+  return CleanSums(pmy_pack, "cln_sumc2", 2,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    s0 += a_(m,k,j,i);
+    s1 += b_(m,k,j,i);
+  });
+}
 
 Real RadiationVet::CleanSumCells(const DvceArray4D<Real> &a) {
   auto a_ = a;

@@ -156,9 +156,9 @@ Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
 ### Angular momentum $L_z$: exact on the cubed sphere; on spherical polar exact except where the cone cut acts
 
 On a spherical-polar mesh the azimuthal radiation stress is written in torque form, so it
-cancels between neighbouring cells; `clean_stag_fwb_ring = 1`
-removes the net torque of the
-well-balancing residual on each azimuthal ring. On the cubed sphere the panel faces are not
+cancels between neighbouring cells; `clean_stag_fwb_ring = 1` adds one rigid rotation of the
+thin light, so that the total torque of its source s (below) is 0: gas + radiation $L_z$ then
+changes only by the stress at the radial boundaries (exact in the sum, not local). On the cubed sphere the panel faces are not
 azimuthal faces: each cell's gas takes its absorption torque, and the part that cannot cancel
 locally is collected each solve and given back to the gas as a uniform rigid spin. This
 conserves $L_z$ exactly but not locally.
@@ -196,8 +196,8 @@ physical sources. Three things change gas + radiation momentum without being giv
 
 - the realisability cut of the face flux (`clean_stag_fcone`)
   unless `clean_stag_fcone_gas = true`, which makes the cut momentum-neutral;
-- the well-balancing residual of `clean_stag_fwb` (on a uniform Cartesian mesh
-  `clean_stag_fwb_cart = true` removes its line mean: no net momentum);
+- the source s of the face rows' thin share (`clean_stag_fwb`): it is the radiation's momentum,
+  not the gas's;
 - the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
 
 Their sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line; what the primitive
@@ -237,7 +237,15 @@ tau_cell = 1e4 stays within [background, background + amplitude] to round-off) a
 A star in hydrostatic and radiative equilibrium is designed as a steady state of the discrete
 equations. The gas sees only the deviation of the radiative force from a reference force that
 balances gravity (`force_reference = wb_arad`, held by the well-balanced hydro), and the face
-flux rows are written about the rays' own steady state (`clean_stag_fwb`). The steady start
+flux rows relax their thin share to the rays' own flux (`clean_stag_fwb`). With $o = w/(1 + \tau_f)$,
+$\tau_f = \chi_f\,\Delta x_f$, that share of a row is
+$i_t F - a G + (hc/\Delta x)(F - F_{thin}) - (i_t - a)F_{thin} = 0$, with $i_t = 1 + hc\chi$ and
+$a = 1 - b$ (the gas's drag share), i.e. $dF/dt = -(c/\Delta x + c\chi)(F - F_{thin})$ up to the
+drag; $F_{thin} = c(h_+ E_L + h_- E_R)$ with the area terms is the energy flux's own thin share
+without the advective $aE$. The thick share keeps the momentum equation. The steady state does
+not depend on $h$, and $F = \Phi$ where the gas is thin. s, what a row without the share lacks at
+the solution, is taken from the radiation ($V s/c^2$), not from the gas. The cone bound uses
+$S^2 = \sum \max(0, v_f\cdot v_g)$ of the face directions. The steady start
 (`clean_init = steady`) begins from the scheme's own discrete equilibrium. The remaining
 motion is at the solver-tolerance level, not round-off.
 
@@ -299,8 +307,8 @@ follows exact transport (an M1 closure merges crossing beams and fills shadows).
 of the test, 4 cells wide, stays straight at its angle but carries 1.19 x the exact energy
 (the cap of the streaming share at its edges), while its energy flux equals the injected flux to 6e-8. Around
 the cylinder E and the energy flux Phi are within 1.1 % and 1.2 % of exact transport; the face
-momentum F there is about 20 % above it (likely the
-harmonic face opacity at the sharp edge; not measured).
+momentum F is within 1.2 % of it, the error of Phi itself (F = Phi outside the cylinder by
+construction, so F is no independent check there).
 
 Test: `idort_beams` (L1 of E and the beam energy within 5 % of 0.1772 and 1.193), `idort_shadow`, `idort_shadow_gl` (L1
 0.014 and 0.013), `idort_cylinder` (E and Phi outside 0.011 and 0.012), `nlte_eps1e-1`, `nlte_eps1e-4` (J

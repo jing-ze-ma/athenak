@@ -375,8 +375,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fwb: F rows in deviation form about the rays' own state, their exact
-    // steady state (CleanStagFSolve)
+    // clean_stag_fwb: the thin share of the F rows relaxes to the rays' own flux, the
+    // energy flux's thin share (CleanStagFRow)
     cln_fwb = pin->GetOrAddBoolean("rad_vet","clean_stag_fwb", cln_fsolve &&
                                    cln_consist && fix("clean_stag_fwb", "true", "false"));
     if (cln_fwb && !(cln_fsolve && cln_consist)) {
@@ -385,49 +385,36 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fwb_stage: fwb's residual s of the stage-old state, once per stage;
-    // off: of each solve's E (thin-row F = the rays' flux factor times E)
-    cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_stage",false);
-    // clean_stag_fwb_t2: fwb_stage's s of the stage-time state E_old + h K (second order
-    // in time)
-    cln_fwbt2 = pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_t2",cln_fwbst &&
-                                     fix("clean_stag_fwb_t2", "true", "false"));
-    if (cln_fwbt2 && cln_fwb && !cln_fwbst) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_t2 needs "
-                << "clean_stag_fwb_stage" << std::endl;
-      std::exit(EXIT_FAILURE);
+    // the explicit forms of fwb's s are gone (false in a restart file is fine)
+    for (const char *k : {"clean_stag_fwb_stage", "clean_stag_fwb_t2",
+                          "clean_stag_fwb_line", "clean_stag_fwb_cart"}) {
+      if (cln_fwb && pin->DoesParameterExist("rad_vet", k) &&
+          pin->GetBoolean("rad_vet", k)) {
+        std::cout << "### FATAL ERROR: <rad_vet>/" << k << " = true was removed (only "
+                  << "false): clean_stag_fwb relaxes the thin share implicitly"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
-    cln_fwbt2 = cln_fwbt2 && cln_fwbst;
-    // clean_stag_fwb_line / _ring: fwb's s of the x1 faces less its line mean, of the phi
-    // faces (3-D sp, periodic x3) less its ring mean: no net radial force on a line, no
-    // torque on a ring (CleanStagFwbProject)
-    cln_fwbpj[0] = cln_fwb && stag("clean_stag_fwb_line", false);
+    // clean_stag_fwb_ring: one rigid rotation of the thin light (3-D sp, periodic x3): no
+    // net torque of fwb's s (CleanStagFwbProject)
     const bool ring_ok = pmy_pack->pmesh->use_spherical_polar &&
         pmy_pack->pmesh->three_d &&
         !pmy_pack->pmesh->multilevel &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
-    cln_fwbpj[2] = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_ring",
+    cln_fwbr = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_ring",
         ring_ok && fix("clean_stag_fwb_ring", "true", "false"));
-    if ((cln_fwbpj[0] || cln_fwbpj[2]) && pmy_pack->pmesh->multilevel) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_line, _ring need a uniform "
+    if (cln_fwbr && pmy_pack->pmesh->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_ring needs a uniform "
                 << "mesh" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (cln_fwbpj[2] && !(pmy_pack->pmesh->use_spherical_polar &&
+    if (cln_fwbr && !(pmy_pack->pmesh->use_spherical_polar &&
         pmy_pack->pmesh->three_d &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic)) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fwb_ring needs 3-D spherical "
                 << "polar with a periodic x3" << std::endl;
       std::exit(EXIT_FAILURE);
-    }
-    // clean_stag_fwb_cart (read only when named, default false): on a uniform Cartesian
-    // mesh fwb's s of the faces of every direction less its line mean, as fwb_line's x1
-    // faces: linear momentum exact without a ledger; no-op on curvilinear meshes
-    if (cln_fwb && pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart") &&
-        pin->GetBoolean("rad_vet", "clean_stag_fwb_cart") &&
-        !pmy_pack->pmesh->multilevel && !pmy_pack->pmesh->use_spherical_polar &&
-        !pmy_pack->pmesh->use_cubed_sphere) {
-      cln_fwbpj[0] = cln_fwbpj[1] = cln_fwbpj[2] = true;
     }
     // clean_stag_fcone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0

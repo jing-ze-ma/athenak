@@ -34,6 +34,7 @@ class Driver;
 
 namespace radvet {
 struct CleanArgs;   // rad_vet_clean.hpp
+struct CleanFLine;  // rad_vet_clean.cpp
 struct CleanLevel;  // rad_vet_clean.hpp
 
 //! \struct CleanW
@@ -296,14 +297,6 @@ constexpr int VET_NCNT = 5;
 //----------------------------------------------------------------------------------------
 //! \struct RadiationVetTaskIDs
 //! \brief container to hold TaskIDs of all rad_vet tasks
-
-//! \struct CleanRingMates
-//! \brief the MeshBlocks of each local block's line along a direction (CleanRingMatesInit)
-struct CleanRingMates {
-  int nmb = -1, nt = -1, nslot = 0;   // blocks here and in the mesh; received blocks
-  DvceArray2D<int> src;               // (m, position): local block or -1 - received slot
-  std::vector<std::array<int, 3>> snd, rcv;   // (block or slot, rank, source gid)
-};
 
 struct VetMBState;   // multi-block short-characteristics sweep (rad_vet_vet.cpp)
 
@@ -1070,7 +1063,6 @@ class RadiationVet {
   void CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
                           const int col, const int lim = -1);
   void CleanStagCoarseSetup();
-  void CleanRingMatesInit(const int d, CleanRingMates &rm);
   void CleanStagVCycle(const int l, const int src, const int dst);
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
@@ -1126,8 +1118,7 @@ class RadiationVet {
   void CleanStagDrag(const bool first, const bool vel = false, const bool lat = true);
   void CleanStagFCsShared();
   void CleanStagFCone(const int e, const int kd);
-  void CleanStagFwbProject(const int d, const int slot, const DvceArray4D<Real> &rs,
-                           const DvceArray4D<Real> &rw, const bool cnt);
+  void CleanStagFwbProject(const CleanFLine &ln);
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real CleanStagFSweepChange();
@@ -1173,6 +1164,8 @@ class RadiationVet {
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
   Real CleanSumCells(const DvceArray4D<Real> &a);
+  std::array<Real, 2> CleanSumCells2(const DvceArray4D<Real> &a,
+                                     const DvceArray4D<Real> &b);
   void CleanClosureSphere();
 
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
@@ -1265,7 +1258,6 @@ class RadiationVet {
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
   DvceArray3D<Real> cln_fsjt[3];   // (layout tile: the F join per tile, CleanFsjt)
-  std::array<CleanRingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fcgas = false;   // clean_stag_fcone_gas
@@ -1274,11 +1266,8 @@ class RadiationVet {
   bool cln_lzsp = false;    // clean_lz_spin
   DvceArray5D<Real> cln_fcx;   // (clean_lz_spin: fcone's cut withheld, by face)
   DvceArray2D<Real> cln_cx[2];   // (clean_lz_spin, Cartesian: the cell centres x, y)
-  bool cln_fwbst = false;   // clean_stag_fwb_stage
-  bool cln_fwbpj[3] = {false, false, false};   // fwb_line, -, _ring (fwb_cart: all)
-  int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
-  bool cln_fwbok = false;
-  bool cln_fwbt2 = false;   // clean_stag_fwb_t2
+  bool cln_fwbr = false;    // clean_stag_fwb_ring
+  int cln_fwe = -1;         // clean_stag_fwb: the E of F_ray in the F solve's rows
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)

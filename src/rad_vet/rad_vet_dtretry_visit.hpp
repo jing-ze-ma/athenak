@@ -483,11 +483,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_lzsp", cln_lzsp);
   v.view("cln_fcx", cln_fcx);
   for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("cln_cx[]", cln_cx[q0_]);}
-  v.value("cln_fwbst", cln_fwbst);
-  v.value("cln_fwbpj", cln_fwbpj);
-  v.value("cln_fwbs", cln_fwbs);
-  v.value("cln_fwbok", cln_fwbok);
-  v.value("cln_fwbt2", cln_fwbt2);
+  v.value("cln_fwbr", cln_fwbr);
+  v.value("cln_fwe", cln_fwe);
   v.view("cln_fconc", cln_fconc);
   v.value("cln_xdfz", cln_xdfz);
   v.value("cln_xdh", cln_xdh);
@@ -1024,7 +1021,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_pcrl : std::map<std::array<int, 8>, DvceArray1D<int>> (protocol counter, kept monotonic)
 //   cln_dbginf : int (one-shot test injection, kept)
 //   pin_rcut_ : ParameterInput *
-//   cln_fwr : std::array<CleanRingMates, 3> (protocol counter, kept monotonic)
 //   cln_lzpin : ParameterInput *
 //   cln_wci : DvceArray5D<Real> (protocol counter, kept monotonic)
 //   cln_sgv : DvceArray4D<Real> (protocol counter, kept monotonic)

@@ -86,7 +86,7 @@ fast-relaxation thermal equilibrium is `thermal_eq`). L1 is sum |q - q_exact| / 
 | `idort_beams` | `idort_beams` | two beams, 4 cells wide, crossing in vacuum at +-45 deg (256 x 64, x2 periodic, ring of 4 rays): E vs the exact straight beams (cell averages); `lum_top` the energy of the row 3 cells below x1max vs exact; `flux_err` the x1 energy flux (`vet_phi1`) through every row vs the injected flux; `F_nocone` the largest face momentum \|F\|/(c E_max) without `clean_stag_fcone` | L1 and `lum_top` within 5 % of 0.1772 and 1.193 (regression references, see below); `flux_err` <= 1e-5, `F_nocone` <= 1 |
 | `idort_beams_mb` | `idort_beams` | the beams on 4 MeshBlocks vs 1: along x2 in tile mode (`layout_tile = 16`), along x1 in block mode | tile x2: identical; block x1: largest difference <= 1e-8 |
 | `idort_shadow`, `idort_shadow_gl` | `idort_shadow*` | two beams at +-15 deg past an opaque ellipse (128 x 64; ring of 12 rays, or the general 8 x 32 set with the beams snapped to its rays): E vs the exact attenuated beams | L1 within 5 % of 0.0138 and 0.0126 |
-| `idort_cylinder` | `idort_cylinder` | homogeneous emitting cylinder (rho kappa = 10, a T^4 = 1) in vacuum, 128 x 128: E inside and outside, the energy flux Phi_x (`vet_phi1`, `F_out`) and the face momentum F_x (`vet_f1`, `FH_out`) outside along y = 0 vs the exact transport solution (`ref/idort_cylinder_exact.npz`) | each L1 within 5 % of 5.3e-4, 0.011, 0.0116, 0.203 |
+| `idort_cylinder` | `idort_cylinder` | homogeneous emitting cylinder (rho kappa = 10, a T^4 = 1) in vacuum, 128 x 128: E inside and outside, the energy flux Phi_x (`vet_phi1`, `F_out`) and the face momentum F_x (`vet_f1`, `FH_out`) outside along y = 0 vs the exact transport solution (`ref/idort_cylinder_exact.npz`) | each L1 of E and Phi within 5 % of 5.3e-4, 0.011, 0.0116; `FH_out` <= 0.0125 |
 | `idort_radshock_m2`, `_m5` | `idort_radshock_m*` | Lowrie & Edwards (2008) radiative shocks, Mach 2 and 5, 256 cells, started from the semi-analytic profile (`ref/idort_radshock_m*.txt`, its absolute path set by `run_tests.py`) with the Eddington closure of the diffusion-theory reference (`clean_closure = eddington`): rho, v, T_gas, T_rad at t = 2e-10 s, no shift | each L1 within 5 % of the reference (2.1e-4 ... 1.7e-3) |
 | `idort_thermal_eq2` | `idort_thermal_eq2` | hot gas cooling into radiation (Jiang 2021 sec. 4.1), dt = 5 to 1e5 relaxation times: T(t) vs the exact ODE | max error within 5 % of 2.0e-3; total-energy drift <= 1e-13 |
 
@@ -104,9 +104,8 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
   to 6e-8 (`flux_err`).
 - **Cylinder flux.** E outside the cylinder is within 1.1 % of exact transport and the
   energy flux Phi (`F_out`, `vet_phi1`, the flux the method paper measures) within 1.2 %
-  (r F at x = 2-3.5 is 0.989 of exact). The face momentum F (`vet_f1`, `FH_out`) is 20 %
-  above exact, a regression reference. The likely
-  cause is the harmonic face opacity at the cylinder's sharp edge (not measured).
+  (r F at x = 2-3.5 is 0.989 of exact). The face momentum F (`vet_f1`, `FH_out`)
+  equals Phi there by construction, so it is within the same error (bound 0.0125).
 - **Shocks.** The decks name the production `time2_tableau = sdirk2`, with its default
   `time2_gtime_slope`: the L1 values are within 3 % of the method paper's bench table, which
   ran `hesdirk2` (Mach 2 and 5); the shock stays at the semi-analytic position (no shift

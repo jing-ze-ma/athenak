@@ -72,7 +72,7 @@ athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt mesh/layout_til
 |---|---|---|
 | `<rad_vet>/scheme`, `clean_layout`, `clean_rays` | `clean`, `staggered`, `sc` | the old solver and its forms were removed: FATAL without them |
 | `<rad_vet>/time2_k1_stiff`, `time2_k1_redist` | `0` | older files store 1.0, 0.1 |
-| `<rad_vet>/clean_stag_fwb_stage`, `clean_stag_fwb_t2` | `false` | early files of this scheme store true |
+| `<rad_vet>/clean_stag_fwb_stage`, `clean_stag_fwb_t2` | `false` | early files of this scheme store true: the forms were removed, FATAL if true (also `clean_stag_fwb_line`, `clean_stag_fwb_cart`) |
 | `<rad_vet>/clean_w_fse_tau`, `time2_gtime_mom` | `true` | early files may store false |
 | `<rad_vet>/clean_stag_mg_levels` | `2` | early files may store 4 |
 | `<rad_vet>/clean_maxit`, `clean_pc_sweep` | `200`, `rb` | not stored; a restart keeps 800, and `sym` is the default |
@@ -222,14 +222,13 @@ Scheme options (in brackets the templates' values):
 - `clean_stag_upwind_central` (true), `clean_stag_central` (true): central advective flux within the TVD bound.
 - `clean_face_hctau` (true), `clean_face_jse` (true), `clean_face_opac` (`harmonic`): face values of the rays' flux, half ranges and opacity.
 - `clean_stag_thinf` (true), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
-- `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (1: 3-D spherical polar with periodic phi only): well-balanced face rows, cone limit |F| <= cE, ring projection.
+- `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (1: 3-D spherical polar with periodic phi only): the thin share of the face rows relaxes to the rays' flux (SCHEME.md), cone limit |F| <= cE, ring projection: one rigid rotation of the thin light, no net torque.
 - `clean_stag_fcone_gas` (false): the cone cut's momentum is not given to the gas.
 - `clean_cs_lat_wb` (default true on the cubed sphere, also on a restart whose file lacks it, with a NOTE in the log: name `clean_cs_lat_wb=false` to keep the old; cubed sphere only, else FATAL): a spherically symmetric radiation pressure pushes the gas along r alone, the same in every cell of a shell. Lateral faces: their cells' lateral stress sums are projected perpendicular to each cell's radial direction (without it a constant lateral force of O(dtheta^2) of the radial one, at every radius, with the cube's symmetry: the interior m = 4 pattern). Radial faces: the normal stress takes the hydro's area r^2 Omega instead of the vector area r^2 |S| (without it a smaller panel pattern of the radial force). Test `shell_force_cs`.
 - `clean_stag_fcone_lz` (read only when named): fcone takes a cell's excess from the face families without an L_z arm first (spherical polar x1, x2; cubed sphere x1; Cartesian x3); that cut is counted and printed signed per family (`CLEAN FCONE_LZ`). The faces with an arm are scaled only where they alone exceed cE, and the gas takes their cut at the face, so L_z is exact.
 - `clean_lz_spin` (read only when named; needs `clean_stag_fcone_lz`; a no-op on the cubed sphere, where `clean_cs_lz_tel` covers it): the L_z X of the arm faces' fcone cut, the `clean_stag_fcone_emax` clamp and the `clean_wb_mcap` cap goes to the gas as one rigid rotation dOmega = X/I, I = sum rho V R^2 (no per-cell kick; E pays the kinetic energy; `CLEAN LZSPIN`).
 - `clean_stag_fcone_emax` (read only when named; needs `clean_stag_fcone`): every inner face's F within c max(E_L, E_R), an opaque face's too. L_z-exact with `clean_stag_fcone_lz` + `clean_lz_spin`.
 - `clean_wb_mcap` (read only when named): the write-back gives the gas the face momentum terms at the Newton passes' cap h chi_f E; the withheld momentum is printed per family (`CLEAN MCAP write-back`). L_z-exact only with `clean_lz_spin`.
-- `clean_stag_fwb_cart` (read only when named; uniform Cartesian meshes only, no-op elsewhere): the well-balancing residual minus its line mean along every face direction, so `clean_stag_fwb` gives no net linear momentum.
 - `clean_gas_secant` (`max_stage2`): in the stage-2 solves the gas-exchange slope is the chord through the last pass's T where it beats the tangent by more than a derived round-off bound (16 eps of the terms of e(T) - e(T_p)), else the tangent.
 - `clean_pred_xch` (true): the stage-2 start blends this step's stage-1 slope and the last step's stage-2 slope by the stiffness of each cell's exchange.
 - `clean_wb_exch_local` (true): the write-back's cell exchange is solved exactly from the transported E (E > 0 and gas >= e(rho, tfloor) by construction); needs an EOS `tfloor` > 0.

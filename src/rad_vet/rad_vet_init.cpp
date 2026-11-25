@@ -758,7 +758,7 @@ void RadiationVet::MemArenaBind() {
   if (CleanExtrapSx()) bind(cln_csy);   // (else CleanRingMoments' scratch)
   for (auto &a : cln_mg) bind(a);
   // (the closure built once per stage: no pass keeps the faces' coefficients over one)
-  if (!cln_closit && !(cln_fwbst && t2_tab == 0)) {
+  if (!cln_closit) {
     for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) bind(f->o);
   }
   // (the write-back's: their first use makes them, here already over the arena)
