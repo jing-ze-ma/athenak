@@ -1,0 +1,10 @@
+<hydro>/wb_rmax : 7.504290e+12 -> 4.5e12
+<problem>/he_ic_file : /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/t9l62/ic_t9l62_LIC.txt -> /resnick/groups/carnegie_poc/jingze/prod_mlt_1125/files/ic_t9_mlt_a10.txt
+<problem>/mlt_closure : frozen -> adaptive
+<problem>/mlt_closure_dout : None -> 1.08e4
+<problem>/mlt_closure_taper : None -> 0.01
+<problem>/mlt_flux_frozen : false -> true
+<problem>/mlt_ramp_start : None -> auto
+<problem>/mlt_ramp_time : None -> auto
+<problem>/mlt_relax_time : None -> 1500
+<problem>/mlt_src_time : None -> start
