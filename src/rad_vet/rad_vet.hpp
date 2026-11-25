@@ -1238,7 +1238,6 @@ class RadiationVet {
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
-  bool cln_csvr = false;        // clean_stag_csvec_radial (CleanStagCsVector)
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   bool cln_rfrst = false;       // clean_rot_ring_fill_rst: full window at an old restart

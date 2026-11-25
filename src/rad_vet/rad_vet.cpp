@@ -77,13 +77,27 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   auto fix = [&](const char *k, const char *v, const char *o) {
     return nw || recipe::Fix(pin, "rad_vet", k, v, o);
   };
-  {const bool scd = nw;
-  if (scd && !pin->DoesParameterExist("rad_vet","scheme")) {
-    recipe::Log("<rad_vet>/scheme = clean (the default with transport = implicit)");
-  }
-  std::string sc = pin->GetOrAddString("rad_vet","scheme",scd ? "clean" : "default");
-  if (sc.compare("clean") == 0) {
+  {
     CleanPreflight(pin);
+    // rst_version, recorded: a restart file without it is of an older code and must name
+    // the solver, the layout and (sphere) the rays it ran, the only ones left
+    if (!nw && !pin->DoesParameterExist("rad_vet","rst_version")) {
+      for (const char *k : {"scheme", "clean_layout", "clean_rays"}) {
+        if (pin->DoesParameterExist("rad_vet", k)) continue;
+        const std::string s(k);
+        if (s == "clean_rays" && !((pmy_pack->pmesh->use_spherical_polar ||
+            pmy_pack->pmesh->use_cubed_sphere) && VetCurvedRays(pin))) continue;
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_vet>: the restart file does not hold " << k << ": it ran "
+          << "the removed " << (s == "scheme" ? "old solver" : s == "clean_layout" ?
+          "cell layout" : "FV rays") << "; name " << k << "="
+          << (s == "scheme" ? "clean" : s == "clean_layout" ? "staggered" : "sc")
+          << " to continue with the present one (inputs/stars/restart_old_files.txt)"
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    pin->GetOrAddInteger("rad_vet","rst_version",1);
     // clean_w_fse: thin-share thinness g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
     // 1), w = smoothstep((g - c0)/(c1 - c0)): upwind streaming where the field is
     // anisotropic, not merely non-local
@@ -145,14 +159,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                        pl || fix("clean_lin_pass", "true", "false"));}
     cln_tol_nl = pin->GetOrAddReal("rad_vet","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_vet","clean_ray_min",1.0e-3);
-    // clean_rays = sc only
-    if (pin->DoesParameterExist("rad_vet","clean_rays") &&
-        pin->GetString("rad_vet","clean_rays") != "sc") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/clean_rays = sc (the FV rays fv1 | fv | lld were "
-        << "removed)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_rot_ring = off | live | jump (live where the vet_gd rays rotate with a
     // cross-fade, CleanInit): the rotating union swept as the current (+ next) set, older
     // sets as moment offsets (CleanRingMoments). clean_rot_fuse: the live ring's two sets
@@ -194,14 +200,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                    fix("clean_pred_xch", "true", "false"));
     {std::string bf = pin->GetOrAddString("rad_vet","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
-    // clean_layout = staggered only
-    if (pin->GetOrAddString("rad_vet","clean_layout",nw ? "staggered" : "cell") !=
-        "staggered") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/clean_layout = staggered (the cell layout was removed)"
-        << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
     // clean_stag_opac_update: opacities at the iterate's temperature; clean_face_opac =
     // harmonic | arith: the face opacity
@@ -222,17 +220,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_hface = (fo == "harmonic");}
-    // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU; old files'
-    // clean_stag_fs_pcr (true) / clean_stag_fs_pcr_cs (cs: false) when unnamed
-    {const bool cs = pmy_pack->pmesh->use_cubed_sphere;
-    auto named = [&](const char *k, const bool d) {
-      return pin->DoesParameterExist("rad_vet", k) ? pin->GetBoolean("rad_vet", k) : d;
-    };
-    const bool pcr = named("clean_stag_fs_pcr", true) &&
-                     (!cs || named("clean_stag_fs_pcr_cs",
-                                   fix("clean_stag_fs_line", "pcr", "thomas")));
-    const std::string fl = pin->GetOrAddString("rad_vet","clean_stag_fs_line",
-                                               pcr ? "pcr" : "thomas");
+    // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU
+    {const std::string fl = pin->GetOrAddString("rad_vet","clean_stag_fs_line",
+        fix("clean_stag_fs_line", "pcr", "thomas") ? "pcr" : "thomas");
     if (fl != "pcr" && fl != "thomas") {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fs_line = pcr | thomas"
                 << std::endl;
@@ -321,17 +311,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool curv = pmy_pack->pmesh->use_spherical_polar ||
                       pmy_pack->pmesh->use_cubed_sphere;
     const bool vg = VetCurvedRays(pin);
-    // sp / cs: clean_rays recorded; a restart file without it ran other rays: fatal
-    if (curv && vg && !pin->DoesParameterExist("rad_vet","clean_rays")) {
-      if (global_variable::restart_run) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_vet>/clean_rays: the restart file ran the removed FV "
-                          "rays "
-          << "(fv1); name clean_rays = sc" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      pin->GetOrAddString("rad_vet","clean_rays","sc");
-    }
     cln_split = true;
     cln_consist = pin->GetOrAddBoolean("rad_vet","clean_consistency", !curv || vg);
     cln_maxpic = pin->GetOrAddInteger("rad_vet","clean_maxpic",12);
@@ -356,25 +335,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_ucp = pin->GetOrAddBoolean("rad_vet","clean_stag_central",
                                    fix("clean_stag_central", "true", "false"));
     cln_ucen = cln_ucen || cln_ucp;
-    // clean_stag_csvec_radial: cs cell vector exact for a radial field (true only)
-    cln_csvr = stag("clean_stag_csvec_radial", true);
-    if (!cln_csvr) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_csvec_radial = false (the old "
-                << "cell vector) is gone" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_stag_thinf: the bracket's ray correction in the face half ranges, realisable
     // (CleanStagBracket)
     cln_thinf = pin->GetOrAddBoolean("rad_vet","clean_stag_thinf",
                                      fix("clean_stag_thinf", "true", "false"));
-    // clean_stag_flim: false only (fwb + fcone bound F)
-    if (pin->GetOrAddBoolean("rad_vet","clean_stag_flim",false)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_stag_flim = true was removed (only "
-                                "false)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_stag_fwb: F rows in deviation form about the rays' own state, their exact
     // steady state (CleanStagFSolve)
     cln_fwb = pin->GetOrAddBoolean("rad_vet","clean_stag_fwb", cln_fsolve &&
@@ -464,13 +428,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
     // (no donor/cap flip between passes)
     cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);
-    if (const int pd = pin->GetOrAddInteger("rad_vet","clean_pass_damp",0); pd != 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_pass_damp = " << pd
-                << " was removed (only 0)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_stag_xdonor = lag | p1 | off: the off-diagonal stress flux as an M-matrix
     // term (CleanStagXDonor); clean_stag_xsrc: also the face sources past their explicit
     // share
@@ -494,12 +451,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
     // radiation's (CleanLzBook)
     if (pmy_pack->pmesh->use_cubed_sphere) cln_lza = 2;
-    if (pin->DoesParameterExist("rad_vet", "clean_cs_lz_abs") &&
-        pin->GetInteger("rad_vet", "clean_cs_lz_abs") != 2) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_abs = 0 | 1 (the old cubed-"
-                << "sphere gas phi momentum) is gone; 2 is the only form" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
                                     pmy_pack->pmesh->three_d);
     // clean_cs_lz_tel: L_z by telescoping (gas phi momentum of CleanCsTorque, radiation
@@ -765,13 +716,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_nl_cell = (nn.compare("cell") == 0);}
     // clean_troot_rtol: the exchange root stops at its residual noise
     cln_trtol = pin->GetOrAddReal("rad_vet","clean_troot_rtol",1.0e-13);
-    if (pin->GetOrAddBoolean("rad_vet","clean_conv_est_f",false)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_conv_est_f = true was removed "
-                << "(only false)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
     // and events; 1 also the per-solve diagnostics (CLEAN MCAP, OLDVEC, FCONE, FWB, LZ,
     // WBFCT, KPOS, KREAL, XPAT, the write-back closure and the ray cut); 2 also the
@@ -791,20 +735,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_budget = (cv == "budget");}
     cln_bkap = pin->GetOrAddReal("rad_vet","clean_conv_kappa",1.0);
-    // a step dt_retry redoes is solved to the strict tolerance
-    if (pin->GetOrAddBoolean("rad_vet","clean_retry_budget",false)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_retry_budget = true was removed "
-                << "(only false)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (!pin->GetOrAddBoolean("rad_vet","clean_halo_direct",true)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_halo_direct = false was removed "
-                << "(only true)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_init = given | steady: steady relaxes the radiation
     // before step 1
     {
@@ -830,13 +760,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                            eqk("star_ic_equil_dtfac", 1.0e6));
       cln_steady_tol = pin->GetOrAddReal("rad_vet","clean_init_tol",1.0e-8);
     }
-  } else {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/scheme = '" << sc << "': only scheme = clean (with "
-      << "transport = implicit; a restart file without the key ran the old solver)"
-      << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   }
   // geometry guard: uniform Cartesian, a spherical-polar wedge or full sphere, or the
   // cubed sphere (checks in SphericalS1Check, VetRayInit); no relativistic coordinates
@@ -1688,13 +1611,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_vet","vet_gd_halo_compact");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_twin") &&
-        pin->GetBoolean("rad_vet","vet_gd_twin")) {
-      std::cout << "### FATAL ERROR <rad_vet>/vet_gd_twin = true: the twin is not in "
-                   "this "
-                << "build" << std::endl;
-      std::exit(EXIT_FAILURE);
     }
     vsrc_noes_h2be =
         pin->GetOrAddBoolean("rad_vet","vet_source_noesrc_h2be",vsrc_noes_h2be);

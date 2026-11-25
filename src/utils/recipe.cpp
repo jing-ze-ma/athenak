@@ -71,10 +71,7 @@ void CleanDefaults(ParameterInput *pin) {
     pin->SetString("rad_vet", "transport", "implicit");
     Log("<rad_vet>/transport = implicit (the default of a fresh run)");
   }
-  const std::string sc = named("rad_vet", "scheme") ? pin->GetString("rad_vet",
-                                                                     "scheme") :
-      (pin->GetString("rad_vet", "transport") == "implicit" ? "clean" : "default");
-  if (sc != "clean") return;
+  if (pin->GetString("rad_vet", "transport") != "implicit") return;
   if (!named("time", "cfl_number")) {
     pin->GetOrAddReal("time", "cfl_number", 0.3);
     Log("<time>/cfl_number = 0.3 (the default of a fresh clean VET run)");

@@ -271,7 +271,6 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.tf = false;
   x.fd = cln_fsolve && cln_fkin;
   x.gf = cln_gflux;
-  x.cvr = cln_csvr;
   x.fre = cln_freal;
   x.fdg = cln_fdg;
   x.xq = cln_xd_on ? cln_xqs : -1;
