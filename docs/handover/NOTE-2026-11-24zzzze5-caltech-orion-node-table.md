@@ -425,3 +425,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 03:53 02-09: tr_T7 -> tr_T8
 - 11-25 03:55 02-03: tr_T8 -> tr_T6
 - 11-25 03:55 02-09: tr_T8 -> tr_T6
+- 11-25 03:56 02-03: tr_T6 -> IDLE
+- 11-25 03:56 02-09: tr_T6 -> IDLE
+- 11-25 03:57 02-03: IDLE -> tr_T0b
+- 11-25 03:57 02-09: IDLE -> tr_T0b
+- 11-25 03:57 02-16: fwp_t9mlt_FW300 -> fwp_t9mlt_NX300
+- 11-25 03:59 02-03: tr_T0b -> tr_T3r
+- 11-25 03:59 02-09: tr_T0b -> tr_T3r
