@@ -1,0 +1,2 @@
+2026-11-25 05:01:28 start HGO6 ranks 8 BIN athena_gpu_he_star_m1_prod1118_1d197280_fmadoff ENV UCX_TLS=^xpmem UCX_IB_GPU_DIRECT_RDMA=no UCX_RNDV_SCHEME=get_zcopy UCX_MAX_RNDV_RAILS=12
+2026-11-25 05:05:02 rc=0 ended: Terminating on cycle limit wall=214 s CW 0 FATAL 0
