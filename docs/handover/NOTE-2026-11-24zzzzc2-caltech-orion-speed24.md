@@ -94,3 +94,25 @@ MLAT init: 884736 non-uniform gas groups, 0 non-uniform radiation groups -> aver
 MLATDIAG h cyc 2560 t 2.4825965697e+05 dt 1.525118e+02 M 2.3310565725424865e+32 E 1.3352846316879129e+47 P -7.4114538118e+32 2.3784055268e+34 3.0528546728e+33 L -1.3734661930871166e+45 4.2906567203172836e+44 -3.025401274
 MLATDIAG h cyc 2560 t 2.4825965697e+05 dt 1.525118e+02 M 2.3310565725424865e+32 E 1.3352846407255275e+47 P -7.4677898501e+32 -2.8161327717e+34 3.0619477718e+33 L -1.3784697268373582e+45 4.2906309107513319e+44 -3.03538494
 ```
+
+## PRF_zam (11-24 18:06)
+TAG=PRF_zam BIN md5=30d01765970051212176cc2eb81ea034 RST=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/m35zams/rst_keep/m35zams.stop1124b.rst N0=22155 NC=12 HOLDER=7333072 NODE=hpc-sm-02-03 NR=4 NSYS=/central/software9/spack/opt/spack/linux-rhel9-x86_64/n
+run rc=0 (srun) ended: Terminating on cycle limit wall=47 s CW 0 FATAL 0
+main loop time (before the final outputs) = 7.120714e+00
+elapsed=9.658395e+00 cycle=22160
+nsys_r0.sqlite: cycles 5 wall 640.4 ms/cyc  busy 477.5  kernel sum 477.5  launches 8139/cyc  keys 128
+  ms/cyc     %   n/cyc    us/l  reg  blk     grid lmem  label | key
+   42.90   9.0     408   105.1  130  128     2016    0   | radvet::RadiationVet::VetGdSweep#1
+nsys_r0.sqlite: cycles 5 wall 640.4 ms/cyc  GPU idle 113.1 ms/cyc (17.7 %)  gaps 11311/cyc
+idle by host activity (ms/cyc): MPI(part) 29.5  MPI 27.8  sync 18.4  memcpy-api(part) 16.9  sync(part) 8.7  memcpy-api 4.4  launch(part) 2.7  cuda-other 2.0  launch 1.7  cuda-other(part) 0.7  host-compute 0.4
+idle by gap size   (ms/cyc, n/cyc): <10us 21.3 (8199)  10-100us 51.1 (3079)  0.1-1ms 17.2 (27)  >1ms 23.6 (5)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 1871, 7.3, 2.04  2: 364, 5.0, 0.86  8: 42, 1591.9, 0.89  10: 2774, 10083.6, 94.11
+host time in (ms/cyc, overlapping GPU work or not): sync 435.3  MPI 336.1
+largest gaps (us, host activity, previous kernel -> next):
+     8311.0 sync(part)     M -> M
+     7840.1 MPI(part)      M -> M
+     7044.2 memcpy-api(part) M -> M
+     7019.6 memcpy-api(part) M -> M
+     7006.4 memcpy-api(part) M -> M
+     6974.3 sync(part)     M -> M
+- Text files: caltech_results/PRF_1124/PRF_zam/ (res.txt, kname_r0..3.txt, gaps_r0..3.txt, stats_r0.txt, CLEAN PASS/cycle lines, hst). Plain s/cyc of the same state in the CAND arm: 0.297 s/cyc (m35zams_R). Only the kernel SHARES of this run count (nsys slows the step). nsys from cuda-12.9.0.

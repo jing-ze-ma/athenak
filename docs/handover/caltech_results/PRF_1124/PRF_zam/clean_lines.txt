@@ -1,0 +1,75 @@
+CLEAN PASS cycle 22155 t2s 2 pass 0 it 12 de 2.558e-06 dv 5.078e-10 tol 1.279e-06 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22155 t2s 2 pass 1 it 8 de 6.231e-07 dv 2.915e-12 tol 1.282e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22155 t2s 2 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22155 t2s 3 pass 0 it 4 de 2.863e-06 dv 5.097e-10 tol 1.431e-06 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22155 t2s 3 pass 1 it 10 de 8.065e-07 dv 1.159e-12 tol 1.219e-06 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22155 t2s 3 it 10 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22156 t2s 2 pass 0 it 12 de 3.078e-06 dv 5.079e-10 tol 1.539e-06 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22156 t2s 2 pass 1 it 8 de 5.643e-07 dv 2.931e-12 tol 1.479e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22156 t2s 2 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22156 t2s 3 pass 0 it 4 de 2.940e-06 dv 5.102e-10 tol 1.470e-06 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22156 t2s 3 pass 1 it 10 de 9.239e-07 dv 1.372e-12 tol 1.302e-06 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22156 t2s 3 it 10 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22157 t2s 2 pass 0 it 12 de 1.831e-06 dv 5.082e-10 tol 9.156e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22157 t2s 2 pass 1 it 8 de 5.732e-07 dv 3.268e-12 tol 1.090e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22157 t2s 2 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22157 t2s 3 pass 0 it 1 de 1.632e-06 dv 5.100e-10 tol 8.158e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22157 t2s 3 pass 1 it 13 de 4.744e-07 dv 6.061e-12 tol 6.425e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22157 t2s 3 it 13 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22158 t2s 2 pass 0 it 11 de 1.883e-06 dv 5.081e-10 tol 9.413e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22158 t2s 2 pass 1 it 8 de 5.727e-07 dv 3.332e-12 tol 1.148e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22158 t2s 2 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22158 t2s 3 pass 0 it 1 de 2.574e-06 dv 5.098e-10 tol 1.287e-06 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22158 t2s 3 pass 1 it 12 de 4.096e-07 dv 2.075e-12 tol 1.288e-06 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22158 t2s 3 it 12 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22159 t2s 2 pass 0 it 11 de 1.982e-06 dv 5.079e-10 tol 9.911e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22159 t2s 2 pass 1 it 10 de 5.758e-07 dv 3.334e-12 tol 1.187e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22159 t2s 2 it 10 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22159 t2s 3 pass 0 it 1 de 1.913e-06 dv 5.098e-10 tol 9.566e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22159 t2s 3 pass 1 it 13 de 5.561e-07 dv 2.084e-12 tol 9.389e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22159 t2s 3 it 13 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22160 t2s 2 pass 0 it 11 de 1.927e-06 dv 5.079e-10 tol 9.634e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22160 t2s 2 pass 1 it 9 de 5.667e-07 dv 3.304e-12 tol 1.154e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22160 t2s 2 it 9 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22160 t2s 3 pass 0 it 2 de 4.877e-07 dv 5.097e-10 tol 2.438e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22160 t2s 3 pass 1 it 12 de 4.499e-07 dv 1.862e-12 tol 3.208e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN PASS cycle 22160 t2s 3 pass 2 it 12 de 1.183e-07 dv 2.224e-13 tol 2.924e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22160 t2s 3 it 12 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN PASS cycle 22161 t2s 2 pass 0 it 11 de 1.704e-06 dv 5.080e-10 tol 8.520e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22161 t2s 2 pass 1 it 7 de 5.589e-07 dv 3.166e-12 tol 1.038e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22161 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22161 t2s 3 pass 0 it 2 de 1.592e-06 dv 5.099e-10 tol 7.960e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22161 t2s 3 pass 1 it 13 de 1.441e-06 dv 1.839e-12 tol 7.680e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN PASS cycle 22161 t2s 3 pass 2 it 10 de 1.126e-07 dv 5.236e-13 tol 7.362e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22161 t2s 3 it 10 (sum 25) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN PASS cycle 22162 t2s 2 pass 0 it 11 de 2.399e-06 dv 5.079e-10 tol 1.200e-06 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22162 t2s 2 pass 1 it 7 de 5.657e-07 dv 3.100e-12 tol 1.456e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22162 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22162 t2s 3 pass 0 it 1 de 1.605e-06 dv 5.096e-10 tol 8.024e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22162 t2s 3 pass 1 it 13 de 8.058e-07 dv 2.298e-12 tol 7.081e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN PASS cycle 22162 t2s 3 pass 2 it 12 de 1.495e-07 dv 2.517e-13 tol 7.328e-07 fe 1.000e-10 fv 1.172e-15 opac
+CLEAN cycle 22162 t2s 3 it 12 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN PASS cycle 22163 t2s 2 pass 0 it 11 de 1.808e-06 dv 5.078e-10 tol 9.040e-07 fe 1.000e-10 fv 1.172e-15
+CLEAN PASS cycle 22163 t2s 2 pass 1 it 7 de 5.409e-07 dv 3.105e-12 tol 1.014e-06 fe 1.000e-10 fv 1.172e-15 clos opac
+CLEAN cycle 22163 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22163 t2s 3 pass 0 it 1 de 9.859e-07 dv 5.096e-10 tol 4.929e-07 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22163 t2s 3 pass 1 it 13 de 2.486e-07 dv 2.170e-12 tol 4.536e-07 fe 1.000e-10 fv 1.171e-15 opac
+CLEAN cycle 22163 t2s 3 it 13 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22164 t2s 2 pass 0 it 12 de 1.928e-06 dv 5.077e-10 tol 9.640e-07 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22164 t2s 2 pass 1 it 7 de 5.730e-07 dv 3.220e-12 tol 1.186e-06 fe 1.000e-10 fv 1.171e-15 clos opac
+CLEAN cycle 22164 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22164 t2s 3 pass 0 it 1 de 7.601e-07 dv 5.094e-10 tol 3.801e-07 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22164 t2s 3 pass 1 it 13 de 3.025e-07 dv 2.248e-12 tol 3.347e-07 fe 1.000e-10 fv 1.171e-15 opac
+CLEAN cycle 22164 t2s 3 it 13 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22165 t2s 2 pass 0 it 12 de 1.920e-06 dv 5.076e-10 tol 9.598e-07 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22165 t2s 2 pass 1 it 8 de 5.845e-07 dv 3.267e-12 tol 1.163e-06 fe 1.000e-10 fv 1.171e-15 clos opac
+CLEAN cycle 22165 t2s 2 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22165 t2s 3 pass 0 it 1 de 2.045e-06 dv 5.095e-10 tol 1.022e-06 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22165 t2s 3 pass 1 it 12 de 7.389e-07 dv 2.127e-12 tol 9.685e-07 fe 1.000e-10 fv 1.171e-15 opac
+CLEAN cycle 22165 t2s 3 it 12 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22166 t2s 2 pass 0 it 10 de 2.011e-06 dv 5.076e-10 tol 1.005e-06 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22166 t2s 2 pass 1 it 10 de 5.620e-07 dv 3.246e-12 tol 1.186e-06 fe 1.000e-10 fv 1.171e-15 clos opac
+CLEAN cycle 22166 t2s 2 it 10 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN PASS cycle 22166 t2s 3 pass 0 it 1 de 1.366e-06 dv 5.094e-10 tol 6.830e-07 fe 1.000e-10 fv 1.171e-15
+CLEAN PASS cycle 22166 t2s 3 pass 1 it 13 de 4.978e-07 dv 2.137e-12 tol 6.223e-07 fe 1.000e-10 fv 1.171e-15 opac
+CLEAN cycle 22166 t2s 3 it 13 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
