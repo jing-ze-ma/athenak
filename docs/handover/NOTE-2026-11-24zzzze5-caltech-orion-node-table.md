@@ -385,3 +385,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 03:07 02-03: kt2_88cdc4657_6 -> kt2_88cdc4657_26
 - 11-25 03:07 02-09: kt2_88cdc4657_6 -> kt2_88cdc4657_26
 - 11-25 03:07 02-16: fwv_m35mms_FW -> fwv_m35mms_NX
+- 11-25 03:08 02-16: fwv_m35mms_NX -> fwv_bsg_NX
+- 11-25 03:09 02-03: kt2_88cdc4657_26 -> b_fwbmemPS
+- 11-25 03:09 02-09: kt2_88cdc4657_26 -> IDLE
+- 11-25 03:09 02-16: fwv_bsg_NX -> kt2s_t9l62_base_6
+- 11-25 03:11 02-16: kt2s_t9l62_base_6 -> kt2s_t9l62_5de1_6
