@@ -71,13 +71,11 @@ floorcap_v = 3e7
 floorcap_lz = true
 floorcap_lz_spin = true
 floorcap_rho = 1e-14
-vet_gd_halo_ipc = true
 c_light = 2.99792458e10
 arad = 2.3392742567e-47
 temp_unit_kelvin = 7.4568864364e-9
 e_floor = 1.0e-4
 implicit_flux_x1min = 2.2942145641e+13
-vet_gd_band_ring = true            # band slabs lent per shell: bitwise, less GPU memory
 clean_verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
 clean_pc_sweep = rb
 

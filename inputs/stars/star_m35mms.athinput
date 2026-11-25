@@ -70,7 +70,6 @@ arad = 2.3619941258e-47
 temp_unit_kelvin = 7.4749268633e-09
 e_floor = 1.0e-4
 implicit_flux_x1min = 1.8587122274e+14
-vet_gd_band_ring = true            # band slabs lent per shell: bitwise, less GPU memory
 clean_verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
 clean_pc_sweep = rb
 
