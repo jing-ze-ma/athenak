@@ -1428,7 +1428,7 @@ void RadiationVet::VetGdCsSweep() {
   auto cs_ = vgd_cs;
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
-  auto cnt_ = vlat_cnt;
+  auto cnt_ = vray_cnt;
   auto mr_ = vgd_mr;
   auto cr_ = vgd_csr;
   auto bl_ = vgd_csblk;

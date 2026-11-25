@@ -319,8 +319,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_consistency: default on Cartesian, and on sp / cs with the vet_gd rays (sc)
     const bool curv = pmy_pack->pmesh->use_spherical_polar ||
                       pmy_pack->pmesh->use_cubed_sphere;
-    const bool vg = pin->DoesParameterExist("rad_vet","vet_gd") &&
-                    pin->GetBoolean("rad_vet","vet_gd");
+    const bool vg = VetCurvedRays(pin);
     // sp / cs: clean_rays recorded; a restart file without it ran other rays: fatal
     if (curv && vg && !pin->DoesParameterExist("rad_vet","clean_rays")) {
       if (global_variable::restart_run) {
@@ -836,7 +835,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   }
   // geometry guard: uniform Cartesian, a spherical-polar wedge or full sphere, or the
-  // cubed sphere (checks in SphericalS1Check, VetLatInit); no relativistic coordinates
+  // cubed sphere (checks in SphericalS1Check, VetRaySetup); no relativistic coordinates
   sph_geom = false;
   cs_geom = false;
   {
@@ -1023,7 +1022,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   //      energy.
   //  (ii) closure source VetScatterMix: vet_scatter_form = ma | absorption,
   //      vet_scatter_j = relaxed | current.
-  // Default on for a fresh run with ray data (vet_sc, or vet_col + vet_gd), opacity =
+  // Default on for a fresh run with rays, opacity =
   // table and a tabulated general EOS (kappa_e = eos); else off.
   const bool fresh = !global_variable::restart_run;
   bool gen_eos_tab = false;   // <hydro|mhd>/eos = general with general_eos = table
@@ -1035,13 +1034,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       gen_eos_tab = true;
     }
   }
-  bool vet_rays = false;      // closure = vet_sc, or vet_col + vet_gd = true
-  if (pin->DoesParameterExist("rad_vet","closure")) {
-    const std::string cl0 = pin->GetString("rad_vet","closure");
-    vet_rays = (cl0.compare("vet_sc") == 0) ||
-               (cl0.compare("vet_col") == 0 && pin->DoesParameterExist("rad_vet","vet_gd")
-                && pin->GetBoolean("rad_vet","vet_gd"));
-  }
+  const bool vet_rays = !sph_geom || VetCurvedRays(pin);
   vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter", fresh && vet_rays &&
                                opacity_type == VET_OPAC_TABLE);
   if (vscat) {
@@ -1357,31 +1350,51 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_time = 0.0;
   vet_itime = 0.0;
   vet_ncall = 0.0;
-  tau_ready = false;
-  vet_col = false;
+  vray_ready = false;
   vcol_sph = false;
   vcol_sq = false;
   vcol_qmin = vcol_qmax = 0.0;
-  // none: no rays (the analytic clean_closure = eddington | sphere); so are the old
-  // solver's m1, minerbo, kershaw and eddington of a restart file
-  {std::string cl = pin->GetOrAddString("rad_vet","closure","none");
-  const bool oldcl = (cl.compare("m1") == 0) || (cl.compare("minerbo") == 0) ||
-                     (cl.compare("kershaw") == 0) || (cl.compare("eddington") == 0);
-  if (cl.compare("none") == 0 || (oldcl && global_variable::restart_run)) {
-    if (oldcl && global_variable::my_rank == 0) {
-      std::cout << "### NOTE: <rad_vet>/closure = " << cl << " of the restart file is "
-                << "read as none" << std::endl;
+  // sc: short characteristics, on a Cartesian mesh and (vgd_on) on spherical polar and
+  // the cubed sphere.  An older name is read as sc only where it ran the same closure:
+  // vet_sc on a Cartesian mesh, vet_col with vet_gd = true on a curved one; with an
+  // analytic clean_closure there also vet_col and, in a restart file, m1, minerbo, kershaw
+  // and eddington (a file without the key ran m1)
+  {std::string cl = pin->GetOrAddString("rad_vet","closure",
+                                        global_variable::restart_run ? "m1" : "sc");
+  if (cl.compare("sc") != 0) {
+    const bool an = sph_geom && VetAnalytic(pin);
+    const bool gd = sph_geom && pin->DoesParameterExist("rad_vet","vet_gd") &&
+                    pin->GetBoolean("rad_vet","vet_gd");
+    const bool oldcl = (cl.compare("m1") == 0) || (cl.compare("minerbo") == 0) ||
+                       (cl.compare("kershaw") == 0) || (cl.compare("eddington") == 0);
+    if (!((cl.compare("vet_sc") == 0 && !sph_geom) ||
+          (cl.compare("vet_col") == 0 && (gd || an)) ||
+          (oldcl && an && global_variable::restart_run))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_vet>/closure = '" << cl << "' was removed (only sc: the "
+        << "rays, on every mesh; vet_sc is read as sc on a Cartesian mesh, vet_col with "
+        << "vet_gd = true on spherical polar and the cubed sphere; the analytic closures "
+        << "are clean_closure = eddington | sphere).  Name closure = sc to change to the "
+        << "rays" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
-  } else if (cl.compare("vet_sc") == 0) {
-    // short characteristics on a Cartesian mesh (rad_vet_vet.cpp)
+    if (global_variable::my_rank == 0) {
+      std::cout << "### NOTE: <rad_vet>/closure = " << cl << " is read as sc (the same "
+                << "closure under its new name)" << std::endl;
+    }
+    pin->SetString("rad_vet","closure","sc");
+  }
+  if (!sph_geom) {
+    // a Cartesian mesh (rad_vet_vet.cpp)
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
     // vet_gd_rotate_every has no vet_sc clock: inert
     if (pin->DoesParameterExist("rad_vet","vet_gd_rotate_every") &&
         pin->GetInteger("rad_vet","vet_gd_rotate_every") > 0 &&
         global_variable::my_rank == 0) {
-      std::cout << "### NOTE: <rad_vet>/vet_gd_rotate_every has no effect with closure = "
-                << "vet_sc (the set does not rotate); name vet_gd_rotate_dt" << std::endl;
+      std::cout << "### NOTE: <rad_vet>/vet_gd_rotate_every has no effect on a "
+                << "Cartesian mesh (the set does not rotate); name vet_gd_rotate_dt"
+                << std::endl;
     }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
     // clean_rot_ring named: the rotating set on the clean ring (vet_gd_rotate_xfade)
@@ -1391,9 +1404,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // vet_source_noesrc (rad_vet_vet.cpp)
     vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",fresh);
-  } else if (cl.compare("vet_col") == 0) {
-    // (rad_vet_vetcol.cpp)
-    vet_col = true;
+  } else {
+    // spherical polar, cubed sphere (rad_vet_vetray.cpp, rad_vet_vetgd.cpp)
+    vgd_on = VetCurvedRays(pin);
     // vet_col_surface_face (sp): acts with vet_col_surface_q and implicit_marshak_face =
     // linear (rad_vet.hpp)
     if (sph_geom) {
@@ -1453,15 +1466,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // Athena++ x2rat / x3rat (not AthenaK keys) noted for VetLatInit
+    // Athena++ x2rat / x3rat (not AthenaK keys) noted for VetRaySetup
     for (const char *rk : {"x2rat", "x3rat"}) {
       if (pin->DoesParameterExist("mesh", rk) && pin->GetReal("mesh", rk) != 1.0) {
-        vlat_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);
+        vray_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);
       }
-    }
-    // vet_gd (rad_vet_vetgd.cpp)
-    if (pin->DoesParameterExist("rad_vet","vet_gd")) {
-      vgd_on = pin->GetBoolean("rad_vet","vet_gd");
     }
     // default of a fresh start on spherical polar: a fixed set (vet_gd_rotate_dt = 0)
     if (vgd_on && ppack->pmesh->use_spherical_polar && !global_variable::restart_run &&
@@ -1703,10 +1712,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "build" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // vet_source_noesrc: fresh default true for a plain vet_col (no vet_gd)
-    if (!vgd_on && fresh && !pin->DoesParameterExist("rad_vet","vet_source_noesrc")) {
-      vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",true);
-    }
     vsrc_noes_h2be =
         pin->GetOrAddBoolean("rad_vet","vet_source_noesrc_h2be",vsrc_noes_h2be);
     if (vgd_on) vgd_wint = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_interp",vgd_wint);
@@ -1746,16 +1751,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // vet_col_lat_cut_thin (CleanRayCut)
     if (vgd_on) {
-      vlat_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
+      vray_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
                                         global_variable::restart_run ? 0.0 : 1.0);
     }
-  } else {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/closure = '" << cl << "' is not a choice (vet_sc on a "
-      << "Cartesian mesh, vet_col with vet_gd = true on spherical polar and the cubed "
-      << "sphere, none; m1, minerbo, kershaw, eddington and tau were removed)"
-      << std::endl;
-    std::exit(EXIT_FAILURE);
   }
   }
 
@@ -1863,8 +1861,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet>: c=" << c_light << " chat/c=" << chat_over_c
               << " advect_split=" << (advect_split ? "true" : "false")
-              // the closure as named in the input
-              << " closure=" << (vet_col ? "vet_col" : vet_sc ? "vet_sc" : "none")
+              << " closure=" << ((vet_sc || vgd_on) ? "sc" : "analytic")
               << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
               << " kappa_f=" << kappa_f << " kappa_s=" << kappa_s
@@ -2217,7 +2214,7 @@ RadiationVet::~RadiationVet() {
     (void)hipFree(vgd_ipc_err);
   }
 #endif
-  if (vet_col) {VetColReport();}
+  VetRayReport();
   ReportCounters();
   ImplicitReport();
   Time2Report();      // time_scheme = hesdirk2

@@ -296,7 +296,7 @@ block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for the
   run may carry such a key: override it on the command line (for example
   `rad_vet/time2_stage_local_be=false`).
 - `<rad_vet>/scheme = clean currently needs a uniform mesh and chat = c`, `... on spherical
-  polar needs ... closure = vet_col with vet_gd`, `force_reference = wb_arad(_md) ... needs
+  polar needs ... the rays (closure = sc)`, `force_reference = wb_arad(_md) ... needs
   ... force_reference_work = split`, `clean_stag_fschur cannot take this mesh (nghost >= 3,
   MeshBlock size, uniform mesh)`, `<mesh>/layout_tile N needs ...`:
   set-up checks; the message says which key or mesh property to change.

@@ -489,7 +489,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       }
     }
     hr_q = impl_beam_hr && (vet_sc || (vgd_on && sph_geom)) &&
-           (ibc_x1max == VET_IBC_MARSHAK) && !(hrq_col && vet_col);
+           (ibc_x1max == VET_IBC_MARSHAK) && !(hrq_col && sph_geom);
     if (hr_q && vcol_q.extent_int(0) < nmb) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);

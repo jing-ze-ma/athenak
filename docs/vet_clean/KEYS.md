@@ -98,10 +98,8 @@ with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
 |---|---|---|---|---|
 | `rad_vet/transport` | Radiation transport; the clean scheme needs `implicit`. | `implicit` on a fresh run with a `<rad_vet>` block | all: `implicit` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/scheme` | Radiation solver. Only `clean` exists; any other value is FATAL. | `clean` with implicit transport | all: `clean` | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/closure` | Closure. `vet_col` with `vet_gd = true`: variable Eddington tensor from the global ray sweep (required on spherical polar and the cubed sphere). | `vet_col` with `vet_gd` on a fresh sp/cs run; `m1` otherwise | all: `vet_col` | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/vet_gd` | Use the global ray sweep for the Eddington tensor. | true with `closure = vet_col` on a fresh sp/cs run | all: `true` | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/vet_gd_replace` | The global sweep replaces the per-column sweep. | true with `vet_gd`, also on a restart whose file lacks it (NOTE) | all: `true` | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/clean_closure` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays, with or without `vet_gd` (without: `clean_consistency = false`); for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet.cpp` (constructor) |
+| `rad_vet/closure` | Only `sc`: the Eddington tensor from the short-characteristics rays, on Cartesian meshes and by the global sweep on spherical polar and the cubed sphere. An older name is read as `sc` (NOTE) only where it ran the same closure: `vet_sc` on a Cartesian mesh, `vet_col` with `vet_gd = true` on a curved one; every other value stops the run. | `sc` | - | `rad_vet/rad_vet.cpp` (constructor) |
+| `rad_vet/clean_closure` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays; for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet.cpp` (constructor) |
 
 ## Rays
 
@@ -244,7 +242,7 @@ Scheme options (in brackets the templates' values):
 - `clean_stag_opac_update` (true), `clean_stag_opac_passes` (3): opacities at the iterate's temperature.
 - `clean_stag_lat_sums`, `clean_stag_opac_drag`, `clean_stag_tie_gid` (all true, the defaults).
 - `implicit_pos_floor`, `implicit_pos_floor_cons`, `implicit_pos_gas`, `implicit_pos_gas_cons` (true): E floor and gas positivity paid from the radiation. A non-finite E (a diverged iterate) is never raised: the write-back rejects the solve.
-- `vet_seg` (`jump`), `vet_interp` (`auto`), `vet_bc_inner`, `vet_bc_diff`, `vet_gd_tangential`, `vet_gd_wall_interp`, `vet_gd_halo_compact`, `vet_gd_allow_clamp`: ray-sweep details.
+- `vet_seg` (`jump`), `vet_interp` (`auto`), `vet_bc_inner`, `vet_bc_diff`, `vet_gd_wall_interp`, `vet_gd_halo_compact`, `vet_gd_allow_clamp`: ray-sweep details.
 
 Solver internals (in brackets the templates' values): `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_kappa`,
 `clean_tol`, `clean_tol_nl`, `clean_maxit` (200), `clean_maxnl` (200), `clean_maxpic`,
@@ -263,11 +261,16 @@ may store 0.1: name it 0). Not recommended: `time2_k1_stiff` (keep 0).
 
 Removed study and debug keys stop the run with a message when named with another value than
 their old default (`CleanPreflight` in `rad_vet/rad_vet_clean.cpp` lists them); keys of the
-removed solvers that old decks and restart files carry are accepted without effect.
+removed solvers that old decks and restart files carry are accepted without effect (listed at
+the start): also `vet_col_*` (`vet_col_axis` only `radial`, `vet_col_every` only 1;
+`vet_col_lat_cut_thin` is read), `vet_every` (only 1), `vet_source`, `vet_gd_replace`,
+`vet_gd_tangential`, `vet_gd_rotate_slope_reuse`, `time2_vet_source*` and `cs_vertex_mono*`.
+`vet_gd` is read only where `clean_closure` is `eddington` or `sphere` (true: the rays' arrays
+are set up).
 
 Named in the templates but without effect with them (fixed rays, spherical polar): the
 rotation keys other than `vet_gd_rotate_dt`, the cubed-sphere keys (`clean_cs_lz_tel`,
-`cs_cross_mono`, `cs_vertex_mono`, `mesh/cs_*`), `vet_source`, `vet_scatter_j` and the other
+`cs_cross_mono`, `mesh/cs_*`), `vet_scatter_j` and the other
 relaxed-source keys (`clean_ray_source_relaxed` was removed: only false), `vet_col_lat_taucut`,
 `implicit_maxit`, `implicit_lin_maxit`, `time2_enth_be`, `time/dt_retry_max`. Keys that are
 never read are listed by the `never read` warning after the first cycle.

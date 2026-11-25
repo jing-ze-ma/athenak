@@ -68,16 +68,6 @@ void CleanDefaults(ParameterInput *pin) {
                                                                      "scheme") :
       (pin->GetString("rad_vet", "transport") == "implicit" ? "clean" : "default");
   if (sc != "clean") return;
-  // spherical polar and the cubed sphere: the vet_gd rays, unless the input names a
-  // closure (or the analytic clean_closure)
-  auto on = [&](const char *k) {return named("mesh", k) && pin->GetBoolean("mesh", k);};
-  if ((on("use_spherical_polar") || on("use_cubed_sphere")) &&
-      !named("rad_vet", "closure") && !named("rad_vet", "clean_closure")) {
-    pin->SetString("rad_vet", "closure", "vet_col");
-    if (!named("rad_vet", "vet_gd")) pin->SetBoolean("rad_vet", "vet_gd", true);
-    Log("<rad_vet>/closure = vet_col, vet_gd = true (the default of a fresh clean run on "
-        "spherical polar or the cubed sphere)");
-  }
   if (!named("time", "cfl_number")) {
     pin->GetOrAddReal("time", "cfl_number", 0.3);
     Log("<time>/cfl_number = 0.3 (the default of a fresh clean VET run)");

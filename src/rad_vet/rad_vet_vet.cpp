@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vet.cpp
-//! \brief closure = vet_sc: variable Eddington tensor for the multi-D implicit VET solve
+//! \brief closure = sc: variable Eddington tensor for the multi-D implicit VET solve
 //! from a grey short-characteristics formal solution on the Cartesian VET grid.
 //!
 //! Solved per build at the lagged state:
@@ -675,7 +675,7 @@ Real RadiationVet::VetBathLo() const {
 void RadiationVet::VetInit(ParameterInput *pin) {
   Mesh *pm = pmy_pack->pmesh;
   if (!trans_on) {
-    VetFatal("<rad_vet>/closure = vet_sc needs transport = implicit on a MULTI-D mesh");
+    VetFatal("<rad_vet>/closure = sc needs transport = implicit on a MULTI-D mesh");
   }
   // several MeshBlocks or ranks: the banded sweep VetSweepMB
   const bool mbpath = (pm->nmb_total != 1 || global_variable::nranks != 1);
@@ -690,12 +690,12 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   auto vac = [](const int b) {return b == VET_IBC_MARSHAK || b == VET_IBC_OUTFLOW;};
   if ((vet_x2open && !(vac(ibc_x2min) && vac(ibc_x2max))) ||
       (vet_x3open && !(vac(ibc_x3min) && vac(ibc_x3max)))) {
-    VetFatal("<rad_vet>/closure = vet_sc on a non-periodic x2 (x3) mesh needs "
+    VetFatal("<rad_vet>/closure = sc on a non-periodic x2 (x3) mesh needs "
              "implicit_bc_x2min = implicit_bc_x2max (x3min, x3max) = marshak: the "
              "vacuum face of both the formal solution and the moment solve");
   }
   if ((vet_x2open || vet_x3open) && mbpath) {
-    VetFatal("<rad_vet>/closure = vet_sc with non-periodic x2 (x3) boundaries (vacuum "
+    VetFatal("<rad_vet>/closure = sc with non-periodic x2 (x3) boundaries (vacuum "
              "faces of the formal solution) needs a single MeshBlock on one rank");
   }
   vet_nmu = pin->GetOrAddInteger("rad_vet", "vet_nmu", 4);
@@ -914,7 +914,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
     }
   }
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> closure = vet_sc: short characteristics, " << vet_nray
+    std::cout << "<rad_vet> closure = sc: short characteristics, " << vet_nray
               << (vsc_gd ? " rays (vet_sc_set = gd: the vet_gd set, pole on x1"
                          : " rays (double-Gauss nmu=" + std::to_string(vet_nmu) +
                            " x nphi=" + std::to_string(vet_nphi))
@@ -1187,14 +1187,14 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   const bool thrd = trans_x3;
   if ((mindcs.nx1 % nx1) != 0 || (mindcs.nx2 % nx2) != 0 ||
       (thrd && (mindcs.nx3 % nx3) != 0)) {
-    VetFatal("<rad_vet>/closure = vet_sc on several MeshBlocks needs a uniform mesh");
+    VetFatal("<rad_vet>/closure = sc on several MeshBlocks needs a uniform mesh");
   }
   st.nbx1 = mindcs.nx1/nx1;
   const int nbx2 = mindcs.nx2/nx2;
   const int nbx3 = thrd ? (mindcs.nx3/nx3) : 1;
   st.nx1g = mindcs.nx1;
   if (nx1 < 2) {
-    VetFatal("<rad_vet>/closure = vet_sc needs <meshblock>/nx1 >= 2");
+    VetFatal("<rad_vet>/closure = sc needs <meshblock>/nx1 >= 2");
   }
   const int me = global_variable::my_rank;
   // sweep blocks: the rank's own; rays: all, up rays (mu1 > 0) first
@@ -1281,7 +1281,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
         rdh(rl,2*d + 1) = std::max(0, o + 1) + eps + wp;
         if (rdh(rl,2*d) > ((d == 0) ? st.w2 : st.w3) ||
             rdh(rl,2*d + 1) > ((d == 0) ? st.w2 : st.w3)) {
-          VetFatal("<rad_vet>/closure = vet_sc: per-ray band wider than the band");
+          VetFatal("<rad_vet>/closure = sc: per-ray band wider than the band");
         }
       }
     }
@@ -1364,7 +1364,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   }
   for (int t = 0; t < nbt; ++t) {
     if (gof[t] < 0) {
-      VetFatal("<rad_vet>/closure = vet_sc: incomplete MeshBlock grid");
+      VetFatal("<rad_vet>/closure = sc: incomplete MeshBlock grid");
     }
   }
   const int nsb = st.nsb, g0 = st.gsb0;
@@ -1466,7 +1466,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
     for (const auto &x : pr) {
       while (ip < A.prk.size() && A.prk[ip] != x[0]) ++ip;
       if (ip == A.prk.size()) {
-        VetFatal("<rad_vet>/closure = vet_sc: asymmetric neighbour ranks");
+        VetFatal("<rad_vet>/closure = sc: asymmetric neighbour ranks");
       }
       if (static_cast<int>(ip) != last) {
         A.rdsp[ip] = A.rtot;
@@ -2693,7 +2693,7 @@ void RadiationVet::ImplBeamInit(ParameterInput *pin) {
   ibm_n = pin->GetInteger("rad_vet", "implicit_beam_n");
   if (ibm_n <= 0) {ibm_n = 0; return;}
   if (ibm_n > 2) VetFatal("<rad_vet>/implicit_beam_n must be 0, 1 or 2");
-  if (!vet_sc) VetFatal("<rad_vet>/implicit_beam_n needs closure = vet_sc");
+  if (!vet_sc) VetFatal("<rad_vet>/implicit_beam_n needs closure = sc");
   if (ibc_x1min != VET_IBC_MARSHAK)
     VetFatal("<rad_vet>/implicit_beam_n needs implicit_bc_x1min = marshak");
   if (vet_x1per) VetFatal("<rad_vet>/implicit_beam_n is not for a periodic x1 sweep");

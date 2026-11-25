@@ -116,7 +116,7 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
 
 The classic grey radiation tests (group `radiation`; decks `decks/rad_*.athinput`, ported from
 the former `inputs/tests/rad_vet_*` decks, removed because they used the explicit transport, to
-the production clean scheme: `transport = implicit`, `closure = vet_sc`, the key block of the
+the production clean scheme: `transport = implicit`, `closure = sc`, the key block of the
 other Cartesian decks, Marshak radiation faces).
 
 | test | deck | what | criterion |

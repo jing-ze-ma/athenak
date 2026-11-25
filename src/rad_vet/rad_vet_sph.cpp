@@ -38,8 +38,6 @@ namespace radvet {
 void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   std::string why;
   auto *pm = pmy_pack->pmesh;
-  // vet_sc is refused
-  if (vet_sc) {why += " closure = vet_sc;";}
   if (pm->multilevel) {why += " SMR/AMR;";}
   if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
@@ -88,7 +86,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_vet> on the cubed sphere supports only "
-        << "transport = implicit, closure = vet_col | none, "
+        << "transport = implicit, "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
         << "= bicgstab, implicit_precond = rbgs_fwd | mg (and the spherical-polar "
         << "list below); this input has:"
@@ -116,7 +114,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> on a spherical-polar mesh supports "
-      << "only transport = implicit, closure = vet_col | none, "
+      << "only transport = implicit, "
       << "implicit_offdiag = auto | none | lagged, "
       << "time_scheme = be | hesdirk2, one MeshBlock "
       << "along x1, no SMR, implicit_flux = central | berthon | blend, "

@@ -70,7 +70,7 @@ const char *kDtrMinimal[] = {
   "vet.u0", "vet.f0x1", "vet.f0x2", "vet.f0x3", "vet.ipred", "vet.t2k1",
   "vet.vet_prev", "vet.csk1",
   "vet.vra_d", "vet.opac", "vet.vet_cell",
-  "vet.vlat_cs",
+  "vet.vray_cs",
   // step 1 time2_face_fct: the face E flux of K1 (rotated with it)
   "vet.t2pf1",
   // esrc (the explicit energy source, OLD vector of E in every solve) is
@@ -471,8 +471,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   pk->pradvet->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
   // clean: the minimal list without the Views the clean scheme (<rad_vet>/scheme =
-  // clean) does not write (the implicit solve's predictors and sources, the vet_col
-  // closure builds)
+  // clean) does not write (the implicit solve's predictors and sources)
   all_views_ = (vm == "all");
   clean_views_ = (vm == "clean");
   if (!all_views_ && !clean_views_ && vm != "minimal") {
@@ -586,8 +585,8 @@ void DtRetry::Build(Mesh *pm) {
       sel.erase("vet.cln_fvi");
       if (!vet->cln_cssc || vet->CleanFhBuilt()) sel.erase("vet.cln_fh");
     }
-    // (and the rays' source vlat_cs, each build's, written before it is read)
-    sel.erase("vet.vlat_cs");
+    // (and the rays' source vray_cs, each build's, written before it is read)
+    sel.erase("vet.vray_cs");
     Binder b{&ent_, "vet.", &sel, all_views_, host_ || hvet_};
     vet->DtRetryVisit(b);
   }
