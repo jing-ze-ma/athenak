@@ -2070,10 +2070,12 @@ void RadiationVet::CleanGdFaceSums() {
   auto qb_ = vgd_x1b;
   auto qr_ = vgd_x1r;
   const int nj = je - js + 1, nkj = (ke - ks + 1)*nj;
-  // rr: the rays' r face fluxes, all faces at once (the columns only read them)
+  // rr: the rays' r face fluxes, all faces at once (the columns only read them); cubed
+  // sphere: the faces above the lowest, no march there
+  const bool rf_on = rr || x.cub;
   DvceArray5D<Real> rf = ScratchView<DvceArray5D<Real>>("cln_gd_rf",
-                       rr ? nmb1 + 1 : 1, 4, rr ? ke - ks + 1 : 1, rr ? nj : 1,
-                       rr ? ie - is + 2 : 1);
+                       rf_on ? nmb1 + 1 : 1, 4, rf_on ? ke - ks + 1 : 1, rf_on ? nj : 1,
+                       rf_on ? ie - is + 2 : 1);
   Kokkos::deep_copy(DevExeSpace(), rf, 0.0);
   if (fs) {
     // (cells is..ie: low lateral faces as cln_gd_lat; faces is..ie+1: the r face as
@@ -2126,6 +2128,14 @@ void RadiationVet::CleanGdFaceSums() {
     CleanGhostFill(cln_s, CLN_F3, 4);
   } else if (rr) {
     CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, is, ie + 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real q[4];
+      rflux(m, k, j, i, q);
+      for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
+    });
+  }
+  if (x.cub) {
+    CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, is + 1, ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
       rflux(m, k, j, i, q);
@@ -2199,7 +2209,7 @@ void RadiationVet::CleanGdFaceSums() {
       for (int i = is; i <= ie && !cel; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
         if (x.cub) {   // (no curvature terms: Cartesian momentum)
-          rflux(m, k, j, i + 1, q);
+          for (int c = 0; c < 4; ++c) q[c] = rf(m,c,k-ks,j-js,i+1-is);
           continue;
         }
         Real g[2] = {0.0, 0.0}, qi = q[2];
