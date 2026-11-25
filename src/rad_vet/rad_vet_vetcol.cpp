@@ -80,7 +80,7 @@ void RadiationVet::VetColInit() {
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
     const double rtop = x1f_h(0, ie + 1);
-    M1SphMarshakCoef(x1v_h(0, ie), x1v_h(0, ie - 1), rtop, vcol_jca, vcol_jcb);
+    VetSphMarshakCoef(x1v_h(0, ie), x1v_h(0, ie - 1), rtop, vcol_jca, vcol_jcb);
     vcol_jcap = 2.0*SQR(x1v_h(0, ie)/rtop);
   }
   const int nmb = pmy_pack->nmb_thispack;
@@ -331,7 +331,7 @@ void RadiationVet::VetLatOdMax() {
     const int vr = cs_vtx_n + 1;
     par_for("vet_vlat_csvtx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (M1CsVtxDist(k, j, ks, ke, js, je, cse(m,0) != 0, cse(m,1) != 0, cse(m,2) != 0,
+      if (VetCsVtxDist(k, j, ks, ke, js, je, cse(m,0) != 0, cse(m,1) != 0, cse(m,2) != 0,
                       cse(m,3) != 0) <= vr) {
         tt_(m,VET_TT_LAT0+1,k,j,i) = 0.0;
         tt_(m,VET_TT_LAT0+2,k,j,i) = 0.0;

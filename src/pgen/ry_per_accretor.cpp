@@ -513,7 +513,7 @@ Real t2s1_[2] = {0.0, 0.0};
 Real t2nf_ = -1.0;
 // problem/sink_kick_book (default true; history only): the audit
 // (<rad_vet>/dbg_energy_audit) found that the kinetic energy
-// RyPerM1Post removes from the sink cells is NOT all unpaid work: the M1 write-back pays
+// RyPerVetPost removes from the sink cells is NOT all unpaid work: the M1 write-back pays
 // the kick's work from E, and only where that drives E below e_floor does the
 // implicit_pos_floor raise create the energy (VET_POS_FLR_UN).  With the key, every
 // backward-Euler solve books Emsk += eke - (the solve's FLR_UN increment, all cells): the
@@ -1419,7 +1419,7 @@ void RyPerBCEnv(Mesh *pm) {
           u0(m,IM2,k,j,ig) = dg*v2;
           u0(m,IM3,k,j,ig) = dg*v3;
           u0(m,IEN,k,j,ig) = eg + 0.5*dg*AccQ(cs, cc, v1, v2, v3) + dg*phicc(m,k,j,ig);
-          if (rad) radvet::M1FillGhost(ur, m, k, j, ig, k, j, is, 1, 0, -1.0, rcl, refl);
+          if (rad) radvet::VetFillGhost(ur, m, k, j, ig, k, j, is, 1, 0, -1.0, rcl, refl);
         }
       }
       if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
@@ -1473,7 +1473,7 @@ void RyPerBCEnv(Mesh *pm) {
               ur(m,radvet::VET_F2,k,j,ig) = 0.0;
               ur(m,radvet::VET_F3,k,j,ig) = (4.0/3.0)*eg*v3;
             } else {
-              radvet::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
+              radvet::VetFillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
             }
           }
         }
@@ -1674,7 +1674,7 @@ void RyPerBCEnv(Mesh *pm) {
                            + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,jg,i);
         if (rad) {
           const int md = (sd == 0) ? rm2lo : rm2hi;
-          radvet::M1FillGhost(ur, m, k, jg, i, k, (md == 1) ? jm : ja, i, 2, md,
+          radvet::VetFillGhost(ur, m, k, jg, i, k, (md == 1) ? jm : ja, i, 2, md,
                               (sd == 0) ? -1.0 : 1.0, rcl, refl);
         }
       }
@@ -1948,7 +1948,7 @@ void RyPerFloorVcap(Mesh *pm) {
   });
 }
 
-void RyPerM1Post(Mesh *pm) {
+void RyPerVetPost(Mesh *pm) {
   if (flvc_) RyPerFloorVcap(pm);
   if (!msk_) return;
   if (!(mirr_ || (nzback_ && stvol_ && stream_on_))) return;
@@ -2216,16 +2216,16 @@ void RyPerHoldBook(Mesh *pm) {
 }
 
 //! the M1 post hook of the envelope with rbk_ (booking, then as before)
-void RyPerM1PostRb(Mesh *pm) {
+void RyPerVetPostRb(Mesh *pm) {
   RyPerHoldBook(pm);
   RyPerRadBook(pm);
-  RyPerM1Post(pm);
+  RyPerVetPost(pm);
   if (lz_) RyPerLzMark(pm->pmb_pack);
 }
 
-//! the M1 post hook of the envelope (RyPerM1Post, then the L_z mark)
-void RyPerM1PostLz(Mesh *pm) {
-  RyPerM1Post(pm);
+//! the M1 post hook of the envelope (RyPerVetPost, then the L_z mark)
+void RyPerVetPostLz(Mesh *pm) {
+  RyPerVetPost(pm);
   RyPerLzMark(pm->pmb_pack);
 }
 
@@ -3624,10 +3624,10 @@ void RadColG(radvet::RadiationVet *pm1, const Real du, const Real tk, const Real
     }
     Kokkos::deep_copy(dd, hd);
     Kokkos::deep_copy(dt, ht);
-    radvet::M1OpacTab ot = pm1->otab;
+    radvet::VetOpacTab ot = pm1->otab;
     par_for("ryper_ckt", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int n) {
       Real op, oe, of, os;
-      radvet::M1TableOpacities(ot, dd(n), dt(n), op, oe, of, os);
+      radvet::VetTableOpacities(ot, dd(n), dt(n), op, oe, of, os);
       dk(n) = of + os;
     });
     auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
@@ -3920,10 +3920,10 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     const Real pg = eos.Pressure(d, e, t);
     const Real prad = ar*SQR(SQR(t))/3.0;
     DvceArray1D<Real> sk("ryper_sk", 2);
-    radvet::M1OpacTab ot = pm1->otab;
+    radvet::VetOpacTab ot = pm1->otab;
     par_for("ryper_skt", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
       Real op, oe, of, os;
-      radvet::M1TableOpacities(ot, d, t, op, oe, of, os);
+      radvet::VetTableOpacities(ot, d, t, op, oe, of, os);
       sk(0) = of + os;
       sk(1) = op;
     });
@@ -6739,15 +6739,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_bcs_func = RyPerBCEnv;
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
-    if (msk_ || flvc_) user_m1post_func = RyPerM1Post;
-    if (lz_) user_m1post_func = RyPerM1PostLz;   // (RyPerM1Post + the L_z mark)
+    if (msk_ || flvc_) user_m1post_func = RyPerVetPost;
+    if (lz_) user_m1post_func = RyPerVetPostLz;   // (RyPerVetPost + the L_z mark)
     // rbk_ (see there): wherever the M1 post hook runs after every solve
     {
       auto *pm1 = pmbp->pradvet;
       rbk_ = rad_ && pm1 != nullptr && pm1->coupling && pm1->gas_feedback && pm1->fl_on &&
              (!pin->DoesParameterExist("problem", "rad_book_lag") ||
               !pin->GetBoolean("problem", "rad_book_lag"));
-      if (rbk_) user_m1post_func = RyPerM1PostRb;
+      if (rbk_) user_m1post_func = RyPerVetPostRb;
       if (rbk_ && global_variable::my_rank == 0) {
         std::printf("ry_per_accretor: Ebnd radiation out booked per M1 solve "
                     "(problem/rad_book_lag = true: the old one-cycle-late "

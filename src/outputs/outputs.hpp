@@ -325,23 +325,23 @@ class BaseTypeOutput {
   // on and has allocated; see utils/two_stream_warm_rst.hpp for the file format.
   HostArray4D<Real> outarray_wm1, outarray_wm2;
   // the <rad_vet> implicit_predictor = step increment (RadiationVet::ipred, 3 channels);
-  // empty unless one is stored.  See radvet::kM1PredRstMagic.
+  // empty unless one is stored.  See radvet::kVetPredRstMagic.
   HostArray5D<Real> outarray_m1p;
   // <rad_vet> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
   // RadiationVet::Time2RstPack); empty unless a slope is stored.
-  // radvet::kM1Time2RstMagic.
+  // radvet::kVetTime2RstMagic.
   HostArray5D<Real> outarray_m1t;
   HostArray5D<Real> outarray_wpv;   // hydro w0 (its IDN, IVX..IVZ go to the eint record)
   std::vector<DvceArray5D<Real>> rst_keep_;   // device packs a zero-copy staging reads
   DvceArray5D<Real> outarray_m1t_d;   // (its memory where the host reads device memory)
   // <rad_vet> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
-  // radvet::kM1CtrRstMagic.
+  // radvet::kVetCtrRstMagic.
   HostArray5D<Real> outarray_m1c;
   // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationVet::RssSlot);
-  // empty unless the signal speed is on.  radvet::kM1RssRstMagic.
+  // empty unless the signal speed is on.  radvet::kVetRssRstMagic.
   HostArray5D<Real> outarray_m1s;
   // <rad_vet>/vet_rotate_avg: the averaging history, densely packed
-  // slabs; empty without a complete history.  radvet::kM1RaRstMagic.
+  // slabs; empty without a complete history.  radvet::kVetRaRstMagic.
   HostArray5D<Real> outarray_m1r;
   // implicit_gas_src = conservative(2): the cell-F slope csk1
   HostArray5D<Real> outarray_m1k;

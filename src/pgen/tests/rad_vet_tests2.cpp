@@ -114,7 +114,7 @@ int m1_cy_n = 0;
 Real m1_cy_p[24][9] = {};
 // the object table captured by value in the reset kernel (namespace scope: CUDA does
 // not take a function-local type in an extended lambda)
-struct M1CylP {Real v[24][9];};
+struct VetCylP {Real v[24][9];};
 Real m1_cy_rhob = 1.0e-6, m1_cy_tb = 1.0e-3, m1_cy_gm1 = 2.0/3.0;
 
 // radshock: the two Dirichlet end states (rho, v, E_gas, E_rad, F_rad)
@@ -133,11 +133,11 @@ Real m1_sa_h = 0.0;
 Real m1_cs_ax[3] = {0.0, 0.0, 1.0};
 
 //----------------------------------------------------------------------------------------
-//! \fn M1Legendre
+//! \fn VetLegendre
 //! \brief P_l(x) by the upward recurrence
 
 KOKKOS_INLINE_FUNCTION
-Real M1Legendre(const int l, const Real x) {
+Real VetLegendre(const int l, const Real x) {
   Real p0 = 1.0, p1 = x;
   if (l == 0) return p0;
   for (int n = 1; n < l; ++n) {
@@ -149,11 +149,11 @@ Real M1Legendre(const int l, const Real x) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1CsMu
+//! \fn VetCsMu
 //! \brief rhat . axis of the centre of cell (k,j) of a cubed-sphere MeshBlock
 
 KOKKOS_INLINE_FUNCTION
-Real M1CsMu(const int panel, const int k, const int j, const int ks, const int js,
+Real VetCsMu(const int panel, const int k, const int j, const int ks, const int js,
             const int nx2, const int nx3, const Real x2mn, const Real x2mx,
             const Real x3mn, const Real x3mx, const Real ax, const Real ay,
             const Real az) {
@@ -165,12 +165,12 @@ Real M1CsMu(const int panel, const int k, const int j, const int ks, const int j
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1AtmTau
+//! \fn VetAtmTau
 //! \brief the Rosseland optical depth measured DOWNWARD from the top mesh face z = ztop
 //! for rho(z) = rho_top exp[(ztop - z)/H] and a constant kappa.
 
 KOKKOS_INLINE_FUNCTION
-Real M1AtmTau(const Real z, const Real rho_top, const Real kap, const Real hh,
+Real VetAtmTau(const Real z, const Real rho_top, const Real kap, const Real hh,
               const Real ztop) {
   Real s = (ztop - z)/hh;
   // expm1 keeps the top cells (s << 1) accurate: tau -> kappa rho_top (ztop - z) there
@@ -178,12 +178,12 @@ Real M1AtmTau(const Real z, const Real rho_top, const Real kap, const Real hh,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1ShadowRho
+//! \fn VetShadowRho
 //! \brief the clump density profile: a Fermi-like smoothing of the ellipse boundary,
 //! rho = rho0 [1 + (ratio - 1)/(1 + exp(delta (D - 1)))], D^2 = (dx/ax)^2 + (dy/ay)^2.
 
 KOKKOS_INLINE_FUNCTION
-Real M1ShadowRho(const Real x, const Real y, const Real rho0, const Real ratio,
+Real VetShadowRho(const Real x, const Real y, const Real rho0, const Real ratio,
                  const Real x0, const Real y0, const Real ax, const Real ay,
                  const Real delta, const bool dsq = false) {
   // shadow_dsq: D^2 - 1 in the exponent (Jiang 2021 / Ma et al. 2025)
@@ -289,7 +289,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       Real &x2max = size.d_view(m).x2max;
       Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
       Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-      Real d = M1ShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta, dsq);
+      Real d = VetShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta, dsq);
       uh(m,IDN,k,j,i) = d;
       uh(m,IM1,k,j,i) = 0.0;
       uh(m,IM2,k,j,i) = 0.0;
@@ -465,13 +465,13 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     Real ztop = pmy_mesh_->mesh_size.x1max;
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     Real qq = pmbp->pradvet->marshak_q;
-    Real q0 = radvet::M1Chi(qq)/qq;
+    Real q0 = radvet::VetChi(qq)/qq;
     m1_at_rho = rht;
     m1_at_h = hh;
     m1_at_ztop = ztop;
     m1_at_egas = tg/gm1;
     // the closed-form E at the bottom MESH FACE, which is where tau_bot sits (reported)
-    Real taub = M1AtmTau(pmy_mesh_->mesh_size.x1min, rht, kap, hh, ztop);
+    Real taub = VetAtmTau(pmy_mesh_->mesh_size.x1min, rht, kap, hh, ztop);
     Real ebot;
     {
       // invert chi(f)/f = q0 + tau on the decreasing branch by bisection on f
@@ -479,7 +479,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       Real flo = 1.0e-14, fhi = 0.8250;
       for (int n=0; n<200; ++n) {
         Real fm = 0.5*(flo + fhi);
-        if (radvet::M1Chi(fm)/fm > target) {flo = fm;} else {fhi = fm;}
+        if (radvet::VetChi(fm)/fm > target) {flo = fm;} else {fhi = fm;}
       }
       ebot = fin/(cl*0.5*(flo + fhi));
     }
@@ -487,7 +487,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
     if (global_variable::my_rank == 0) {
       std::cout << "  m1_test = atmosphere: kappa=" << kap << " rho_top=" << rht
                 << " H=" << hh << " tau_bot=" << taub << " tau_topcell="
-                << M1AtmTau(ztop - (ztop - pmy_mesh_->mesh_size.x1min)/
+                << VetAtmTau(ztop - (ztop - pmy_mesh_->mesh_size.x1min)/
                             static_cast<Real>(pmy_mesh_->mesh_indcs.nx1), rht, kap, hh,
                             ztop)
                 << " F=" << fin << " marshak_q=" << qq << " q0=" << q0
@@ -509,7 +509,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
       Real &x1max = size.d_view(m).x1max;
       Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
       Real d = rht*exp((ztop - x1v)/hh);
-      Real tau = M1AtmTau(x1v, rht, kap, hh, ztop);
+      Real tau = VetAtmTau(x1v, rht, kap, hh, ztop);
       uh(m,IDN,k,j,i) = d;
       uh(m,IM1,k,j,i) = 0.0;
       uh(m,IM2,k,j,i) = 0.0;
@@ -1107,16 +1107,16 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
       }
       if (lamp != 0.0 && csm && csl > 0) {
-        const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+        const Real mu = VetCsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
-        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*VetLegendre(csl, mu);
       }
       if (rla != 0.0) {
-        const Real mr = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+        const Real mr = VetCsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, rlx, rly, rlz);
-        const Real fr = 1.0 + rla*M1Legendre(1, mr);
+        const Real fr = 1.0 + rla*VetLegendre(1, mr);
         uh(m,IDN,k,j,i) *= fr;
         uh(m,IEN,k,j,i) *= fr;
       }
@@ -1206,7 +1206,7 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
         Real ff = (4.0/3.0)*bb, chq = 1.0/3.0;
         if (rqm1) {
           for (int it = 0; it < 60; ++it) {
-            chq = radvet::M1Chi(fabs(ff), rqck);
+            chq = radvet::VetChi(fabs(ff), rqck);
             ff = bb*(1.0 + chq);
           }
         }
@@ -1363,10 +1363,10 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
       }
       if (lamp != 0.0 && csm && csl > 0) {
-        const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+        const Real mu = VetCsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
-        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
+        u0(m,radvet::VET_E,k,j,i) *= 1.0 + lamp*VetLegendre(csl, mu);
       }
       u0(m,radvet::VET_F1,k,j,i) = f;
       u0(m,radvet::VET_F2,k,j,i) = 0.0;
@@ -1432,7 +1432,7 @@ void RadVetShadowGas(Mesh *pm, const Real bdt) {
     Real &x2max = size.d_view(m).x2max;
     Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
     Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-    Real d = M1ShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta, dsq);
+    Real d = VetShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta, dsq);
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;
@@ -1464,7 +1464,7 @@ void RadVetCylGas(Mesh *pm, const Real bdt) {
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
   const int nc = m1_cy_n;
-  M1CylP p;
+  VetCylP p;
   for (int c = 0; c < 24; ++c) {
     for (int q = 0; q < 9; ++q) {p.v[c][q] = m1_cy_p[c][q];}
   }
@@ -1640,7 +1640,7 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   const int nkji = nx3*nx2*nx1;
   const int nji = nx2*nx1;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("M1AmHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  Kokkos::parallel_reduce("VetAmHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;

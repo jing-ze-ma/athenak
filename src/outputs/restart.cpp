@@ -403,14 +403,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       hold(outarray_pgs, tmp);
     }
   }
-  // implicit_hr_cmem_rst: the applied face fluxes (kM1FaxRstMagic)
+  // implicit_hr_cmem_rst: the applied face fluxes (kVetFaxRstMagic)
   if (pradvet != nullptr && pradvet->FaxRstNslab() > 0) {
     const int nf = pradvet->FaxRstNslab();
     pack(outarray_fax, "rst-fax", nmb, nf, [&](DvceArray5D<Real> &t) {
       pradvet->FaxRstPack(t, nmb);
     });
   }
-  // vet_x1_periodic: the warm-start exit plane (kM1X1eRstMagic)
+  // vet_x1_periodic: the warm-start exit plane (kVetX1eRstMagic)
   if (pradvet != nullptr && pradvet->X1eRstNslab(nout1) > 0) {
     pack(outarray_x1e, "rst-x1e", nmb, pradvet->X1eRstNslab(nout1),
          [&](DvceArray5D<Real> &t) {pradvet->X1eRstPack(t, nmb);});
@@ -478,7 +478,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   // <rad_vet> implicit_predictor = step: the number of ipred channels written (0 when no
   // increment is stored, and then not one byte), and its marked header -- int32 have,
-  // int32 ncomp, Real pred_dt.  See radvet::kM1PredRstMagic.
+  // int32 ncomp, Real pred_dt.  See radvet::kVetPredRstMagic.
   const int npred = (pradvet != nullptr && pradvet->impl_pred && pradvet->pred_ok) ?
                     static_cast<int>(pradvet->ipred.extent(1)) : 0;
   char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
@@ -545,7 +545,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   const int nck = ck_rst_hdr_bytes.empty() ? 0
                   : static_cast<int>(outarray_ck.extent(0));
   // <rad_vet> implicit_closure_thin_relax: 4 ctr_mem slabs behind everything (0 = none,
-  // and then not one byte).  radvet::kM1CtrRstMagic.
+  // and then not one byte).  radvet::kVetCtrRstMagic.
   const int nctr = (pradvet != nullptr && pradvet->impl_ctrelax > 0.0 &&
                     pradvet->ctr_init)
                    ? 4 : 0;
@@ -554,7 +554,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[2] = {(nctr > 0) ? 1 : 0, static_cast<std::int32_t>(nctr)};
     std::memcpy(&(ctr_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <hydro|mhd>/rad_signal_speed: nrss slabs behind even those (radvet::kM1RssRstMagic)
+  // <hydro|mhd>/rad_signal_speed: nrss slabs behind even those (radvet::kVetRssRstMagic)
   const bool wrss = (pradvet != nullptr) &&
                     ((phydro != nullptr && phydro->rad_signal_speed) ||
                      (pmhd != nullptr && pmhd->rad_signal_speed));
@@ -567,7 +567,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   // <rad_vet>/implicit_gas_src = conservative(2): csk1 + the flags,
-  // ncsk slabs behind the vet_gd_async ones (radvet::kM1CskRstMagic)
+  // ncsk slabs behind the vet_gd_async ones (radvet::kVetCskRstMagic)
   const bool wcsk = (pradvet != nullptr) && pradvet->CskRstHdr();
   const int ncsk = wcsk ? pradvet->CskRstNch() : 0;
   char csk_hdr[4*sizeof(std::int32_t)];
@@ -577,7 +577,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(csk_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   // <rad_vet>/vet_rotate_avg: the averaging history, nra slabs behind
-  // even the csk ones (radvet::kM1RaRstMagic; RadiationVet::RotAvgRstHdr)
+  // even the csk ones (radvet::kVetRaRstMagic; RadiationVet::RotAvgRstHdr)
   std::int64_t ra_hdr[radvet::RadiationVet::VET_RA_RST_NH] = {0};
   if (pradvet != nullptr) {pradvet->RotAvgRstHdr(&(ra_hdr[0]));}
   const int nra = static_cast<int>(ra_hdr[1]);
@@ -796,8 +796,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the implicit_predictor header, same marked form, behind the warm-start one
     if (npred > 0) {
       IOWrapperSizeT nb = sizeof(pred_hdr);
-      resfile.Write_any_type(&(radvet::kM1PredRstMagic[0]),
-                             sizeof(radvet::kM1PredRstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kVetPredRstMagic[0]),
+                             sizeof(radvet::kVetPredRstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(pred_hdr[0]), nb, "byte", single_file_per_rank);
@@ -805,24 +805,24 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the hesdirk2 slope header, same marked form, behind the predictor one
     if (nt2 > 0) {
       IOWrapperSizeT nb = sizeof(t2_hdr);
-      resfile.Write_any_type(&(radvet::kM1Time2RstMagic[0]),
-                             sizeof(radvet::kM1Time2RstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kVetTime2RstMagic[0]),
+                             sizeof(radvet::kVetTime2RstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(t2_hdr[0]), nb, "byte", single_file_per_rank);
     }
     if (wonep) {
       IOWrapperSizeT nb = onep_nb;
-      resfile.Write_any_type(&(radvet::kM1OnePassRstMagic[0]),
-                             sizeof(radvet::kM1OnePassRstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kVetOnePassRstMagic[0]),
+                             sizeof(radvet::kVetOnePassRstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(onep_hdr[0]), nb, "byte", single_file_per_rank);
     }
     if (wabe) {
       IOWrapperSizeT nb = sizeof(abe_hdr);
-      resfile.Write_any_type(&(radvet::kM1AutoBeRstMagic[0]),
-                             sizeof(radvet::kM1AutoBeRstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kVetAutoBeRstMagic[0]),
+                             sizeof(radvet::kVetAutoBeRstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(abe_hdr[0]), nb, "byte", single_file_per_rank);
@@ -847,7 +847,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the thin_relax closure header, same marked form, behind the implicit-ck one
     if (nctr > 0) {
       IOWrapperSizeT nb = sizeof(ctr_hdr);
-      resfile.Write_any_type(&(radvet::kM1CtrRstMagic[0]), sizeof(radvet::kM1CtrRstMagic),
+      resfile.Write_any_type(&(radvet::kVetCtrRstMagic[0]),
+                             sizeof(radvet::kVetCtrRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ctr_hdr[0]), nb, "byte", single_file_per_rank);
@@ -855,7 +856,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the signal-speed header, same marked form, behind the thin_relax one
     if (nrss > 0) {
       IOWrapperSizeT nb = sizeof(rss_hdr);
-      resfile.Write_any_type(&(radvet::kM1RssRstMagic[0]), sizeof(radvet::kM1RssRstMagic),
+      resfile.Write_any_type(&(radvet::kVetRssRstMagic[0]),
+                             sizeof(radvet::kVetRssRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
@@ -863,7 +865,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the conservative cell-F slope header, same marked form, behind the signal-speed one
     if (wcsk) {
       IOWrapperSizeT nb = sizeof(csk_hdr);
-      resfile.Write_any_type(&(radvet::kM1CskRstMagic[0]), sizeof(radvet::kM1CskRstMagic),
+      resfile.Write_any_type(&(radvet::kVetCskRstMagic[0]),
+                             sizeof(radvet::kVetCskRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(csk_hdr[0]), nb, "byte", single_file_per_rank);
@@ -871,7 +874,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the vet_rotate_avg header, same marked form, behind the csk one
     if (nra > 0) {
       IOWrapperSizeT nb = sizeof(ra_hdr);
-      resfile.Write_any_type(&(radvet::kM1RaRstMagic[0]), sizeof(radvet::kM1RaRstMagic),
+      resfile.Write_any_type(&(radvet::kVetRaRstMagic[0]), sizeof(radvet::kVetRaRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ra_hdr[0]), nb, "byte", single_file_per_rank);
@@ -895,7 +898,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the rad_vet applied face flux header, same marked form, behind the pgen slab one
     if (nfax > 0) {
       IOWrapperSizeT nb = sizeof(fax_hdr);
-      resfile.Write_any_type(&(radvet::kM1FaxRstMagic[0]), sizeof(radvet::kM1FaxRstMagic),
+      resfile.Write_any_type(&(radvet::kVetFaxRstMagic[0]),
+                             sizeof(radvet::kVetFaxRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(fax_hdr[0]), nb, "byte", single_file_per_rank);
@@ -903,7 +907,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the vet_x1_periodic warm-start header, behind the fax one
     if (nx1e > 0) {
       IOWrapperSizeT nb = sizeof(x1e_hdr);
-      resfile.Write_any_type(&(radvet::kM1X1eRstMagic[0]), sizeof(radvet::kM1X1eRstMagic),
+      resfile.Write_any_type(&(radvet::kVetX1eRstMagic[0]),
+                             sizeof(radvet::kVetX1eRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(x1e_hdr[0]), nb, "byte", single_file_per_rank);
@@ -1010,19 +1015,19 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                  + sizeof(warm_hdr);
   }
   if (npred > 0) {
-    step3size += sizeof(radvet::kM1PredRstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kVetPredRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(pred_hdr);
   }
   if (nt2 > 0) {
-    step3size += sizeof(radvet::kM1Time2RstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kVetTime2RstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(t2_hdr);
   }
   if (wonep) {
-    step3size += sizeof(radvet::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kVetOnePassRstMagic) + sizeof(IOWrapperSizeT)
                  + onep_nb;
   }
   if (wabe) {
-    step3size += sizeof(radvet::kM1AutoBeRstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kVetAutoBeRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(abe_hdr);
   }
   if (neint > 0) {
@@ -1033,19 +1038,19 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                  + ck_rst_hdr_bytes.size();
   }
   if (nctr > 0) {
-    step3size += sizeof(radvet::kM1CtrRstMagic) + sizeof(IOWrapperSizeT) +
+    step3size += sizeof(radvet::kVetCtrRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(ctr_hdr);
   }
   if (nrss > 0) {
-    step3size += sizeof(radvet::kM1RssRstMagic) + sizeof(IOWrapperSizeT) +
+    step3size += sizeof(radvet::kVetRssRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(rss_hdr);
   }
   if (wcsk) {
-    step3size += sizeof(radvet::kM1CskRstMagic) + sizeof(IOWrapperSizeT) +
+    step3size += sizeof(radvet::kVetCskRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(csk_hdr);
   }
   if (nra > 0) {
-    step3size += sizeof(radvet::kM1RaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
+    step3size += sizeof(radvet::kVetRaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
   }
   if (nams > 0) {
     step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) +
@@ -1055,11 +1060,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     step3size += sizeof(kPgenSlabRstMagic) + sizeof(IOWrapperSizeT) + sizeof(pgs_hdr);
   }
   if (nfax > 0) {
-    step3size += sizeof(radvet::kM1FaxRstMagic) + sizeof(IOWrapperSizeT) +
+    step3size += sizeof(radvet::kVetFaxRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(fax_hdr);
   }
   if (nx1e > 0) {
-    step3size += sizeof(radvet::kM1X1eRstMagic) + sizeof(IOWrapperSizeT) +
+    step3size += sizeof(radvet::kVetX1eRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(x1e_hdr);
   }
 
@@ -1599,24 +1604,24 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     write_wtemp(Kokkos::subview(outarray_ck, n, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "ck restart state");
   }
-  // and the thin_relax closure memory last of all (kM1CtrRstMagic)
+  // and the thin_relax closure memory last of all (kVetCtrRstMagic)
   write_group(outarray_m1c, nctr, "rad_vet thin_relax closure");
-  // and the rad_signal_speed inputs behind it (kM1RssRstMagic)
+  // and the rad_signal_speed inputs behind it (kVetRssRstMagic)
   write_group(outarray_m1s, nrss, "rad_signal_speed inputs",
               [&](DvceArray5D<Real> &t, int m, int) {
                 pradvet->RssRstPack(t, 1, pradvet->RssRstMode(), m);});
-  // and the vet_gd_async pending source behind it (kM1VgdRstMagic)
-  // and the conservative cell-F slope behind it (kM1CskRstMagic)
+  // and the vet_gd_async pending source behind it (kVetVgdRstMagic)
+  // and the conservative cell-F slope behind it (kVetCskRstMagic)
   write_group(outarray_m1k, ncsk, "rad_vet conservative cell-F slope");
-  // and the vet_rotate_avg history behind it (kM1RaRstMagic)
+  // and the vet_rotate_avg history behind it (kVetRaRstMagic)
   write_group(outarray_m1r, nra, "vet_rotate_avg history");
   // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
   write_group(outarray_ams, nams, "am_vector spin");
   // and the per-cell pgen slabs behind it (kPgenSlabRstMagic)
   write_group(outarray_pgs, npgs, "pgen slab");
-  // and the rad_vet applied face fluxes last of all (kM1FaxRstMagic)
+  // and the rad_vet applied face fluxes last of all (kVetFaxRstMagic)
   write_group(outarray_fax, nfax, "rad_vet applied face flux");
-  // and the vet_x1_periodic warm-start plane behind them (kM1X1eRstMagic)
+  // and the vet_x1_periodic warm-start plane behind them (kVetX1eRstMagic)
   write_group(outarray_x1e, nx1e, "rad_vet vet_x1 warm start");
 
   // close file, clean up

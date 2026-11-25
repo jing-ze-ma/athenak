@@ -593,12 +593,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
-  // --- THE <rad_vet> implicit_predictor HEADER (radvet::kM1PredRstMagic): the same peek
+  // --- THE <rad_vet> implicit_predictor HEADER (radvet::kVetPredRstMagic): the same peek
   // once more, behind the warm-start header.  It says how many ipred channels the tail
   // carries behind the warm-start slabs and the dt of the step they were stored on.
   int npred_file = 0;
-  if (std::memcmp(variabledata, &(radvet::kM1PredRstMagic[0]),
-                  sizeof(radvet::kM1PredRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetPredRstMagic[0]),
+                  sizeof(radvet::kVetPredRstMagic)) == 0) {
     char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -629,12 +629,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     npred_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE <rad_vet> time_scheme = hesdirk2 HEADER (radvet::kM1Time2RstMagic), behind
+  // --- THE <rad_vet> time_scheme = hesdirk2 HEADER (radvet::kVetTime2RstMagic), behind
   // the predictor one: nch slabs of the stored FSAL slope follow the predictor slabs.
   int nt2_file = 0, nt2_ver = 1;
   Real t2_hv[3] = {0.0, 0.0, 0.0};
-  if (std::memcmp(variabledata, &(radvet::kM1Time2RstMagic[0]),
-                  sizeof(radvet::kM1Time2RstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetTime2RstMagic[0]),
+                  sizeof(radvet::kVetTime2RstMagic)) == 0) {
     char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -667,12 +667,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nt2_ver = static_cast<int>(hdr[0]);
   }
 
-  // --- THE <rad_vet> implicit_one_pass HEADER (radvet::kM1OnePassRstMagic), behind the
+  // --- THE <rad_vet> implicit_one_pass HEADER (radvet::kVetOnePassRstMagic), behind the
   // hesdirk2 one: 9 Reals (18 with implicit_one_pass_auto), no slabs
   bool onep_file = false, onep_auto_file = false;
   Real onep_hv[18];
-  if (std::memcmp(variabledata, &(radvet::kM1OnePassRstMagic[0]),
-                  sizeof(radvet::kM1OnePassRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetOnePassRstMagic[0]),
+                  sizeof(radvet::kVetOnePassRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -701,11 +701,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     onep_file = true;
   }
 
-  // --- THE <rad_vet> implicit_mr_every / vet_sc_every HEADER (radvet::kM1MRRstMagic),
+  // --- THE <rad_vet> implicit_mr_every / vet_sc_every HEADER (radvet::kVetMRRstMagic),
   // behind the one-pass one: 10 Reals, no slabs (both removed: read past)
   Real mr_hv[10];
-  if (std::memcmp(variabledata, &(radvet::kM1MRRstMagic[0]),
-                  sizeof(radvet::kM1MRRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetMRRstMagic[0]),
+                  sizeof(radvet::kVetMRRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -730,12 +730,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
-  // --- THE <rad_vet> time2_auto_be HEADER (radvet::kM1AutoBeRstMagic), behind
+  // --- THE <rad_vet> time2_auto_be HEADER (radvet::kVetAutoBeRstMagic), behind
   // the multi-rate one: int32 len, int32 left, no slabs (absent: stage mode, as before)
   bool abe_file = false;
   std::int32_t abe_hv[2] = {0, 0};
-  if (std::memcmp(variabledata, &(radvet::kM1AutoBeRstMagic[0]),
-                  sizeof(radvet::kM1AutoBeRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetAutoBeRstMagic[0]),
+                  sizeof(radvet::kVetAutoBeRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -830,11 +830,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nck_file = ckh.nslab;
   }
 
-  // --- THE <rad_vet> implicit_closure_thin_relax HEADER (radvet::kM1CtrRstMagic), behind
-  // the implicit-ck one: nctr_file (4) slabs of ctr_mem, the LAST of each record.
+  // --- THE <rad_vet> implicit_closure_thin_relax HEADER (radvet::kVetCtrRstMagic),
+  // behind the implicit-ck one: nctr_file (4) slabs of ctr_mem, the LAST of each record.
   int nctr_file = 0;
-  if (std::memcmp(variabledata, &(radvet::kM1CtrRstMagic[0]),
-                  sizeof(radvet::kM1CtrRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetCtrRstMagic[0]),
+                  sizeof(radvet::kVetCtrRstMagic)) == 0) {
     char ctr_hdr[2*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -863,12 +863,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nctr_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE <hydro>/rad_signal_speed HEADER (radvet::kM1RssRstMagic), behind the
+  // --- THE <hydro>/rad_signal_speed HEADER (radvet::kVetRssRstMagic), behind the
   // thin_relax one: nrss_file slabs (RadiationVet::RssSlot of mode rss_mode_file), the
   // LAST of each record.
   int nrss_file = 0, rss_mode_file = -1;
-  if (std::memcmp(variabledata, &(radvet::kM1RssRstMagic[0]),
-                  sizeof(radvet::kM1RssRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetRssRstMagic[0]),
+                  sizeof(radvet::kVetRssRstMagic)) == 0) {
     char rss_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -899,12 +899,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     rss_mode_file = static_cast<int>(hdr[2]);
   }
 
-  // --- THE <rad_vet>/vet_gd_async HEADER (radvet::kM1VgdRstMagic), behind the
+  // --- THE <rad_vet>/vet_gd_async HEADER (radvet::kVetVgdRstMagic), behind the
   // signal-speed one: nvgd_file (2) slabs of the pending gd build's source, the LAST of
   // each record, and the build's ncycle.
   int nvgd_file = 0, vgd_cyc_file = -1;
-  if (std::memcmp(variabledata, &(radvet::kM1VgdRstMagic[0]),
-                  sizeof(radvet::kM1VgdRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetVgdRstMagic[0]),
+                  sizeof(radvet::kVetVgdRstMagic)) == 0) {
     char vgd_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -934,13 +934,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     vgd_cyc_file = static_cast<int>(hdr[2]);
   }
 
-  // --- THE <rad_vet>/implicit_gas_src = conservative(2) HEADER (radvet::kM1CskRstMagic),
-  // behind the vet_gd_async one: ncsk_file (3 or 0) slabs of csk1 and
-  // the flags (skipped: the clean solve does not read them)
+  // --- THE <rad_vet>/implicit_gas_src = conservative(2) HEADER
+  // (radvet::kVetCskRstMagic), behind the vet_gd_async one: ncsk_file (3 or 0) slabs of
+  // csk1 and the flags (skipped: the clean solve does not read them)
   int ncsk_file = 0;
   bool csk_have = false;
-  if (std::memcmp(variabledata, &(radvet::kM1CskRstMagic[0]),
-                  sizeof(radvet::kM1CskRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetCskRstMagic[0]),
+                  sizeof(radvet::kVetCskRstMagic)) == 0) {
     char csk_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -970,13 +970,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     ncsk_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE <rad_vet>/vet_rotate_avg HEADER (radvet::kM1RaRstMagic),
+  // --- THE <rad_vet>/vet_rotate_avg HEADER (radvet::kVetRaRstMagic),
   // behind the vet_gd_async one: nra_file slabs of the averaging history (densely
   // packed), the LAST of each record, and the scalars (RadiationVet::RotAvgRstHdr)
   int nra_file = 0;
   std::int64_t ra_hdr[radvet::RadiationVet::VET_RA_RST_NH] = {0};
-  if (std::memcmp(variabledata, &(radvet::kM1RaRstMagic[0]),
-                  sizeof(radvet::kM1RaRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetRaRstMagic[0]),
+                  sizeof(radvet::kVetRaRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -1072,11 +1072,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     npgs_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE rad_vet APPLIED FACE FLUX HEADER (radvet::kM1FaxRstMagic), behind
+  // --- THE rad_vet APPLIED FACE FLUX HEADER (radvet::kVetFaxRstMagic), behind
   // the pgen slab one: nfax_file slabs, the last of each record
   int nfax_file = 0;
-  if (std::memcmp(variabledata, &(radvet::kM1FaxRstMagic[0]),
-                  sizeof(radvet::kM1FaxRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetFaxRstMagic[0]),
+                  sizeof(radvet::kVetFaxRstMagic)) == 0) {
     char fax_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -1105,11 +1105,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nfax_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE time2_stage_local_be CARRY HEADER (radvet::kM1ThcRstMagic),
+  // --- THE time2_stage_local_be CARRY HEADER (radvet::kVetThcRstMagic),
   // behind the fax one: nthc_file slabs, the last of each record
   int nthc_file = 0;
-  if (std::memcmp(variabledata, &(radvet::kM1ThcRstMagic[0]),
-                  sizeof(radvet::kM1ThcRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetThcRstMagic[0]),
+                  sizeof(radvet::kVetThcRstMagic)) == 0) {
     char thc_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -1137,13 +1137,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     nthc_file = static_cast<int>(hdr[1]);
   }
-  // --- THE vet_gd_rotate_xfade HEADER (radvet::kM1XfdRstMagic), behind the
+  // --- THE vet_gd_rotate_xfade HEADER (radvet::kVetXfdRstMagic), behind the
   // thc one: nxfd_file slabs, the last of each record
   int nxfd_file = 0;
-  std::int64_t xfd_hi[radvet::kM1XfdRstNi] = {};
-  Real xfd_hr[radvet::kM1XfdRstNr] = {};
-  if (std::memcmp(variabledata, &(radvet::kM1XfdRstMagic[0]),
-                  sizeof(radvet::kM1XfdRstMagic)) == 0) {
+  std::int64_t xfd_hi[radvet::kVetXfdRstNi] = {};
+  Real xfd_hr[radvet::kVetXfdRstNr] = {};
+  if (std::memcmp(variabledata, &(radvet::kVetXfdRstMagic[0]),
+                  sizeof(radvet::kVetXfdRstMagic)) == 0) {
     char xfd_hdr[sizeof(xfd_hi) + sizeof(xfd_hr)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -1173,11 +1173,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     nxfd_file = static_cast<int>(xfd_hi[1]);
   }
-  // --- THE vet_x1_periodic WARM-START HEADER (radvet::kM1X1eRstMagic), behind the
+  // --- THE vet_x1_periodic WARM-START HEADER (radvet::kVetX1eRstMagic), behind the
   // fax one (an old file: behind its xfade one): nx1e_file slabs, the last of each record
   int nx1e_file = 0;
-  if (std::memcmp(variabledata, &(radvet::kM1X1eRstMagic[0]),
-                  sizeof(radvet::kM1X1eRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kVetX1eRstMagic[0]),
+                  sizeof(radvet::kVetX1eRstMagic)) == 0) {
     std::int32_t hdr[4] = {0, 0, 0, 0};
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -2197,7 +2197,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
       two_stream_rt::ck_rst_have = true;
     }
-    // the thin_relax closure memory (kM1CtrRstMagic), the last slabs of the record
+    // the thin_relax closure memory (kVetCtrRstMagic), the last slabs of the record
     if (ctr_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
@@ -2213,7 +2213,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
       pradvet->ctr_init = true;
     }
-    // the rad_signal_speed inputs (kM1RssRstMagic), the last slabs of the record
+    // the rad_signal_speed inputs (kVetRssRstMagic), the last slabs of the record
     if (rss_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
@@ -2230,7 +2230,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
       pradvet->rss_stage_mode = rss_mode_file;
     }
-    // the vet_rotate_avg history (kM1RaRstMagic), the last slabs of the record
+    // the vet_rotate_avg history (kVetRaRstMagic), the last slabs of the record
     if (ra_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
@@ -2298,7 +2298,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL, Kokkos::ALL), wtin);
       }
     }
-    // the rad_vet applied face fluxes (kM1FaxRstMagic), last of the record
+    // the rad_vet applied face fluxes (kVetFaxRstMagic), last of the record
     if (nfax_file == 0 && pradvet != nullptr && pradvet->t2_pfst &&
         global_variable::my_rank == 0) {
       std::cout << "NOTE <rad_vet> restart: no time2_face_fct face fluxes in the file; the "
@@ -2328,18 +2328,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                   << std::endl;
       }
     }
-    // the time2_stage_local_be carry (kM1ThcRstMagic) of an old file: not used
+    // the time2_stage_local_be carry (kVetThcRstMagic) of an old file: not used
     if (nthc_file > 0 && global_variable::my_rank == 0) {
       std::cout << "<rad_vet> restart: time2_stage_local_be carry (" << nthc_file
                 << " slabs) IGNORED (local_be is not in this build)" << std::endl;
     }
-    // the old scheme's vet_gd_rotate_xfade state (kM1XfdRstMagic), last of the record:
+    // the old scheme's vet_gd_rotate_xfade state (kVetXfdRstMagic), last of the record:
     // not used (the clean ring keeps no cross-fade state)
     if (nxfd_file > 0 && global_variable::my_rank == 0) {
       std::cout << "<rad_vet> restart: vet_gd_rotate_xfade state (" << nxfd_file
                 << " slabs) IGNORED (the old scheme's cross-fade)" << std::endl;
     }
-    // the vet_x1_periodic warm-start plane (kM1X1eRstMagic), last of the record
+    // the vet_x1_periodic warm-start plane (kVetX1eRstMagic), last of the record
     if (nx1e_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file

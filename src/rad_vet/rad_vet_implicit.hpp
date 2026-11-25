@@ -19,7 +19,7 @@ namespace radvet {
 // Restart block markers (8 bytes).  Each block is written behind the previous one only
 // when its state exists; a file without it restarts from the cold state.
 // implicit_predictor = step: int32 have, int32 ncomp, Real pred_dt; ncomp slabs of ipred
-constexpr char kM1PredRstMagic[8] = {'M', '1', 'P', 'R', 'E', 'D', '0', '1'};
+constexpr char kVetPredRstMagic[8] = {'M', '1', 'P', 'R', 'E', 'D', '0', '1'};
 
 // time_scheme
 constexpr int VET_TIME_BE = 0;        // Lie splitting: Heun hydro, then one BE solve
@@ -39,35 +39,35 @@ constexpr int VET_T2_NK = 8;
 constexpr int VET_T2_NVET = 10;
 // hesdirk2 slope: int32 have, int32 nch, Real pred2_dt, dt_prev, vprev; nch slabs
 // (K1, ipred2, vet_prev) behind the predictor slabs
-constexpr char kM1Time2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
+constexpr char kVetTime2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
 // implicit_one_pass > 0: 9 Reals (last two contractions, solve counters)
-constexpr char kM1OnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
+constexpr char kVetOnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
 // implicit_mr_every / vet_sc_every > 1: multi-rate window and tensor cadence, 10 Reals
-constexpr char kM1MRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
+constexpr char kVetMRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
 // time2_auto_be back-off while active: int32 len, int32 left
-constexpr char kM1AutoBeRstMagic[8] = {'M', '1', 'A', 'U', 'T', 'O', 'B', 'E'};
+constexpr char kVetAutoBeRstMagic[8] = {'M', '1', 'A', 'U', 'T', 'O', 'B', 'E'};
 // implicit_closure_thin_relax: ctr_mem (chi, n1, n2, n3): int32 have, nch = 4; slabs last
-constexpr char kM1CtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
+constexpr char kVetCtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
 // rad_signal_speed inputs: int32 have = 1, nch, mode, 0; nch slabs (opac T, tensor)
-constexpr char kM1RssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
+constexpr char kVetRssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
 // vet_gd_async pending source (ln chi, ln S): int32 have = 1, nch = 2, ncycle, 0
-constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
+constexpr char kVetVgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
 // conservative gas source with hesdirk2: int32 have = 1, nch (3 | 0), csk1_ok, 0; nch
 // slabs of csk1
-constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
+constexpr char kVetCskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
 // time2_face_fct: face fluxes t2pf1 (FaxRst*)
-constexpr char kM1FaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
+constexpr char kVetFaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
 // vet_rotate_avg history: VET_RA_RST_NH int64 words (RotAvgRstHdr), then nslab slabs
-constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
+constexpr char kVetRaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 // old files: stage-2 drop slabs (skipped)
-constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
+constexpr char kVetThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
 // old files: cross-fade state behind the thc slabs (skipped)
-constexpr char kM1XfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
-constexpr int kM1XfdRstNi = 24;  // int64 header words
-constexpr int kM1XfdRstNr = 8;   // Real header words
+constexpr char kVetXfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
+constexpr int kVetXfdRstNi = 24;  // int64 header words
+constexpr int kVetXfdRstNr = 8;   // Real header words
 // vet_x1_periodic (adaptive): the last build's exit plane vet_x1ent, ray r of row (k, j)
 // at slab r / n1, cell i = r % n1 (RadiationVet::X1eRst*), behind the fax slabs
-constexpr char kM1X1eRstMagic[8] = {'M', '1', 'X', '1', 'E', 'R', 'S', '1'};
+constexpr char kVetX1eRstMagic[8] = {'M', '1', 'X', '1', 'E', 'R', 'S', '1'};
 
 // implicit_solver (both converge to the same fixed point)
 constexpr int VET_ISOLV_LINE_JACOBI = 0;  // x1 tridiagonal exact, x2/x3 lagged (M-matrix)
@@ -99,10 +99,10 @@ constexpr int VET_IFLUX_CENTRAL = 0;  // face-eliminated central (diffusion) for
 constexpr int VET_IFLUX_BERTHON = 2;  // A_up + alpha F_HLL (Berthon), no F_diff
 constexpr int VET_IFLUX_BLEND   = 3;  // (1 - w_f) central + w_f berthon, w_f lagged
 
-// implicit_thin_switch: dt-free face weight of the half-range blend (M1ThinFace)
+// implicit_thin_switch: dt-free face weight of the half-range blend (VetThinFace)
 constexpr int VET_THSW_FS   = 3;  // smoothstep of max(|H|/J, C1/1.5), C1 = <|I-S|>/J
 constexpr int VET_THSW_FSKN = 5;  // max(fs, kn)
-constexpr int VET_THSW_FSI  = 7;  // fs; h+- isotropic where the rays miss E^n (M1ThinHr)
+constexpr int VET_THSW_FSI  = 7;  // fs; h+- isotropic where the rays miss E^n (VetThinHr)
 constexpr int VET_THSW_FSE  = 8;  // max(|H|/J, eps C1/1.5), eps the thermal fraction
 constexpr int VET_THSW_FSQ  = 6;  // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
 
@@ -151,12 +151,12 @@ constexpr int VET_IW_F3   = 33;  // cell-centred x3 flux
 constexpr int VET_NIW = 34;
 
 KOKKOS_INLINE_FUNCTION
-Real M1EddDiag(const Real chi, const Real nd) {
+Real VetEddDiag(const Real chi, const Real nd) {
   return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*nd*nd;
 }
 
 KOKKOS_INLINE_FUNCTION
-void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
+void VetCsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
                   Real &smid) {
   const bool flip = (q > n - 1 - q);
   const int qq = flip ? (n - 1 - q) : q;
@@ -179,7 +179,7 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 }
 
 KOKKOS_INLINE_FUNCTION
-int M1CsSeamDepth(const int c, const int lo, const int hi, const bool slo,
+int VetCsSeamDepth(const int c, const int lo, const int hi, const bool slo,
                   const bool shi) {
   int d = 1 << 20;
   if (slo) {d = (c < lo) ? (lo - 1 - c) : (c - lo);}
@@ -191,16 +191,16 @@ int M1CsSeamDepth(const int c, const int lo, const int hi, const bool slo,
 }
 
 KOKKOS_INLINE_FUNCTION
-int M1CsVtxDist(const int k, const int j, const int ks, const int ke, const int js,
+int VetCsVtxDist(const int k, const int j, const int ks, const int ke, const int js,
                 const int je, const bool s2lo, const bool s2hi, const bool s3lo,
                 const bool s3hi) {
-  const int dj = M1CsSeamDepth(j, js, je, s2lo, s2hi);
-  const int dk = M1CsSeamDepth(k, ks, ke, s3lo, s3hi);
+  const int dj = VetCsSeamDepth(j, js, je, s2lo, s2hi);
+  const int dk = VetCsSeamDepth(k, ks, ke, s3lo, s3hi);
   return (dj > dk) ? dj : dk;
 }
 
 KOKKOS_INLINE_FUNCTION
-void M1SphMarshakCoef(const Real rc, const Real rn, const Real rf, Real &ca, Real &cb) {
+void VetSphMarshakCoef(const Real rc, const Real rn, const Real rf, Real &ca, Real &cb) {
   const Real al = (rf - rc)/(rc - rn);
   ca = (1.0 + al)*SQR(rc/rf);
   cb = al*SQR(rn/rf);

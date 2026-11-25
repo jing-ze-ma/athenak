@@ -8,7 +8,7 @@
 //! \file vet_fluid.hpp
 //! \brief FluidRef: one accessor for the fluid M1 couples to (<hydro> or <mhd>).
 //! FluidRef::Get(pmbp) returns shallow View handles plus flags and EOS. Under MHD the
-//! conserved energy carries |B|^2/2, removed with the C2P cell field (M1EmagCell).
+//! conserved energy carries |B|^2/2, removed with the C2P cell field (VetEmagCell).
 
 #include <utility>
 
@@ -83,13 +83,13 @@ struct FluidRef {
 };
 
 //----------------------------------------------------------------------------------------
-//! \fn Real M1EmagCell
+//! \fn Real VetEmagCell
 //! \brief |B|^2/2 of the cell field, averaged from faces exactly as the MHD ConsToPrim
 //! does (sph: x_v-weighted; cs: CellCenteredRadialFld in x1; else plain means).
 //! A hydro caller may pass any 4-D View as never-read face arrays.
 
 KOKKOS_INLINE_FUNCTION
-Real M1EmagCell(const DvceArray4D<Real> &b1f, const DvceArray4D<Real> &b2f,
+Real VetEmagCell(const DvceArray4D<Real> &b1f, const DvceArray4D<Real> &b2f,
                 const DvceArray4D<Real> &b3f, const bool sph, const bool csr,
                 const DvceArray2D<Real> &x1v, const DvceArray2D<Real> &x1f,
                 const DvceArray2D<Real> &x2v, const DvceArray2D<Real> &x2f,

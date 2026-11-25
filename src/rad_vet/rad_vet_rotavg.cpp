@@ -596,7 +596,7 @@ void RadiationVet::RotAvgEmaApply(const int ilo) {
 }
 
 //----------------------------------------------------------------------------------------
-//! Restart record of the averaging state (kM1RaRstMagic), for a bitwise continuation.
+//! Restart record of the averaging state (kVetRaRstMagic), for a bitwise continuation.
 //! Header (int64 x VET_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc,
 //! +16 EMA), head, pend, nslot (K-1, or K with the Delta slot when pend = 3), blk,
 //! interior cells per MeshBlock, i0.  The slots' interior values for i >= i0 (first i

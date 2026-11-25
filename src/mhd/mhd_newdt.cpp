@@ -105,7 +105,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   const bool rss_ = rad_signal_speed;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
   radvet::CleanGeo gn_;
-  int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_mode = 0;          // 0 isotropic E/3, 1 VetChi, 2 tau_ten, 3 vet_sc, 4 vet full
   int rss_kind = 0;
   Real rss_cl = 1.0;
   if (rss_) {
@@ -288,7 +288,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
               const Real f3 = erad_(m,radvet::VET_F3,k,j,i);
               const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
               const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-              chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+              chi = (er > 0.0) ? radvet::VetChi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
               n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
             }
             if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3

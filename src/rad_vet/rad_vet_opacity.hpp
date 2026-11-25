@@ -17,7 +17,7 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn M1TableOpacities
+//! \fn VetTableOpacities
 //! \brief opacity = table: Rosseland and Planck means, bilinear in (log10 T, log10 rho)
 //! (K, g/cm^3). kappa_F = kappa_R (includes e-scattering), kappa_P = kappa_E; with
 //! vet_scatter (tab.scat != 0): of = kappa_R - kappa_e, os = kappa_e (Ma+2026 eq. 7).
@@ -26,7 +26,7 @@ namespace radvet {
 //! \param[out] op,oe,of,os  the four opacities per unit mass, code units
 
 KOKKOS_INLINE_FUNCTION
-void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
+void VetTableOpacities(const VetOpacTab &tab, const Real d, const Real t,
                       Real &op, Real &oe, Real &of, Real &os) {
   const Real tk = t*tab.tunit;
   const Real dc = d*tab.dunit;
@@ -77,10 +77,10 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
   oe = op;
   of = kr*tab.kunit;
   os = 0.0;
-  // vet_scatter: split into kappa_a + kappa_e; scat = 2 is refined by M1ScatterEos
+  // vet_scatter: split into kappa_a + kappa_e; scat = 2 is refined by VetScatterEos
   if (tab.scat != 0) {
     const Real kt = of;
-    os = M1ScatterGuard(kt, tab.kes, tab.kfl);
+    os = VetScatterGuard(kt, tab.kes, tab.kfl);
     of = kt - os;
   }
   // <rad_vet>/opac_abs_rho_max: below this density the gas only scatters (0 = off)
@@ -93,23 +93,23 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1ScatterEos
+//! \fn VetScatterEos
 //! \brief vet_scatter_kappa_e = eos: split kappa_R = of + os with the EOS electron
 //! scattering kappa_e = (sigma_T/m_u) x_e/mu, x_e = n_e/n_tot. No-op unless scat == 2.
 template <class EosT>
 KOKKOS_INLINE_FUNCTION
-void M1ScatterEos(const M1OpacTab &tab, const EosT &eos, const Real d, const Real t,
+void VetScatterEos(const VetOpacTab &tab, const EosT &eos, const Real d, const Real t,
                   Real &of, Real &os) {
   if (tab.scat != 2) return;
   const Real kt = of + os;
   const Real xe = eos.ElectronFraction(d, 0.0, t);
   const Real mu = eos.MeanMolecularWeight(d, 0.0, t);
-  os = M1ScatterGuard(kt, tab.kxe*xe/fmax(mu, 1.0e-30), tab.kfl);
+  os = VetScatterGuard(kt, tab.kxe*xe/fmax(mu, 1.0e-30), tab.kfl);
   of = kt - os;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1UserOpacity
+//! \fn VetUserOpacity
 //! \brief opacity = user law (inline: device lambdas cannot call host function
 //! pointers); a problem with its own law edits this function.
 //! \param[in]  d, t        density and temperature of the cell, code units
@@ -117,7 +117,7 @@ void M1ScatterEos(const M1OpacTab &tab, const EosT &eos, const Real d, const Rea
 //! \param[out] op,oe,of,os the four opacities per unit mass
 
 KOKKOS_INLINE_FUNCTION
-void M1UserOpacity(const Real d, const Real t, const Real kp, const Real ke,
+void VetUserOpacity(const Real d, const Real t, const Real kp, const Real ke,
                    const Real kf, const Real ks, const Real rho_ref, const Real t_ref,
                    const Real aa, const Real bb,
                    Real &op, Real &oe, Real &of, Real &os) {
@@ -136,12 +136,12 @@ void M1UserOpacity(const Real d, const Real t, const Real kp, const Real ke,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1Opacities
+//! \fn VetOpacities
 //! \brief the four opacities per unit mass at (d, t) under the law otype:
-//!   const: kappa0; powerlaw: kappa0 (d/rho_ref)^a (t/t_ref)^b; user: M1UserOpacity
+//!   const: kappa0; powerlaw: kappa0 (d/rho_ref)^a (t/t_ref)^b; user: VetUserOpacity
 
 KOKKOS_INLINE_FUNCTION
-void M1Opacities(const int otype, const Real d, const Real t,
+void VetOpacities(const int otype, const Real d, const Real t,
                  const Real kp, const Real ke, const Real kf, const Real ks,
                  const Real rho_ref, const Real t_ref, const Real aa, const Real bb,
                  Real &op, Real &oe, Real &of, Real &os) {
@@ -154,7 +154,7 @@ void M1Opacities(const int otype, const Real d, const Real t,
     of = kf*sc;
     os = ks*sc;
   } else if (otype == VET_OPAC_USER) {
-    M1UserOpacity(d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
+    VetUserOpacity(d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
   } else {
     op = kp;
     oe = ke;
@@ -164,21 +164,22 @@ void M1Opacities(const int otype, const Real d, const Real t,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1CellOpacities
-//! \brief the four opacities per unit mass at (d, t): tables (+ M1ScatterEos) or
-//! M1Opacities
+//! \fn VetCellOpacities
+//! \brief the four opacities per unit mass at (d, t): tables (+ VetScatterEos) or
+//! VetOpacities
 
 template <class EosT>
 KOKKOS_INLINE_FUNCTION
-void M1CellOpacities(const int otype, const M1OpacTab &ot, const EosT &eos, const Real d,
+void VetCellOpacities(const int otype, const VetOpacTab &ot, const EosT &eos, const Real
+                      d,
                      const Real t, const Real kp, const Real ke, const Real kf,
                      const Real ks, const Real rho_ref, const Real t_ref, const Real aa,
                      const Real bb, Real &op, Real &oe, Real &of, Real &os) {
   if (otype == VET_OPAC_TABLE) {
-    M1TableOpacities(ot, d, t, op, oe, of, os);
-    M1ScatterEos(ot, eos, d, t, of, os);
+    VetTableOpacities(ot, d, t, op, oe, of, os);
+    VetScatterEos(ot, eos, d, t, of, os);
   } else {
-    M1Opacities(otype, d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
+    VetOpacities(otype, d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
   }
 }
 

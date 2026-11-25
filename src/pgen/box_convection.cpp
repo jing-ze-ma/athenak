@@ -379,7 +379,7 @@ bool m1_on_ = false;             // <rad_vet> exists on this pack
 Real m1_fin_ = 0.0;              // the imposed bottom flux, code units (= rad_flux_inner)
 Real m1_cl_ = 0.0;               // c in code units, for the boundary fill
 Real m1_efl_ = 0.0;              // <rad_vet>/e_floor
-// problem/m1_top_bc: `vacuum` is the module's own fill (radvet::M1FillGhost mode 2),
+// problem/m1_top_bc: `vacuum` is the module's own fill (radvet::VetFillGhost mode 2),
 // which since the 2a diagnosis ALWAYS hands the face a dark ghost, so `vacuum` and
 // `dark` are now the same boundary and the two keys are kept only for compatibility.
 // `outflow` is the OLD copy fill (mode 0) and is kept for diagnosis only: at a
@@ -954,7 +954,7 @@ void BoxConvProfileDump(Mesh *pm) {
       const Real pg = w0(m,IPR,k,j,i);
       Real ei = u0(m,IEN,k,j,i) - 0.5*d*(v1*v1 + v2*v2 + v3*v3);
       if (mhdb) {
-        ei -= radvet::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+        ei -= radvet::VetEmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
                                     cx3v, cx3f, m, k, j, i);
       }
       ls.the_array[0] += d;
@@ -1641,17 +1641,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       auto cd_dv = cd.d_view, ct_dv = ct.d_view;
       const Real zlo_a = zlo, dzf_a = dzf, fin_a = m1_fin_, cl_a = m1_cl_;
       const int nf_a = nfine;
-      radvet::M1OpacTab ot = pm1->otab;
+      radvet::VetOpacTab ot = pm1->otab;
       par_for("boxconv_m1aref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
         const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
         const Real dcol = ColInterp(cd_dv, zlo_a, dzf_a, nf_a, z);
         // ct_ holds KELVIN (pgen_eos::PresTempFromEint multiplies by eos.temp_cgs), and
-        // M1TableOpacities takes the EOS CODE temperature: divide it back out.
+        // VetTableOpacities takes the EOS CODE temperature: divide it back out.
         const Real tcol = ColInterp(ct_dv, zlo_a, dzf_a, nf_a, z)/ot.tunit;
         Real op, oe, of, os;
-        radvet::M1TableOpacities(ot, dcol, tcol, op, oe, of, os);
+        radvet::VetTableOpacities(ot, dcol, tcol, op, oe, of, os);
         // the TOTAL extinction (vet_scatter splits it; os = 0 otherwise: bitwise)
         aref(m,k,j,i) = (of + os)*fin_a/cl_a;
       });
@@ -2327,7 +2327,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0(m,IEN,k,j,i) = e*efac + 0.5*d*v1*v1;
     if (etotgrav) u0(m,IEN,k,j,i) += d*g0*(z - zmin);
     if (mhdic) {
-      u0(m,IEN,k,j,i) += radvet::M1EmagCell(bic1, bic2, bic3, false, false, cx1v, cx1f,
+      u0(m,IEN,k,j,i) += radvet::VetEmagCell(bic1, bic2, bic3, false, false, cx1v, cx1f,
                                             cx2v, cx2f, cx3v, cx3f, m, k, j, i);
     }
   });
@@ -2719,7 +2719,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
                            + SQR(u0(m,IM3,k,j,ic)))/d;
           if (etotgrav) ei -= d*phit(m,k,j,ic);
           if (mhdb) {
-            ei -= radvet::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+            ei -= radvet::VetEmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
                                         cx3v, cx3f, m, k, j, ic);
           }
           // guard the EOS call: a tabulated EOS takes log10(e) and would write a NaN
@@ -2977,7 +2977,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
                        + SQR(u0(m,IM3,k,j,i)))*id;
       if (etotgrav) eg -= d*phicc(m,k,j,i);
       if (mhdb) {
-        eg -= radvet::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+        eg -= radvet::VetEmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
                                     cx3v, cx3f, m, k, j, i);
       }
       const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
@@ -3227,7 +3227,7 @@ void BoxConvBC(Mesh *pm) {
                  + SQR(u0(m,IM3,km,jm,im)))*di;
     if (etotgrav) e_i -= d_i*phicc(m,km,jm,im);
     if (mhd) {
-      e_i -= radvet::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+      e_i -= radvet::VetEmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
                                 cx3v, cx3f, m, km, jm, im);
     }
   };
@@ -3424,7 +3424,7 @@ void BoxConvBC(Mesh *pm) {
     Real et = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
     if (etotgrav) et += d*g0*(zg - zmin);
     if (mhd) {
-      et += radvet::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+      et += radvet::VetEmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
                                cx3v, cx3f, m, k, j, i);
     }
     u0(m,IEN,k,j,i) = et;
@@ -3446,7 +3446,7 @@ void BoxConvBC(Mesh *pm) {
   // sect. 3).  As for hydro, the ghosts are built from the CONSERVED moments only --
   // never from any primitive -- so a restart is a bitwise continuation.
   //
-  //   TOP     : the module's own `vacuum` state, radvet::M1FillGhost mode 2, which is a
+  //   TOP     : the module's own `vacuum` state, radvet::VetFillGhost mode 2, which is a
   //             DARK ghost (no incoming radiation); problem/m1_top_bc = outflow selects
   //             the old copy fill (mode 0) for diagnosis.
   //   BOTTOM  : the imposed internal flux.  F_n = <hydro>/rad_flux_inner, transverse
@@ -3492,7 +3492,7 @@ void BoxConvBC(Mesh *pm) {
           ru0(m,radvet::VET_F2,k,j,ie+1+n) = 0.0;
           ru0(m,radvet::VET_F3,k,j,ie+1+n) = 0.0;
         } else {
-          radvet::M1FillGhost(ru0, m, k, j, ie+1+n, k, j, ie, 1, 0, 1.0, clm1, eflm1);
+          radvet::VetFillGhost(ru0, m, k, j, ie+1+n, k, j, ie, 1, 0, 1.0, clm1, eflm1);
         }
       }
     });

@@ -452,7 +452,7 @@ void StarReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 
 // kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
 // own ckt) of the module's tables at (d, t) [code units], one device thread per point
-void StarKtEval(const radvet::M1OpacTab &ot, const std::vector<Real> &d,
+void StarKtEval(const radvet::VetOpacTab &ot, const std::vector<Real> &d,
                 const std::vector<Real> &t, std::vector<Real> &k) {
   const int n = static_cast<int>(d.size());
   DvceArray1D<Real> dd("star_icr_d", n), dt("star_icr_t", n), dk("star_icr_k", n);
@@ -466,7 +466,7 @@ void StarKtEval(const radvet::M1OpacTab &ot, const std::vector<Real> &d,
   Kokkos::deep_copy(dt, ht);
   par_for("star_icr_kt", DevExeSpace(), 0, n-1, KOKKOS_LAMBDA(const int i) {
     Real op, oe, of, os;
-    radvet::M1TableOpacities(ot, dd(i), dt(i), op, oe, of, os);
+    radvet::VetTableOpacities(ot, dd(i), dt(i), op, oe, of, os);
     dk(i) = of + os;
   });
   auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
@@ -1046,7 +1046,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       e0[n] = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(t0[n]));
     }
     std::vector<Real> tcur(t0), ef(e0), kt, tauf(nf, 0.0);
-    radvet::M1OpacTab otr = pm1->otab;
+    radvet::VetOpacTab otr = pm1->otab;
     auto ftau = [&]() {   // kappa_t and tau from the mesh top (as the pgen's tau below)
       StarKtEval(otr, hd, tcur, kt);
       tauf[nf-1] = 0.0;
@@ -1631,12 +1631,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   {
     auto crho = star_rho_, ceint = star_eint_;
-    radvet::M1OpacTab ot = pm1->otab;
+    radvet::VetOpacTab ot = pm1->otab;
     par_for("star_col", DevExeSpace(), 0, nf-1, KOKKOS_LAMBDA(const int n) {
       const Real d = crho(n);
       const Real t = eos.Temperature(d, ceint(n));
       Real op, oe, of, os;
-      radvet::M1TableOpacities(ot, d, t, op, oe, of, os);
+      radvet::VetTableOpacities(ot, d, t, op, oe, of, os);
       cT(n) = t;
       ckt(n) = of + os;
       if (!(cE(n) > 0.0)) cE(n) = ar*t*t*t*t;
@@ -2214,7 +2214,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     DvceArray1D<Real> kk_d("star_kk", NW + 1);
     auto hkd = Kokkos::create_mirror_view(kd_d);
     auto hkt = Kokkos::create_mirror_view(kt_d);
-    radvet::M1OpacTab ot1 = pm1->otab;
+    radvet::VetOpacTab ot1 = pm1->otab;
     std::vector<Real> aw(NW, 0.0);
     const Real pf_top = hpf(0,k0,j0,is+NW);
     const Real pf_old = hpf(0,k0,j0,is);
@@ -2233,7 +2233,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Kokkos::deep_copy(kt_d, hkt);
       par_for("star_kap1", DevExeSpace(), 0, NW, KOKKOS_LAMBDA(const int n) {
         Real op, oe, of, os;
-        radvet::M1TableOpacities(ot1, kd_d(n), kt_d(n), op, oe, of, os);
+        radvet::VetTableOpacities(ot1, kd_d(n), kt_d(n), op, oe, of, os);
         kk_d(n) = of + os;
       });
       auto hkk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), kk_d);
@@ -3995,7 +3995,7 @@ Real StarZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
 //! \brief x1 ghosts carrying the scaled initial profile (rho and eint scaled by the ratio
 //! of the adjacent active cell to its own initial value), the radial velocity mirrored
 //! (wall) or, at the outer edge where it points outward, copied (outflow).  M1 ghosts by
-//! M1FillGhost (the implicit solve imposes its own face BCs).
+//! VetFillGhost (the implicit solve imposes its own face BCs).
 
 void StarBC(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -4149,7 +4149,7 @@ void StarBC(Mesh *pm) {
           uh(m,IM2,k,j,ig) = 0.0;
           uh(m,IM3,k,j,ig) = 0.0;
           uh(m,IEN,k,j,ig) = eg + 0.5*dg*v1*v1 + dg*phicc(m,k,j,ig);
-          radvet::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+          radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
         }
         continue;
       }
@@ -4172,7 +4172,7 @@ void StarBC(Mesh *pm) {
           uh(m,IM2,k,j,ig) = dg*v2;
           uh(m,IM3,k,j,ig) = dg*v3;
           uh(m,IEN,k,j,ig) = ea + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-          radvet::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
+          radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
         }
         continue;
       }
@@ -4251,7 +4251,7 @@ void StarBC(Mesh *pm) {
           uh(m,IM2,k,j,ig) = dg*v2;
           uh(m,IM3,k,j,ig) = dg*v3;
           uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-          radvet::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
+          radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
         }
         continue;
       }
@@ -4273,7 +4273,7 @@ void StarBC(Mesh *pm) {
           uh(m,IM2,k,j,ig) = 0.0;
           uh(m,IM3,k,j,ig) = 0.0;
           uh(m,IEN,k,j,ig) = eg + 0.5*dg*v1*v1 + dg*phicc(m,k,j,ig);
-          radvet::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+          radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
         }
         continue;
       }
@@ -4300,7 +4300,7 @@ void StarBC(Mesh *pm) {
         uh(m,IM2,k,j,ig) = dg*v2;
         uh(m,IM3,k,j,ig) = dg*v3;
         uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-        radvet::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, lo ? 0 : 2,
+        radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, lo ? 0 : 2,
                             lo ? -1.0 : 1.0, cl, efl);
       }
     }

@@ -77,13 +77,13 @@ Real m1_emag = 0.0;
 
 namespace {
 //----------------------------------------------------------------------------------------
-//! \fn M1SetUniformGas
+//! \fn VetSetUniformGas
 //! \brief fill hydro's conserved u0 with a gas at rest of density d and internal energy
 //! density e.  The M1 tests never evolve a velocity, so the conserved state is just
 //! (d, 0, 0, 0, e); it is written directly rather than through PrimToCons so that the
 //! ghost zones are filled too (the opacity kernel reads them).
 
-void M1SetUniformGas(MeshBlockPack *pmbp, Real d, Real e) {
+void VetSetUniformGas(MeshBlockPack *pmbp, Real d, Real e) {
   // m1-mhd2: <hydro> or <mhd>; under <mhd> IEN also carries the uniform |B|^2/2
   radvet::FluidRef flr = radvet::FluidRef::Get(pmbp);
   if (!flr.on) return;
@@ -276,7 +276,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     // the dynamic-diffusion test (Jiang 2021 Sect. 4.4 / Ma et al. 2025 Sect. 4.2.1)
     Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);
     if (restart) return;
-    M1SetUniformGas(pmbp, dgas, egas);
+    VetSetUniformGas(pmbp, dgas, egas);
     if (gvx != 0.0) {
       auto uhv = pmbp->phydro->u0;
       par_for("vet_thickpulse_v", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
@@ -403,7 +403,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     Real ff = (4.0/3.0)*bb;
     Real chi = 1.0/3.0;
     for (int it=0; it<50; ++it) {
-      chi = radvet::M1Chi(fabs(ff));
+      chi = radvet::VetChi(fabs(ff));
       ff = bb*(1.0 + chi);
     }
     Real erad = ar*tg*tg*tg*tg/((1.0 + bb*bb) - 2.0*bb*ff + bb*bb*chi);
@@ -444,7 +444,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     Real gm1 = radvet::FluidRef::Get(pmbp).eos.gamma - 1.0;   // m1-mhd2
     Real e_ini = fmax(ar*tini*tini*tini*tini, efl);
     if (restart) return;
-    M1SetUniformGas(pmbp, dgas, dgas*tini/gm1);
+    VetSetUniformGas(pmbp, dgas, dgas*tini/gm1);
     par_for("vet_marshak_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       u0(m,radvet::VET_E,k,j,i) = e_ini;
@@ -507,7 +507,7 @@ void ProblemGenerator::RadiationVetTests(ParameterInput *pin, const bool restart
     Real erad = pin->GetReal("problem","e_rad");
     Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);   // (J21 4.1)
     if (restart) return;
-    M1SetUniformGas(pmbp, dgas, egas);
+    VetSetUniformGas(pmbp, dgas, egas);
     if (gvx != 0.0) {
       auto uhv = pmbp->phydro->u0;
       par_for("vet_equil_v", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),

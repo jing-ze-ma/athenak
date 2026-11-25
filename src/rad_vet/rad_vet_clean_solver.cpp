@@ -38,8 +38,8 @@
 // layout-invariant reductions of the clean solve (repro sums)
 namespace radvet {
 
-//! up to three sums and one max (M1LayReduce)
-struct M1BcgVal {
+//! up to three sums and one max (VetLayReduce)
+struct VetBcgVal {
   Real s0, s1, s2, mx;
 };
 
@@ -48,8 +48,8 @@ constexpr int VET_DR_NT = 256;    // slots per team (a power of 2)
 constexpr int VET_LB_NS = 32768;
 
 //----------------------------------------------------------------------------------------
-//! \fn M1GlobalMax
-inline void M1GlobalMax(Real &a) {
+//! \fn VetGlobalMax
+inline void VetGlobalMax(Real &a) {
 #if MPI_PARALLEL_ENABLED
   Real g;
   MPI_Allreduce(&a, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
@@ -60,8 +60,8 @@ inline void M1GlobalMax(Real &a) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1LayReduce
-//! \brief <mesh>/layout_invariant: the M1BcgVal reduction of fn(idx, v) over idx in
+//! \fn VetLayReduce
+//! \brief <mesh>/layout_invariant: the VetBcgVal reduction of fn(idx, v) over idx in
 //! [0, n) and all ranks with exact order-independent sums (repro::ReproSum).
 //! Cell mode: every cell term deposited exactly (independent of layout and backend).
 //! Block mode (default): each MeshBlock's (or tile's) partial in a fixed order
@@ -69,9 +69,9 @@ inline void M1GlobalMax(Real &a) {
 //! host and merged over ranks.  bpart / hpart: device / host scratch.
 
 template <class F>
-void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real> &bpart,
+void VetLayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real> &bpart,
                  Kokkos::View<Real*, Kokkos::HostSpace> &hpart, const F &fn,
-                 M1BcgVal &out, const int *nxb = nullptr) {
+                 VetBcgVal &out, const int *nxb = nullptr) {
   if (repro::block_mode) {
     // level 1: slot s of VET_LB_NS sums q = s, s + VET_LB_NS, ...; level 2: one team per
     // unit sums slots t, t + VET_DR_NT, ..., then the pairwise tree.  Tile mode (nxb):
@@ -96,7 +96,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
     Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*ns),
     KOKKOS_LAMBDA(const int idx) {
       const int m = idx/ns, sl = idx - m*ns;
-      M1BcgVal v;
+      VetBcgVal v;
       v.s0 = v.s1 = v.s2 = v.mx = 0.0;
       if (tl) {
         const int b = m/ntb, u = m - b*ntb, k0 = (u/nt2)*t3, j0 = (u%nt2)*t2;
@@ -189,7 +189,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
   repro::ReproVal<3> rv;
   Kokkos::parallel_reduce(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, n),
   KOKKOS_LAMBDA(const int idx, repro::ReproVal<3> &a) {
-    M1BcgVal t;
+    VetBcgVal t;
     t.s0 = t.s1 = t.s2 = t.mx = 0.0;
     fn(idx, t);
     a.s[0].Add(t.s0);
@@ -198,7 +198,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
     a.mx = (t.mx > a.mx) ? t.mx : a.mx;
   }, repro::ReproRed<3, Kokkos::HostSpace>(rv));
   repro::AllMerge(rv.s, 3);
-  M1GlobalMax(rv.mx);
+  VetGlobalMax(rv.mx);
   out.s0 = rv.s[0].Value();
   out.s1 = rv.s[1].Value();
   out.s2 = rv.s[2].Value();
@@ -1184,7 +1184,7 @@ Real RadiationVet::CleanReduce(Real v, const bool max) {
 //----------------------------------------------------------------------------------------
 //! \fn std::array<Real, 2> CleanSums
 //! \brief the n <= 2 sums f(m, k, j, i, s0, s1) adds over the active cells and ranks
-//! (f may also update vectors); layout_invariant: via M1LayReduce
+//! (f may also update vectors); layout_invariant: via VetLayReduce
 
 template <typename F>
 std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
@@ -1196,11 +1196,11 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   std::array<Real, 2> d = {0.0, 0.0};
   if (pp->pmesh->layout_invariant) {
-    M1BcgVal v;
+    VetBcgVal v;
     auto *r = pp->pradvet;
     const int nxb[3] = {nx1, nx2, nx3};   // (layout_invariant_mode = tile)
-    M1LayReduce(name, nmb*nkji, nkji, r->lay_part, r->lay_part_h,
-    KOKKOS_LAMBDA(const int idx, M1BcgVal &a) {
+    VetLayReduce(name, nmb*nkji, nkji, r->lay_part, r->lay_part_h,
+    KOKKOS_LAMBDA(const int idx, VetBcgVal &a) {
       int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
       f(m, k+ks, j+js, idx - m*nkji - k*nji - j*nx1 + is, a.s0, a.s1);
     }, v, nxb);

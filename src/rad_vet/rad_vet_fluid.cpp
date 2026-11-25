@@ -376,7 +376,7 @@ void RadiationVet::EmagBuild(bool un) {
   }
   par_for("vet_emag", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    em(m,k,j,i) = M1EmagCell(b1f, b2f, b3f, sph, csr, x1v, x1f, x2v, x2f, x3v, x3f,
+    em(m,k,j,i) = VetEmagCell(b1f, b2f, b3f, sph, csr, x1v, x1f, x2v, x2f, x3v, x3f,
                              m, k, j, i);
   });
 }
@@ -424,7 +424,7 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
   Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
   bool need_t = (otype != VET_OPAC_CONST);
   // copy the tables (held by value) into the closure instead of capturing this
-  M1OpacTab ot = otab;
+  VetOpacTab ot = otab;
   const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(VET_OP_S)
   if (ot.scat == 2 && !eos.tbl.active) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -452,7 +452,7 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
       t = eos.Temperature(d, fmax(eint, 0.0));
     }
     Real op, oe, of, os;
-    M1CellOpacities(otype, ot, eos, d, t, kp, ke, kf, ks, rref, tref, aa, bb, op, oe, of,
+    VetCellOpacities(otype, ot, eos, d, t, kp, ke, kf, ks, rref, tref, aa, bb, op, oe, of,
                     os);
     opac_(m,VET_OP_P,k,j,i) = d*op;
     opac_(m,VET_OP_E,k,j,i) = d*oe;

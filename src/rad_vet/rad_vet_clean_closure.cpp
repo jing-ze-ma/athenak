@@ -516,7 +516,7 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
   int otype = opacity_type;
   Real kp = kappa_p, ke_ = kappa_e, kf = kappa_f, ksc = kappa_s;
   Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
-  M1OpacTab otab_ = otab;
+  VetOpacTab otab_ = otab;
   bool scat = vscat;
   Real arad_ = arad, cl = c_light;
   const bool feedback = cln_feedback;
@@ -572,10 +572,10 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
     if (new_opac) {
       Real op, oe, of, os;
       if (otype == VET_OPAC_TABLE) {
-        M1TableOpacities(otab_, d, t, op, oe, of, os);
-        M1ScatterEos(otab_, eos, d, t, of, os);
+        VetTableOpacities(otab_, d, t, op, oe, of, os);
+        VetScatterEos(otab_, eos, d, t, of, os);
       } else {
-        M1Opacities(otype, d, t, kp, ke_, kf, ksc, rref, tref, aa, bb, op, oe, of, os);
+        VetOpacities(otype, d, t, kp, ke_, kf, ksc, rref, tref, aa, bb, op, oe, of, os);
       }
       opac_(m,VET_OP_P,k,j,i) = d*op;
       opac_(m,VET_OP_E,k,j,i) = d*oe;
