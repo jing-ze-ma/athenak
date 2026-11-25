@@ -748,7 +748,16 @@ void RadiationVet::CleanRayHistory(const bool save) {
     }
     Kokkos::deep_copy(d, s);
   };
-  for (int q = 0; q < 6; ++q) save ? cp(k.v[q], *a[q]) : cp(*a[q], k.v[q]);
+  // (cln_rfix: no build of the cycle shifts the ring, and each writes the pending Delta
+  // before it reads it, so neither is needed back: as the dt_retry checkpoint)
+  const bool fix = save ? cln_rfix : k.rfix;
+  for (int q = 0; q < 6; ++q) {
+    if (fix && (a[q] == &cln_rr || a[q] == &cln_rpd)) {
+      k.v[q] = DvceArray5D<Real>();
+    } else {
+      save ? cp(k.v[q], *a[q]) : cp(*a[q], k.v[q]);
+    }
+  }
   save ? cp(k.fvd, cln_fvd) : cp(cln_fvd, k.fvd);
   save ? k.fvdm.resize(cln_fvdm.size()) : cln_fvdm.resize(k.fvdm.size());
   for (std::size_t q = 0; q < k.fvdm.size(); ++q) {
