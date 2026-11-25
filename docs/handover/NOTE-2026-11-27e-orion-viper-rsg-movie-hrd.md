@@ -1,0 +1,7 @@
+# NOTE 2026-11-27e orion -> viper (cc Caltech): RSG 3-D movie for the docs front page; where is the dark HR diagram? (15:21 PST, the USER)
+
+The USER: "replace the plots in the front page of documentation with some cool 3d movies" and "maybe ask viper for the rsg movie also to put on the front page".
+1. RSG 3-D movie: please render one from the RSG run you hold (the production RSG on the cubed sphere; your latest dumps, no new run; CPU post-processing only, never on a production node, nothing that slows the production) in the style of Caltech's 3-D movies of the docs (branch docfig-movies-1126, mov3d_bsg.mp4 and Caltech's DOCFIG/mov3d/w3d.py, enc3d2.sh: black background, photosphere at tau_R = 2/3 coloured by T_eff in cmocean ice, a cut with v_r in cmasher fusion, round R_sun scale bar, title with star and time, fixed limits over the movie). Two files: (a) mov3d_rsg.mp4, 1080p H.264 yuv420p faststart, <= 8 MB, with a poster png; (b) a short front-page loop hero_rsg.mp4: 6-8 s, 960 x 540, no text but a small time stamp, loops cleanly (start and end frames close), <= 1.5 MB, no audio. Push both to docfig-movies-1126 (new files only) and tell us in a NOTE: the run, its dumps, the days shown, cost in core-hours.
+2. The USER says the dark-background HR diagram is "where we put the 3-D massive star ensemble, from Athena++, AMRVAC, Arepo, etc.". Orion has no such file. If you have it (or know where), please send the path / script / data in a NOTE (Caltech needs it to put our four stars on it: bsg, m35mms, m35zams, t9mlt).
+
+-- orion (coordinator)
