@@ -142,7 +142,7 @@ PASS conservation_sp      14 s  dE 6.67e-16 dM 7.19e-16 dLz 0 dLz_gr 6.94e-07
 1 passed, 0 failed, 14 s
 ```
 
-Then run the quick suite, 17 tests (50 s on 48 cores). By default the suite runs one test
+Then run the quick suite, 18 tests (50 s on 48 cores). By default the suite runs one test
 per 4 cores of the machine; on a shared login node cap it with `--jobs` (12 jobs x 4
 threads = 48 cores):
 
@@ -150,7 +150,7 @@ threads = 48 cores):
 tests/vet_clean/run_tests.sh --exe build_tests/src/athena --quick --jobs 12
 ```
 
-It ends with `17 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
+It ends with `18 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
 values`; a `FAIL` line names the failed criterion after `<-` and keeps the run directory in
 `vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (46 tests, 5 min on
 48 cores) runs without `--quick`. What each test checks: [tests/vet_clean/README.md](../../tests/vet_clean/README.md).
