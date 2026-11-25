@@ -245,3 +245,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 01:05 02-09: IDLE -> hgx_HGV
 - 11-25 01:07 02-03: hgx_HGV -> hgx_PRF2
 - 11-25 01:07 02-09: hgx_HGV -> hgx_PRF2
+- 11-25 01:10 02-03: hgx_PRF2 -> hgx_PRF2 wmlt
+- 11-25 01:11 02-03: hgx_PRF2 wmlt -> hgx_PRF2
+- 11-25 01:12 02-03: hgx_PRF2 -> IDLE
+- 11-25 01:12 02-09: hgx_PRF2 -> IDLE
