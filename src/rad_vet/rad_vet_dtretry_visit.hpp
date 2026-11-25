@@ -800,6 +800,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("marena_sw", marena_sw);
   v.value("marena_bound", marena_bound);
   v.value("marena_hyd", marena_hyd);
+  v.value("marena_k2", marena_k2);
   v.value("vgd_rg_k", vgd_rg_k);
   v.value("vgd_ring", vgd_ring);
   v.value("vgd_ring_named", vgd_ring_named);

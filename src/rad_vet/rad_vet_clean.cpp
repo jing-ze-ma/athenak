@@ -4929,6 +4929,10 @@ void RadiationVet::CleanWriteBack() {
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;   // clean_stag_split: the faces store the momentum state
   auto kk = (t2_solve == VET_T2S_STAGE1) ? t2k2 : t2k1;
+  if (marena_k2 && t2_solve == VET_T2S_STAGE1) {   // (as its own allocation: 0 elsewhere)
+    Kokkos::deep_copy(DevExeSpace(), t2k2, 0.0);
+    Kokkos::deep_copy(DevExeSpace(), t2pf2, 0.0);
+  }
   // h div Phi of the solution (CLW_Q) before the F solve below moves the memory d
   // (clean_stag_fkin): E takes the residual of the operator it was solved with; with
   // clean_stag_split also the cell flux of Phi (the faces keep F^H)
