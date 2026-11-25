@@ -833,8 +833,9 @@ void RadiationVet::MemArenaBind() {
     off = align(off + n);
     moved += n;
   };
-  // (cubed sphere: cln_st holds the build's face-layer chunks, CleanGdFaceSums)
-  if (!pmy_pack->pmesh->use_cubed_sphere) bind(cln_st);
+  // (cubed sphere without the live ring: cln_st holds the build's face-layer chunks,
+  // CleanGdFaceSums)
+  if (!pmy_pack->pmesh->use_cubed_sphere || cln_ring == 1) bind(cln_st);
   bind(cln_yl);
   bind(cln_vf);
   for (auto &a : cln_mg) bind(a);

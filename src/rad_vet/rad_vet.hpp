@@ -1421,6 +1421,7 @@ class RadiationVet {
   DvceArray5D<Real> cln_rl;
   DvceArray5D<Real> cln_rr;     // offsets g_{b-j} - g_b, J_{b-j}/J_b (< 0: none), K-1
   DvceArray5D<Real> cln_rpd;    // the pending Delta g_{b+1} - g_b, J_{b+1}/J_b
+  bool cln_rpfree = false;      // its memory is scratch of the build (CleanGdFaceSums)
   Real cln_rguard_sum = 0.0, cln_roff_sum = 0.0;   // guard falls, off-boundary shifts
   DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
   DvceArray5D<Real> cln_vf;     // cubed sphere: the F solve's cells, faces (m,18,k,j,i)
@@ -1805,6 +1806,9 @@ class RadiationVet {
   void MemArenaHydro();       // zeroes those (Hydro::Fluxes)
   bool marena_k2 = false;     // t2k2, t2pf2 in it (zeroed in stage 1's CleanWriteBack)
   void MemArenaBind();        // the solver's and the hydro's scratch arrays over it
+  bool MemArenaIn(const Real *p) const {
+    return p >= marena.data() && p < marena.data() + marena.extent(0);
+  }
   void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
   bool MemArenaVgd(VgdRag &a, int64_t n);
   void MemArenaGrow(int64_t need, bool keep = true);
