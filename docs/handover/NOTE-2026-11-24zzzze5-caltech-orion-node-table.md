@@ -81,3 +81,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-24 20:08 02-09: hx_H139T -> hx_HRLb
 - 11-24 20:10 02-03: hx_HRLb -> hx_H139F
 - 11-24 20:10 02-09: hx_HRLb -> hx_H139F
+- 11-24 20:17 02-03: hx_H139F -> IDLE
+- 11-24 20:17 02-09: hx_H139F -> IDLE
+- 11-24 20:18 01-17: IDLE for 10 min
+- 11-24 20:18 02-09: IDLE -> nm_NM0b
