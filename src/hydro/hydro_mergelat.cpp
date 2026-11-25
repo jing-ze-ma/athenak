@@ -97,6 +97,7 @@ void MlatCheck(const Real *s0, const Real *s1, const Real r,
   Kokkos::atomic_max(&cerr(2), fabs(s1[2] - s0[2])/pn);
   Kokkos::atomic_max(&cerr(3), sqrt(dp)/pn);
   Kokkos::atomic_max(&cerr(4), sqrt(dl)/(r*pn));
+  Kokkos::atomic_add(&cerr(5), s1[8] - s0[8]);
 }
 
 //----------------------------------------------------------------------------------------
@@ -382,7 +383,7 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
   Kokkos::deep_copy(amn, 1.0);
   const bool chk_ = check && (kind == 0);
   const bool radial_ = radial;
-  DvceArray1D<Real> cerr("mlat_cerr", 5);
+  DvceArray1D<Real> cerr("mlat_cerr", 6);
   par_for("mlat_avg", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, imax_loc,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int f = fi_(m,i);
@@ -554,6 +555,7 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
     for (int n = 0; n < 5; ++n) {
       chkerr[n] = std::max(chkerr[n], static_cast<double>(h(n)));
     }
+    dlz += h(5);
   }
   if (kind == 0) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), nfb);
@@ -650,19 +652,22 @@ void MergeLat::Diag(const DvceArray5D<Real> &u, const char *tag) {
   MPI_Allreduce(MPI_IN_PLACE, h, 10, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   std::int64_t nf = nfallback;
   MPI_Allreduce(MPI_IN_PLACE, &nf, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-  double ce[5] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3], chkerr[4]}, am = amin;
+  double ce[5] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3], chkerr[4]};
+  double am = amin, dl = dlz;
   MPI_Allreduce(MPI_IN_PLACE, ce, 5, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &am, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &dl, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 #else
   std::int64_t nf = nfallback;
-  double ce[5] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3], chkerr[4]}, am = amin;
+  double ce[5] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3], chkerr[4]};
+  double am = amin, dl = dlz;
 #endif
   if (global_variable::my_rank == 0) {
     std::printf("MLATDIAG %s cyc %d t %.10e dt %.6e M %.16e E %.16e P %.10e %.10e %.10e "
                 "L %.16e %.16e %.16e nfb %" PRId64 " chk %.2e %.2e %.2e %.2e %.2e "
-                "amin %.2e Pabs %.10e Labs %.10e\n", tag,
+                "amin %.2e Pabs %.10e Labs %.10e dLzm %.6e\n", tag,
                 pm->ncycle, pm->time, pm->dt, h[0], h[1], h[2], h[3], h[4], h[5], h[6],
-                h[7], nf, ce[0], ce[1], ce[2], ce[3], ce[4], am, h[8], h[9]);
+                h[7], nf, ce[0], ce[1], ce[2], ce[3], ce[4], am, h[8], h[9], dl);
     std::fflush(stdout);
   }
 }
