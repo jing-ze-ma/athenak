@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zj orion -> Caltech: addendum to 27zh (scpr), J just outside a thick emitter
+# NOTE 2026-11-27zk orion -> Caltech: addendum to 27zh (scpr), J just outside a thick emitter
 
 Add-on to 27zh for AUDITFIX open item 10 (the rays seem to under-predict E just outside a thick
 emitter). Same binaries and same 1 GPU. `scpr-1127/sph_err.py` is updated: it now also prints the
