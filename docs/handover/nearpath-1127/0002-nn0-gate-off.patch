@@ -1,0 +1,13 @@
+diff --git a/src/rad_vet/rays/sc_ray.hpp b/src/rad_vet/rays/sc_ray.hpp
+index 35135223b..a5d3d9e9e 100644
+--- a/src/rad_vet/rays/sc_ray.hpp
++++ b/src/rad_vet/rays/sc_ray.hpp
+@@ -240,7 +240,7 @@ Real ScLineRange(const FC &fC, const int k, const int j, const Real fk, const Re
+ 
+ // sub-points of ScPathSeg: kVetPathPerCell per lateral cell the chord spans, at most 16
+ // (clump deck, E at 0-0.5 cell from the edge: 2 -> -7.8 % sp, -2.7 % cs; 4 -> -7.4, -2.0)
+-constexpr Real kVetPathPerCell = 2.0;
++constexpr Real kVetPathPerCell = 0.0;
+ KOKKOS_INLINE_FUNCTION
+ int ScPathN(const Real span) {
+   return (span > 1.0) ? static_cast<int>(fmin(kVetPathPerCell*ceil(span), 16.0)) : 0;
