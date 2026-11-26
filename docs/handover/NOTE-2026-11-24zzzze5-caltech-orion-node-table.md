@@ -802,3 +802,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 22:14 02-17: q_rcut -> rc_B1
 - 11-25 22:15 02-17: rc_B1 -> rc_A2
 - 11-25 22:16 02-17: rc_A2 -> IDLE
+- 11-25 22:27 02-17: IDLE -> sc_S_B
