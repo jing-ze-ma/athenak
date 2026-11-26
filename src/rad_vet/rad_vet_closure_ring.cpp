@@ -400,7 +400,7 @@ void RadiationVet::RingMoments() {
     const bool older = (p >= 0 && p < nr);
     const bool keep = (older && fill) || p == nr || p == nk;
     if (older && fill) vra_gen += 1;
-    if (!vgd_on) {   // (vet_sc: the set of block cln_fvblk[q] alone)
+    if (!vgd_on && vgd_slab != 1) {   // (vet_sc: the set of block cln_fvblk[q] alone)
       VetRotSet(VetRotBeta(cln_fvblk[q]));
       ScCartSweep();
       ClosureFromRays();
@@ -434,7 +434,7 @@ void RadiationVet::RingMoments() {
       }
     });
   }
-  if (vgd_on) ScPost();
+  if (vgd_on || vgd_slab == 1) ScPost();
   cln_rpfree = false;
   cln_fvd = dfull;
   cln_raymin = ray_min;
@@ -642,7 +642,8 @@ void RadiationVet::RingSets(const Real tc, const int cyc) {
   auto d_h = Kokkos::create_mirror_view(cln_fvd);
   for (int64_t blk = (two ? b : b - nk + 1); blk <= b + nx; ++blk) {
     const int q = static_cast<int>(((blk % ns) + ns) % ns);
-    const Real key = RotAngleBlk(blk);
+    // (Cartesian slab: the turn of the vet_sc set about x1)
+    const Real key = (vgd_slab == 1) ? ScSlabKey(blk) : RotAngleBlk(blk);
     Real w = ((xf && blk == b - nk + 1) ? 1.0 - s : ((blk > b) ? s : 1.0))/nk;
     if (two) w = (blk > b) ? s : 1.0 - s;
     const std::vector<double> d = ScRotate(key);
