@@ -80,3 +80,29 @@
 - **W1E (fresh HLLE on W1's grid):** no band at 0.74 at all. The peak sits at k20 8 with rms about 1e-5 km/s and no growth (e-folds negative or 1.7e5 s); the convective/shell power is at r 0.85 R_ph. This confirms on a fresh start what R6 (HLLE) showed on the restart: the band needs HLLC.
 - **Frequency (item 5):** W1R2 keeps one strongest mode (11, 0) through 70 dumps after 2e5 s: |omega| = 1.86e-4 rad/s = 1.16 N, phase residual 0.25 rad. W05 gives 1.13 N likewise. So the band oscillates at about N at 0.74 (alias caveat: 1800 s cadence, Nyquist 1.75e-3 rad/s).
 - W2 (lateral halving) will decide the lateral question; final readings when it ends.
+
+## Final readings (W2 included)
+- **W2 ran only to t = 2.678e5 s (cycle 44100).** My own step time limit of 12 h (srun -t 720) killed it at 43233 s wall (rc 137); my launch estimate of 10.9 h was too low.
+  - No final rst: the deck wrote rst only at the end, so it could not continue. A rerun from 0 does not fit the holder (it ends 23:16).
+  - Up to the cut it was clean: 0 CW / FATAL / DT_RETRY, dt 6.07 s. All dumps to 2.678e5 s are used; the W2 '3.46e5' rows below are its last dump at 2.678e5.
+- Full tables for all arms (items 1-6) and figures F1-F4: docs/handover/caltech_results/HLLRES/final/.
+
+### W2 against W1 at 0.74 R_ph,IC (k20 = k per 20 deg)
+| band rms [km/s], k20 window | W1 1.8e5 | W1 2.6e5 | W2 1.8e5 | W2 2.6e5 |
+|---|---|---|---|---|
+| 4-16 | 1.6e-5 | 5.4e-5 | 8.7e-6 | 3.6e-5 |
+| 20-32 (W1's band) | 1.2e-4 | 3.2e-3 | 8.9e-7 | 1.7e-6 |
+| 40-64 (where a band at 10 cells per wavelength would sit in W2) | 6.0e-6 | 9.6e-5 | 1.4e-6 | 4.6e-6 |
+| 64-120 | 1.8e-6 | 7.3e-5 | 3.2e-7 | 4.0e-7 |
+- W2 has **no band** at 0.74: neither at W1's k20 22-26 (1.7e-6 against 3.2e-3 km/s at 2.6e5 s, 1900x lower) nor at twice that k.
+  - Its strongest lateral power is at k20 6-12 at about 1e-5 km/s, growing slowly (e-fold 4-7e4 s). That is the same picture as W1E (HLLE), which shows no band at all.
+  - W2's shell-power peak sits at r 0.85 R_ph, where W1E's is.
+  - The hst means over 2.0-2.68e5 s (KE_int 11.6, KEr_int 5.29 x 1e39 erg/sr, L_top/L_in 1.0032) match the other arms.
+
+### Verdict against your fixed reading
+- Lateral: W05 -> W1 doubles the band's k20 (14 -> 26) at the same 9-10 cells per wavelength. W2 (cell halved again) shows **no band** at all by 2.68e5 s. By your rule, "a band that vanishes in W2 counts as grid-set": **a lateral grid artefact.**
+  - Its growth rate barely changes from W05 to W1 (2.1 vs 2.5e4 s early); its amplitude at equal t drops 5x from W05 to W1, and to below detection in W2.
+- Radial: W1R2 keeps the band, with the same width in R_ph at 2.6e5 s (0.047 vs 0.043 R) and the same node spacing in R. The radial structure is therefore not set by the radial cell, but the band itself needs the coarse lateral cell.
+- Riemann solver: HLLE (W1E, and R6 before it) has no band on W1's grid. So the band is an HLLC feature at about 10 lateral cells per wavelength, and it disappears with lateral resolution.
+- Wedge control: W1 matches prod_c1 within your 25 % / 20 % bounds (e-fold within 4 %, k20 26 vs 23-26), so the narrow-wedge ladder holds.
+- Caveat: W2 stops at 2.68e5 s, so its last window (2.6-3.5e5) is not covered. Up to there it is 1900x below W1 at equal t, so a late appearance would have to be very fast.
