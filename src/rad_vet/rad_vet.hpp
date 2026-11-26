@@ -120,7 +120,8 @@ class RadiationVet {
   // debug: dbg_gas_force = false gives the gas no momentum and no work
   bool dbg_gas_force{};
 
-  // ---- vet_sc short characteristics (rad_vet_vet.cpp): Eddington tensor K/J of a grey
+  // ---- Cartesian short characteristics (rays/sc_cart_*.cpp): Eddington tensor K/J of a
+  // grey
   // formal solution, once per hydro step from the start-of-step state
   bool vet_sc{};             // closure = sc on a Cartesian mesh
   int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
@@ -164,7 +165,7 @@ class RadiationVet {
   Real vsc_beta = 0.0;                  // current rotation of the vet_sc set
   void VetBuildAngles(const Real beta);
   void VgdBuildSet(std::vector<double> &d) const;
-  void VetRotInit(ParameterInput *pin);   // shared rotation keys (rad_vet_vetgd.cpp)
+  void VetRotInit(ParameterInput *pin);   // (rays/sc_directions.cpp)
   void VetRotUpdate();
   Real VetRotBeta(const int64_t blk) const;   // rotation of block blk
   void VetRotSet(const Real beta);
@@ -577,10 +578,10 @@ class RadiationVet {
   void SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi);
   //! print v_max*tau_max/chat once, from the first Opacity task with a filled array
   void RSLACheck();
-  // ---- implicit transport (rad_vet_implicit.cpp)
+  // ---- implicit transport (rad_vet_params_implicit.cpp)
   //! read the implicit-solver parameters, allocate its arrays
   void ImplicitInit(ParameterInput *pin);
-  // IC radiation start, fresh starts only (rad_vet_icrad.cpp)
+  // IC radiation start, fresh starts only (rad_vet_steady.cpp)
   int icr_mode = 0;             // ic_rad: 0 none, 1 fs, 2 relax, 3 fs_relax (IcRadInit)
   // icr_fmeas (set by a pgen): one more IcRadRun pass with the force on the gas; its net
   // x1 momentum deposit dm - dt rho a_ref goes to icr_dm (dt icr_dm_dt), the gas is
@@ -636,7 +637,7 @@ class RadiationVet {
   void VetSweepMB();
   //! VET: free the multi-block state
   void VetFree();
-  // ---- scheme = clean: the implicit stage solve (rad_vet_clean*.cpp)
+  // ---- scheme = clean: the implicit stage solve (rad_vet_tasks.cpp)
   TaskStatus CleanSolve(Driver *d, int stage);
   // the step's radiation (rad_vet_imex.cpp), called by Driver::Execute
   void RunStage(Driver *pdrive, const int stage);
@@ -1056,7 +1057,7 @@ class RadiationVet {
   void VetRayInit();           // checks, buffers, the direction set (first call)
   void VetRayReport();
 
-  // ---- the source (ln chi, ln S) of the vet_gd rays (rad_vet_vetray.cpp)
+  // ---- the source (ln chi, ln S) of the vet_gd rays (rays/sc_source.cpp)
   // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetRayInit
   // refuses them
   std::string vray_rat_keys;
@@ -1070,7 +1071,7 @@ class RadiationVet {
   void VetRayExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
 
-  // ---- vet_gd (rad_vet_vetgd.cpp): Eddington tensor from an SC sweep along globally
+  // ---- vet_gd (rays/sc_sph_sweep.cpp): Eddington tensor from an SC sweep along globally
   // fixed (Cartesian) HEALPix directions; sp wedge / cubed sphere
   bool vgd_on = false;         // closure = sc on spherical polar, cubed sphere
   // HEALPix nside of a set that names none (12 nside^2 directions)
@@ -1108,7 +1109,8 @@ class RadiationVet {
   bool vgd_rot3 = false;
   void VgdRot3(const Real key, double r[9]) const;
   std::vector<double> VgdRotate(const Real alpha) const;
-  // vet_rotate_avg = K >= 2 (rad_vet_rotavg.cpp): the closure is the mean over the last K
+  // vet_rotate_avg = K >= 2 (rays/sc_cart_rotavg.cpp): the closure is the mean over the
+  // last K
   // rotated direction sets. A closure registers its normalised fields (ratios to J); the
   // mean is kept as offsets d_j = g_{b-j} - g_b, each from two sweeps of the same state:
   // used = g_b(now) + sum_j d_j / K. Needs a rotating closure.
@@ -1192,7 +1194,7 @@ class RadiationVet {
   void RotAvgDelta(const int slot, const int ilo);
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
-  // history in the restart file (kVetRaRstMagic, rad_vet_rotavg.cpp)
+  // history in the restart file (kVetRaRstMagic, rays/sc_cart_rotavg.cpp)
   static constexpr int VET_RA_RST_NH = 11;   // int64 header entries (10)
   int RotAvgNf() const;
   int RotAvgRstNslab(const int ncell) const;
@@ -1382,7 +1384,7 @@ class RadiationVet {
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   MeshBoundaryValuesCC *pbval_hr = nullptr;
   void VetGdHaloInit();
-  // vet_gd on the cubed sphere (rad_vet_vetgd_cs.cpp): a block's band is its own panel's
+  // vet_gd on the cubed sphere (rays/sc_cs_sweep.cpp): a block's band is its own panel's
   // index space with the four neighbour panels' strips unfolded at the edges; each band
   // position holds one global cell, filled per shell by exact keyed copies. The upwind
   // point is found in Cartesian (panel by the largest normal component, (xi, eta) by the
@@ -1520,7 +1522,7 @@ class RadiationVet {
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
                     const std::vector<int> &pbh);
   DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
-  // vet_gd on a stretched theta and/or the full sphere (rad_vet_vetgd_sph2.inc).
+  // vet_gd on a stretched theta and/or the full sphere (rays/sc_sph_globalband.cpp).
   // vgd_sth: band-row theta from the node table vgd_thn (extended chart: beyond a pole
   // theta continues as (-theta, phi + pi)), upwind rows linear between nodes. vgd_pol:
   // halo slots beyond a pole take the pole partner (lx2, lx3 + nb3/2) with rows reversed

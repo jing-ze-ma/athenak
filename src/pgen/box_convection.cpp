@@ -548,7 +548,7 @@ bool rtbud_arm_ = false;
 
 void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
@@ -605,7 +605,7 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
 
 Real BoxConvMassInt(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
@@ -900,7 +900,7 @@ void BoxConvSurfaceDump(Mesh *pm) {
 
 void BoxConvProfileDump(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
@@ -1032,7 +1032,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   pgen_final_func = BoxConvFinal;
   user_hist_func = BoxConvHistory;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   if (!pfl->on) {
@@ -2449,7 +2449,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     }
   }
   MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
@@ -2843,7 +2843,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 void BoxConvARadForce(Mesh *pm, Real bdt) {
   if (!arad_force_ || wb_phi_eff_) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
@@ -2902,7 +2902,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   // V1max and Fres are maxima and were always right.
   if (vet_on_) {
     MeshBlockPack *pmbp = pm->pmb_pack;
-    // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+    // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
     radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
     auto *pfl = &flr_;
     radvet::RadiationVet *pvet = pmbp->pradvet;
@@ -3113,7 +3113,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
 
 void BoxConvBC(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/vet_fluid.hpp)
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_vet/rad_vet_fluid.hpp)
   radvet::FluidRef flr_ = radvet::FluidRef::Get(pmbp);
   auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;

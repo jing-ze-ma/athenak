@@ -7,7 +7,7 @@
 //========================================================================================
 //! \file imex_sdirk2.hpp
 //! \brief The tableau of the IMEX second-order step of <rad_vet>/time_scheme = hesdirk2
-//! (rad_vet_time2.cpp).  The explicit part is AthenaK's
+//! (rad_vet_imex.cpp).  The explicit part is AthenaK's
 //! rk2 (Heun); the implicit part the stiffly accurate, L-stable ESDIRK
 //!   A = [[0,0,0],[1-g,g,0],[1/2,b2,g]],  g = 1 - 1/sqrt 2,  b2 = g/(2(1-g)),
 //! FSAL.  Each implicit stage is a backward-Euler solve with dt -> g dt on the old vector
@@ -15,7 +15,7 @@
 //! c2 = c32 dt (the Heun average w0 U^n + w1 Y2 of the explicit part supplies the rest of
 //! the row), and its slope is K = (Y - old vector)/(g dt).  trbdf2: the ESDIRK form of
 //! TR-BDF2 with the RK2 of c2 = 2 - sqrt 2 (VET only).  The expressions are those of
-//! rad_vet_time2.cpp before the factorisation (bitwise).
+//! rad_vet_imex.cpp before the factorisation (bitwise).
 
 #include <cmath>
 

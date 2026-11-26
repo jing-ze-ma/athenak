@@ -19,7 +19,7 @@
 //! 2-D ring vet_ring, or the vet_gd set (vet_sc_set = gd); optionally rotated.
 //! Sweep: layer by layer in x1, each ray traced back to the plane of cell centres of the
 //! upwind layer, I, chi, S (bi)linearly interpolated there (vet_interp, PLM foot), S
-//! linear in tau along the segment (vet_seg, rad_vet_vetseg.hpp).  Up and down rays run
+//! linear in tau along the segment (vet_seg, rays/sc_segment.hpp).  Up and down rays run
 //! in the same launches, one par_for per layer, so the moments need no atomics.
 //! x1 ends: diffusion intensity E + 3 F.Omega/c (vet_bc_diff), Marshak bath / black
 //! sphere (vet_bc_inner, vet_bc_bath), mirror at a reflecting end (vet_bc_reflect), or

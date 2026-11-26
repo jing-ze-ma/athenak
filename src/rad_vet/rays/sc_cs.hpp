@@ -83,7 +83,7 @@ struct VgdCsSt {
   Real w[4];
 };
 
-// stencil accessor of the shared upwind core (rad_vet_vgdray.hpp): weighted sum
+// stencil accessor of the shared upwind core (rays/sc_ray.hpp): weighted sum
 struct VgdCsA {
   const VgdCsSt &st;
   KOKKOS_INLINE_FUNCTION int N() const {return st.n;}

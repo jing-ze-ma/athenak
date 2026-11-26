@@ -125,7 +125,7 @@ bool RadiationVet::VetBcEmit() const {
 
 void RadiationVet::RotAvgParse(ParameterInput *pin) {
   // vet_rotate_avg = K (read only when named; < 2 off): closure averaged over the last
-  // K rotated sets (rad_vet_rotavg.cpp)
+  // K rotated sets (rays/sc_cart_rotavg.cpp)
   if (pin->DoesParameterExist("rad_vet","vet_rotate_avg")) {
     vra_k = pin->GetInteger("rad_vet","vet_rotate_avg");
     if (vra_k > VET_RA_NF) {
@@ -239,7 +239,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     pin->SetString("rad_vet","closure","sc");
   }
   if (!sph_geom) {
-    // a Cartesian mesh (rad_vet_vet.cpp)
+    // a Cartesian mesh (rays/sc_cart_sweep.cpp)
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
     // vet_gd_rotate_every has no vet_sc clock: inert
@@ -256,11 +256,11 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     if (VgdRotOn()) {
       recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
     }
-    // vet_source_noesrc (rad_vet_vet.cpp)
+    // vet_source_noesrc (rays/sc_cart_sweep.cpp)
     vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",
                                      fix("vet_source_noesrc", "true", "false"));
   } else {
-    // spherical polar, cubed sphere (rad_vet_vetray.cpp, rad_vet_vetgd.cpp)
+    // spherical polar, cubed sphere (rays/sc_source.cpp, rays/sc_sph_sweep.cpp)
     vgd_on = VetCurvedRays(pin);
     if (pin->DoesParameterExist("rad_vet","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_vet","vet_source_noesrc");
@@ -384,7 +384,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     // step's dt, recorded) on a physical-time clock; default auto on a fresh vet_gd run
     // naming neither _dt nor _every and no vet_gd_beam. Sub-keys _t0, _align, _stretch,
     // _slope.
-    VetRotInit(pin);   // shared with vet_sc (rad_vet_vetgd.cpp)
+    VetRotInit(pin);   // shared with vet_sc (rays/sc_directions.cpp)
     // clean sp / cs, fresh, rotating on the time clock: vet_rotate_avg = 4 (recorded)
     const bool clk = vgd_on && VgdRotOn() && (vgd_rot_dt > 0.0 || vgd_rot_auto);
     if (clk && nw) pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);

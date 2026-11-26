@@ -352,7 +352,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
 //! \brief keys of the implicit scheme
 
 void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
-  // ---- scheme = clean (rad_vet_clean*.cpp), the only scheme of a fresh implicit run
+  // ---- scheme = clean (rad_vet_tasks.cpp), the only scheme of a fresh implicit run
   const bool nw = !global_variable::restart_run;
   // the fresh default of a scheme key, on a restart without it too (fix)
   auto fix = [&](const char *k, const char *v, const char *o) {

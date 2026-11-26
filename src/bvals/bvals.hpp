@@ -473,7 +473,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam. Set by the implicit VET on its scratch
-  // exchanges (stage CS1, rad_vet_sph.cpp), whose seam faces pair cell to cell.
+  // exchanges (stage CS1, rad_vet_geometry.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
   // teams of each (block, buffer, variable) of the CC pack/unpack: 1; the clean VET
   // exchanges take more.  GPU: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one

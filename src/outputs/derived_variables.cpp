@@ -1294,7 +1294,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
   // vet_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
-  // (clean_closure = predict, the staggered default; rad_vet_clean_closure.cpp
+  // (clean_closure = predict, the staggered default; rad_vet_closure.cpp
   // CleanClosure: the formal solution of the predicted state at
   // t^{n+1}, the clean_rot_ring average over the window's sets, CleanClosureFromGd, then
   // CleanClosureFill; built once per step and rebuilt for a new dt (dt_retry), read by

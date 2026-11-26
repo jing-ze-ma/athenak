@@ -47,14 +47,12 @@
 
 namespace radvet {
 
-// VetGdSweep and its shell kernels build in their own TU, rad_vet_vetgd_sweep.cpp (this
-// file with VET_VGD_SWEEP_TU: includes, helpers above and this function only)
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSweep
 //! \brief one sweep (inward then outward) of every direction
 
 void RadiationVet::VetGdSweep() {
-  if (vgd_csg) {   // the cubed-sphere sweep (rad_vet_vetgd_cs.cpp)
+  if (vgd_csg) {   // the cubed-sphere sweep (rays/sc_cs_sweep.cpp)
     VetGdCsSweep();
     return;
   }
@@ -235,7 +233,7 @@ void RadiationVet::VetGdSweep() {
 #undef VET_VGD_BODY_NAME
 #undef VET_VGD_BODY_MIR
 #if defined(KOKKOS_ENABLE_CUDA)
-    // CUDA gx-false kernels (rad_vet_vetgd_body.inc): bodyg / bodymg compile in
+    // CUDA gx-false kernels (rays/sc_sph_sweep_body.inc): bodyg / bodymg compile in
     // vpa = gx = false (nvcc has no generic device lambda for std::false_type)
 #define VET_VGD_BODY_GX0
 #define VET_VGD_BODY_NAME bodyg

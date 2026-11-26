@@ -27,8 +27,8 @@
 #include "utils/time_table.hpp"
 
 namespace radvet {
-struct CleanArgs;   // rad_vet_clean.hpp
-struct CleanLevel;  // rad_vet_clean.hpp
+struct CleanArgs;   // rad_vet_args.hpp
+struct CleanLevel;  // rad_vet_args.hpp
 
 //! \struct CleanW
 //! \brief the clean work vectors cln_w (CLW_*): slots n < ns in s, the layout's own
@@ -219,7 +219,7 @@ constexpr int VET_OPAC_USER     = 2;
 constexpr int VET_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables
 
 // <rad_vet>/force_reference: what the momentum coupling subtracts from the radiative
-// force (arad_ref; see the head of rad_vet_fluid.cpp)
+// force (arad_ref)
 constexpr int VET_FREF_NONE    = 0;
 constexpr int VET_FREF_WB_ARAD = 1;
 constexpr int VET_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
@@ -292,7 +292,7 @@ struct CleanRingMates {
   std::vector<std::array<int, 3>> snd, rcv;   // (block or slot, rank, source gid)
 };
 
-struct VetMBState;   // multi-block short-characteristics sweep (rad_vet_vet.cpp)
+struct VetMBState;   // multi-block short-characteristics sweep (rays/sc_cart_sweep.cpp)
 
 struct RadiationVetTaskIDs {
   TaskID irecv;

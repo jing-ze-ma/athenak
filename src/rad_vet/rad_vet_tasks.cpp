@@ -7,25 +7,36 @@
 //! \brief the workflow of <rad_vet>, read this file first: the task lists, and the
 //! implicit stage solve (CleanSolve) as a driver of named steps.
 //!
+//! One time step (Driver::Execute, driver.cpp):
+//!   dt_retry checkpoint
+//!   time_scheme = hesdirk2 with a valid slope K1 (Time2Active):
+//!     stage 1, 2: hydro stage -> Time2Stage (rad_vet_imex.cpp): Time2FormStage, then the
+//!       implicit stage below with dt_sub = g dt; a failed one: Time2Restore, hydro again
+//!   else, or a failed stage: BackwardEuler (rad_vet_imex.cpp), dt_sub = dt
+//!   dt_retry (a solve raised dtr_fail: the cycle again) or ledgers, outputs
+//! One implicit stage = the vet_* task lists (AssembleRadVetTasks):
+//!   InitRecv -> Opacity -> CleanSolve -> HydroConToPrim (floor caps, gas ghosts,
+//!   primitives) -> ghosts of E, F
+//! CleanSolve:
+//!   closure -> old vector, face coefficients -> first iterate
+//!   passes: [closure, opacity] -> right-hand side, operator -> E -> gas T -> face F, gas
+//!     momentum, drag -> settled?
+//!   counts, verdict -> write-back -> verdict -> ray moments of the new state
+//! Closure (rad_vet_closure*.cpp): predicted E, T -> rays (rays/sc_*) or extrapolation ->
+//!   cell closure and face sums -> fill, ghosts
+//! Charts and file list: docs/vet_clean/WORKFLOW.md
+//!
 //!  called from: mesh/meshblock_pack.cpp (task lists), driver/driver.cpp
 //!  calls into: rad_vet_bvals.cpp, rad_vet_closure.cpp, rad_vet_closure_faces.cpp,
 //!    rad_vet_closure_ring.cpp, rad_vet_flux_seam.cpp, rad_vet_init.cpp,
 //!    rad_vet_ledger.cpp, rad_vet_newton.cpp, rad_vet_oldvector.cpp, rad_vet_rhs.cpp,
 //!    rad_vet_solver.cpp, rad_vet_steady.cpp, rad_vet_update.cpp, rays/sc_source.cpp
 
-#include <array>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
 #include <map>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "athena.hpp"
-#include "globals.hpp"
 #include "tasklist/task_list.hpp"
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
@@ -33,10 +44,36 @@
 #include "pgen/pgen.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
-#include "rad_vet/rad_vet_fluid.hpp"
 #include "rad_vet/rad_vet_args.hpp"
 
 namespace radvet {
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::AssembleRadVetTasks
+//! \brief adds the rad_vet tasks to the vet_* task lists (called by AddPhysics)
+
+void RadiationVet::AssembleRadVetTasks(std::map<std::string,
+                                       std::shared_ptr<TaskList>> tl) {
+  TaskID none(0);
+
+  // "vet_before_stagen"
+  id.irecv = tl["vet_before_stagen"]->AddTask(&RadiationVet::InitRecv, this, none);
+
+  // "vet_stagen": clean stage solve, hydro inversion, ghost exchange of the moments
+  id.closure = tl["vet_stagen"]->AddTask(&RadiationVet::ApplyClosureLimits,this,none);
+  id.opac    = tl["vet_stagen"]->AddTask(&RadiationVet::Opacity, this, id.closure);
+  id.update  = tl["vet_stagen"]->AddTask(&RadiationVet::CleanSolve, this, id.opac);
+  id.c2p     = tl["vet_stagen"]->AddTask(&RadiationVet::HydroConToPrim,this,id.update);
+  id.restu   = tl["vet_stagen"]->AddTask(&RadiationVet::RestrictU, this, id.c2p);
+  id.sendu   = tl["vet_stagen"]->AddTask(&RadiationVet::SendU, this, id.restu);
+  id.recvu   = tl["vet_stagen"]->AddTask(&RadiationVet::RecvU, this, id.sendu);
+  id.bcs     = tl["vet_stagen"]->AddTask(&RadiationVet::ApplyPhysicalBCs,this,id.recvu);
+  id.prol    = tl["vet_stagen"]->AddTask(&RadiationVet::Prolongate, this, id.bcs);
+  // "vet_after_stagen"
+  id.csend = tl["vet_after_stagen"]->AddTask(&RadiationVet::ClearSend, this, none);
+  id.crecv = tl["vet_after_stagen"]->AddTask(&RadiationVet::ClearRecv, this, id.csend);
+  return;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationVet::CleanSolve
@@ -77,33 +114,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   // 4. clean_closure = extrap(2): ray moments of the new state, for the next closure
   if (cln_extrap > 0 && !t2_fail) CleanClosureAfterSolve();         //        (_closure)
   return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::AssembleRadVetTasks
-//! \brief adds the rad_vet tasks to the vet_* task lists (called by AddPhysics)
-
-void RadiationVet::AssembleRadVetTasks(std::map<std::string,
-                                       std::shared_ptr<TaskList>> tl) {
-  TaskID none(0);
-
-  // "vet_before_stagen"
-  id.irecv = tl["vet_before_stagen"]->AddTask(&RadiationVet::InitRecv, this, none);
-
-  // "vet_stagen": clean stage solve, hydro inversion, ghost exchange of the moments
-  id.closure = tl["vet_stagen"]->AddTask(&RadiationVet::ApplyClosureLimits,this,none);
-  id.opac    = tl["vet_stagen"]->AddTask(&RadiationVet::Opacity, this, id.closure);
-  id.update  = tl["vet_stagen"]->AddTask(&RadiationVet::CleanSolve, this, id.opac);
-  id.c2p     = tl["vet_stagen"]->AddTask(&RadiationVet::HydroConToPrim,this,id.update);
-  id.restu   = tl["vet_stagen"]->AddTask(&RadiationVet::RestrictU, this, id.c2p);
-  id.sendu   = tl["vet_stagen"]->AddTask(&RadiationVet::SendU, this, id.restu);
-  id.recvu   = tl["vet_stagen"]->AddTask(&RadiationVet::RecvU, this, id.sendu);
-  id.bcs     = tl["vet_stagen"]->AddTask(&RadiationVet::ApplyPhysicalBCs,this,id.recvu);
-  id.prol    = tl["vet_stagen"]->AddTask(&RadiationVet::Prolongate, this, id.bcs);
-  // "vet_after_stagen"
-  id.csend = tl["vet_after_stagen"]->AddTask(&RadiationVet::ClearSend, this, none);
-  id.crecv = tl["vet_after_stagen"]->AddTask(&RadiationVet::ClearRecv, this, id.csend);
-  return;
 }
 
 //----------------------------------------------------------------------------------------

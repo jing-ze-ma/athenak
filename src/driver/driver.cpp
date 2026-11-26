@@ -164,7 +164,7 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
       gam0[1] = 0.5;
       gam1[1] = 0.5;
       beta[1] = 0.5;
-      // <rad_vet>/time2_tableau = trbdf2 (rad_vet_time2.cpp): the explicit
+      // <rad_vet>/time2_tableau = trbdf2 (rad_vet_imex.cpp): the explicit
       // partner of TR-BDF2, the two-stage RK2 with c2 = 2 - sqrt(2) and
       // b = (1 - 1/(2 c2), 1/(2 c2)): stage 2 = 3/4 U^n + 1/4 Y2 + dt/(2 c2) L(Y2)
       if (pin->DoesBlockExist("rad_vet") &&
@@ -486,8 +486,8 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     pmesh->pmb_pack->pradvet->CleanRstFaces();
   }
   //---- Step 2b. <rad_vet>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
-  // restart): the IC radiation passes (rad_vet_icrad.cpp) or the steady radiation of
-  // <rad_vet>/clean_init = steady (rad_vet_clean.cpp) at the first dt, then the
+  // restart): the steady radiation of
+  // <rad_vet>/clean_init = steady (rad_vet_steady.cpp) at the first dt, then the
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
       pmesh->pmb_pack->pradvet != nullptr && pmesh->pmb_pack->pradvet->cln_steady) {
@@ -767,7 +767,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(1);}
 
       // time-integrator tasks for each stage of integrator
-      // <rad_vet>/time_scheme = hesdirk2 (rad_vet_time2.cpp): the implicit radiation
+      // <rad_vet>/time_scheme = hesdirk2 (rad_vet_imex.cpp): the implicit radiation
       // solve runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
       radvet::RadiationVet *pvet = pmesh->pmb_pack->pradvet;
