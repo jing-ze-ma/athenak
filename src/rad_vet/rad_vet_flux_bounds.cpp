@@ -218,14 +218,15 @@ void RadiationVet::RingMatesInit(const int d, RingMates &rm) {
   std::set<std::array<int, 3>> sent;
   Kokkos::realloc(rm.src, nmb, nr[d]);
   auto h = Kokkos::create_mirror_view(rm.src);
-  auto loc = [&](const int g) {
+  auto loc = [&](const int g) {   // (the cubed sphere: gids by panel, uniform mesh)
     const LogicalLocation &l = pm->lloc_eachmb[g];
-    return std::array<int, 4>{static_cast<int>(l.lx1), static_cast<int>(l.lx2),
-                              static_cast<int>(l.lx3), l.level};
+    return std::array<int, 5>{static_cast<int>(l.lx1), static_cast<int>(l.lx2),
+                              static_cast<int>(l.lx3), l.level,
+                              g/(pm->nmb_total/pm->npanels)};
   };
   for (int m = 0; m < nmb; ++m) {
     const int gm = pmy_pack->pmb->mb_gid.h_view(m);
-    std::array<int, 4> w = loc(gm);
+    std::array<int, 5> w = loc(gm);
     const int p0 = w[d];
     for (int p = 0; p < nr[d]; ++p) {
       w[d] = p;

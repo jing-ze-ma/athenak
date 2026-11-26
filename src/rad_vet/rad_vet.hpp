@@ -876,6 +876,7 @@ class RadiationVet {
   DvceArray5D<Real> cln_fcx;   // (clean_lz_spin: fcone's cut withheld, by face)
   DvceArray2D<Real> cln_cx[2];   // (clean_lz_spin, Cartesian: the cell centres x, y)
   bool cln_fwbring = false;   // clean_stag_fwb_ring
+  bool cln_fwbpj[3] = {false, false, false};   // clean_stag_fwb_line: the projected dirs
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)
