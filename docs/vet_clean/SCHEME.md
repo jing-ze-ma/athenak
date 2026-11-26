@@ -292,8 +292,8 @@ to the gas at the face:
   `cut`); the `floor_momentum` exch box (arad 1e-12) still redoes steps with it, so it is
   off by default (`flux_cone_gas = true`, the cut given at each face, fails that box
   outright); a physical boundary face's cut is the radiation's boundary flux;
-- the residual of the well-balanced face rows (`clean_stag_fwb`): with `fwb_line`
-  (default) its mean along every mesh line of the directions whose faces carry P (x1 on
+- the residual of the well-balanced face rows (`clean_stag_fwb`): booked in the ledger
+  (class `fwb`); with `fwb_line` (not the default: undamped line-mean F in vacuum) its mean along every mesh line of the directions whose faces carry P (x1 on
   spherical polar and cubed sphere, x1, x2, x3 on a Cartesian mesh) is removed, so it adds
   no P (the phi rings' torque: `clean_stag_fwb_ring`).
 

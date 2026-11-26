@@ -1727,12 +1727,14 @@ def t_p_ledger(c):
            'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n, 'mesh/x3max': 1.0,
            'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8, 'time/tlim': 1e30,
            'time/nlim': 8, 'problem/radwave_dir': 'xyz', 'problem/radwave_eig': 'false',
-           'hydro/p_ledger': 'true', 'output1/dcycle': 1000000, 'output2/dcycle': 1000000}
+           'hydro/p_ledger': 'true', 'rad_vet/fwb_line': 'true', 'output1/dcycle': 1000000,
+           'output2/dcycle': 1000000}
     out, w = {}, 0
     rel = lambda L, k: max(float(np.abs(r[k]*r['dt'][0]).max()/r['gross'][0]) for r in L)
     runs = [(t, 'wave_cart.athinput', dict(box, **{'problem/radwave_amp': a}))
             for t, a in (('box_small', 1e-3), ('box_violent', 0.1))]
-    runs += [(g, 'shell_%s.athinput' % g, {'time/nlim': n, 'hydro/p_ledger': 'true'})
+    runs += [(g, 'shell_%s.athinput' % g, {'time/nlim': n, 'hydro/p_ledger': 'true',
+                                           'rad_vet/fwb_line': 'true'})
              for g in ('sp', 'cs')]
     for t, deck, o in runs:
         d = c.run(deck, t, o)

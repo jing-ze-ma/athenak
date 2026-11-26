@@ -544,14 +544,15 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         pmy_pack->pmesh->three_d &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
     recipe::Rule(pin, "rad_vet", "clean_stag_fwb_ring", cln_fwbring ? "true" : "false");
-    // fwb_line (default true, uniform mesh): fwb's s less its line mean along
+    // fwb_line (default false; uniform mesh only): fwb's s less its line mean along
     // each direction whose faces carry the momentum P (FluxBalanceProject): x1 (radial)
     // on spherical polar and cubed sphere, x1, x2, x3 on a Cartesian mesh (not with the
-    // old clean_stag_fwb_cart = false named): fwb gives no P
+    // old clean_stag_fwb_cart = false named): fwb gives no P.  Not the default: s is the thin
+    // rows' pull towards F_ray, and its line mean removed leaves the line-mean F error
+    // undamped where nothing absorbs (idort_beams without the cone: |F|/cE 329)
     Mesh *pml = pmy_pack->pmesh;
     const bool cur = pml->use_spherical_polar || pml->use_cubed_sphere;
-    const bool fln = cln_fwb && pin->GetOrAddBoolean("rad_vet", "fwb_line",
-                                                     !pml->multilevel);
+    const bool fln = cln_fwb && pin->GetOrAddBoolean("rad_vet", "fwb_line", false);
     if (fln && pml->multilevel) {
       std::cout << "### FATAL ERROR: <rad_vet>/fwb_line needs a uniform mesh"
                 << std::endl;
