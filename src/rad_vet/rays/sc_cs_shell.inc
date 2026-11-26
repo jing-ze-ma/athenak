@@ -6,7 +6,8 @@
 //! \file sc_cs_shell.inc
 //! \brief cs shell kernel body of RadiationVet::ScCsSweep, included as shell_
 //! (current set) and shellx_ (next set of a fused cross-fade); needs
-//! VET_VGDCS_SHELL_NAME.
+//! VET_VGDCS_SHELL_NAME.  FS (ScCsSweepT): the ray's r-face intensity and exit into
+//! rgs_ (rays/sc_sph_facesum.cpp).
       auto VET_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                                const int d, const bool cnt) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -60,6 +61,7 @@
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
+        Real xv = 0.0;   // (FS: the intensity through the ray's r face)
         // stencil and field reads of the shared upwind core
         const ScCsA acc{st};
         auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
@@ -67,12 +69,15 @@
         };
         if (br == 0) {
           iv = ScTopInflow(ch0, ds, s0, exp(cv(m,1,k,j,i-1)), tbh, itop);
+          xv = itop;
         } else if (br == 1) {
           iv = s0;
+          if (FS) {xv = (l > lcut) ? va(m,d,k,j,i-1) : (emi ? iemit : s0);}
         } else {
           if (typ == 2) {
             iv = ScInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
-                             cx1v(m,i+1), p2, ch0, ds, s0);
+                             cx1v(m,i+1), p2, ch0, ds, s0, -1.0, 0.0,
+                             FS ? &xv : nullptr);
           } else {
             // stencil-cell intensity: owner's interior if on this rank (shell iu done;
             // the other branch of shell i is masked), else the band copy
@@ -116,7 +121,28 @@
             const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
             iv = ScSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim, iuu,
-                             idd);
+                             idd, FS ? &xv : nullptr);
+            // a turned ray crosses no r face of its own: the cell below
+            if (FS && typ == 3) {
+              xv = (l > lcut) ? va(m,d,k,j,i-1) : (emi ? iemit : s0);
+            }
+          }
+        }
+        if (FS) {
+          // its r face's intensity; leaving through the inner (not past its tangent,
+          // else -1) or top face: the chord from the centre at chi_0, S_0
+          const int b = (l & 1)*nmbt_ + m;
+          rgs_(b,SPFS_XV*n + d,k-ks,j-js) = fmax(xv, 0.0);
+          if (inw ? (l == lcut) : (l == n1 - 1)) {
+            const Real rb = cx1f(m,inw ? i : (i + 1));
+            Real xe = -1.0;
+            if (!inw || p2 < rb*rb) {
+              const Real t = inw ? (zr - sqrt(rb*rb - p2))
+                                 : (sqrt(fmax(rb*rb - p2, 0.0)) - zr);
+              const Real ex = exp(-ch0*fmax(t, 0.0));
+              xe = iv*ex + (1.0 - ex)*s0;
+            }
+            rgs_(b,SPFS_XE*n + d,k-ks,j-js) = xe;
           }
         }
         va(m,d,k,j,i) = iv;

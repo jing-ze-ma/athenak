@@ -428,9 +428,10 @@ void RadiationVet::RayFaceSums() {
   // rr (spherical polar, Cartesian slab): r faces carry the rays' own upwind fluxes, not
   // the balance march, which loses the diffusion flux of thick cells in V chi (S - J)
   const bool rr = x.sph || (vgd_slab == 1);
-  // spherical polar, VET_SP_FS: the r faces' sums made in the sweep (vgd_cfs,
-  // rays/sc_sph_facesum.cpp) in place of the upwind cell's intensity
-  const bool isw = x.sph && vgd_spfs;
+  // spherical polar and cubed sphere, VET_SP_FS: the r faces' sums made in the sweep
+  // (vgd_cfs, rays/sc_sph_facesum.cpp) in place of the upwind cell's intensity (cubed
+  // sphere: also the lowest face)
+  const bool isw = (x.sph || x.cub) && vgd_spfs;
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
     const SolveArgs &x = *px;
@@ -619,16 +620,16 @@ void RadiationVet::RayFaceSums() {
       const bool in = (xf_(m) & 1);
       const int kj = (k - ks)*nj + j - js;
       face(0, m, k, j, is, a, e);
-      for (int d = 0; open && in && !rr && d < n; ++d) {   // (rr: the rays' rf below)
+      for (int d = 0; open && in && !rr && !isw && d < n; ++d) {   // (rr, isw: rf below)
         const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
         const Real iv = (emi && f > 0.0) ? iemit : inten(m, d, k, j, is);
         add(e, x.area[0](m,k,j,is), d, f*iv, q);
       }
-      if (in && !open && !rr) mirror(m, k, j, is, is, -1.0, q);
+      if (in && !open && !rr && !isw) mirror(m, k, j, is, is, -1.0, q);
       for (int c = 0; c < 4; ++c) {
         q[c] = in ? q[c]*x.area[0](m,k,j,is) : qr_(m,c*nkj + kj);
       }
-      for (int c = 0; c < 4 && rr; ++c) q[c] = rf(m,c,k-ks,j-js,0);
+      for (int c = 0; c < 4 && (rr || isw); ++c) q[c] = rf(m,c,k-ks,j-js,0);
       const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
       for (int i = is; i <= ie && !cel; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);

@@ -39,6 +39,7 @@
 #include "rad_vet/rays/sc_segment.hpp"
 #include "rad_vet/rays/sc_ray.hpp"
 #include "rad_vet/rays/sc_cs.hpp"
+#include "rad_vet/rays/sc_sph_facesum.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -49,9 +50,20 @@ namespace radvet {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScCsSweep
 //! \brief one sweep (inward then outward) of every direction on the cubed sphere:
-//! the ScSweep body with the cs upwind stencil
+//! the ScSweep body with the cs upwind stencil; closure_consistency: the variant that
+//! makes the r-face sums (rays/sc_sph_facesum.cpp)
 
 void RadiationVet::ScCsSweep() {
+  vgd_spfs = ScSpFsOn();
+  if (vgd_spfs) {
+    ScCsSweepT<true>();
+  } else {
+    ScCsSweepT<false>();
+  }
+}
+
+template <bool FS>
+void RadiationVet::ScCsSweepT() {
   if (vgd_xff_prep) {return;}   // nothing to prepare (lists made below)
   // vet_gd_rotate_xfade_fuse: the next set (own intensities vgd_i_xb, tables, lists)
   // is swept in the same shell kernels
@@ -92,6 +104,10 @@ void RadiationVet::ScCsSweep() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const Real lcr = log(kVetCornerRatio);
   vgd_hsweep += xffs ? 2 : 1;
+  // closure_consistency (FS): the rays' r-face scalars of two shells (ScSpFaceSum)
+  if constexpr (FS) {ScSpFaceZero(DevExeSpace());}
+  auto rgs_ = vgd_rgs;
+  const int nmbt_ = nmb1 + 1;
   // compact lists of this set (built on first sweep); a remote read missing from the
   // read mask is fatal below
   const bool ccl = vgd_cscomp;
@@ -289,6 +305,7 @@ void RadiationVet::ScCsSweep() {
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const int nsh = n1 - lcut;
+    if constexpr (FS) {ScSpFacePass(DevExeSpace());}
     for (int q = 0; q < nsh; ++q) {
       const int l = inw ? (n1 - 1 - q) : (lcut + q);
       const int i = is + l;
@@ -376,6 +393,7 @@ void RadiationVet::ScCsSweep() {
           auto dir_ = vgd_tabd.dir;
           auto mr_ = vgd_tabd.mr;
           auto vi_ = vgd_i_xb;
+          auto rgs_ = vgd_rgs_xb;
           auto msk_ = vgd_cscl[(xcurb >= 0) ? xcurb : vgd_cscur].msk;
 #define VET_VGDCS_SHELL_NAME shellx_
 #include "rad_vet/rays/sc_cs_shell.inc"
@@ -417,6 +435,10 @@ void RadiationVet::ScCsSweep() {
       }   // !xffs
       if (esid_ != 0) {eev.StreamWait(DevExeSpace());}   // the send cells
 #undef VET_VGDCS_LAUNCHN
+      if constexpr (FS) {   // the shell's r-face sums (the fused sweep: both sets')
+        ScSpFaceSum(i, l, inw, DevExeSpace(), false);
+        if (xffs) {ScSpFaceSum(i, l, inw, DevExeSpace(), true);}
+      }
       if (rga) {
         // previous shell read: save its inward band values (inward pass), interior back
         // to the compact slab; the next shell gets a slab after this exchange

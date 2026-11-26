@@ -100,7 +100,7 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
   // closure_consistency: the face sums in the sweep (ScSpFaceSum), per shell from the
   // rays' scalars in vgd_rgs (two shells, as the slab's)
   const int nmbt_ = nmb1 + 1;
-  if (!vgd_xff_prep) {ScSpFaceZero();}
+  if (!vgd_xff_prep) {ScSpFaceZero(vgd_cur);}
   auto rgs_ = vgd_rgs;
 #define VET_VGD_FSP(q) (&gq[q])
 #define VET_VGD_XRG(a) , a   // (the fused sets: each its own scalars)
@@ -214,7 +214,7 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
     const bool inw = (pass == 0);
     if (imir && !inw) {ScInnerMirror();}
 #if VET_VGD_SWEEP_FS
-    ScSpFacePass();
+    ScSpFacePass(vgd_cur);
 #endif
     auto isc_ = vgd_isc;
 #define VET_VGD_BODY_NAME body
@@ -665,12 +665,8 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
       if (sfs_) {ScSlabFaceSum(i, l, inw);}
 #endif
 #if VET_VGD_SWEEP_FS
-      ScSpFaceSum(i, l, inw);
-      if (xffs) {   // (the other set's, its context swapped in: handles only)
-        ScXffSwap();
-        ScSpFaceSum(i, l, inw);
-        ScXffSwap();
-      }
+      ScSpFaceSum(i, l, inw, vgd_cur, false);
+      if (xffs) {ScSpFaceSum(i, l, inw, vgd_cur, true);}   // (the other set's)
 #endif
       if (rga) {
         // the previous shell has been read (stream order): save its inward band
