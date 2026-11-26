@@ -75,6 +75,7 @@ Rules:
 | `clean_tol` | `solver_tol` | `clean_tol_nl` | `newton_tol` | `clean_verbose` | `verbose` |
 | `clean_w_c0` | `closure_w_c0` | `clean_w_c1` | `closure_w_c1` | `clean_wb_exch_local` | `update_exchange_local` |
 | `clean_wb_floor_diag` | `update_floor_diag` | `clean_wb_mcap` | `update_mcap` | `clean_stag_fcone_gas` | `flux_cone_gas` |
+| `clean_stag_fwb_line` | `fwb_line` |  |  |  |  |
 
 - The star keys `<problem>/star_*` were named `he_*` (one: `hs_*`) in earlier versions. Old
   names in a deck, on the command line or in a restart file are read as `star_*` with one `### NOTE`; a deck
@@ -265,31 +266,31 @@ prints one NOTE with the keys and values the code runs.
 | `clean_stag_central` = `true` | `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` |
 | `clean_stag_eicarry` = `true` | `clean_stag_flim` = `false` | `clean_stag_fs_line` = `pcr` |
 | `clean_stag_fs_pcr` = `true` | `clean_stag_fs_pcr_cs` = `true` | `clean_stag_fwb_cart` = `false` |
-| `clean_stag_fwb_line` = `false` | `clean_stag_fwb_stage` = `false` | `clean_stag_fwb_t2` = `false` |
-| `clean_stag_lat_sums` = `true` | `clean_stag_mg_color` = `mirror` | `clean_stag_opac_drag` = `true` |
-| `clean_stag_opac_update` = `true` | `clean_stag_pcr` = `true` | `clean_stag_rayratio` = `false` |
-| `clean_stag_tie_gid` = `true` | `clean_stag_vimp` = `true` | `clean_stag_vimp_cs` = `true` |
-| `clean_stag_xdonor` = `lag` | `clean_stag_xsrc` = `true` | `clean_stall_fac` = `0.5` |
-| `clean_troot_rtol` = `1e-13` | `clean_vel_settled` = `false` | `clean_w_face_min` = `false` |
-| `clean_w_fse` = `true` | `clean_w_fse_tau` = `true` | `clean_wb_fct` = `true` |
-| `clean_wb_floor_fail` = `false` | `clean_xt_cons` = `false` | `clean_xt_exact` = `cons` |
-| `clean_xt_norm` = `false` | `dbg_energy_tally` = `false` | `doppler_face` = `donor` |
-| `floorcap_mesh_vol` = `true` | `implicit_am_cs` = `true` | `implicit_enthalpy` = `plm` |
-| `implicit_pos_floor_cons` = `true` | `implicit_pos_floor_gas_keep` = `1` | `implicit_pos_gas` = `true` |
-| `implicit_pos_gas_cons` = `true` | `implicit_pos_gas_frac` = `1e-3` | `implicit_predictor` = `step` |
-| `implicit_predictor_tcap` = `1.1` | `polar_ring_avg` = `false` | `restart_pack_per_mb` = `true` |
-| `rsla_force` = `false` | `rsla_vmax` = `-1` | `rsla_warn` = `0.1` |
-| `scaled_prefactor` = `20` | `scheme` = `clean` | `time2_be_only` = `false` |
-| `time2_cfl_post` = `true` | `time2_face_fct` = `true` | `time2_fref_wacc` = `true` |
-| `time2_gtime_mom` = `true` | `time2_k1_redist` = `0` | `time2_k1_stiff` = `0` |
-| `vet_axis` = `flux` | `vet_col_lat_cut_thin` = `1` | `vet_gd_halo_compact` = `2` |
-| `vet_gd_rotate_align` = `true` | `vet_gd_rotate_stretch` = `0.02` | `vet_gd_rotate_t0` = `0` |
-| `vet_gd_rotate_xfade_m` = `0` | `vet_gd_twin` = `false` | `vet_interp` = `auto` |
-| `vet_rotate_avg_ema_change` = `0.05` | `vet_rotate_avg_ema_change_j` = `true` | `vet_rotate_avg_ema_dema` = `false` |
-| `vet_rotate_avg_ema_diag` = `0` | `vet_rotate_avg_ema_lc` = `0` | `vet_rotate_avg_ema_tau` = `0` |
-| `vet_rotate_avg_weight` = `j` | `vet_scatter_form` = `ma` | `vet_scatter_j` = `relaxed` |
-| `vet_seg` = `jump` | `vet_seg_plateau` = `false` | `vet_source_noesrc_h2be` = `true` |
-| `vet_tensor` = `full` | `zalesak_active` = `true` | `zalesak_halo_skip` = `true` |
+| `clean_stag_fwb_stage` = `false` | `clean_stag_fwb_t2` = `false` | `clean_stag_lat_sums` = `true` |
+| `clean_stag_mg_color` = `mirror` | `clean_stag_opac_drag` = `true` | `clean_stag_opac_update` = `true` |
+| `clean_stag_pcr` = `true` | `clean_stag_rayratio` = `false` | `clean_stag_tie_gid` = `true` |
+| `clean_stag_vimp` = `true` | `clean_stag_vimp_cs` = `true` | `clean_stag_xdonor` = `lag` |
+| `clean_stag_xsrc` = `true` | `clean_stall_fac` = `0.5` | `clean_troot_rtol` = `1e-13` |
+| `clean_vel_settled` = `false` | `clean_w_face_min` = `false` | `clean_w_fse` = `true` |
+| `clean_w_fse_tau` = `true` | `clean_wb_fct` = `true` | `clean_wb_floor_fail` = `false` |
+| `clean_xt_cons` = `false` | `clean_xt_exact` = `cons` | `clean_xt_norm` = `false` |
+| `dbg_energy_tally` = `false` | `doppler_face` = `donor` | `floorcap_mesh_vol` = `true` |
+| `implicit_am_cs` = `true` | `implicit_enthalpy` = `plm` | `implicit_pos_floor_cons` = `true` |
+| `implicit_pos_floor_gas_keep` = `1` | `implicit_pos_gas` = `true` | `implicit_pos_gas_cons` = `true` |
+| `implicit_pos_gas_frac` = `1e-3` | `implicit_predictor` = `step` | `implicit_predictor_tcap` = `1.1` |
+| `polar_ring_avg` = `false` | `restart_pack_per_mb` = `true` | `rsla_force` = `false` |
+| `rsla_vmax` = `-1` | `rsla_warn` = `0.1` | `scaled_prefactor` = `20` |
+| `scheme` = `clean` | `time2_be_only` = `false` | `time2_cfl_post` = `true` |
+| `time2_face_fct` = `true` | `time2_fref_wacc` = `true` | `time2_gtime_mom` = `true` |
+| `time2_k1_redist` = `0` | `time2_k1_stiff` = `0` | `vet_axis` = `flux` |
+| `vet_col_lat_cut_thin` = `1` | `vet_gd_halo_compact` = `2` | `vet_gd_rotate_align` = `true` |
+| `vet_gd_rotate_stretch` = `0.02` | `vet_gd_rotate_t0` = `0` | `vet_gd_rotate_xfade_m` = `0` |
+| `vet_gd_twin` = `false` | `vet_interp` = `auto` | `vet_rotate_avg_ema_change` = `0.05` |
+| `vet_rotate_avg_ema_change_j` = `true` | `vet_rotate_avg_ema_dema` = `false` | `vet_rotate_avg_ema_diag` = `0` |
+| `vet_rotate_avg_ema_lc` = `0` | `vet_rotate_avg_ema_tau` = `0` | `vet_rotate_avg_weight` = `j` |
+| `vet_scatter_form` = `ma` | `vet_scatter_j` = `relaxed` | `vet_seg` = `jump` |
+| `vet_seg_plateau` = `false` | `vet_source_noesrc_h2be` = `true` | `vet_tensor` = `full` |
+| `zalesak_active` = `true` | `zalesak_halo_skip` = `true` |  |
 
 Removed keys whose value follows from the run (FATAL when named otherwise):
 
@@ -324,6 +325,7 @@ Scheme options (in brackets the templates' values):
 - `closure_consistency` (true with the rays), `face_thin` (true), `flux_cone` (true): the flux bound by the rays, the thin-limit correction, the cone limit |F| <= cE.
 - `flux_balance_lat` (default true on the cubed sphere, also on a restart whose file lacks it, with a NOTE in the log: name `flux_balance_lat=false` to keep the old; cubed sphere only, else FATAL): a spherically symmetric radiation pressure pushes the gas along r alone, the same in every cell of a shell. Lateral faces: their cells' lateral stress sums are projected perpendicular to each cell's radial direction (without it a constant lateral force of O(dtheta^2) of the radial one, at every radius, with the cube's symmetry: the interior m = 4 pattern). Radial faces: the normal stress takes the hydro's area r^2 Omega instead of the vector area r^2 |S| (without it a smaller panel pattern of the radial force). Test `shell_force_cs`.
 - `flux_cone_gas` (false): `true` gives the gas the momentum the cone cut takes from each inner face (its absorption of the unscaled F), so gas + radiation momentum and L_z are exact, and E pays the kinetic energy; where the radiation cannot pay it the run fails (the radiation-poor exchange box `exch0` of test `floor_momentum`: dt collapse at cycle 1). `false`: the cut is withheld from the gas (`hydro/p_ledger` class `cut`). Old name `clean_stag_fcone_gas`.
+- `fwb_line` (true on a uniform mesh, FATAL on a refined one): the well-balancing residual s less its mean along each mesh line of the directions whose faces carry the momentum P (x1 on spherical polar and cubed sphere; x1, x2, x3 on a Cartesian mesh, unless the old `clean_stag_fwb_cart = false` is named), so fwb gives no P (`hydro/p_ledger` class `fwb` 0). Cost: the time error of F in `order_time` +18 % (finest 1.98e-4 instead of 1.68e-4, order 1.79). `false`: the release's unprojected residual. Old name `clean_stag_fwb_line`.
 - `flux_cone_lz` (read only when named): fcone takes a cell's excess from the face families without an L_z arm first (spherical polar x1, x2; cubed sphere x1; Cartesian x3); that cut is counted and printed signed per family (`CLEAN FCONE_LZ`). The faces with an arm are scaled only where they alone exceed cE, and the gas takes their cut at the face, so L_z is exact.
 - `lz_spin` (read only when named; needs `flux_cone_lz`; a no-op on the cubed sphere, where `lz_telescope` covers it): the L_z X of the arm faces' fcone cut, the `flux_cone_emax` clamp and the `update_mcap` cap goes to the gas as one rigid rotation dOmega = X/I, I = sum rho V R^2 (no per-cell kick; E pays the kinetic energy; `CLEAN LZSPIN`).
 - `flux_cone_emax` (read only when named; needs `flux_cone`): every inner face's F within c max(E_L, E_R), an opaque face's too. L_z-exact with `flux_cone_lz` + `lz_spin`.

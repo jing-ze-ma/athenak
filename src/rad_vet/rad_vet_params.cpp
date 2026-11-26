@@ -116,7 +116,6 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/vet_gd_twin", "=false"},
     // study keys: removed
     {"rad_vet/clean_stag_colflux", "=false"}, {"rad_vet/clean_stag_fwb_cart", "=false"},
-    {"rad_vet/clean_stag_fwb_line", "=false"},
     {"rad_vet/clean_stag_fwb_stage", "=false"}, {"rad_vet/clean_stag_fwb_t2", "=false"},
     {"rad_vet/clean_stag_rayratio", "=false"}, {"rad_vet/clean_vel_settled", "=false"},
     {"rad_vet/clean_xt_cons", "=false"}, {"rad_vet/clean_xt_norm", "=false"},
@@ -544,6 +543,23 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         pmy_pack->pmesh->three_d &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
     recipe::Rule(pin, "rad_vet", "clean_stag_fwb_ring", cln_fwbring ? "true" : "false");
+    // fwb_line (default true, uniform mesh): fwb's s less its line mean along
+    // each direction whose faces carry the momentum P (FluxBalanceProject): x1 (radial)
+    // on spherical polar and cubed sphere, x1, x2, x3 on a Cartesian mesh (not with the
+    // old clean_stag_fwb_cart = false named): fwb gives no P
+    Mesh *pml = pmy_pack->pmesh;
+    const bool cur = pml->use_spherical_polar || pml->use_cubed_sphere;
+    const bool fln = cln_fwb && pin->GetOrAddBoolean("rad_vet", "fwb_line",
+                                                     !pml->multilevel);
+    if (fln && pml->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_vet>/fwb_line needs a uniform mesh"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (int d = 0; d < 3; ++d) {
+      cln_fwbpj[d] = fln && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ?
+                     2 : 1)) && !pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart")));
+    }
     // flux_cone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
     // (FluxCone)

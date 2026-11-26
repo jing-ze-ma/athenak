@@ -208,10 +208,10 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
     // E and the energy flux memory G + d are unchanged.
     if (fwb && q == x.nf) {
       const SolveArgs *pw = DevArgs(x, 0);
-      // clean_stag_fwb_ring: s and its weight of the projected faces
+      // clean_stag_fwb_ring, _line: s and its weight of the projected faces
       // (FluxBalanceProject)
       DvceArray4D<Real> rs, rw;
-      if (cln_fwbring) {
+      if (cln_fwbring || cln_fwbpj[0]) {
         rs = ScratchView<DvceArray4D<Real>>("cln_fwrs", nmb1 + 1, u0.extent_int(2),
                                             u0.extent_int(3), u0.extent_int(4));
         rw = ScratchView<DvceArray4D<Real>>("cln_fwrw", nmb1 + 1, u0.extent_int(2),
@@ -247,7 +247,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
         for (int d = 0; d < x.nf; ++d) {
           const int ek = (d == 2), ej = (d == 1), ei = (d == 0);
           auto fd = x.fc[d];
-          const bool pj = cln_fwbring && d == 2;
+          const bool pj = (cln_fwbring && d == 2) || cln_fwbpj[d];
           if (pj) {
             Kokkos::deep_copy(rs, 0.0);
             Kokkos::deep_copy(rw, 0.0);

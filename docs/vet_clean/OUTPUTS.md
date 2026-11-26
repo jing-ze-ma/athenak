@@ -126,12 +126,13 @@ Notes:
   am and user sources, less the reference force the radiation withholds from the gas
   (force_reference: the hydro's well-balanced background gives it); `Pr_rad`, the
   radiation update and write-back (boundary radiation stress, geometric terms); `Pr_cut`,
-  the cone cut the gas does not take (0 with `clean_stag_fcone_gas = true`); `Pr_fwb`, the unprojected fwb residual's momentum;
+  the cone cut the gas does not take (0 with `flux_cone_gas = true`); `Pr_fwb`, the
+  unprojected fwb residual's momentum (0 with `fwb_line`);
   `Pr_flr`, floors
   (dfloor_flux_limit, ConToPrim, floor-gas cap); `Pr_mrg`, the average of the merged
   lateral cells (`merge_lat`); `Pr_gap`, the rest (0). So dPr_tot + Pr_hflx dt - (the
   other rates) dt = 0 to the round-off of the sums (the `END` of `CLEAN PLEDGER`); `ntel`,
-  `mrg` (`merge_lat_mom = radial`) and `gap` are round-off. On a
+  `fwb`, `mrg` (`merge_lat_mom = radial`) and `gap` are round-off. On a
   Cartesian mesh the columns are `Px_*`, `Py_*`, `Pz_*`.
 
 ## 2. Event log `<basename>.log`
@@ -275,7 +276,7 @@ round-off levels of that test (to see which passes a solve needs and why).
 | `CLEAN MCAP cycle N t2s S: K face momentum terms at the cap h chi_f E in the last pass` | Face momentum exchange terms at their cap. | Diagnostic. |
 | `CLEAN LZB cycle N t2s S ledger X` | 3-D spherical polar: the radiation's L_z ledger (stored in the restart file). | Use with `Lz_tot` in the history. |
 | `CLEAN FLOORMOM cycle N: ekin K dp X Y Z \|dp\| X Y Z vceil ... other ...` | The momentum the step's primitive recoveries removed, with their end-of-step weights: `ekin` (`floor_from_ekin`), `vceil`, `other` (density floor, or with a raised E); K cell-conversions, then the signed and absolute sums x volume of (r, theta, phi), Cartesian (x, y, z). Exact sums (any layout / rank count). `initial`: the first conversion; the run end prints the job's totals (not stored in the restart file: the lines of the jobs add up). | Compare with the total momentum; large values mean the floors drive the flow. |
-| `CLEAN PLEDGER cycle N dt T hflx .. ntel .. src .. rad .. cut .. fwb .. flr .. mrg .. gap .. P .. END .. gross G` | `hydro/p_ledger`: the step's momentum books by class as rates (one value per component: r on spherical polar / cubed sphere, x y z on Cartesian), P = gas + radiation momentum after the step, END = dP + hflx dt - (the other classes) dt, G = sum V \|p\| (gas + radiation). | END / G is round-off (1e-16); `ntel`, `mrg` and `gap` should be round-off too. |
+| `CLEAN PLEDGER cycle N dt T hflx .. ntel .. src .. rad .. cut .. fwb .. flr .. mrg .. gap .. P .. END .. gross G` | `hydro/p_ledger`: the step's momentum books by class as rates (one value per component: r on spherical polar / cubed sphere, x y z on Cartesian), P = gas + radiation momentum after the step, END = dP + hflx dt - (the other classes) dt, G = sum V \|p\| (gas + radiation). | END / G is round-off (1e-16); `ntel`, `fwb`, `mrg` and `gap` should be round-off too. |
 | `CLEAN KPOS`, `CLEAN KREAL`, `CLEAN XPAT` | Only with those (non-production) keys. | - |
 | `DT_RETRY cycle=N t=T dt A -> B reason=R resid=X cut K` | A cycle is taken again with a smaller dt. `reason`: NON-CONVERGED, resid>implicit_resid_fatal, eint<=0, vkick, floor_pay_unpaid, forced. | A few per run are normal for dynamic stars; many in a row mean the run is in trouble. |
 | `CLEAN RETRY cycle N t2s S: the redone step's solve converged (last change X, tolerance T)` | A solve of a cycle that dt_retry takes again converged. The redo is held to the tolerance of any step (the time-error budget at the cut dt), not a stricter one: a stalled step cannot be rescued by a cut dt alone otherwise. | - |
