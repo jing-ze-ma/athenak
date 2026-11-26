@@ -43,7 +43,7 @@ other boxes are tasks of the same list (`AssembleRadVetTasks`).
 
 ![The closure and the rays](figures/flow/closure.svg)
 
-The chart is for the default `clean_closure` = extrap1 with `time2_tableau` = sdirk2. A step then sweeps the
+The chart is for the default `closure_form` = extrap1 with `time2_tableau` = sdirk2. A step then sweeps the
 rays once.
 
 | when | sweeps |
@@ -53,7 +53,7 @@ rays once.
 | first step | Two: before and after its solve. No moments are stored yet, so `BuildClosure` predicts the state first. |
 | steady start | Two per pass, before and after its solve (`SteadyStart` in `rad_vet_steady.cpp`). |
 
-With rotating direction sets (`clean_rot_ring`), `RingMoments` in `rad_vet_closure_ring.cpp` sweeps the two
+With rotating direction sets (`ring`), `RingMoments` in `rad_vet_closure_ring.cpp` sweeps the two
 live sets and mixes their moments with those of the older sets. The direction sets and their rotation are
 in `rays/sc_directions.cpp`, the halo exchange of a sweep in `rays/sc_sph_halo.cpp` and `rays/sc_cs_halo.cpp`.
 

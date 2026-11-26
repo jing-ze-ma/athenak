@@ -171,14 +171,42 @@ InputBlock* ParameterInput::GetPtrToBlock(std::string name) {
 //! \fn void VetAlias(std::string &block, std::string &name, std::string &value)
 //! \brief the names of the radiation module before its m1 -> vet rename, read as the new
 //! names: <rad_m1>, <problem>/m1_*, <problem>/pgen_name = rad_m1_*, <outputN>/variable =
-//! m1 | m1_*.  And the star keys before their rename: <problem>/he_* and hs_* are read as
-//! star_*.  Input files, command lines and restart files that use them run unchanged.
+//! m1 | m1_*.  The star keys before their rename: <problem>/he_* and hs_* are read as
+//! star_*.  The <rad_vet> keys before their names lost "clean" (docs/vet_clean/KEYS.md).
+//! Input files, command lines and restart files that use them run unchanged.
 
 static void VetAlias(std::string &block, std::string &name, std::string &value) {
+  static const std::map<std::string, std::string> vet_keys = {
+    {"clean_bud_maxnorm", "newton_maxnorm"},
+    {"clean_clos1_budget", "newton_closure_budget"}, {"clean_closure", "closure_form"},
+    {"clean_consistency", "closure_consistency"}, {"clean_conv", "newton_conv"},
+    {"clean_conv_kappa", "newton_conv_kappa"}, {"clean_conv_max", "newton_conv_max"},
+    {"clean_cs_lat_wb", "flux_balance_lat"}, {"clean_cs_lz_k1", "lz_cs_k1"},
+    {"clean_cs_lz_ledger", "lz_cs_ledger"}, {"clean_cs_lz_tel", "lz_telescope"},
+    {"clean_dbg_inf", "dbg_inf"}, {"clean_init", "steady_init"},
+    {"clean_init_dtfac", "steady_dtfac"}, {"clean_init_n", "steady_n"},
+    {"clean_init_tol", "steady_tol"}, {"clean_lz_ledger", "lz_ledger"},
+    {"clean_lz_ledger_k1", "lz_ledger_k1"}, {"clean_lz_spin", "lz_spin"},
+    {"clean_maxit", "solver_maxit"}, {"clean_maxnl", "newton_maxit"},
+    {"clean_pc_sweep", "solver_sweep"}, {"clean_ray_cut_count", "ray_cut_count"},
+    {"clean_ray_cut_now", "ray_cut_now"}, {"clean_ray_cut_r", "ray_cut_r"},
+    {"clean_ray_cut_wait", "ray_cut_wait"}, {"clean_ray_min", "closure_ray_min"},
+    {"clean_rot_fuse", "ring_fuse"}, {"clean_rot_ring", "ring"},
+    {"clean_sp_lz_bnd", "lz_sp_bnd"}, {"clean_sp_lz_bnd_k1", "lz_sp_bnd_k1"},
+    {"clean_sphere_radius", "closure_sphere_radius"}, {"clean_stag_fcone", "flux_cone"},
+    {"clean_stag_fcone_emax", "flux_cone_emax"}, {"clean_stag_fcone_lz", "flux_cone_lz"},
+    {"clean_stag_mg_levels", "solver_mg_levels"},
+    {"clean_stag_opac_passes", "gas_opac_passes"}, {"clean_stag_thinf", "face_thin"},
+    {"clean_stag_xdonor_freeze", "face_xdonor_freeze"}, {"clean_tol", "solver_tol"},
+    {"clean_tol_nl", "newton_tol"}, {"clean_verbose", "verbose"},
+    {"clean_w_c0", "closure_w_c0"}, {"clean_w_c1", "closure_w_c1"},
+    {"clean_wb_exch_local", "update_exchange_local"},
+    {"clean_wb_floor_diag", "update_floor_diag"}, {"clean_wb_mcap", "update_mcap"}};
   auto swap = [](std::string &s, const std::string &a, const std::string &b) {
     if (s.compare(0, a.size(), a) == 0) s = b + s.substr(a.size());
   };
   if (block == "rad_m1") block = "rad_vet";
+  if (block == "rad_vet" && vet_keys.count(name)) name = vet_keys.at(name);
   if (block == "problem") {
     swap(name, "m1_", "vet_");
     swap(name, "he_", "star_");
@@ -192,21 +220,24 @@ static void VetAlias(std::string &block, std::string &name, std::string &value) 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void ParameterInput::CheckStarAlias()
-//! \brief the <problem> parameters of one source (file, restart header or command line) as
-//! spelled there: FATAL if it names he_X (hs_X) and star_X with different values;
-//! records the old names for the NOTE of ModifyFromCmdline
+//! \fn void ParameterInput::CheckKeyAlias()
+//! \brief the <problem> and <rad_vet> parameters of one source (file, restart header or
+//! command line) as spelled there (block/name): FATAL if it names an old name (VetAlias)
+//! and the new one with different values; records the old names for the NOTE of
+//! ModifyFromCmdline
 
-void ParameterInput::CheckStarAlias(const std::map<std::string, std::string> &spelled) {
+void ParameterInput::CheckKeyAlias(const std::map<std::string, std::string> &spelled) {
   for (const auto &kv : spelled) {
-    const std::string pre = kv.first.substr(0, 3);
-    if (pre != "he_" && pre != "hs_") continue;
-    star_renamed.insert(kv.first);
-    auto it = spelled.find("star_" + kv.first.substr(3));
+    std::string b = kv.first.substr(0, kv.first.find('/')), n = kv.first.substr(b.size() + 1);
+    std::string v;
+    VetAlias(b, n, v);
+    if (b + "/" + n == kv.first) continue;
+    key_renamed.insert(kv.first);
+    auto it = spelled.find(b + "/" + n);
     if (it == spelled.end() || it->second == kv.second) continue;
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<problem>/" << kv.first << " = " << kv.second << " (old name) and "
-              << it->first << " = " << it->second << " differ" << std::endl;
+              << "<" << kv.first << "> = " << kv.second << " (old name) and <" << it->first
+              << "> = " << it->second << " differ" << std::endl;
     std::exit(EXIT_FAILURE);
   }
 }
@@ -274,12 +305,14 @@ void ParameterInput::LoadFromStream(std::istream &is) {
     }
     // parse line and add name/value/comment strings (if found) to current block name
     ParseLine(line, param_name, param_value, param_comment);
-    if (block_name == "problem") spelled[param_name] = param_value;
+    if (block_name == "problem" || block_name == "rad_vet") {
+      spelled[block_name + "/" + param_name] = param_value;
+    }
     VetAlias(block_name, param_name, param_value);
     AddParameter(pib, param_name, param_value, param_comment);
     pib->GetPtrToLine(param_name)->origin = kOriginFile;  // MarkAllAsRestart re-tags
   }
-  CheckStarAlias(spelled);
+  CheckKeyAlias(spelled);
   return;
 }
 
@@ -460,7 +493,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool restart) {
     block = input_text.substr(0, slash_posn);
     name  = input_text.substr(slash_posn+1, (equal_posn - slash_posn - 1));
     value = input_text.substr(equal_posn+1, std::string::npos);
-    if (block == "problem") spelled[name] = value;
+    if (block == "problem" || block == "rad_vet") spelled[block + "/" + name] = value;
     VetAlias(block, name, value);
 
     // get pointer to node with same block name in linked list of InputBlocks
@@ -490,10 +523,11 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool restart) {
 
     if (value.length() > pb->max_len_parvalue) pb->max_len_parvalue = value.length();
   }
-  CheckStarAlias(spelled);
-  if (global_variable::my_rank == 0 && !star_renamed.empty()) {
-    std::cout << "### NOTE: <problem>/he_* (hs_*) keys are now named star_*; read so:";
-    for (const auto &k : star_renamed) std::cout << " " << k;
+  CheckKeyAlias(spelled);
+  if (global_variable::my_rank == 0 && !key_renamed.empty()) {
+    std::cout << "### NOTE: old key names read by their new names (<problem>/he_*, hs_* "
+              << "as star_*; <rad_vet> without clean, docs/vet_clean/KEYS.md):";
+    for (const auto &k : key_renamed) std::cout << " " << k;
     std::cout << std::endl;
   }
 }

@@ -53,7 +53,7 @@ void RadiationVet::InitArrays() {
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   int nmb = pmy_pack->nmb_thispack;
-  // clean_closure = iterate: not the closure a restart file holds (Time2RstSet)
+  // closure_form = iterate: not the closure a restart file holds (Time2RstSet)
   if (!cln_cip) {
     Kokkos::realloc(cln_s, nmb, NumClosureSlots(pmy_pack->pmesh->use_cubed_sphere,
                                                 cln_rfh),
@@ -66,7 +66,7 @@ void RadiationVet::InitArrays() {
   // staggered on the cubed sphere: cell terms and faces of FluxSolve
   if (pmy_pack->pmesh->use_cubed_sphere) Kokkos::realloc(cln_vf, nmb, 18, n3, n2, n1);
   // mem_arena: the shared slots follow cln_w.o (BindWorkVecs), unless the closure is
-  // built inside the solve (clean_closure = iterate | extrap*)
+  // built inside the solve (closure_form = iterate | extrap*)
   cln_w.s = DvceArray5D<Real>();
   if (!marena_on || cln_closit || cln_extrap > 0) {
     Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
@@ -111,7 +111,7 @@ void RadiationVet::InitArrays() {
   }
   if (cln_ysum) Kokkos::realloc(cln_yl, nmb, 9, n3, n2, n1);
   // multigrid levels of the preconditioner: halve x2 and x3 where the tile's are even
-  // (>= 4), clean_stag_mg_levels coarse levels at most (x1 is never halved)
+  // (>= 4), solver_mg_levels coarse levels at most (x1 is never halved)
   std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
   if (cln_mgt[0] == 0) cln_mgt = nc;   // layout_tile: the tiles' cells
   std::array<int, 3> tc = cln_mgt;
@@ -164,19 +164,19 @@ void RadiationVet::InitArrays() {
                 "split)");
   }
   if (force_ref == VET_FREF_WB_MD && !cln_steady && !cln_fref_set) {
-    RadVetFatal("<rad_vet>/force_reference = wb_arad_md needs clean_init = steady (its "
+    RadVetFatal("<rad_vet>/force_reference = wb_arad_md needs steady_init = steady (its "
                 "reference is the steady start's force)");
   }
   if ((vgd_on || (vsc_rot && cln_ring)) && ScRotOn()) {
     // rotating rays (RingSets): the closure is the J-weighted mean of the sets, made
     // continuous across blocks by the cross-fade, no slope correction.
-    // vet_rotate_avg_ema: only with clean_rot_ring = live (RingEma)
+    // vet_rotate_avg_ema: only with ring = live (RingEma)
     if ((vra_ema && cln_ring != 1) ||
         (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
         (vgd_rot3 && !pm->three_d)) {
       RadVetFatal("<rad_vet>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = "
                   "K "
-                  "(J-weighted; _ema only with clean_rot_ring = live), "
+                  "(J-weighted; _ema only with ring = live), "
                   "vet_gd_rotate_xfade with vet_gd_rotate_dt, and on a "
                   "2-D axisymmetric mesh the z axis");
     }
@@ -185,13 +185,13 @@ void RadiationVet::InitArrays() {
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
                        vra_k <= VET_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
-    RadVetFatal("<rad_vet>/clean_rot_ring needs vet_gd or vet_sc rays rotating in time: "
+    RadVetFatal("<rad_vet>/ring needs vet_gd or vet_sc rays rotating in time: "
                 "vet_rotate_avg = K and vet_gd_rotate_dt");
   }
   // sc rays sweep one set at a time: a mean or cross-fade of sets needs the ring
   if (vgd_on && ScRotOn() && (vra_on || vgd_xf) && !cln_ring) {
     RadVetFatal("<rad_vet>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
-                "needs clean_rot_ring");
+                "needs ring");
   }
   if (pm->use_cubed_sphere) {
     // rays: vet_gd's (clean_rays = sc: its band, ScCsSweep) or the analytic sphere
@@ -200,7 +200,7 @@ void RadiationVet::InitArrays() {
     if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
         pm->mesh_indcs.nx2 % 2 != 0) {
       RadVetFatal("<rad_vet>/scheme = clean on the cubed sphere needs "
-                  "clean_closure = sphere | eddington (no clean_consistency) or the "
+                  "closure_form = sphere | eddington (no closure_consistency) or the "
                   "rays (closure = sc) and an even <mesh>/nx2");
     }
     if (!vgd_on) {
@@ -213,11 +213,11 @@ void RadiationVet::InitArrays() {
   }
   if (pm->use_spherical_polar) {
     // rays: vet_gd's fixed direction set swept from the first shell, or the analytic
-    // sphere (clean_closure = sphere | eddington)
+    // sphere (closure_form = sphere | eddington)
     if (!(cln_sphere || vgd_on || cln_edd) ||
         (cln_consist && !vgd_on)) {
-      RadVetFatal("<rad_vet>/scheme = clean on spherical polar needs clean_closure = "
-                  "sphere | eddington (no clean_consistency) or the "
+      RadVetFatal("<rad_vet>/scheme = clean on spherical polar needs closure_form = "
+                  "sphere | eddington (no closure_consistency) or the "
                   "rays (closure = sc)");
     }
     // theta walls: vet_gd_theta_wall or the mesh's (rad_vet.cpp); the sweep starts at the
@@ -229,7 +229,7 @@ void RadiationVet::InitArrays() {
   }
   if (cln_sphere || !vet_sc || !vet_full) {
     RadVetFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs "
-                "vet_tensor = full (clean_closure = sphere is for spherical polar)");
+                "vet_tensor = full (closure_form = sphere is for spherical polar)");
   }
   // the formal solution provides the half-range sums and C1
   impl_beam_hr = true;
@@ -354,7 +354,7 @@ SolveArgs RadiationVet::MakeArgs() {
     x.x1v = pmy_pack->pcoord->x1v;
     x.x1f = pmy_pack->pcoord->xx1f;
   }
-  if (!x.sph && !x.cub && cln_lzsp) {   // (clean_lz_spin, Cartesian: z x r of cells)
+  if (!x.sph && !x.cub && cln_lzsp) {   // (lz_spin, Cartesian: z x r of cells)
     const int nmb = pmy_pack->nmb_thispack, ng = indcs.ng;
     const int n1 = indcs.nx1 + 2*ng, n2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
     if (cln_cx[0].extent_int(0) != nmb) {

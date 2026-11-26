@@ -54,10 +54,10 @@ arad = 1.0
 implicit_cfl = 1.0e4
 implicit_bc_x1min = marshak
 implicit_bc_x1max = marshak
-clean_init = steady
+steady_init = steady
 force_reference = clean
-clean_w_c0 = 0.1
-clean_w_c1 = 0.5
+closure_w_c0 = 0.1
+closure_w_c1 = 0.5
 
 <problem>
 pgen_name = rad_vet_beam

@@ -1,6 +1,6 @@
 # The reduced star deck of star_smoke and wb_star: inputs/stars/star3d_sp.athinput (the
 # production BSG envelope) on 256 x 8 x 8 cells (one MeshBlock, tile 8), with the settings
-# decided for the stars (clean_stag_thinf, lat_sums, tie_gid, opac_drag true). Needs a
+# decided for the stars (face_thin, lat_sums, tie_gid, opac_drag true). Needs a
 # binary built with -D PROBLEM=star_vet and star3d_data (inputs/stars) linked into the run
 # directory (run_tests.py does it).
 

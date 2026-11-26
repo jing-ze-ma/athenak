@@ -30,8 +30,8 @@ namespace radvet {
 //! \brief clean_ray_cut: first swept shell vray_icut (global min over columns); below
 //! it the closure is the diffusion limit (ThickI, error O(R^2),
 //! R = |grad S|/(chi S)).
-//! A column's cut: 10 optical depths below its lowest cell with R >= clean_ray_cut_r
-//! or thinner than one optical depth.  Moves down at once, up after clean_ray_cut_wait
+//! A column's cut: 10 optical depths below its lowest cell with R >= ray_cut_r
+//! or thinner than one optical depth.  Moves down at once, up after ray_cut_wait
 //! builds (both in the restart file).  sc rays only; no cut with several MeshBlocks
 //! along x1
 
@@ -84,8 +84,8 @@ void RadiationVet::RayCut() {
     std::cout << "CLEAN ray cut cycle " << pmy_pack->pmesh->ncycle << " shell "
               << prev << " -> " << cln_rcut << " (want " << lmin << ")" << std::endl;
   }
-  pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_now", cln_rcut);
-  pin_rcut_->SetInteger("rad_vet", "clean_ray_cut_count", cln_rcut_n);
+  pin_rcut_->SetInteger("rad_vet", "ray_cut_now", cln_rcut);
+  pin_rcut_->SetInteger("rad_vet", "ray_cut_count", cln_rcut_n);
   vray_icut = cln_rcut;
 }
 
@@ -216,7 +216,7 @@ void RadiationVet::ClosureFromSc() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureFromRays
-//! \brief closure from the vet_sc moments where J >= clean_ray_min E (else isotropic,
+//! \brief closure from the vet_sc moments where J >= closure_ray_min E (else isotropic,
 //! marked for the fill); the rays' face fluxes copied everywhere
 
 void RadiationVet::ClosureFromRays() {

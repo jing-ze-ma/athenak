@@ -552,7 +552,7 @@ void RadiationVet::RotNewBlock() {
         std::floor(pm->time/vgd_rot_dt - 1.0e-9));
   }
   // a Cartesian set without the ring keeps the slope and asks Time2RotCorrect for its
-  // jump; the cross-fade has no jump; clean_rot_ring = jump: a backward-Euler step
+  // jump; the cross-fade has no jump; ring = jump: a backward-Euler step
   if (vgd_xf && vgd_on) {
     vgd_rot_lastblk = b;
     return;

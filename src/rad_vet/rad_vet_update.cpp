@@ -38,7 +38,7 @@ static Real RadialPart(const SolveArgs &x, const int m, const int k, const int j
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CsTorque
-//! \brief cubed sphere, clean_cs_lz_tel: the gas L_z change of cell (k,j,i) over the
+//! \brief cubed sphere, lz_telescope: the gas L_z change of cell (k,j,i) over the
 //! stage in telescoping form; rl: the radiation's (halves of V F_f lambda_f/c^2 of the
 //! lateral faces, lambda_f = (M_f x n_f)_z/A_f); xs: the stress part (exact less faces').
 //! The gas takes the faces' absorption torque V cf lambda plus the exact stress torque of
@@ -234,15 +234,15 @@ void RadiationVet::WriteBack() {
   xh.fs = true;
   xh.fa = true;   // the tied T in CLF_PT (FluxTie)
 
-  // clean_cs_lz_tel: CsTorque's stress torque xs is zero-sum noise per cell; the gas
+  // lz_telescope: CsTorque's stress torque xs is zero-sum noise per cell; the gas
   // takes only its net X = sum xs, as the solid-body rotation dOmega = X/I of least
   // kinetic energy, I = sum rho V R^2.  tqv: the gas's L_z gl and the ledger's; lxs, lxi:
   // xs and rho V R^2, lzs their sums X and I
   const bool lzt = cln_lzt && feedback;
   DvceArray5D<Real> tqv;
   Real lzs[2] = {0.0, 0.0};
-  // (clean_lz_spin: X, the L_z of fcone's cut of the faces with an arm (FluxCone)
-  // and of clean_wb_mcap's cap (a pass of the arm families' terms), the gas's as the
+  // (lz_spin: X, the L_z of fcone's cut of the faces with an arm (FluxCone)
+  // and of update_mcap's cap (a pass of the arm families' terms), the gas's as the
   // rigid rotation dOmega = X/I, I = sum rho V R^2; the cubed sphere: none, its gas phi
   // momentum is lz_tel's torque of the uncut, uncapped face terms)
   const bool spn = cln_lzsp && feedback && !x.vzero && !x.cub;
@@ -352,7 +352,7 @@ void RadiationVet::WriteBack() {
   const bool eso = esrc_on;
   auto es = esrc;
   const Real arad_ = arad;
-  // wb_arad_md, clean_init = steady: the steady state's reference; cln_fref 0..2 its
+  // wb_arad_md, steady_init = steady: the steady state's reference; cln_fref 0..2 its
   // acceleration (components of dm), 3 + 2 dir + side the potential the hydro walks of
   // <hydro>/wb_dirs = all take along dir: the line integral of 2 cf/(h rho) over each
   // half cell (side 0 face to centre, 1 centre to face).  None outside the Roche lobe
@@ -365,10 +365,10 @@ void RadiationVet::WriteBack() {
   auto cf2 = pmy_pack->pcoord->xx2f, cf3 = pmy_pack->pcoord->xx3f;
   const Real tgf = eos.tfloor;
   const bool lex = cln_wbxl && feedback;
-  if (lex && !(tgf > 0.0)) RadVetFatal("<rad_vet>/clean_wb_exch_local needs a tfloor > "
+  if (lex && !(tgf > 0.0)) RadVetFatal("<rad_vet>/update_exchange_local needs a tfloor > "
                                        "0");
   const Real pgf = 1.0e-3, efl = e_floor;
-  // clean_wb_floor_diag N: the first N floored cells of each write-back, their terms
+  // update_floor_diag N: the first N floored cells of each write-back, their terms
   const int fdn = cln_wbfdg;
   DvceArray1D<Real> fdc;
   if (fdn > 0) fdc = DvceArray1D<Real>("cln_wbfdc", 1);
@@ -395,7 +395,7 @@ void RadiationVet::WriteBack() {
   auto pgd = pgc_def;
   const bool xwb = feedback && !cln_vzero;
   const bool cls = xwb;   // the closure in CLW_PW, printed below
-  // (clean_wb_mcap: the gas's momentum at the passes' cap, that of the E row's work; the
+  // (update_mcap: the gas's momentum at the passes' cap, that of the E row's work; the
   // terms capped and their momentum withheld per face family, CLEAN MCAP below)
   const bool wmc = cln_wbmc && feedback && !x.vzero;
   if (wmc) {
@@ -410,7 +410,7 @@ void RadiationVet::WriteBack() {
                                                  u0.extent_int(3), u0.extent_int(4));
   // (prb, clean_wb_fct's probe: no side effects, each cell's E without its face
   // transport, e + qf, into cln_wbfp 3 for WbFct, before the cells' write-back)
-  // (clean_dbg_inf: once, in the first stage-1 write-back of that cycle)
+  // (dbg_inf: once, in the first stage-1 write-back of that cycle)
   const bool dinf = (cln_dbginf == fcy) && t2_solve == VET_T2S_STAGE1 && !t2_inprobe &&
                     global_variable::my_rank == 0;
   if (dinf) cln_dbginf = -1;
@@ -439,11 +439,11 @@ void RadiationVet::WriteBack() {
     }
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3] = {0.0, 0.0, 0.0};
     Real den = 0.0, wsl = 0.0;
-    Real dg[5] = {0.0, 0.0, 0.0, 0.0, 0.0};   // clean_wb_floor_diag: eg wk wp dw rd
+    Real dg[5] = {0.0, 0.0, 0.0, 0.0, 0.0};   // update_floor_diag: eg wk wp dw rd
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0;
       CellMomentumChange(xh, CLW_X, m, k, j, i, dm, mg, &dlz);
-      if (spn) {   // (clean_lz_spin: dOmega rho z x r; the ledger's withheld L_z back)
+      if (spn) {   // (lz_spin: dOmega rho z x r; the ledger's withheld L_z back)
         const Real w = lzw_*uh(m,IDN,k,j,i), r = LzArm(x, m, k, j, i);
         if (x.sph) {
           dm[2] += w*r;
@@ -453,7 +453,7 @@ void RadiationVet::WriteBack() {
         }
         dlz -= w*r*r*CellVolume(x, m, k, j, i);
       }
-      if (lzt) {   // (clean_cs_lz_tel: the gas phi momentum of CsTorque, cln_wbtq)
+      if (lzt) {   // (lz_telescope: the gas phi momentum of CsTorque, cln_wbtq)
         Real q[3][3];
         const Real rc = CsFrame(x, m, k, j, i, q);
         const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) + lzw_*uh(m,IDN,k,j,i)*rc -
@@ -524,7 +524,7 @@ void RadiationVet::WriteBack() {
         // the Newton passes it caused 2-cycles); a root below it raises the gas to
         // e(rho, tfloor) with E's energy, counted as implicit_pos_gas
         Real eg = x.w(m,CLW_EP,k,j,i) - ex;
-        // clean_wb_exch_local: the cell's exchange solved exactly from the transported
+        // update_exchange_local: the cell's exchange solved exactly from the transported
         // E* = X + den - wk - wp at the solve's opacities, G and s = EP: the root
         // T >= tfloor of (1 + b)(e(rho, T) - eint) + c4 T^4 - b E* - s (b = h c kE,
         // c4 = h c kP G a), increasing in T, so unique; E = (E* - s + c4 T^4)/(1 + b) > 0

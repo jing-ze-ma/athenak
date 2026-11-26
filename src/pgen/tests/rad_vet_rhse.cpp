@@ -19,7 +19,7 @@
 //! dp/dx1 = -rho g (1 - rh_eddf), integrated by the midpoint rule.  E is the Eddington
 //! solution 3 (F/c) (tau + 2/3) of the isothermal column, F the flux above, the bath at
 //! x1min E(x1min).  The radiation relaxes to the scheme's own steady state with
-//! <rad_vet>/clean_init = steady (which with force_reference = clean also relaxes the gas
+//! <rad_vet>/steady_init = steady (which with force_reference = clean also relaxes the gas
 //! internal energy); after it the gas becomes the static background (all cells, ghost
 //! zones included), so the discrete state of both is the reference equilibrium.
 //!

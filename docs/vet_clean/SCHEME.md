@@ -182,7 +182,7 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 |---|---|
 | energy (gas + radiation) | exact; floors are paid from the radiation |
 | mass | exact |
-| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger), exact there too with `clean_stag_fcone_lz` + `clean_lz_spin` |
+| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger), exact there too with `flux_cone_lz` + `lz_spin` |
 | linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to below 1e-8 of the sound speed |
@@ -251,11 +251,11 @@ exactly what the step changes, `Lz_tot` is constant by construction; the scheme'
 error is the growth of the ledger, i.e. the drift of gas + radiation alone (`dLz_gr` in the
 test output).
 
-- Spherical polar, production keys: the face-flux realisability cut (`clean_stag_fcone`)
+- Spherical polar, production keys: the face-flux realisability cut (`flux_cone`)
   removes momentum the gas does not take, and its $L_z$ goes into the ledger. On the test shell
   this happens on the first cycles of a fresh start and amounts to about 6e-7 of the gas
   $L_z$; the ledger is constant afterwards.
-  With `clean_stag_fcone_lz` and `clean_lz_spin` (test `conservation_lz`) the gas takes the
+  With `flux_cone_lz` and `lz_spin` (test `conservation_lz`) the gas takes the
   cut's $L_z$, which is then exact without a ledger (1e-15); not the production setting.
 - Cubed sphere: the ledger stays at round-off (1e-17), so gas + radiation $L_z$ is conserved
   without one. Here the radiation's $L_z$ is that of the face momenta; the larger `dLz_gr`
@@ -275,7 +275,7 @@ change of the radiation momentum of that face, shared between the two cells, and
 radiation stress is in flux form. Gravity and the open boundaries change the momentum as
 physical sources. Three things change gas + radiation momentum without being given to the gas:
 
-- the realisability cut of the face flux (`clean_stag_fcone`);
+- the realisability cut of the face flux (`flux_cone`);
 - the residual of the well-balanced face rows;
 - the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
 
@@ -322,7 +322,7 @@ A star in hydrostatic and radiative equilibrium is designed as a steady state of
 equations. The gas sees only the deviation of the radiative force from a reference force that
 balances gravity (`force_reference = wb_arad`, held by the well-balanced hydro), and the face
 flux rows are written about the rays' own steady state (`clean_stag_fwb`). The steady start
-(`clean_init = steady`) begins from the scheme's own discrete equilibrium. The remaining
+(`steady_init = steady`) begins from the scheme's own discrete equilibrium. The remaining
 motion is at the solver-tolerance level, not round-off.
 
 A rotating ray set is a new angular discretisation at every turn, so its closure of the same
@@ -339,7 +339,7 @@ a static state at every turn.
 Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured 6e-9 and 5e-10; with
 the rotating sets `_rot` 6e-9 and 7e-9).
 `wb_cs` withholds the static radiation force and cannot see a spurious one on the cubed
-sphere; `shell_force_cs` (`clean_cs_lat_wb`) does.
+sphere; `shell_force_cs` (`flux_balance_lat`) does.
 
 ### Order of accuracy in space and time
 
@@ -397,7 +397,7 @@ unchanged to 2 %).
 
 The coupled scheme holds the Lowrie & Edwards (2008) non-equilibrium radiative shocks at their
 semi-analytic profiles, precursor, Zel'dovich spike and relaxation region included, without
-a shift of the shock (with `clean_closure = eddington`, as the reference is grey
+a shift of the shock (with `closure_form = eddington`, as the reference is grey
 non-equilibrium diffusion). The gas-radiation exchange is L-stable: at time steps of up to 1e5
 relaxation times the gas reaches the exact equilibrium temperature with the total energy
 conserved.

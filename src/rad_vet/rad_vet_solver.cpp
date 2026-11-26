@@ -63,7 +63,7 @@ void RadiationVet::FaceCoefficients() {
   const bool fsc = cln_cssc;   // (the sc rays: their folded sums, FaceHalf)
   const bool fho = cln_rfh;    // (vet_rotate_avg_ema_wb: the cells' own)
   const SolveArgs *px = DevArgs(MakeArgs(), 0);
-  // (clean_closure = eddington | sphere sweeps no rays: the cells' half ranges)
+  // (closure_form = eddington | sphere sweeps no rays: the cells' half ranges)
   const int nd = (pmy_pack->pmesh->use_cubed_sphere && !cln_edd && !cln_sphere)
                  ? cln_fvn : 0;
 
@@ -696,7 +696,7 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
 //! \fn void RadiationVet::VCycle
 //! \brief u(dst) = M^{-1} u(src) on level l of the staggered mg: z0 = red-black x1-line
 //! sweep, r1 = R (r - A z0) (volume-weighted on curved meshes), z = z0 + P z1 with z1
-//! from level l+1; the coarsest level only sweeps.  clean_pc_sweep: &1 a second even
+//! from level l+1; the coarsest level only sweeps.  solver_sweep: &1 a second even
 //! pass, &2 a post-sweep (odd, then even)
 
 void RadiationVet::VCycle(const int l, const int src, const int dst) {
@@ -764,10 +764,10 @@ int RadiationVet::SolveBiCGStab() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   WorkVec w = cln_w;
   const int nc = 1;
-  // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
+  // newton_conv = budget, in the Newton passes (a single solve keeps solver_tol in its own
   // norm): the rows over their gross terms S (RightHandSide), W A X = W B with
   // W = 1/S, right-preconditioned by M^-1 W^-1, so that every norm below is the budget's
-  // (cln_ewr -3: clean_clos1_budget's pass, in that norm to 0.1 clean_conv_max)
+  // (cln_ewr -3: newton_closure_budget's pass, in that norm to 0.1 newton_conv_max)
   const bool bud = cln_bon && (cln_ewr > -1.5 || cln_ewr < -2.5);
   const int sx = CLW_X, sb = bud ? CLW_BW : CLW_B;
   const int sr = CLW_R, sr0 = CLW_R0;
@@ -839,7 +839,7 @@ int RadiationVet::SolveBiCGStab() {
   };
   restart(-1);
   Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
-  // clean_bud_maxnorm: the budget's tests on max_i |r_i|, the norm of the pass's own test
+  // newton_maxnorm: the budget's tests on max_i |r_i|, the norm of the pass's own test
   // (an L2 norm above sqrt(N) t has its max above t: not reduced)
   const bool mn = bud && cln_bmn;
   const Real sqn = std::sqrt(static_cast<Real>(pmy_pack->pmesh->nmb_total)*

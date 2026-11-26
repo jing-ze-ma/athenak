@@ -50,18 +50,18 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/implicit_ebath_*", nullptr}, {"rad_vet/implicit_beam*", nullptr},
     {"rad_vet/implicit_cfl", nullptr},
     {"rad_vet/implicit_mr_*", nullptr}, {"rad_vet/implicit_det_trace", nullptr},
-    {"rad_vet/implicit_tol", "clean_tol_nl"}, {"rad_vet/implicit_lin_tol", "clean_tol"},
+    {"rad_vet/implicit_tol", "newton_tol"}, {"rad_vet/implicit_lin_tol", "solver_tol"},
     // read by ImplicitInit; a value other than the clean key's prints a NOTE
     {"rad_vet/implicit_maxit", nullptr},
     {"rad_vet/implicit_tol_rel_max", nullptr},
     {"rad_vet/implicit_lin_maxit", nullptr},
-    {"rad_vet/implicit_closure_lag", "clean_closure"},
-    {"rad_vet/time2_vet", "clean_closure"}, {"rad_vet/time2_vet_col", "clean_closure"},
-    {"rad_vet/time2_vet_sc", "clean_closure"},
-    {"rad_vet/time2_vet_extrap", "clean_closure"},
+    {"rad_vet/implicit_closure_lag", "closure_form"},
+    {"rad_vet/time2_vet", "closure_form"}, {"rad_vet/time2_vet_col", "closure_form"},
+    {"rad_vet/time2_vet_sc", "closure_form"},
+    {"rad_vet/time2_vet_extrap", "closure_form"},
     {"rad_vet/advect_split", ""}, {"rad_vet/time2_one_pass_safety", ""},
-    {"rad_vet/time2_lin_tol*", "clean_tol"},
-    {"rad_vet/implicit_ghost_x1min", "!"}, {"rad_vet/ic_rad*", "clean_init"},
+    {"rad_vet/time2_lin_tol*", "solver_tol"},
+    {"rad_vet/implicit_ghost_x1min", "!"}, {"rad_vet/ic_rad*", "steady_init"},
     {"rad_vet/implicit_predictor", "=step"}, {"rad_vet/implicit_predictor_tcap", "=1.1"},
     {"rad_vet/implicit_resid_fatal", nullptr},
     // the old scheme's predictor order: the layout of its restart files (Time2RstNchWant)
@@ -149,7 +149,7 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/clean_wb_floor_fail", "=false"}, {"rad_vet/clean_rst_mshare", "=true"},
     {"rad_vet/clean_rot_ring_fill_rst", "=true"},
     // staggered operator: constants; where a rule decides (fwb, freal with
-    // clean_consistency; fschur, fsweeps by the mesh; fwb_ring by the x3 wrap) the rule
+    // closure_consistency; fschur, fsweeps by the mesh; fwb_ring by the x3 wrap) the rule
     {"rad_vet/clean_stag_fwb", nullptr}, {"rad_vet/clean_stag_fwb_ring", nullptr},
     {"rad_vet/clean_stag_freal", nullptr},
     {"rad_vet/clean_stag_fschur", nullptr}, {"rad_vet/clean_stag_fsweeps", nullptr},
@@ -404,15 +404,15 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // 1), w = smoothstep((g - c0)/(c1 - c0)): upwind streaming where the field is
     // anisotropic, not merely non-local
     // eps -> 1 - (1 - eps)(1 - exp(-tau_d)), tau_d = chi V/A_f
-    cln_c0 = pin->GetOrAddReal("rad_vet","clean_w_c0",0.3);
-    cln_c1 = pin->GetOrAddReal("rad_vet","clean_w_c1",0.6);
-    cln_tol = pin->GetOrAddReal("rad_vet","clean_tol",1.0e-10);
-    // clean_maxnl, clean_maxit, clean_conv_max do not take implicit_maxit,
+    cln_c0 = pin->GetOrAddReal("rad_vet","closure_w_c0",0.3);
+    cln_c1 = pin->GetOrAddReal("rad_vet","closure_w_c1",0.6);
+    cln_tol = pin->GetOrAddReal("rad_vet","solver_tol",1.0e-10);
+    // newton_maxit, solver_maxit, newton_conv_max do not take implicit_maxit,
     // implicit_lin_maxit, implicit_tol_rel_max (a named other value prints a NOTE).
-    // A linear solve ending at clean_maxit leaves its iterate to the next pass.
+    // A linear solve ending at solver_maxit leaves its iterate to the next pass.
     {Real ov[3] = {0.0, 0.0, 0.0};   // named implicit_maxit, _lin_maxit, _tol_rel_max
     const char *ok[3] = {"implicit_maxit", "implicit_lin_maxit", "implicit_tol_rel_max"};
-    const char *ck[3] = {"clean_maxnl", "clean_maxit", "clean_conv_max"};
+    const char *ck[3] = {"newton_maxit", "solver_maxit", "newton_conv_max"};
     for (const InputBlock &ib : pin->block) {
       if (ib.block_name != "rad_vet") continue;
       for (const InputLine &ln : ib.line) {
@@ -424,10 +424,10 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     }
     bool nck[3];
     for (int n = 0; n < 3; ++n) nck[n] = pin->DoesParameterExist("rad_vet", ck[n]);
-    cln_maxnl = pin->GetOrAddInteger("rad_vet","clean_maxnl",200);
-    recipe::Old(pin, "rad_vet", "clean_maxit", "800");
-    cln_maxit = pin->GetOrAddInteger("rad_vet","clean_maxit",nw ? 200 : 800);
-    cln_bmax = pin->GetOrAddReal("rad_vet","clean_conv_max",1.0e-5);
+    cln_maxnl = pin->GetOrAddInteger("rad_vet","newton_maxit",200);
+    recipe::Old(pin, "rad_vet", "solver_maxit", "800");
+    cln_maxit = pin->GetOrAddInteger("rad_vet","solver_maxit",nw ? 200 : 800);
+    cln_bmax = pin->GetOrAddReal("rad_vet","newton_conv_max",1.0e-5);
     const Real cv[3] = {static_cast<Real>(cln_maxnl), static_cast<Real>(cln_maxit),
                         cln_bmax};
     for (int n = 0; n < 3; ++n) {
@@ -438,26 +438,26 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       }
     }
     }
-    cln_tol_nl = pin->GetOrAddReal("rad_vet","clean_tol_nl",1.0e-11);
-    cln_raymin = pin->GetOrAddReal("rad_vet","clean_ray_min",1.0e-3);
-    // clean_rot_ring = off | live | jump (live where the vet_gd rays rotate with a
+    cln_tol_nl = pin->GetOrAddReal("rad_vet","newton_tol",1.0e-11);
+    cln_raymin = pin->GetOrAddReal("rad_vet","closure_ray_min",1.0e-3);
+    // ring = off | live | jump (live where the vet_gd rays rotate with a
     // cross-fade, InitArrays): the rotating union swept as the current (+ next) set,
-    // older sets as moment offsets (RingMoments). clean_rot_fuse: the live ring's two
+    // older sets as moment offsets (RingMoments). ring_fuse: the live ring's two
     // sets in one fused sweep (bitwise the two sweeps; a second intensity array)
-    cln_rfuse = pin->GetOrAddBoolean("rad_vet","clean_rot_fuse",
-                                     fix("clean_rot_fuse", "true", "false"));
-    if (pin->DoesParameterExist("rad_vet","clean_rot_ring")) {
-      std::string rr = pin->GetString("rad_vet","clean_rot_ring");
+    cln_rfuse = pin->GetOrAddBoolean("rad_vet","ring_fuse",
+                                     fix("ring_fuse", "true", "false"));
+    if (pin->DoesParameterExist("rad_vet","ring")) {
+      std::string rr = pin->GetString("rad_vet","ring");
       cln_ring = (rr.compare("live") == 0) ? 1 : ((rr.compare("jump") == 0) ? 2 : 0);
       cln_ring_named = true;
       if (cln_ring == 0 && rr.compare("off") != 0) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_vet>/clean_rot_ring = off | live | jump" << std::endl;
+          << std::endl << "<rad_vet>/ring = off | live | jump" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
-    // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
-    cln_optn = pin->GetOrAddInteger("rad_vet","clean_stag_opac_passes",3);
+    // gas_opac_passes: opacities of passes 0 .. N-1, then frozen
+    cln_optn = pin->GetOrAddInteger("rad_vet","gas_opac_passes",3);
     // fschur where it applies: F lines exact across MeshBlocks
     // and periodic wraps (FluxSchur); needs a uniform mesh and MeshBlocks of >= 3
     // cells along a line (>= 6 on longer or open lines)
@@ -504,12 +504,12 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     if (cs && !cln_fschur) cln_fsweeps = 64;
     recipe::Rule(pin, "rad_vet", "clean_stag_fschur", cln_fschur ? "true" : "false");
     recipe::Rule(pin, "rad_vet", "clean_stag_fsweeps", std::to_string(cln_fsweeps));}
-    // clean_consistency: default on Cartesian, and on sp / cs with the vet_gd rays (sc)
+    // closure_consistency: default on Cartesian, and on sp / cs with the vet_gd rays (sc)
     const bool curv = pmy_pack->pmesh->use_spherical_polar ||
                       pmy_pack->pmesh->use_cubed_sphere;
     const bool vg = VetCurvedRays(pin);
     cln_split = true;
-    cln_consist = pin->GetOrAddBoolean("rad_vet","clean_consistency", !curv || vg);
+    cln_consist = pin->GetOrAddBoolean("rad_vet","closure_consistency", !curv || vg);
     // staggered: energy flux apart from the face momentum (split), face momentum of its
     // own F solve (fsolve) in the Newton loop (fwork); with consistency the rays'
     // kinetic momentum flux (fkin) and face flux as flux factors (gflux); donor-cell
@@ -526,10 +526,10 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // freal: realisable sb (comoving part <= 2 |beta| hc kE E_k) and restart
     // faces <= c E of their donor
     cln_freal = cln_gflux;
-    // clean_stag_thinf: the bracket's ray correction in the face half ranges, realisable
+    // face_thin: the bracket's ray correction in the face half ranges, realisable
     // (FaceBracket)
-    cln_thinf = pin->GetOrAddBoolean("rad_vet","clean_stag_thinf",
-                                     fix("clean_stag_thinf", "true", "false"));
+    cln_thinf = pin->GetOrAddBoolean("rad_vet","face_thin",
+                                     fix("face_thin", "true", "false"));
     // fwb: F rows in deviation form about the rays' own state, their exact steady state
     // (FluxSolve); fwb_ring: its s of the phi faces (3-D sp, periodic x3) less its
     // ring mean: no torque on a ring (FluxBalanceProject)
@@ -538,75 +538,75 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         pmy_pack->pmesh->three_d &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
     recipe::Rule(pin, "rad_vet", "clean_stag_fwb_ring", cln_fwbring ? "true" : "false");
-    // clean_stag_fcone (default on with fwb, recorded): every cell's flux vector within
+    // flux_cone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
     // (FluxCone)
-    cln_fcone = pin->GetOrAddBoolean("rad_vet","clean_stag_fcone",cln_fwb &&
-                                     fix("clean_stag_fcone", "true", "false"));
+    cln_fcone = pin->GetOrAddBoolean("rad_vet","flux_cone",cln_fwb &&
+                                     fix("flux_cone", "true", "false"));
     if (cln_fcone && !cln_fsolve) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fcone needs the staggered F "
+      std::cout << "### FATAL ERROR: <rad_vet>/flux_cone needs the staggered F "
                 << "solve" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fcone_lz (read only when named, default off): fcone takes a cell's
+    // flux_cone_lz (read only when named, default off): fcone takes a cell's
     // excess from its faces without L_z lever arm first (LzFamily: spherical polar
     // x1, x2; cubed sphere x1; Cartesian x3), cut and counted as now; a face with an arm
     // is scaled only where those faces alone exceed c E, and its cut is the gas's at the
-    // face (as fcone_gas; clean_lz_spin: a rigid rotation), so that L_z is exact (cubed
+    // face (as fcone_gas; lz_spin: a rigid rotation), so that L_z is exact (cubed
     // sphere: CsTorque)
-    cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
-               pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
-    // clean_stag_fcone_emax (read only when named; needs clean_stag_fcone): every inner
+    cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","flux_cone_lz") &&
+               pin->GetBoolean("rad_vet","flux_cone_lz");
+    // flux_cone_emax (read only when named; needs flux_cone): every inner
     // face's F within c max(E_L, E_R), also an opaque face's: no face F streams more than
     // its brighter cell holds, so the gas's face terms stay below the cap h chi_f E
-    if (pin->DoesParameterExist("rad_vet","clean_stag_fcone_emax")) {
-      cln_fcemx = pin->GetBoolean("rad_vet","clean_stag_fcone_emax");
+    if (pin->DoesParameterExist("rad_vet","flux_cone_emax")) {
+      cln_fcemx = pin->GetBoolean("rad_vet","flux_cone_emax");
       if (cln_fcemx && !cln_fcone) {
-        std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fcone_emax needs "
-                  << "clean_stag_fcone" << std::endl;
+        std::cout << "### FATAL ERROR: <rad_vet>/flux_cone_emax needs "
+                  << "flux_cone" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
-    // clean_stag_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
+    // face_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
     // (no donor/cap flip between passes)
-    cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);
+    cln_xdfz = pin->GetOrAddInteger("rad_vet","face_xdonor_freeze",4);
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
     // radiation's (LzBook)
     if (pmy_pack->pmesh->use_cubed_sphere) cln_lza = 2;
     cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
                                     pmy_pack->pmesh->three_d);
-    // clean_cs_lz_tel: L_z by telescoping (gas phi momentum of CsTorque, radiation
+    // lz_telescope: L_z by telescoping (gas phi momentum of CsTorque, radiation
     // L_z of its face momenta), so the ledger holds the radial boundaries' torque alone
-    if (cln_lza == 2 || pin->DoesParameterExist("rad_vet", "clean_cs_lz_tel")) {
-      cln_lzt = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_tel",
-                                     fix("clean_cs_lz_tel", "true", "false"));
+    if (cln_lza == 2 || pin->DoesParameterExist("rad_vet", "lz_telescope")) {
+      cln_lzt = pin->GetOrAddBoolean("rad_vet","lz_telescope",
+                                     fix("lz_telescope", "true", "false"));
     }
-    // clean_cs_lat_wb: a spherically symmetric P gives the cs lateral faces no force
+    // flux_balance_lat: a spherically symmetric P gives the cs lateral faces no force
     // (CsLat).  Default on for the cubed sphere, also on a restart without it
     if (cln_lza == 2) {
-      cln_latwb = pin->GetOrAddBoolean("rad_vet","clean_cs_lat_wb",
-                                       fix("clean_cs_lat_wb", "true", "false"));
-      recipe::OldStored(pin, "rad_vet", "clean_cs_lat_wb", "false", "true");
-    } else if (stag("clean_cs_lat_wb", false)) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lat_wb needs the cubed sphere "
+      cln_latwb = pin->GetOrAddBoolean("rad_vet","flux_balance_lat",
+                                       fix("flux_balance_lat", "true", "false"));
+      recipe::OldStored(pin, "rad_vet", "flux_balance_lat", "false", "true");
+    } else if (stag("flux_balance_lat", false)) {
+      std::cout << "### FATAL ERROR: <rad_vet>/flux_balance_lat needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (cln_lzt && cln_lza != 2) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_tel needs the cubed sphere "
+      std::cout << "### FATAL ERROR: <rad_vet>/lz_telescope needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_lz_spin (read only when named; needs clean_stag_fcone_lz, on the cubed sphere
-    // clean_cs_lz_tel): the L_z of the momentum that fcone's cut of the faces with an
-    // arm and clean_wb_mcap's cap withhold is the gas's as one rigid rotation dOmega =
+    // lz_spin (read only when named; needs flux_cone_lz, on the cubed sphere
+    // lz_telescope): the L_z of the momentum that fcone's cut of the faces with an
+    // arm and update_mcap's cap withhold is the gas's as one rigid rotation dOmega =
     // X/I, I = sum rho V R^2 (WriteBack), not the face's gas: L_z exact, no kick
-    if (pin->DoesParameterExist("rad_vet","clean_lz_spin")) {
-      cln_lzsp = pin->GetBoolean("rad_vet","clean_lz_spin");
+    if (pin->DoesParameterExist("rad_vet","lz_spin")) {
+      cln_lzsp = pin->GetBoolean("rad_vet","lz_spin");
       if (cln_lzsp && (!cln_fclz || (pmy_pack->pmesh->use_cubed_sphere && !cln_lzt))) {
-        std::cout << "### FATAL ERROR: <rad_vet>/clean_lz_spin needs clean_stag_fcone_lz "
-                  << "(the cubed sphere: and clean_cs_lz_tel)" << std::endl;
+        std::cout << "### FATAL ERROR: <rad_vet>/lz_spin needs flux_cone_lz "
+                  << "(the cubed sphere: and lz_telescope)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -627,37 +627,37 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         pin->SetReal("rad_vet", key, 0.0);
       }
     }
-    // clean_clos1_budget (default; false: the strict norm): a pass whose iterate the next
-    // pass takes the closure of in the budget's norm, to 0.1 clean_conv_max, the floor of
+    // newton_closure_budget (default; false: the strict norm): a pass whose iterate the next
+    // pass takes the closure of in the budget's norm, to 0.1 newton_conv_max, the floor of
     // the passes after it at the budget's ceiling (a step dt_retry redoes strictly, as
     // its budget)
-    cln_c1b = pin->GetOrAddBoolean("rad_vet","clean_clos1_budget",
-                                   fix("clean_clos1_budget", "true", "false"));
-    // clean_bud_maxnorm (default; false: the L2 norm): the budget passes' linear test and
+    cln_c1b = pin->GetOrAddBoolean("rad_vet","newton_closure_budget",
+                                   fix("newton_closure_budget", "true", "false"));
+    // newton_maxnorm (default; false: the L2 norm): the budget passes' linear test and
     // Eisenstat-Walker |r0| in the max norm over the cells, the norm of the pass's own
     // test (NewtonUpdate)
-    cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",
-                                   fix("clean_bud_maxnorm", "true", "false"));
-    // clean_wb_exch_local (default): the write-back's cell exchange
+    cln_bmn = pin->GetOrAddBoolean("rad_vet","newton_maxnorm",
+                                   fix("newton_maxnorm", "true", "false"));
+    // update_exchange_local (default): the write-back's cell exchange
     // solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))
-    cln_wbxl = pin->GetOrAddBoolean("rad_vet","clean_wb_exch_local",
-                                   fix("clean_wb_exch_local", "true", "false"));
-    // clean_wb_mcap (read only when named; default false): the write-back gives the gas
+    cln_wbxl = pin->GetOrAddBoolean("rad_vet","update_exchange_local",
+                                   fix("update_exchange_local", "true", "false"));
+    // update_mcap (read only when named; default false): the write-back gives the gas
     // the face momentum terms at the Newton passes' cap h chi_f E, the momentum whose
     // work the E row paid (FaceMomentumChange); the terms withheld are printed
-    if (pin->DoesParameterExist("rad_vet","clean_wb_mcap")) {
-      cln_wbmc = pin->GetBoolean("rad_vet","clean_wb_mcap");
+    if (pin->DoesParameterExist("rad_vet","update_mcap")) {
+      cln_wbmc = pin->GetBoolean("rad_vet","update_mcap");
     }
-    // clean_wb_floor_diag N (diagnostic, read only when named): the terms of the first
+    // update_floor_diag N (diagnostic, read only when named): the terms of the first
     // N cells of each write-back whose E the floor raises (CLEAN WBFDIAG)
-    if (pin->DoesParameterExist("rad_vet","clean_wb_floor_diag")) {
-      cln_wbfdg = pin->GetInteger("rad_vet","clean_wb_floor_diag");
+    if (pin->DoesParameterExist("rad_vet","update_floor_diag")) {
+      cln_wbfdg = pin->GetInteger("rad_vet","update_floor_diag");
     }
-    // clean_dbg_inf C (test, read only when named): the first stage-1 write-back of cycle
+    // dbg_inf C (test, read only when named): the first stage-1 write-back of cycle
     // C gives rank 0's first active cell a non-finite E iterate (the test of the
     // non-finite rejection, tests/vet_clean inf_reject)
-    if (pin->DoesParameterExist("rad_vet","clean_dbg_inf")) {
-      cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
+    if (pin->DoesParameterExist("rad_vet","dbg_inf")) {
+      cln_dbginf = pin->GetInteger("rad_vet","dbg_inf");
     }
     // preconditioner: mg (VCycle)
     {
@@ -676,31 +676,31 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       }
       cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
     }
-    // clean_stag_mg_levels N (default 2): the mg's coarse levels at
+    // solver_mg_levels N (default 2): the mg's coarse levels at
     // most, each halving the tile's x2 and x3 where even (>= 4); 0: the sweep alone
-    cln_mgnl = pin->GetOrAddInteger("rad_vet","clean_stag_mg_levels",cln_mgnl);
+    cln_mgnl = pin->GetOrAddInteger("rad_vet","solver_mg_levels",cln_mgnl);
     if (cln_mgnl < 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_stag_mg_levels N >= 0" << std::endl;
+                << std::endl << "<rad_vet>/solver_mg_levels N >= 0" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_pc_sweep = sym (the default, recorded) | rb | rbr | rbrsym: the mg's
+    // solver_sweep = sym (the default, recorded) | rb | rbr | rbrsym: the mg's
     // smoothing on each level, a forward red-black sweep, + a second red pass (rbr), + a
     // black-red post-sweep after the coarse correction (sym) (VCycle)
-    const std::string sw = pin->GetOrAddString("rad_vet","clean_pc_sweep",
-        fix("clean_pc_sweep", "sym", "rb") ? "sym" : "rb");
+    const std::string sw = pin->GetOrAddString("rad_vet","solver_sweep",
+        fix("solver_sweep", "sym", "rb") ? "sym" : "rb");
     cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
     if (!cln_pcsweep && sw != "rb") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_pc_sweep = " << sw << ": rb | rbr | sym "
+                << std::endl << "<rad_vet>/solver_sweep = " << sw << ": rb | rbr | sym "
                 << "| rbrsym (wave was removed)" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     // sp / Cartesian: the faces' lateral stress from the cells' sums Y
     // (CsLateralStress), the cs form
     cln_ysum = pmy_pack->pmesh->multi_d && !pmy_pack->pmesh->use_cubed_sphere;
-    // clean_closure: predict | iterate | extrap | extrap1 | extrap2 | eddington | sphere
-    {std::string cl = pin->GetOrAddString("rad_vet","clean_closure","extrap1");
+    // closure_form: predict | iterate | extrap | extrap1 | extrap2 | eddington | sphere
+    {std::string cl = pin->GetOrAddString("rad_vet","closure_form","extrap1");
     cln_closit = (cl.compare("iterate") == 0);
     cln_extrap = (cl.compare("extrap") == 0) ? 1 : ((cl.compare("extrap2") == 0) ? 2 :
                  ((cl.compare("extrap1") == 0) ? 3 : 0));
@@ -709,38 +709,38 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     if (!cln_closit && cln_extrap == 0 && !cln_edd && !cln_sphere &&
         cl.compare("predict") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/clean_closure = predict | iterate | extrap | extrap1 "
+        << std::endl << "<rad_vet>/closure_form = predict | iterate | extrap | extrap1 "
                         "| "
         << "extrap2 | eddington | sphere" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (cln_sphere) cln_sph_r = pin->GetReal("rad_vet","clean_sphere_radius");}
-    // clean_verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
+    if (cln_sphere) cln_sph_r = pin->GetReal("rad_vet","closure_sphere_radius");}
+    // verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
     // and events; 1 also the per-solve diagnostics (CLEAN MCAP, OLDVEC, FCONE, FWB, LZ,
     // WBFCT, KPOS, KREAL, XPAT, the write-back closure and the ray cut); 2 also the
     // CLEAN PASS line of every pass (its changes de, dv against tol_nl)
-    if (pin->DoesParameterExist("rad_vet","clean_verbose")) {
-      cln_verbose = pin->GetInteger("rad_vet","clean_verbose");
+    if (pin->DoesParameterExist("rad_vet","verbose")) {
+      cln_verbose = pin->GetInteger("rad_vet","verbose");
     }
-    // clean_conv = budget | strict. budget: every row measured in the cell's own step
-    // budget S (sum of its gross terms), tolerance clean_conv_kappa x the step's
-    // time-error estimate, between clean_tol_nl and clean_conv_max, BiCGStab in that norm
-    // with Eisenstat-Walker forcing; strict: E, T relative to themselves, clean_tol_nl
-    {const std::string cv = pin->GetOrAddString("rad_vet","clean_conv","budget");
+    // newton_conv = budget | strict. budget: every row measured in the cell's own step
+    // budget S (sum of its gross terms), tolerance newton_conv_kappa x the step's
+    // time-error estimate, between newton_tol and newton_conv_max, BiCGStab in that norm
+    // with Eisenstat-Walker forcing; strict: E, T relative to themselves, newton_tol
+    {const std::string cv = pin->GetOrAddString("rad_vet","newton_conv","budget");
     if (cv != "budget" && cv != "strict") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_conv = budget | strict" << std::endl;
+                << std::endl << "<rad_vet>/newton_conv = budget | strict" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_budget = (cv == "budget");}
-    cln_bkap = pin->GetOrAddReal("rad_vet","clean_conv_kappa",1.0);
-    // clean_init = given | steady: steady relaxes the radiation
+    cln_bkap = pin->GetOrAddReal("rad_vet","newton_conv_kappa",1.0);
+    // steady_init = given | steady: steady relaxes the radiation
     // before step 1
     {
-      const std::string ci = pin->GetOrAddString("rad_vet","clean_init","given");
+      const std::string ci = pin->GetOrAddString("rad_vet","steady_init","given");
       if (ci != "given" && ci != "steady") {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_vet>/clean_init = given | steady" << std::endl;
+          << std::endl << "<rad_vet>/steady_init = given | steady" << std::endl;
         std::exit(EXIT_FAILURE);
       }
       cln_steady = (ci == "steady");
@@ -753,11 +753,11 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         return (heq && pin->DoesParameterExist("problem", k)) ?
                pin->GetReal("problem", k) : d;
       };
-      cln_steady_n = pin->GetOrAddInteger("rad_vet","clean_init_n",
+      cln_steady_n = pin->GetOrAddInteger("rad_vet","steady_n",
           static_cast<int>(eqk("star_ic_equil_relax_n", heq ? 40.0 : 50.0)));
-      cln_steady_dtfac = pin->GetOrAddReal("rad_vet","clean_init_dtfac",
+      cln_steady_dtfac = pin->GetOrAddReal("rad_vet","steady_dtfac",
                                            eqk("star_ic_equil_dtfac", 1.0e6));
-      cln_steady_tol = pin->GetOrAddReal("rad_vet","clean_init_tol",1.0e-8);
+      cln_steady_tol = pin->GetOrAddReal("rad_vet","steady_tol",1.0e-8);
     }
   }
 }

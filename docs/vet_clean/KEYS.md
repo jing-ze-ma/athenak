@@ -32,11 +32,11 @@ parameters are put together in this order (`main.cpp`):
 stored in the restart file, not the code default.** When a `-i` deck is given, each such key whose stored value differs from the code default prints one `CLEAN WARNING restart: block/key = value from the restart file (code default d; the deck does not name it)` after the first cycle; the value is still used (name the key in the deck to choose; a restart without `-i` prints none). If the file does not hold the key either,
 a key that corrects the scheme takes the fresh default, with a `### NOTE: ... the fix applies`
 (name the old value to keep the old behaviour), and a stored old value of `merge_lat_mom`,
-`merge_lat_blockend`, `fofc_flag_exchange`, `clean_cs_lat_wb`, `time2_gtime_slope`,
+`merge_lat_blockend`, `fofc_flag_exchange`, `flux_balance_lat`, `time2_gtime_slope`,
 `time2_gtime_pos` or `mlt_src_time` prints a `### NOTE` with the name to switch; the other keys take their restart default. For a
 file of an older scheme use `restart_old_files.txt` (below).
 
-Example: a restart file had stored `clean_maxit = 800` from an earlier deck. The fresh default
+Example: a restart file had stored `solver_maxit = 800` from an earlier deck. The fresh default
 is 200, but the restart runs with 800 when the new deck does not name the key.
 
 Rules:
@@ -50,6 +50,31 @@ Rules:
   modules add later are not shown).
 - After the first cycle the code prints `### WARNING: N input parameter(s) were never read by
   the code`: a key there is a typo or a key this build does not have.
+
+- The `<rad_vet>` keys `clean_*` lost "clean" (one method is left): the old names in a deck,
+  on the command line or in a restart file are read as the new ones with one `### NOTE`; a
+  source that names both spellings of a key with different values is FATAL. A restart file of
+  this code stores the new names. Removed keys keep their old names (below). Log tags
+  (`CLEAN cycle`, `CLEAN WARNING`, `clean_init steady pass`) are unchanged.
+
+| old | new | old | new | old | new |
+|---|---|---|---|---|---|
+| `clean_bud_maxnorm` | `newton_maxnorm` | `clean_clos1_budget` | `newton_closure_budget` | `clean_closure` | `closure_form` |
+| `clean_consistency` | `closure_consistency` | `clean_conv` | `newton_conv` | `clean_conv_kappa` | `newton_conv_kappa` |
+| `clean_conv_max` | `newton_conv_max` | `clean_cs_lat_wb` | `flux_balance_lat` | `clean_cs_lz_k1` | `lz_cs_k1` |
+| `clean_cs_lz_ledger` | `lz_cs_ledger` | `clean_cs_lz_tel` | `lz_telescope` | `clean_dbg_inf` | `dbg_inf` |
+| `clean_init` | `steady_init` | `clean_init_dtfac` | `steady_dtfac` | `clean_init_n` | `steady_n` |
+| `clean_init_tol` | `steady_tol` | `clean_lz_ledger` | `lz_ledger` | `clean_lz_ledger_k1` | `lz_ledger_k1` |
+| `clean_lz_spin` | `lz_spin` | `clean_maxit` | `solver_maxit` | `clean_maxnl` | `newton_maxit` |
+| `clean_pc_sweep` | `solver_sweep` | `clean_ray_cut_count` | `ray_cut_count` | `clean_ray_cut_now` | `ray_cut_now` |
+| `clean_ray_cut_r` | `ray_cut_r` | `clean_ray_cut_wait` | `ray_cut_wait` | `clean_ray_min` | `closure_ray_min` |
+| `clean_rot_fuse` | `ring_fuse` | `clean_rot_ring` | `ring` | `clean_sp_lz_bnd` | `lz_sp_bnd` |
+| `clean_sp_lz_bnd_k1` | `lz_sp_bnd_k1` | `clean_sphere_radius` | `closure_sphere_radius` | `clean_stag_fcone` | `flux_cone` |
+| `clean_stag_fcone_emax` | `flux_cone_emax` | `clean_stag_fcone_lz` | `flux_cone_lz` | `clean_stag_mg_levels` | `solver_mg_levels` |
+| `clean_stag_opac_passes` | `gas_opac_passes` | `clean_stag_thinf` | `face_thin` | `clean_stag_xdonor_freeze` | `face_xdonor_freeze` |
+| `clean_tol` | `solver_tol` | `clean_tol_nl` | `newton_tol` | `clean_verbose` | `verbose` |
+| `clean_w_c0` | `closure_w_c0` | `clean_w_c1` | `closure_w_c1` | `clean_wb_exch_local` | `update_exchange_local` |
+| `clean_wb_floor_diag` | `update_floor_diag` | `clean_wb_mcap` | `update_mcap` |  |  |
 
 - The star keys `<problem>/star_*` were named `he_*` (one: `hs_*`) in earlier versions. Old
   names in a deck, on the command line or in a restart file are read as `star_*` with one `### NOTE`; a deck
@@ -74,12 +99,12 @@ athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt mesh/layout_til
 | `<rad_vet>/time2_k1_stiff`, `time2_k1_redist` | `0` | removed keys; older files store 1.0, 0.1 (FATAL) |
 | `<rad_vet>/clean_stag_fwb_stage`, `clean_stag_fwb_t2` | `false` | removed keys; early files of this scheme store true (FATAL) |
 | `<rad_vet>/clean_w_fse_tau`, `time2_gtime_mom` | `true` | removed keys; early files may store false (FATAL) |
-| `<rad_vet>/clean_stag_mg_levels` | `2` | early files may store 4 |
-| `<rad_vet>/clean_maxit`, `clean_pc_sweep` | `200`, `rb` | not stored; a restart keeps 800, and `sym` is the default |
+| `<rad_vet>/solver_mg_levels` | `2` | early files may store 4 |
+| `<rad_vet>/solver_maxit`, `solver_sweep` | `200`, `rb` | not stored; a restart keeps 800, and `sym` is the default |
 | `<rad_vet>/vet_gd_wall_interp`, `vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | spherical-polar wedges with fixed rays (commented out in the file); a theta-periodic wedge without them is FATAL |
 | `<hydro>/fofc` | `true` | older star files may store false (HG, RSG, R136 store true) |
 | `<hydro>/merge_lat_mom`, `merge_lat_blockend` | `radial`, `exchange` | commented out, a choice of physics: a stored `rigid` (RSG) or `flat` stays (NOTE) |
-| `<rad_vet>/vet_rotate_avg_ema`, `_change_form`, `clean_rot_ring` | `128`, `linear`, `live` | commented out: stars with rotating rays (HG, RSG, R136 continuations) |
+| `<rad_vet>/vet_rotate_avg_ema`, `_change_form`, `ring` | `128`, `linear`, `live` | commented out: stars with rotating rays (HG, RSG, R136 continuations) |
 | `<problem>/mlt_src_time` | `stage` | files of the release ccab558ee store `start` (MLT stars) |
 | `<mesh>/layout_invariant_mode`, `layout_tile` | `tile`, the lateral size of the file's MeshBlocks | stored as block (layout_tile is commented out: set it) |
 | `<time>/restart_refill_ghosts` | `false` | some files store true |
@@ -96,7 +121,7 @@ with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
 |---|---|---|---|---|
 | `rad_vet/transport` | Radiation transport; the scheme needs `implicit`. | `implicit` on a fresh run with a `<rad_vet>` block | all: `implicit` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/closure` | Only `sc`: the Eddington tensor from the short-characteristics rays, on Cartesian meshes and by the global sweep on spherical polar and the cubed sphere. An older name is read as `sc` (NOTE) only where it ran the same closure: `vet_sc` on a Cartesian mesh, `vet_col` with `vet_gd = true` on a curved one; every other value stops the run. | `sc` | - | `rad_vet/rad_vet_params_closure.cpp` (constructor) |
-| `rad_vet/clean_closure` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays; for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `rad_vet/closure_form` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays; for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet_params.cpp` (constructor) |
 | `hydro/reconstruct`, `mhd/reconstruct` | Reconstruction of the fluid sweeps (`dc`, `plm`, `ppm4`, `ppmx`, `wenoz`) on Cartesian meshes and in the cubed sphere's lateral sweeps (its radial sweep is the grid PLM). On spherical polar every sweep is the grid PLM, and with `wb_dirs = all` the well-balanced PLM: there a value other than `plm` stops the run (FATAL). `wb_x1`, `wb_rho`, `wall_wb_onesided` set without `wellbalance_dynamic = true`, `wb_guard_ideal` / `wb_clamp_ideal` with a general EOS, `mhd/fofc_rsolver = hlle` without `fofc`, `mhd/polar_emf_diss` without `use_polar_boundary` stop the run too (they would not act). `time/dt_retry_views = all` stops the run on the cubed sphere (its retried step differs at a ray-set change). | `plm` | not named | `hydro/hydro.cpp`, `mhd/mhd.cpp` |
 
 ## Rays
@@ -110,7 +135,7 @@ with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
 | `rad_vet/vet_gd_rotate_dt` | Rotate the direction set every dt_rot of physical time (`auto` = 20 x the first dt; 0 = fixed set). | `0` on spherical polar, else `auto` (fresh runs that name no rotation key) | all: `0` | `rad_vet/rad_vet_params.cpp` (constructor) |
 | `rad_vet/vet_rotate_avg` | With rotation: average the closure over the last K sets (0 = off). | 4 with a rotating set on a fresh run | all: `0` | `rad_vet/rad_vet_params_closure.cpp` (`RotAvgParse`) |
 | `rad_vet/vet_rotate_avg_ema` | With rotation: the closure is an exponential moving average over the rotated sets, weight 1/N per block (0 = off; then `vet_rotate_avg` is the K-set window). | 128 on a fresh run with a rotating set; read only when named on a restart | RSG, HG: `128`; all: `0` (fixed rays) | `rad_vet/rad_vet_params_closure.cpp` (`RotAvgParse`) |
-| `rad_vet/clean_rot_ring` | Rotating ray ring of the scheme: `off`, `live`, `jump`. | read only when named | all: `off` | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `rad_vet/ring` | Rotating ray ring of the scheme: `off`, `live`, `jump`. | read only when named | all: `off` | `rad_vet/rad_vet_params.cpp` (constructor) |
 | `rad_vet/vet_scatter` | Split the opacity into absorption and electron scattering in the ray source (Ma et al. 2026, eq. 7). Changes only the rays' source function. | true on a fresh run with table opacity and the rays | all: `true` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/vet_scatter_kappa_e` | Electron-scattering opacity: `const` or `eos` (from the EOS ionisation). | `eos` with a tabulated EOS; `const` otherwise | all: `const` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/vet_gd_wall_sym` | Phi-periodic wedges: centre the set on the wedge, mirror-paired phi-wall maps, the seam face from both sides. Needs `vet_gd_wall_interp = true`. Identical results on wedges that are whole azimuthal periods; required on narrower ones. With a set turning about z it needs a wedge of whole periods (exact wall maps for every turn) and does nothing; FATAL otherwise. No effect without a phi wall (cubed sphere, full 2 pi, 2-D). | false (recorded) | all: `true` | `rad_vet/rad_vet_params_closure.cpp` (constructor), `rad_vet/rad_vet_params_closure.cpp` |
@@ -140,13 +165,13 @@ from a file written before these keys must name both on the command line.
 | `rad_vet/time2_gtime_slope` | sdirk2: the gas eint of the hydro's stage-2 flux state is that of U* + d plus (1 - g) dt minmod(K1, K2), K1 the last step's stage-2 slope of the exchange, K2 = d/(g dt), added to the gas the caps and floors left (Patankar form where negative; its floors act on the primitives only, nothing is booked). Without it the exchange is first order in time where it is stiff (wave p 1.0-1.5 instead of 2, M5 shock rho L1 +27 % over hesdirk2). Helps where gas is trapped or in fast exchange; no effect where the exchange is slow. Limit: the flux state of cold floor gas can move by a factor 3 (toward T_rad). Needs `time2_gtime_mom = true` (FATAL otherwise; the default is false with `time2_gtime_mom = false`). | true, also on a restart whose file lacks it (NOTE) | all: default | `rad_vet/rad_vet_imex.cpp` (`Time2GasTime`) |
 | `rad_vet/time2_gtime_pos` | sdirk2: the flux state is formed from the gas the caps and floors left, stays positive (Patankar) and books nothing; `false` = the older form. Must be true with `time2_gtime_slope` (FATAL otherwise). | true, also on a restart whose file lacks it (NOTE) | all: default | `rad_vet/rad_vet_imex.cpp` (`Time2GasTime`) |
 | `rad_vet/time2_auto_be` | After a step whose stages fell back to backward Euler, the next 1, 2, 4, ... N steps take backward Euler at once (0 = off). | 16 | all: `16` | `rad_vet/rad_vet_params_implicit.cpp` (`Time2Init`) |
-| `rad_vet/clean_init` | `steady`: before step 1 the radiation is relaxed to the scheme's steady solution in the given gas; `given`: start from the given field. | `given` (star_vet: `steady`) | all: `steady` | `rad_vet/rad_vet_params.cpp` (constructor) |
-| `rad_vet/clean_init_dtfac`, `clean_init_tol`, `clean_init_n` | Pseudo time step (in units of the first dt), tolerance and pass limit of the steady start. | 1e6, 1e-8, 40 or 50 (problem dependent) | all: `1.0e6`, not named, not named | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `rad_vet/steady_init` | `steady`: before step 1 the radiation is relaxed to the scheme's steady solution in the given gas; `given`: start from the given field. | `given` (star_vet: `steady`) | all: `steady` | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `rad_vet/steady_dtfac`, `steady_tol`, `steady_n` | Pseudo time step (in units of the first dt), tolerance and pass limit of the steady start. | 1e6, 1e-8, 40 or 50 (problem dependent) | all: `1.0e6`, not named, not named | `rad_vet/rad_vet_params.cpp` (constructor) |
 | `time/dt_retry` | A cycle whose implicit solve fails (not converged, non-finite, unpaid floor energy) is undone and taken again with a smaller dt. Bitwise: a retry restores the full cycle. | true | all: `true` | `driver/dt_retry.cpp` (`DtRetry`) |
 | `time/dt_retry_fac` | dt factor of a retry. | 0.5 | all: `0.5` | `driver/dt_retry.cpp` (`DtRetry`) |
 | `time/dt_retry_grow`, `dt_retry_ngood` | After a cut, dt grows back by this factor per good cycle, starting after this many good cycles. | 1.1, 20 | all: `1.1`, `20` | `driver/dt_retry.cpp` (`DtRetry`) |
 | `time/dt_retry_force_cycle`, `dt_retry_force_fac` | Testing: force one retry at this cycle with this factor (the `dt_retry` test). | off | not named | `driver/dt_retry.cpp` (`DtRetry`) |
-| `rad_vet/clean_dbg_inf` | Testing: the first stage-1 write-back of this cycle gives one cell a non-finite E iterate. `implicit_pos_floor` never raises a non-finite E; the stage is rejected and redone (the `inf_reject` test). | off | not named | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `rad_vet/dbg_inf` | Testing: the first stage-1 write-back of this cycle gives one cell a non-finite E iterate. `implicit_pos_floor` never raises a non-finite E; the stage is rejected and redone (the `inf_reject` test). | off | not named | `rad_vet/rad_vet_params.cpp` (constructor) |
 
 ## Boundaries
 
@@ -200,7 +225,7 @@ round-off change at the restart.
 
 | key | meaning | default | production | read in |
 |---|---|---|---|---|
-| `rad_vet/clean_verbose` | 0: the `CLEAN cycle` lines, `CLEAN WARNING` lines and event lines (`CLEAN WORST`, `GNSW`, `KPOS` without a face slope); 1: also the per-solve diagnostics (`CLEAN MCAP`, `OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT` write-back closure, the ray cut); 2: also a `CLEAN PASS` line per pass of every solve (Krylov its, the changes de / dv, the tolerance they are tested against, the round-off levels fe / fv, `clos` / `opac` where the pass took a closure / opacity refresh). `CLEAN WARNING` lines always print. | 0 (read only when named) | all: `1` | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `rad_vet/verbose` | 0: the `CLEAN cycle` lines, `CLEAN WARNING` lines and event lines (`CLEAN WORST`, `GNSW`, `KPOS` without a face slope); 1: also the per-solve diagnostics (`CLEAN MCAP`, `OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT` write-back closure, the ray cut); 2: also a `CLEAN PASS` line per pass of every solve (Krylov its, the changes de / dv, the tolerance they are tested against, the round-off levels fe / fv, `clos` / `opac` where the pass took a closure / opacity refresh). `CLEAN WARNING` lines always print. | 0 (read only when named) | all: `1` | `rad_vet/rad_vet_params.cpp` (constructor) |
 | `rad_vet/floorcap_report` | With `floorcap_rho`: print the cumulative floor-gas cap counters every N cycles (0 = never). | 25 (read only when named) | all: default | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `time/ndiag` | Print the cycle line every N cycles. | 1 | all: `50` | `driver/driver.cpp` |
 | `hydro/floor_audit` | Print the floor events and their payment every N cycles (`floor_audit cycle` lines). Needs `eos = general`. | 0 | all: `1` | `hydro/dual_energy.cpp` |
@@ -269,13 +294,13 @@ Removed keys whose value follows from the run (FATAL when named otherwise):
 
 | key | the rule |
 |---|---|
-| `clean_stag_fwb`, `clean_stag_freal` | as `clean_consistency` |
+| `clean_stag_fwb`, `clean_stag_freal` | as `closure_consistency` |
 | `clean_stag_fschur` | true where the mesh allows it (nghost >= 3, MeshBlocks long enough), else the cubed sphere iterates its seams and any other multi-block line is FATAL |
 | `clean_stag_fsweeps` | 1; 64 on a cubed sphere without fschur |
 | `clean_stag_fwb_ring` | true on 3-D spherical polar with a periodic phi and the rays |
 | `vet_gd_rotate_axis` | `3d` on the cubed sphere, `z` on spherical polar |
-| `vet_gd_rotate_xfade` | true with a mean of sets rotating in time, not with `clean_rot_ring = jump`; on a Cartesian mesh with `clean_rot_ring = live` only |
-| `vet_rotate_advance` | true on the curved meshes and with `clean_rot_ring`, else false |
+| `vet_gd_rotate_xfade` | true with a mean of sets rotating in time, not with `ring = jump`; on a Cartesian mesh with `ring = live` only |
+| `vet_rotate_advance` | true on the curved meshes and with `ring`, else false |
 | `vet_rotate_avg_ema_wb` | true on the curved meshes, else false |
 | `vet_gd_band_global` | true on a full sphere |
 | `vet_gd_rotate_slope`, `vet_gd_rotate_slope_frac` | `correct`, 1 - 1/sqrt 2 for a Cartesian rotating set without the ring (no effect elsewhere) |
@@ -295,33 +320,33 @@ bitwise restart check, and a comparison with the templates).
 
 Scheme options (in brackets the templates' values):
 
-- `clean_consistency` (true with the rays), `clean_stag_thinf` (true), `clean_stag_fcone` (true): the flux bound by the rays, the thin-limit correction, the cone limit |F| <= cE.
-- `clean_cs_lat_wb` (default true on the cubed sphere, also on a restart whose file lacks it, with a NOTE in the log: name `clean_cs_lat_wb=false` to keep the old; cubed sphere only, else FATAL): a spherically symmetric radiation pressure pushes the gas along r alone, the same in every cell of a shell. Lateral faces: their cells' lateral stress sums are projected perpendicular to each cell's radial direction (without it a constant lateral force of O(dtheta^2) of the radial one, at every radius, with the cube's symmetry: the interior m = 4 pattern). Radial faces: the normal stress takes the hydro's area r^2 Omega instead of the vector area r^2 |S| (without it a smaller panel pattern of the radial force). Test `shell_force_cs`.
-- `clean_stag_fcone_lz` (read only when named): fcone takes a cell's excess from the face families without an L_z arm first (spherical polar x1, x2; cubed sphere x1; Cartesian x3); that cut is counted and printed signed per family (`CLEAN FCONE_LZ`). The faces with an arm are scaled only where they alone exceed cE, and the gas takes their cut at the face, so L_z is exact.
-- `clean_lz_spin` (read only when named; needs `clean_stag_fcone_lz`; a no-op on the cubed sphere, where `clean_cs_lz_tel` covers it): the L_z X of the arm faces' fcone cut, the `clean_stag_fcone_emax` clamp and the `clean_wb_mcap` cap goes to the gas as one rigid rotation dOmega = X/I, I = sum rho V R^2 (no per-cell kick; E pays the kinetic energy; `CLEAN LZSPIN`).
-- `clean_stag_fcone_emax` (read only when named; needs `clean_stag_fcone`): every inner face's F within c max(E_L, E_R), an opaque face's too. L_z-exact with `clean_stag_fcone_lz` + `clean_lz_spin`.
-- `clean_wb_mcap` (read only when named): the write-back gives the gas the face momentum terms at the Newton passes' cap h chi_f E; the withheld momentum is printed per family (`CLEAN MCAP write-back`). L_z-exact only with `clean_lz_spin`.
-- `clean_wb_exch_local` (true): the write-back's cell exchange is solved exactly from the transported E (E > 0 and gas >= e(rho, tfloor) by construction); needs an EOS `tfloor` > 0.
-- `clean_cs_lz_tel` (true on the cubed sphere): L_z by telescoping of the face momenta.
-- `clean_stag_xdonor_freeze` (4): the pass from which the donor form of the off-diagonal stress is held.
-- `clean_w_c0` (0.3), `clean_w_c1` (0.6): thresholds of the weight of the kinetic share.
-- `clean_stag_opac_passes` (3): passes with opacities at the iterate's temperature.
+- `closure_consistency` (true with the rays), `face_thin` (true), `flux_cone` (true): the flux bound by the rays, the thin-limit correction, the cone limit |F| <= cE.
+- `flux_balance_lat` (default true on the cubed sphere, also on a restart whose file lacks it, with a NOTE in the log: name `flux_balance_lat=false` to keep the old; cubed sphere only, else FATAL): a spherically symmetric radiation pressure pushes the gas along r alone, the same in every cell of a shell. Lateral faces: their cells' lateral stress sums are projected perpendicular to each cell's radial direction (without it a constant lateral force of O(dtheta^2) of the radial one, at every radius, with the cube's symmetry: the interior m = 4 pattern). Radial faces: the normal stress takes the hydro's area r^2 Omega instead of the vector area r^2 |S| (without it a smaller panel pattern of the radial force). Test `shell_force_cs`.
+- `flux_cone_lz` (read only when named): fcone takes a cell's excess from the face families without an L_z arm first (spherical polar x1, x2; cubed sphere x1; Cartesian x3); that cut is counted and printed signed per family (`CLEAN FCONE_LZ`). The faces with an arm are scaled only where they alone exceed cE, and the gas takes their cut at the face, so L_z is exact.
+- `lz_spin` (read only when named; needs `flux_cone_lz`; a no-op on the cubed sphere, where `lz_telescope` covers it): the L_z X of the arm faces' fcone cut, the `flux_cone_emax` clamp and the `update_mcap` cap goes to the gas as one rigid rotation dOmega = X/I, I = sum rho V R^2 (no per-cell kick; E pays the kinetic energy; `CLEAN LZSPIN`).
+- `flux_cone_emax` (read only when named; needs `flux_cone`): every inner face's F within c max(E_L, E_R), an opaque face's too. L_z-exact with `flux_cone_lz` + `lz_spin`.
+- `update_mcap` (read only when named): the write-back gives the gas the face momentum terms at the Newton passes' cap h chi_f E; the withheld momentum is printed per family (`CLEAN MCAP write-back`). L_z-exact only with `lz_spin`.
+- `update_exchange_local` (true): the write-back's cell exchange is solved exactly from the transported E (E > 0 and gas >= e(rho, tfloor) by construction); needs an EOS `tfloor` > 0.
+- `lz_telescope` (true on the cubed sphere): L_z by telescoping of the face momenta.
+- `face_xdonor_freeze` (4): the pass from which the donor form of the off-diagonal stress is held.
+- `closure_w_c0` (0.3), `closure_w_c1` (0.6): thresholds of the weight of the kinetic share.
+- `gas_opac_passes` (3): passes with opacities at the iterate's temperature.
 - `implicit_pos_floor` (true): the E floor, paid from the cell's gas and its radial column. A non-finite E (a diverged iterate) is never raised: the write-back rejects the solve.
 - `time2_gtime_slope`, `time2_gtime_pos` (true); `vet_rotate_avg_ema_change_form` (`linear`; HG: `step`); `vet_source_noesrc`.
-- `vet_bc_inner`, `vet_bc_diff`, `vet_bc_bath`, `vet_gd_wall_interp`, `vet_gd_allow_clamp`, `clean_ray_min`, `clean_ray_cut_wait`, `clean_rot_fuse`: ray-sweep details.
-- `clean_ray_cut_r` (0.003): the ray cut's trigger, a column's lowest cell with |grad S|/(chi S) >= this (SCHEME.md, where the rays start; the closure error below the cut is of the order of its square). 0.01 before 2026-11-26: a restart file that holds 0.01 keeps it, with a NOTE (name `clean_ray_cut_r=0.003` to switch); one without the key takes 0.003, with a NOTE.
+- `vet_bc_inner`, `vet_bc_diff`, `vet_bc_bath`, `vet_gd_wall_interp`, `vet_gd_allow_clamp`, `closure_ray_min`, `ray_cut_wait`, `ring_fuse`: ray-sweep details.
+- `ray_cut_r` (0.003): the ray cut's trigger, a column's lowest cell with |grad S|/(chi S) >= this (SCHEME.md, where the rays start; the closure error below the cut is of the order of its square). 0.01 before 2026-11-26: a restart file that holds 0.01 keeps it, with a NOTE (name `ray_cut_r=0.003` to switch); one without the key takes 0.003, with a NOTE.
 
-Solver internals (in brackets the templates' values): `clean_conv` (`budget`), `clean_conv_max`
-(1e-5), `clean_conv_kappa`, `clean_tol`, `clean_tol_nl`, `clean_maxit` (200), `clean_maxnl` (200),
-`clean_pc_sweep` (`rb`; default `sym`), `clean_stag_mg_levels` (default 2, the levels of the
-staggered multigrid preconditioner), `clean_clos1_budget` (true), `clean_bud_maxnorm` (true)
+Solver internals (in brackets the templates' values): `newton_conv` (`budget`), `newton_conv_max`
+(1e-5), `newton_conv_kappa`, `solver_tol`, `newton_tol`, `solver_maxit` (200), `newton_maxit` (200),
+`solver_sweep` (`rb`; default `sym`), `solver_mg_levels` (default 2, the levels of the
+staggered multigrid preconditioner), `newton_closure_budget` (true), `newton_maxnorm` (true)
 (false: the closure pass solved in the strict norm; the budget test in the L2 norm),
 `implicit_resid_fatal`, `time/dt_retry_views`, `time/dt_retry_host`, `time/restart_refill_ghosts`
 (false: restarts are bitwise).
 
-Tests and diagnostics: `clean_dbg_inf`, `time2_dbg_fail`, `dbg_gas_force`, `clean_wb_floor_diag`,
-`implicit_timers`. State kept in restart files: `rst_version`, `clean_ray_cut_now`,
-`clean_ray_cut_count`. Number of `<rad_vet>` keys the code reads: 130 (user 71, physics 26,
+Tests and diagnostics: `dbg_inf`, `time2_dbg_fail`, `dbg_gas_force`, `update_floor_diag`,
+`implicit_timers`. State kept in restart files: `rst_version`, `ray_cut_now`,
+`ray_cut_count`. Number of `<rad_vet>` keys the code reads: 130 (user 71, physics 26,
 scheme and solver 20, tests 8, pgen / state 5).
 
 Removed study and debug keys stop the run with a message when named with another value than
@@ -329,7 +354,7 @@ their old default (`CheckKeys` in `rad_vet/rad_vet_params.cpp` lists them); keys
 removed solvers that old decks and restart files carry are accepted without effect (listed at
 the start): also `vet_col_*` (`vet_col_axis` only `radial`, `vet_col_every` only 1), `vet_every` (only 1), `vet_source`, `vet_gd_replace`,
 `vet_gd_tangential`, `vet_gd_rotate_slope_reuse`, `time2_vet_source*` and `cs_vertex_mono*`.
-`vet_gd` is read only where `clean_closure` is `eddington` or `sphere` (true: the rays' arrays
+`vet_gd` is read only where `closure_form` is `eddington` or `sphere` (true: the rays' arrays
 are set up).
 
 Keys that are never read are listed by the `never read` warning after the first cycle.

@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_steady.cpp
-//! \brief the steady start (clean_init = steady), the first face fluxes of a run and of a
+//! \brief the steady start (steady_init = steady), the first face fluxes of a run and of a
 //! restart from the old scheme.
 //!
 //!  called from: rad_vet_tasks.cpp, driver/driver.cpp
@@ -35,10 +35,10 @@ namespace radvet {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::SteadyStart
-//! \brief <rad_vet>/clean_init = steady (fresh start, at the first dt): relaxes the
+//! \brief <rad_vet>/steady_init = steady (fresh start, at the first dt): relaxes the
 //! initial radiation to the initial matter and sources.
 //! The gas is frozen (no hydro, no feedback) and backward-Euler radiation steps of
-//! clean_init_dtfac x dt are taken until max(|dE|, |dF|/c) < clean_init_tol max E; as
+//! steady_dtfac x dt are taken until max(|dE|, |dF|/c) < steady_tol max E; as
 //! dt -> infinity the fixed point is the scheme's own steady solution (closure included).
 //! A failed pass (or E < 0) is undone and the step shrinks by 1000, down to dt.  The
 //! passes then go on at the run's dt, to the tolerance or until the change contracts by
@@ -255,7 +255,7 @@ void RadiationVet::SteadyStart(Driver *pdrive) {
   // a last change that is not small is a diverged start, not an unconverged one
   if (!(d < 1.0e-2)) {
     RadVetFatal("clean_init steady: the last pass changed E or F/c by " +
-                std::to_string(d) + " of max E (diverged: clean_init_dtfac, _n)");
+                std::to_string(d) + " of max E (diverged: steady_dtfac, _n)");
   }
 }
 

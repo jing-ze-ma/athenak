@@ -33,7 +33,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # vgd_csmb: the cubed sphere's two read-mask buffers (a cache: dropped after a restore, the mask kernel re-runs on reuse)
 # cln_pcrl: the GPU PCR's lines of each colour (a cache keyed by the level's shape, rebuilt on a miss)
 # cln_fwr: the lines' MeshBlocks of fwb's ring sums (a cache of the mesh, rebuilt when it changes)
-# cln_dbginf: clean_dbg_inf's cycle, cleared once injected (rolled back, a dt_retry redo
+# cln_dbginf: dbg_inf's cycle, cleared once injected (rolled back, a dt_retry redo
 # would inject again, without end)
 # cln_sgv / cln_sga0 / cln_sga1 / cln_sgd1 / cln_sgd2 / cln_sgx / cln_sgtg: the theta-seam image geometry
 # (SeamImage; built once from pcoord when the extent changes, read only)

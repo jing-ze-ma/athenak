@@ -85,12 +85,12 @@ arad = 2.3392742567e-47
 temp_unit_kelvin = 7.4568864364e-9
 e_floor = 1.0e-4
 implicit_flux_x1min = 2.2942145641e+13
-clean_pc_sweep = rb
+solver_sweep = rb
 # the values the start-up decides (a restart with -i takes them from the deck)
 force_reference       = wb_arad
-clean_init            = steady
+steady_init            = steady
 implicit_bc_x1min     = flux
-clean_maxit           = 200
+solver_maxit           = 200
 opacity               = table
 vet_scatter           = true
 closure               = sc

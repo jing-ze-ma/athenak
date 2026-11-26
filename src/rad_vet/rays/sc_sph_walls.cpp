@@ -151,7 +151,7 @@ void RadiationVet::ScTopMirror() {
   auto iw_ = iw;
   auto xf_ = vgd_x1f;
   // clean sc rays: the last build's top shell from its copy cln_top (kept in restart
-  // files; clean_rot_ring: the set's slot), else the top cell's E. cln_top holds either
+  // files; ring: the set's slot), else the top cell's E. cln_top holds either
   // every direction per cell (older files) or n1 per packed slot
   auto fi_ = cln_top;
   const int ns = cln_ring ? 2 : 1, n1 = fi_.extent_int(4);
@@ -188,7 +188,7 @@ void RadiationVet::ScTopMirror() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScTopCopy
 //! \brief cln_scmem: the top shell of this build's sweep into its slot of cln_top
-//! (blk mod 2 on clean_rot_ring), for the next build's ScTopMirror
+//! (blk mod 2 on ring), for the next build's ScTopMirror
 
 void RadiationVet::ScTopCopy() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;

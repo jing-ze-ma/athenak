@@ -487,7 +487,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   }
   //---- Step 2b. <rad_vet>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
   // restart): the steady radiation of
-  // <rad_vet>/clean_init = steady (rad_vet_steady.cpp) at the first dt, then the
+  // <rad_vet>/steady_init = steady (rad_vet_steady.cpp) at the first dt, then the
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
       pmesh->pmb_pack->pradvet != nullptr && pmesh->pmb_pack->pradvet->cln_steady) {

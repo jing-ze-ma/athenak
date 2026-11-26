@@ -301,7 +301,7 @@ Real RadiationVet::NewtonUpdate() {
   auto w = cln_w;
   const bool poslim = cln_gflux;
   const bool gfd = cln_gflux && cln_feedback;
-  // clean_conv = budget: changes over the rows' gross terms, and the time error
+  // newton_conv = budget: changes over the rows' gross terms, and the time error
   // h/2 |f(Y) - f(U^n)| of the iterate (Heun against Euler, K1 = f(U^n))
   const bool bud = cln_bon;
   const bool kok = bud && (t2_ok || cln_k1ok) && t2_solve != VET_T2S_NONE &&
@@ -366,8 +366,8 @@ Real RadiationVet::NewtonUpdate() {
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
     // (a step dt_retry redoes keeps it: its passes stall where a cut dt does not lower
     // the change, and the strict tfl failed every cut; a converged redo: CLEAN RETRY)
-    // (clean_clos1_budget, clean_bud_maxnorm: the time error down to
-    // clean_tol_nl, as each relaxes the passes to it; at 10 clean_tol a step whose time
+    // (newton_closure_budget, newton_maxnorm: the time error down to
+    // newton_tol, as each relaxes the passes to it; at 10 solver_tol a step whose time
     // error is below, a 1e-6 wave's 1e-11 at a change of 1e-9, lost the wave's phase)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
     const Real tlo = (cln_c1b || cln_bmn) ? cln_tol_nl : tfl;
@@ -536,7 +536,7 @@ int RadiationVet::CountNegative() {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::CountUnrealizable
 //! \brief staggered: realizability of the solution X beyond the solver tolerance (10
-//! clean_tol max|B|).  R1: cells with E < 0 (cln_nr1); R2: interior faces whose flux
+//! solver_tol max|B|).  R1: cells with E < 0 (cln_nr1); R2: interior faces whose flux
 //! exceeds c E of the donor (cln_nr2).  Returns cln_nr1 + cln_nr2.
 
 int RadiationVet::CountUnrealizable() {
@@ -598,7 +598,7 @@ int RadiationVet::CountUnrealizable() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::FaceBracket
-//! \brief staggered clean_consistency: the bracket C_f = w (F_ray,f - Phi_f(J)) of every
+//! \brief staggered closure_consistency: the bracket C_f = w (F_ray,f - Phi_f(J)) of every
 //! interior face, F_ray the rays' energy flux (CLN_FX, CLN_F2, CLN_F3 of the upper cell),
 //! Phi_f(J) the flux of the rays' own J, so Phi(J) + C = (1 - w) Phi(J) + w F_ray.
 //! Lagged (fixed in the solve), energy flux only.  It enters the streaming share as flux
@@ -609,7 +609,7 @@ int RadiationVet::CountUnrealizable() {
 //! the shrinking one at most to 0.  Linear in E with upwind signs, so the M-matrix holds
 //! for any E.  g+- are not capped at 1 (a beam edge's face flux can exceed c J_donor).
 //! Cubed sphere: a panel seam's high x2, x3 faces take the rays' flux from their last cell
-//! (CLN_FH, RayFace).  clean_stag_thinf takes the flux of the cells' half ranges there
+//! (CLN_FH, RayFace).  face_thin takes the flux of the cells' half ranges there
 //! (the face sum with fixed sets): the two MeshBlocks of a face mix or extrapolate its
 //! sum with their own cells' weights, and the write-back's face tie would move the
 //! difference into one side's E.
@@ -625,7 +625,7 @@ void RadiationVet::FaceBracket() {
   const bool thf = cln_thinf;
   const bool lat = thf && pmy_pack->pmesh->use_cubed_sphere;
   const Real rmn = cln_raymin;
-  // clean_stag_thinf: R, what the rays hold of the cell: its J and its faces' fluxes
+  // face_thin: R, what the rays hold of the cell: its J and its faces' fluxes
   SolveFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
@@ -670,7 +670,7 @@ void RadiationVet::FaceBracket() {
       const Real fr0 = RayFace(x, dir, m, k, j, i);
       const bool bf = IsBoundaryFace(x, dir, m, k, j, i);
       if (bf) return;
-      // the rays' J also below clean_ray_min E (a diagonal beam's side cells);
+      // the rays' J also below closure_ray_min E (a diagonal beam's side cells);
       const Real jl = x.cs(m,CLN_JR,k-dk,j-dj,i-di), jr = x.cs(m,CLN_JR,k,j,i);
       const Real jd = (fr0 > 0.0) ? x.cs(m,CLN_JR,k-dk,j-dj,i-di) : x.cs(m,CLN_JR,k,j,i);
       // the rays' face flux interpolated linearly in optical depth,
@@ -699,13 +699,13 @@ void RadiationVet::FaceBracket() {
         const Real ga = (tg[(fr0 > 0.0) ? 2 : 3] - 1.0)*fy;
         fy = (1.0 - e)*(wl*hl + wr*hr) + e*(fy + ga);
       }
-      // clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
+      // face_thin: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
       // tilted into the face half ranges in proportion to their sizes (the shrinking one
-      // at most to 0), per J of the donor (at least min(clean_ray_min E_old, R)), g+ in
+      // at most to 0), per J of the donor (at least min(closure_ray_min E_old, R)), g+ in
       // [0, 1], g- in [-1, 0]: the thin share w c (g+ E_L + g- E_R) is within [-c E_R,
       // c E_L], realisable by construction, no DG.  A flux the cap cuts is carried by a
       // higher E (a diagonal beam's side cells: J ~ 0, R ~ E).  In a ray hole (R <<
-      // clean_ray_min E_old) E streams along the rays' own direction: per clean_ray_min
+      // closure_ray_min E_old) E streams along the rays' own direction: per closure_ray_min
       // E_old, g -> 0 as J -> 0, so E would stay, its flux independent of it.
       if (thf) {
         const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
@@ -745,15 +745,15 @@ void RadiationVet::FaceBracket() {
 SolvePass RadiationVet::PassSetup() {
   SolvePass p;
   // Newton iteration on the gas coupling, Picard passes on the lagged slopes and (with
-  // clean_closure = iterate, at most clean_maxpic) the closure; one linear solve
-  // without these.  clean_closure = extrap(2): the stage-1 solve takes the closure of
+  // closure_form = iterate, at most clean_maxpic) the closure; one linear solve
+  // without these.  closure_form = extrap(2): the stage-1 solve takes the closure of
   // its own first iterate once (pass 1), else the step is first order in time.
   p.clos1 = (cln_extrap > 0) && (t2_solve == VET_T2S_STAGE1);
   p.iterate = cln_feedback || cln_closit || p.clos1;
   p.t2stage = (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2);
   p.converged = !p.iterate;
   p.nmax = p.iterate ? cln_maxnl : 1;
-  // lagged slopes settle only to the linear tolerance.  clean_conv = budget: the pass's
+  // lagged slopes settle only to the linear tolerance.  newton_conv = budget: the pass's
   // tolerance (NewtonUpdate), the first solve's from the floor (restarts bitwise)
   p.tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
   cln_tolb = p.tol_nl;
@@ -796,7 +796,7 @@ void RadiationVet::FirstPass() {
 void RadiationVet::PassClosure(SolvePass &p) {
   const bool opu = cln_opt && cln_feedback;
   p.clos = (cln_closit && p.n < cln_maxpic) || (p.clos1 && p.n == 1);
-  // opacities of the iterate's T, in passes < clean_stag_opac_passes
+  // opacities of the iterate's T, in passes < gas_opac_passes
   p.opr = opu && p.n > 0 && p.n < cln_optn;
   if (p.clos) {
     cln_csyok = false;
@@ -912,7 +912,7 @@ bool RadiationVet::PassSettled(SolvePass &p) {
   // strict test: stop at 0.1 x the first pass's change, at most 1e-4
   if (!cln_bon && p.n == 0) p.trel = fmin(0.1*p.dnl, 1.0e-4);
   p.tol_nl = fmax(p.tol_nl, p.trel);
-  // clean_verbose >= 2: each pass's changes against the tolerance it is tested with
+  // verbose >= 2: each pass's changes against the tolerance it is tested with
   if (cln_verbose > 1 && global_variable::my_rank == 0) {
     std::printf("CLEAN PASS cycle %d t2s %d pass %d it %d de %.3e dv %.3e tol %.3e "
                 "fe %.3e fv %.3e%s%s\n", pmy_pack->pmesh->ncycle, t2_solve, p.n,

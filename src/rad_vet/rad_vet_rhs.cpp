@@ -339,7 +339,7 @@ void RadiationVet::RightHandSide(const bool beta, const bool lat) {
       x.w(m,CLW_XW,k,j,i) = work;
     }
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
-    if (!bud) return;   // clean_conv = budget: the gross terms of the E and gas rows
+    if (!bud) return;   // newton_conv = budget: the gross terms of the E and gas rows
     const Real xc = hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) + hckp*arad_*SQR(SQR(t)) +
                     fabs(work) + fabs(sb);
     // face flux scale: the old vector's, at least what the cell's E can stream through

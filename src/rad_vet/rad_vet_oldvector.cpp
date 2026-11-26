@@ -116,7 +116,7 @@ void RadiationVet::FaceDonor(const bool first, const bool lat, const bool hold) 
   GhostDefer(cln_w, CLW_EK, 1);   // one exchange
   GhostFill(cln_w, CLW_EO, 1);   // donors' E_old of the lag split
   if (lat) CsLateralStress(CLW_EK);
-  // hold (clean_stag_xdonor_freeze): keep C, q and the explicit part of the last pass
+  // hold (face_xdonor_freeze): keep C, q and the explicit part of the last pass
   cln_xdh = hold;
   if (hold) {cln_xd_on = true; return;}
   SolveArgs x = MakeArgs();   // x.xq = -1: the central cross flux

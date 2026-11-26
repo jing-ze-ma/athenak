@@ -211,7 +211,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
   // sc: short characteristics, on a Cartesian mesh and (vgd_on) on spherical polar and
   // the cubed sphere.  An older name is read as sc only where it ran the same closure:
   // vet_sc on a Cartesian mesh, vet_col with vet_gd = true on a curved one; with an
-  // analytic clean_closure there also vet_col and, in a restart file, m1, minerbo, kershaw
+  // analytic closure_form there also vet_col and, in a restart file, m1, minerbo, kershaw
   // and eddington (a file without the key ran m1)
   {std::string cl = pin->GetOrAddString("rad_vet","closure",
                                         global_variable::restart_run ? "m1" : "sc");
@@ -228,7 +228,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
         << std::endl << "<rad_vet>/closure = '" << cl << "' was removed (only sc: the "
         << "rays, on every mesh; vet_sc is read as sc on a Cartesian mesh, vet_col with "
         << "vet_gd = true on spherical polar and the cubed sphere; the analytic closures "
-        << "are clean_closure = eddington | sphere).  Name closure = sc to change to the "
+        << "are closure_form = eddington | sphere).  Name closure = sc to change to the "
         << "rays" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -251,7 +251,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
                 << std::endl;
     }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
-    // clean_rot_ring = live: the rotating set's cross-fade on the clean ring
+    // ring = live: the rotating set's cross-fade on the clean ring
     vgd_xf = vsc_rot && cln_ring == 1 && ScRotOn();
     if (ScRotOn()) {
       recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
@@ -391,7 +391,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     RotAvgParse(pin);   // also after vet_sc's VetRotInit
     // the mean of sets rotating in time is cross-faded from the current to the next ray
     // set over each block (two sweeps per build, fused where ScXffOk allows), except
-    // under clean_rot_ring = jump
+    // under ring = jump
     vgd_xf = vgd_xff = clk && vra_on && !(cln_ring_named && cln_ring != 1);
     if (ScRotOn()) {
       recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
@@ -401,7 +401,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     // (vet_rotate_avg_ema_wb: the ring carries the cells' half ranges, CLN_HO, so that a
     // set change keeps them in a static state, as the moments)
     cln_rfh = cln_cssc && vra_ema_wb;
-    // clean_rot_ring unnamed: live where the vet_gd rays rotate in time with a cross-fade
+    // ring unnamed: live where the vet_gd rays rotate in time with a cross-fade
     // (decided before a restart file's channels are counted)
     if (!cln_ring_named && vgd_on && vra_on && g_vra_adv &&
         vgd_xf && vra_k <= VET_RA_NF) {

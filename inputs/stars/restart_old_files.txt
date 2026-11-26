@@ -19,10 +19,10 @@ clean_stag_fwb_stage = false
 clean_stag_fwb_t2 = false
 clean_w_fse_tau = true
 time2_gtime_mom = true
-clean_stag_mg_levels = 2
+solver_mg_levels = 2
 # not stored in old files, and the value a restart takes is not the stars'
-clean_maxit = 200
-clean_pc_sweep = rb
+solver_maxit = 200
+solver_sweep = rb
 # a star with rotating rays: the average of the rotated sets.  All continuation runs
 # (RSG, HG, R136) name ema, _wb and the ring; R136 and RSG files store no ema (the restart
 # default is none: the stored vet_rotate_avg sets), HG stores 128 in the form step.  xfade
@@ -31,13 +31,13 @@ clean_pc_sweep = rb
 #vet_rotate_avg_ema = 128
 #vet_rotate_avg_ema_change_form = linear
 #vet_rotate_avg_ema_wb = true
-#clean_rot_ring = live
+#ring = live
 # a spherical-polar wedge (periodic theta and phi walls, fixed rays):
 #vet_gd_wall_interp = true
 #vet_gd_wall_sym = true
 #vet_gd_theta_seam_sym = true
 # the RSG (default 4):
-#clean_stag_xdonor_freeze = 8
+#face_xdonor_freeze = 8
 
 <hydro>
 # the HG, RSG, R136 files store true; named because other old star files may store false

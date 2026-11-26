@@ -123,16 +123,16 @@ constexpr int VET_NVAR = 4;
 constexpr int VET_NSTAGE = 2;
 
 //! \fn VetAnalytic
-//! \brief the input names an analytic clean_closure (eddington | sphere): no rays
+//! \brief the input names an analytic closure_form (eddington | sphere): no rays
 inline bool VetAnalytic(ParameterInput *pin) {
-  if (!pin->DoesParameterExist("rad_vet", "clean_closure")) {return false;}
-  const std::string c = pin->GetString("rad_vet", "clean_closure");
+  if (!pin->DoesParameterExist("rad_vet", "closure_form")) {return false;}
+  const std::string c = pin->GetString("rad_vet", "closure_form");
   return c == "eddington" || c == "sphere";
 }
 
 //! \fn VetCurvedRays
 //! \brief spherical polar, cubed sphere: the rays of closure = sc.  Off with an analytic
-//! clean_closure; an input that names the old key vet_gd decides
+//! closure_form; an input that names the old key vet_gd decides
 inline bool VetCurvedRays(ParameterInput *pin) {
   return pin->DoesParameterExist("rad_vet", "vet_gd") ?
          pin->GetBoolean("rad_vet", "vet_gd") : !VetAnalytic(pin);
@@ -162,9 +162,9 @@ inline std::string VetKeyName(ParameterInput *pin, const std::string &canon,
 //! \brief key of the clean L_z ledger (and K1's sum) on every mesh; old files' cs / sp
 //! spellings are read as aliases
 inline std::string VetLzKey(ParameterInput *pin, const bool cs, const bool k1) {
-  return VetKeyName(pin, k1 ? "clean_lz_ledger_k1" : "clean_lz_ledger",
-                   {cs ? (k1 ? "clean_cs_lz_k1" : "clean_cs_lz_ledger")
-                       : (k1 ? "clean_sp_lz_bnd_k1" : "clean_sp_lz_bnd")});
+  return VetKeyName(pin, k1 ? "lz_ledger_k1" : "lz_ledger",
+                   {cs ? (k1 ? "lz_cs_k1" : "lz_cs_ledger")
+                       : (k1 ? "lz_sp_bnd_k1" : "lz_sp_bnd")});
 }
 
 // components of RadiationVet::vet_cell (closure = sc)
@@ -184,7 +184,7 @@ constexpr int VETRAY_NC  = 28;
 // scheme = clean: K+^d_bd = sum w I Omega_b mu_d over mu_d > 0 (slot KP + 3 d + b)
 constexpr int VETRAY_KP  = 28;
 constexpr int VETRAY_NKP = 9;
-// clean_consistency (ScCartSweep): ray fluxes sum w g Phi, sum w g Phi Omega_b
+// closure_consistency (ScCartSweep): ray fluxes sum w g Phi, sum w g Phi Omega_b
 // (g = |mu_1| dx2/dx1) through the low x2 face; sum w mu_1 I, sum w mu_1 I Omega_b
 // through the x1 boundary face and the low x1 face; low x3 face as x2
 constexpr int VETRAY_F2  = 37;

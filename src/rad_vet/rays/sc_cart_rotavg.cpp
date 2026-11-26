@@ -427,7 +427,7 @@ void RadiationVet::RotAvgEmaChange(const int ilo) {
 void RadiationVet::RotAvgEmaShift(const int ds) {
   if (vra_ema_wb) {
     std::cout << "### FATAL ERROR <rad_vet>/vet_rotate_avg_ema_wb needs the clean ring "
-              << "(clean_rot_ring = live)" << std::endl;
+              << "(ring = live)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   vra_gen += 1;

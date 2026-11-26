@@ -86,7 +86,7 @@ void CellVector(const SolveArgs &x, const int m, const int k, const int j,
 //----------------------------------------------------------------------------------------
 //! \brief the face families with an L_z arm, (z x r).e_d != 0: spherical polar x3, the
 //! cubed sphere x2, x3 (lateral), Cartesian x1, x2 (L_z about z); the others, without
-//! one, are those a cap or cut may take momentum from (clean_stag_fcone_lz)
+//! one, are those a cap or cut may take momentum from (flux_cone_lz)
 KOKKOS_INLINE_FUNCTION
 bool LzFamily(const bool sph, const bool cub, const int d) {
   return sph ? (d == 2) : (cub ? (d > 0) : (d < 2));
@@ -94,7 +94,7 @@ bool LzFamily(const bool sph, const bool cub, const int d) {
 
 //! \brief the arm (z x r).e_dir of momentum along e_dir in cell (k,j,i), or at its face
 //! normal to dir: spherical polar R along x3, Cartesian -y along x1 and x along x2 (the
-//! cell centres of clean_lz_spin), else 0 (the cubed sphere's faces: CsArm)
+//! cell centres of lz_spin), else 0 (the cubed sphere's faces: CsArm)
 KOKKOS_INLINE_FUNCTION
 Real DirLzArm(const SolveArgs &x, const int dir, const int m, const int k,
               const int j, const int i) {
@@ -158,7 +158,7 @@ Real FaceMomentumChange(const SolveArgs &x, const int e, const int dir, const in
     // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
     // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged
     // F does not kick floor gas to ~c; the write-back keeps the conservative term, with
-    // clean_wb_mcap the capped one, whose work the E row paid)
+    // update_mcap the capped one, whose work the E row paid)
     if (x.mcl) {
       const Real cap = wt*(1.0/x.fc[dir](m,CLF_TH,kf,jf,iff) - 1.0)/x.c*
                        fmax(fmax(x.w(m,e,kf,jf,iff), x.w(m,e,kf-dk,jf-dj,iff-di)), 0.0);
@@ -264,7 +264,7 @@ Real CsFrame(const SolveArgs &x, const int m, const int k, const int j, const in
 
 //! \brief the arm R of L_z = R p_phi of a cell vector p in the frame of y: spherical
 //! polar x1v sin(theta), the cubed sphere CsFrame's; Cartesian |(x, y)| with the
-//! cell centres of clean_lz_spin, else 0
+//! cell centres of lz_spin, else 0
 KOKKOS_INLINE_FUNCTION
 Real LzArm(const SolveArgs &x, const int m, const int k, const int j, const int i) {
   Real q[3][3];

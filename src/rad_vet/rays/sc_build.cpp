@@ -75,7 +75,7 @@ void RadiationVet::ScBuild() {
   // stored intensities belong to the old directions, so the lagged inflow re-converges
   const Real al = RotAngle(pmy_pack->pmesh->ncycle);
   // no vet_rotate_avg or cross-fade here: the clean scheme sweeps rotating sets on its
-  // ring (RingMoments); without clean_rot_ring they are refused (InitArrays)
+  // ring (RingMoments); without ring they are refused (InitArrays)
   if (al != vgd_alpha) {
     Kokkos::Timer tt;
     ScTables(al);
@@ -103,7 +103,7 @@ void RadiationVet::ScSweepPost() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScPost
-//! \brief after the sweep(s) of a build (also clean_rot_ring's): the GPU halo's error
+//! \brief after the sweep(s) of a build (also ring's): the GPU halo's error
 //! flag, the clamp check over all ranks
 
 void RadiationVet::ScPost() {

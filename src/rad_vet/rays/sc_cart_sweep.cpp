@@ -310,7 +310,7 @@ void RadiationVet::ScCartSweep() {
   const bool kps_ = true;
   // implicit_thin_switch = fs | fskn: non-locality sum w |I - S| (VETRAY_NL, C1)
   const bool nls_ = thsw_c1;
-  // clean_consistency: the rays' face fluxes (VETRAY_F2..): x1 flux where the segment
+  // closure_consistency: the rays' face fluxes (VETRAY_F2..): x1 flux where the segment
   // crosses the face, the transverse foot interpolation as an x2 (x3) flux, so the cell
   // balance of the face fluxes is the exchange inside the cell
   const bool f2s_ = cln_consist;
@@ -469,7 +469,7 @@ void RadiationVet::ScCartSweep() {
       Real iv;
       const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
       for (int q = 0; q < 5; ++q) {g[q] = 0.0;}
-      Real ifc = 0.0;   // clean_consistency: intensity at the face crossing
+      Real ifc = 0.0;   // closure_consistency: intensity at the face crossing
       if (l == 0 && !wrap && !mimg) {
         // half a cell from the boundary face; face S linearly extrapolated from the two
         // boundary cells (exact for a deep linear S), linear in tau along the segment

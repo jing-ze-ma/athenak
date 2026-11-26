@@ -1294,9 +1294,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
   // vet_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
-  // (clean_closure = predict, the staggered default; rad_vet_closure.cpp
+  // (closure_form = predict, the staggered default; rad_vet_closure.cpp
   // BuildClosure: the formal solution of the predicted state at
-  // t^{n+1}, the clean_rot_ring average over the window's sets, ClosureFromSc, then
+  // t^{n+1}, the ring average over the window's sets, ClosureFromSc, then
   // ClosureFill; built once per step and rebuilt for a new dt (dt_retry), read by
   // every solve of the step, not rebuilt after it; a restart restores the ring, so the
   // next step builds the same D), so the D of the step that produced the dumped E and
@@ -1311,7 +1311,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto prm = pm->pmb_pack->pradvet;
     auto cs_ = prm->cln_s;
     auto gn_ = prm->cln_gn;
-    // (clean_closure = iterate: the closure in place, also one a restart file holds)
+    // (closure_form = iterate: the closure in place, also one a restart file holds)
     const bool have = (prm->cln_tc > -1.0e299 || (prm->cln_closit && prm->cln_cip)) &&
                       (cs_.extent_int(0) >= nmb) &&
                       (cs_.extent_int(1) > radvet::CLN_D11 + 5);

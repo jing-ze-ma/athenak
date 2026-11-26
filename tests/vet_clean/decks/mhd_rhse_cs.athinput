@@ -57,7 +57,7 @@ arad = 1.0
 implicit_cfl = 1.0e4
 implicit_bc_x1min = marshak
 implicit_bc_x1max = marshak
-clean_init = steady
+steady_init = steady
 force_reference = clean
 
 <problem>

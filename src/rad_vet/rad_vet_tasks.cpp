@@ -111,7 +111,7 @@ TaskStatus RadiationVet::StageSolve(Driver *pdriver, int stage) {
   VerdictState(p);                  // gas eint: t2_fail, dt_retry           (_update)
   cln_xd_on = false;                // the donor q is of this solve's passes only
 
-  // 4. clean_closure = extrap(2): ray moments of the new state, for the next closure
+  // 4. closure_form = extrap(2): ray moments of the new state, for the next closure
   if (cln_extrap > 0 && !t2_fail) ClosureAfterSolve();   //                  (_closure)
   return TaskStatus::complete;
 }

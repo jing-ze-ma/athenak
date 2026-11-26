@@ -3060,7 +3060,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!star_bal_ || star_pm_ || (pvet->icr_mode == 0 && !pvet->cln_steady) || star_atp_)
         {
       StarFatal("problem/star_ic_equil = true needs star_ic_balance = true, star_gravity "
-                "= wb, <rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) "
+                "= wb, <rad_vet>/ic_rad != none (scheme = clean: steady_init = steady) "
                 "and star_ic_rad_atm_post = false", __LINE__);
     }
     // (scheme = clean: each round's relax is SteadyStart, E and the face F at the

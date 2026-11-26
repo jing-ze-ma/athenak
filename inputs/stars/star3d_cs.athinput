@@ -106,7 +106,7 @@ wb_x1               = true
 etotgrav            = true
 
 <rad_vet>
-clean_init_tol = 2.0e-7
+steady_tol = 2.0e-7
 vet_gd_rotate_dt = 2.2e4
 c_light = 2.99792458e10
 arad = 1.583122e-46
@@ -116,12 +116,12 @@ vet_gd_wall_interp = true
 temp_unit_kelvin = 1.202724e-8
 e_floor = 1.0e-4
 implicit_flux_x1min = 1.754459175000e+13
-clean_pc_sweep = rb
+solver_sweep = rb
 # the values the start-up decides (a restart with -i takes them from the deck)
 force_reference   = wb_arad
-clean_init        = steady
+steady_init        = steady
 implicit_bc_x1min = flux
-clean_maxit       = 200
+solver_maxit       = 200
 opacity           = table
 vet_scatter       = true
 closure           = sc

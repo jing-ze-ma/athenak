@@ -225,12 +225,12 @@ handled but that the user should know about.
 
 | message (start) | where | meaning | what to do |
 |---|---|---|---|
-| `CLEAN WARNING cycle N: backward-Euler solve not converged (dt_retry, K so far; last change X)` | `rad_vet_newton.cpp` (`VerdictSolve`) | A backward-Euler radiation solve (first step, the redo after a failed stage, or an auto-BE step) hit `clean_maxnl` passes without converging. With dt_retry on (production) the cycle is taken again with a smaller dt; the text says `no dt_retry: accepted` or `no dt_retry: > implicit_resid_fatal` (then the run stops) when dt_retry is off. A `CLEAN WORST` line names the worst cell. | Occasional ones that dt_retry cures are tolerated by the scheme but are not normal; look at the `CLEAN WORST` cell (position, E, T, opacity). Repeated ones mean the step is too large for the solver there: check the keys against the production set (`KEYS.md`, restart rule), then the state at that cell. |
+| `CLEAN WARNING cycle N: backward-Euler solve not converged (dt_retry, K so far; last change X)` | `rad_vet_newton.cpp` (`VerdictSolve`) | A backward-Euler radiation solve (first step, the redo after a failed stage, or an auto-BE step) hit `newton_maxit` passes without converging. With dt_retry on (production) the cycle is taken again with a smaller dt; the text says `no dt_retry: accepted` or `no dt_retry: > implicit_resid_fatal` (then the run stops) when dt_retry is off. A `CLEAN WORST` line names the worst cell. | Occasional ones that dt_retry cures are tolerated by the scheme but are not normal; look at the `CLEAN WORST` cell (position, E, T, opacity). Repeated ones mean the step is too large for the solver there: check the keys against the production set (`KEYS.md`, restart rule), then the state at that cell. |
 | `CLEAN WARNING cycle N t2s S: stage solve failed, the step is redone with backward Euler (stage fallback K)` | `rad_vet_imex.cpp` (`Time2Restore`) | A stage of the sdirk2 step was not admissible (not converged or not positive); the step is redone with backward Euler (first order for that step). `t2s`: 1 = backward Euler with stored slope, 2 = stage 1, 3 = stage 2. `time2_auto_be` then skips the stage attempt for a few steps. | Rare fallbacks are part of the design; frequent ones lose second-order accuracy in time and cost time. Report them with the deck and the cycle. |
 | `CLEAN WARNING cycle N t2s S: stage start not finite in K cells (gas or E; the solve fails and the step is redone)` | `rad_vet_oldvector.cpp` (`OldVector`) | The state entering a stage has NaN/Inf. The stage fails and the step is redone. | Serious. If it repeats, stop the run and find the source (a hydro failure, a floor, a corrupted restart). |
 | `CLEAN WARNING cycle N: K cells with a ray J not finite (isotropic)` | `rad_vet_closure_rays.cpp` (`ClosureFromRays`) | The ray sweep gave a non-finite mean intensity in K cells; those cells are given an isotropic closure for this build. | Should not happen. Check the opacities and the temperature in those cells; report it. |
 | `CLEAN WARNING cycle N: K ray intensities < 0 set to 0` | `rad_vet_closure_rays.cpp` (`ClosureFromRays`) | Cartesian sc sweep: K ray intensities came out negative and were set to 0. None by construction (the upwind interpolation is bounded, the segment weights are >= 0). | Should not happen; report it with the deck. |
-| `CLEAN WARNING clean_init steady: not converged (residual X, tol Y)` | `rad_vet_steady.cpp` (`SteadyStart`) | The steady start (`clean_init = steady`) ended before reaching `clean_init_tol`. If the last change is above 1e-2 the run stops with a FATAL (diverged start). | Small residuals are usually harmless; otherwise raise `clean_init_n` or change `clean_init_dtfac`, or start from a state closer to radiative equilibrium. |
+| `CLEAN WARNING clean_init steady: not converged (residual X, tol Y)` | `rad_vet_steady.cpp` (`SteadyStart`) | The steady start (`steady_init = steady`) ended before reaching `steady_tol`. If the last change is above 1e-2 the run stops with a FATAL (diverged start). | Small residuals are usually harmless; otherwise raise `steady_n` or change `steady_dtfac`, or start from a state closer to radiative equilibrium. |
 | `CLEAN WARNING cycle N: floor_pay = rad_column left X of the fluid floors' energy unpaid (created)` | `src/hydro/dual_energy.cpp:419` | The radiation of the cell's column could not pay all the internal energy the hydro floors created; X (energy x volume) was created. | Energy is not conserved by X in this cycle (see section 3). If it repeats, the floors act where there is too little radiation: check `dfloor`, `pfloor`, `tfloor`. |
 | `CLEAN WARNING cycle N: Ebnd without the step's boundary energy (BoundaryEnergyAcc), its faces take 0` | `rad_vet_ledger.cpp` (`EbndAccept`) | Only with the boundary-energy ledger of the drive/test problem generators (not in production). | None in production. |
 | `CLEAN WARNING restart: first dt X != the file's dt Y` | `src/driver/driver.cpp:666` | The first cycle after a restart does not use the dt stored in the restart file, so the restart is not a bitwise continuation. | Check that the restart deck does not change keys that set dt (`cfl_number`, `dt_retry` state, `time2_cfl_post`, `rad_signal_speed`). |
@@ -238,11 +238,11 @@ handled but that the user should know about.
 
 ### 4.2 Other per-cycle lines of the scheme
 
-With `<rad_vet>/clean_verbose = 0` (default) the code prints the `CLEAN cycle` lines, the
+With `<rad_vet>/verbose = 0` (default) the code prints the `CLEAN cycle` lines, the
 `CLEAN WARNING` lines and the event lines (`CLEAN WORST`, `GNSW`, `KPOS`
-without a face slope). `clean_verbose = 1` adds the per-solve diagnostics (`CLEAN MCAP`,
+without a face slope). `verbose = 1` adds the per-solve diagnostics (`CLEAN MCAP`,
 `OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT`
-write-back closure, the ray cut). `clean_verbose = 2` adds a `CLEAN PASS cycle N t2s S
+write-back closure, the ray cut). `verbose = 2` adds a `CLEAN PASS cycle N t2s S
 pass P it K de D dv V tol T fe F fv G [clos] [opac]` line for every pass of every solve:
 its Krylov iterations, its changes against the tolerance the convergence test uses, and the
 round-off levels of that test (to see which passes a solve needs and why).
@@ -255,7 +255,7 @@ round-off levels of that test (to see which passes a solve needs and why).
 | `CLEAN GNSW cycle N t2s S pass P: stalled, the gas Newton slope off (K so far)` | A stalled solve continues on the bracketed gas root. | Informational; many per cycle point to a hard region. |
 | `CLEAN OLDVEC cycle N t2s S eint<0 K (carried) E<0 Q` | The state that starts a stage has K cells with gas internal energy < 0 (carried into the gas row) and Q cells with E < 0. | Occasional values are expected in floor gas; growing counts are a warning sign. |
 | `CLEAN FWB cycle N t2s S faces K radiation momentum sum \|dp\| X x1 faces sum dp Y` | `clean_stag_fwb`: the radiation momentum of the well-balancing residuals of this solve. | Diagnostic. |
-| `CLEAN FCONE cycle N t2s S faces K momentum cut sum \|dF\| V/c^2 X` | `clean_stag_fcone` scaled K faces back to \|F\| <= cE; X is the momentum removed. | Should stay small compared with the radiation momentum. |
+| `CLEAN FCONE cycle N t2s S faces K momentum cut sum \|dF\| V/c^2 X` | `flux_cone` scaled K faces back to \|F\| <= cE; X is the momentum removed. | Should stay small compared with the radiation momentum. |
 | `CLEAN WBFCT cycle N t2s S rounds R left K kept X` | The limiter rounds of the write-back; `left` = cells still limited after the last round. | `left` > 0 means the limiter could not fully protect E > e_floor in those cells. |
 | `CLEAN MCAP cycle N t2s S: K face momentum terms at the cap h chi_f E in the last pass` | Face momentum exchange terms at their cap. | Diagnostic. |
 | `CLEAN LZB cycle N t2s S ledger X` | 3-D spherical polar: the radiation's L_z ledger (stored in the restart file). | Use with `Lz_tot` in the history. |
@@ -285,8 +285,8 @@ block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for thi
   and `### WARNING (scheme = clean): no effect: ...`: the input names a key that the
   solve does not use; use the key named in the message. (`CheckKeys`,
   `src/rad_vet/rad_vet_tasks.cpp`.)
-- `### NOTE: <rad_vet>/implicit_maxit = A is not the clean solve's: clean_maxnl = B`: that
-  key is ignored; name `clean_maxnl` to change the limit.
+- `### NOTE: <rad_vet>/implicit_maxit = A is not the clean solve's: newton_maxit = B`: that
+  key is ignored; name `newton_maxit` to change the limit.
 - `### WARNING: N input parameter(s) were never read by the code`: printed after the first
   cycle; check each listed key for a typo (keys that the templates name without effect, `KEYS.md` appendix, may be
   listed).
@@ -302,9 +302,9 @@ block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for thi
   set-up checks; the message says which key or mesh property to change.
 - `### FATAL ERROR in src/main.cpp: a key that places the cells differs from the restart
   file`: a restart deck changes the grid; restart with the grid the file was written with.
-- `clean_init steady: the last pass changed E or F/c by X of max E (diverged: clean_init_dtfac, _n)`:
-  the steady start diverged (last change above 1e-2); change `clean_init_dtfac` or
-  `clean_init_n`, or the initial state.
+- `clean_init steady: the last pass changed E or F/c by X of max E (diverged: steady_dtfac, _n)`:
+  the steady start diverged (last change above 1e-2); change `steady_dtfac` or
+  `steady_n`, or the initial state.
 - `<rad_vet> clean: a backward-Euler solve did not converge and its last change exceeds
   <rad_vet>/implicit_resid_fatal`: only without dt_retry. Turn dt_retry on (production).
 - `### FATAL ERROR: <time> dt_retry: cycle N failed K times (max 8), dt X`: eight cuts did not

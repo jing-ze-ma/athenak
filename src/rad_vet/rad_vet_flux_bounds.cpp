@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_flux_bounds.cpp
-//! \brief bounds of the face flux: |F| <= c E (clean_stag_fcone), the projection of the
+//! \brief bounds of the face flux: |F| <= c E (flux_cone), the projection of the
 //! steady balance's residual (clean_stag_fwb).
 //!
 //!  called from: rad_vet_flux.cpp
@@ -37,7 +37,7 @@ namespace radvet {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::FluxCone
-//! \brief clean_stag_fcone: the cell flux vector (CellVector, F_i = sum_f F_f
+//! \brief flux_cone: the cell flux vector (CellVector, F_i = sum_f F_f
 //! u_f) within the realisable cone |F_i| <= c E_i (E of work vector e), by construction.
 //! Each face is scaled towards 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i^2 =
 //! sum_fg max(0, F_f u_f . F_g u_g), so |F_i| <= l_i S_i <= c E_i.  One value per face
@@ -51,16 +51,16 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
   SolveArgs x = MakeArgs();
   const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
-  // (clean_stag_fcone_lz: l_i of the faces without L_z arm (fa), CLW_CP >= 0 with the
+  // (flux_cone_lz: l_i of the faces without L_z arm (fa), CLW_CP >= 0 with the
   // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E;
-  // clean_lz_spin: the others' cut withheld, its L_z X the gas's rigid rotation; the
+  // lz_spin: the others' cut withheld, its L_z X the gas's rigid rotation; the
   // cubed sphere's gas phi momentum is lz_tel's torque, which holds the cut already)
   const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph;
   auto fa = KOKKOS_LAMBDA(const int q) {return !LzFamily(sph, cub, q);};
   auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
     return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
   };
-  const bool emx = cln_fcemx;   // (clean_stag_fcone_emax)
+  const bool emx = cln_fcemx;   // (flux_cone_emax)
   if (cln_fconc.extent_int(0) != 5) Kokkos::realloc(cln_fconc, 5);
   if (spn && cln_fcx.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(cln_fcx, nmb1 + 1, 3, cln_w.s.extent_int(2) + 1,
@@ -74,7 +74,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
     // l_i = min(1, c E_i/S_i), S_i^2 = sum_fg max(0, v_f.v_g) of the faces' vectors v_f =
     // F_f u_f: |sum_f l_f v_f|^2 <= l_i^2 S_i^2 for every l_f in [0, l_i], S_i = |F_i| of
     // a beam on an orthogonal mesh.  (sa, sb, sc: the faces with L_z arm, the two kinds'
-    // products, the others, clean_stag_fcone_lz)
+    // products, the others, flux_cone_lz)
     Real v[6][3], sa = 0.0, sb = 0.0, sc = 0.0;
     for (int d = 0; d < 2*x.nf; ++d) {
       const int q = d/2, h = d%2;
@@ -113,7 +113,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       const Real l = fmin(lf(x.w(m,CLW_CP,k-dk,j-dj,i-di), d),
                           lf(x.w(m,CLW_CP,k,j,i), d));
       Real fs = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
-      if (emx && !bd) {   // (clean_stag_fcone_emax: |F_f| <= c max(E_L, E_R))
+      if (emx && !bd) {   // (flux_cone_emax: |F_f| <= c max(E_L, E_R))
         const Real ce = x.c*fmax(fmax(x.w(m,e,k,j,i), x.w(m,e,k-dk,j-dj,i-di)), 0.0);
         fs = fmin(fmax(fs, -ce), ce);
       }
@@ -152,7 +152,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       if (spn) fcx(m,d,k,j,i) = 0.0;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-      // (clean_lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
+      // (lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
       if (spn && !bd && !fa(d) && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
       if (!bd && !(lz && !fa(d) && !(spn && !cub))) {
         fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);

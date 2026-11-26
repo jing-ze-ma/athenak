@@ -11,8 +11,8 @@ run, and as starting points for your own star decks.
 | `inputs/stars/star3d_cs.athinput` | cubed sphere, full sphere: r 25-2530 Rsun (stretched; photosphere at 834 Rsun), 6 faces x 32 x 32 | red supergiant (20.5 Msun, MESA profile from a 22 Msun model; the RSG production deck at 1/4 of its lateral resolution) | 548 x 32 x 32 x 6 = 3.4 M | 24 of 548 x 16 x 16 | 1200 cycles, 13.9 d |
 
 Both decks start fresh from a 1-D profile. On the first cycle the code relaxes the
-radiation to its steady state in the initial gas (`clean_init = steady`). The cs deck sets
-`clean_init_tol = 2.0e-7`, see section 3. Both decks use tile layout mode with
+radiation to its steady state in the initial gas (`steady_init = steady`). The cs deck sets
+`steady_tol = 2.0e-7`, see section 3. Both decks use tile layout mode with
 16 x 16 lateral tiles (`layout_tile = 16`): any number of ranks that divides the MeshBlock
 count gives the same answer, bit for bit.
 
@@ -129,7 +129,7 @@ Checks:
    `1.140e-07` (the same on CPU and MI300A). On the RSG the steady-start residual stalls
    near 1.1e-7 of max E. The default tolerance 1e-8 is then never reached, and the start
    ends after 40 passes with a `CLEAN WARNING`, so the cs deck accepts 2e-7. Do not use a
-   large pseudo time step (`clean_init_dtfac = 1e6`, as in the BSG deck) on the RSG. It
+   large pseudo time step (`steady_dtfac = 1e6`, as in the BSG deck) on the RSG. It
    does converge, but it moves the RSG surface layers so far from equilibrium that `L_top`
    falls to 0.28 `L_in` within a day and stays there (measured; with the default it stays
    near 1).

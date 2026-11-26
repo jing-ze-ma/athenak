@@ -33,7 +33,7 @@ extern int64_t g_vgd_csgen_save[16];
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::RingRst*
-//! \brief clean_rot_ring in restart files (version >= 4): offsets cln_rr then Delta
+//! \brief ring in restart files (version >= 4): offsets cln_rr then Delta
 //! cln_rpd on interior cells in the file layout (RingFields; 0 where cln_rr holds
 //! none; ema: 3 extra entries), flat per MeshBlock in RingRstN() ghosted slabs.
 //! RingRstCopy packs (pk; zeros without have) or unpacks slabs c .. of array a
@@ -142,14 +142,14 @@ using deep_copy_across::DeepCopyAcross;
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::RstNq
-//! \brief closure components per record of the clean extrap history and clean_rot_ring
+//! \brief closure components per record of the clean extrap history and ring
 //! (RstSlot order): all CLN_N
 
 int RadiationVet::RstNq() const {
   return CLN_N;
 }
 
-// clean_closure = iterate: the closure in place is restart state (none in a file of
+// closure_form = iterate: the closure in place is restart state (none in a file of
 // another closure, Time2RstAccept)
 int RadiationVet::RstNcl() const {
   if (t2_rcl >= 0) return t2_rcl;  // a file's (Time2RstAccept)
@@ -184,7 +184,7 @@ int RadiationVet::Time2RstNchWant() {
          + ((cln_extrap > 0) ? 2*RstNq() + 1 : 0)    // extrap history
          + RstNcl()                                     // iterate: the closure
          + (cln_ring ? (t2_rstv < 4 ? vra_k*RstNq() : RingRstN()) + 1
-                                : 0)                          // clean_rot_ring
+                                : 0)                          // ring
          + ((cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
          + RstNfv();                                    // the rays' intensities
 }
@@ -202,7 +202,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   t2_rcl = -1;
   int nb = Time2RstNchWant() - RstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (cln_cssc || cln_scmem) ? nfile - nb : 0;
-  // a file of another clean_closure: the iterate closure is skipped, or missing (the
+  // a file of another closure_form: the iterate closure is skipped, or missing (the
   // first solve takes the predicted closure)
   const int ns = NumClosureSlots(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
   auto fits = [&](const int n) {
@@ -213,9 +213,9 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
     nb += cln_closit ? -ns : ns;
     t2_nfv = cln_cssc ? nfile - nb : 0;
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> NOTE: restart from a file of another clean_closure: "
+      std::cout << "<rad_vet> NOTE: restart from a file of another closure_form: "
                 << (cln_closit ? "no closure in it, the first solve takes the predicted "
-                    "one" : "its closure (clean_closure = iterate) is not read")
+                    "one" : "its closure (closure_form = iterate) is not read")
                 << std::endl;
     }
   }
@@ -229,7 +229,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
     std::exit(EXIT_FAILURE);
   }
   // cubed sphere, version >= 6: the face half ranges are the last 0 or 12 channels; a
-  // surplus is a clean_rot_ring file: with the ring off its channels are skipped, else
+  // surplus is a ring file: with the ring off its channels are skipped, else
   // refused
   t2_rskip = 0;
   if (cln_cssc && ver >= 6 && t2_nfv > 12) {
@@ -243,7 +243,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
     }
     t2_nfv = nh;
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> NOTE: restart with clean_rot_ring off: the file's ring "
+      std::cout << "<rad_vet> NOTE: restart with ring off: the file's ring "
                 << "offsets (" << t2_rskip << " channels) are not read" << std::endl;
     }
   }
@@ -304,7 +304,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     one(c + nr, (have && cln_fref_set) ? 1.0 : 0.0);
     c += nr + 1;
   }
-  // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
+  // closure_form = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
   const int nq = RstNq();
   if (cln_extrap > 0) {
@@ -340,12 +340,12 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     }
     c += 2*nq + 1;
   }
-  // clean_closure = iterate: the closure in place, the last iterate's (RstNcl)
+  // closure_form = iterate: the closure in place, the last iterate's (RstNcl)
   if (RstNcl() > 0) {
     if (cln_s.extent_int(0) >= m0 + nmb) put(c, RstNcl(), cln_s, 0);
     c += RstNcl();
   }
-  // clean_rot_ring: the offsets and the pending Delta of the fields the ring carries
+  // ring: the offsets and the pending Delta of the fields the ring carries
   // (interior cells, dense: RingRstCopy), then the ring's flag, block, the pending
   // block and its time at i = 0..3
   if (cln_ring) {
@@ -502,7 +502,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= 2*nq + 1;
   }
-  if (RstNcl() > 0) {   // (clean_closure = iterate: cln_s, with its ghosts)
+  if (RstNcl() > 0) {   // (closure_form = iterate: cln_s, with its ghosts)
     if (ch < RstNcl()) {
       if (!cln_closit) return;   // (an iterate run's file, read by another closure)
       if (cln_s.extent_int(0) != nmb) {

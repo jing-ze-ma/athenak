@@ -70,7 +70,7 @@ sp_x2_periodic_image = true
 etotgrav             = true
 
 <rad_vet>
-clean_stag_mg_levels = 4
+solver_mg_levels = 4
 floorcap_v = 3e7
 floorcap_lz = true
 floorcap_lz_spin = true
@@ -81,13 +81,13 @@ arad = 2.3619941258e-47
 temp_unit_kelvin = 7.4749268633e-09
 e_floor = 1.0e-4
 implicit_flux_x1min = 1.8587122274e+14
-clean_verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
-clean_pc_sweep = rb
+verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
+solver_sweep = rb
 # the values the start-up decides (a restart with -i takes them from the deck)
 force_reference       = wb_arad
-clean_init            = steady
+steady_init            = steady
 implicit_bc_x1min     = flux
-clean_maxit           = 200
+solver_maxit           = 200
 opacity               = table
 vet_scatter           = true
 closure               = sc

@@ -59,7 +59,7 @@ struct ScCartMBState {
                                // layers 0, 1 and nx1+2, nx1+3 = the x1 neighbours' two
                                // face layers (0 beyond a physical x1 face)
   DvceArray5D<Real> ipl;       // (nmb, nring, nray, n3w, n2w) I of the last layers
-  DvceArray5D<Real> spl;       // (nmb, 4, NFS, n3w, n2w) clean_consistency: face sums
+  DvceArray5D<Real> spl;       // (nmb, 4, NFS, n3w, n2w) closure_consistency: face sums
                                // of the x1 neighbours' cells, for the lower (0) and the
                                // upper (1) one, received from the upper (2), lower (3)
   MeshBoundaryValuesCC *pbd = nullptr;  // vet_tensor = full: ghost exchange of D

@@ -44,7 +44,7 @@ fofc = true
 rad_signal_speed = true
 
 <rad_vet>
-clean_closure = eddington
+closure_form = eddington
 c_light = 10
 e_floor = 1.0e-30
 kappa_p = 0.10000000000000001
@@ -57,8 +57,8 @@ implicit_lin_maxit = 400
 vet_gd_rotate_dt = 0
 vet_x1_ptol = 1e-14
 vet_x1_npass = 134
-clean_clos1_budget = false
-clean_bud_maxnorm = false
+newton_closure_budget = false
+newton_maxnorm = false
 
 <problem>
 pgen_name = rad_vet_beam

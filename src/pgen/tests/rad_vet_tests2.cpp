@@ -1783,7 +1783,7 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[14] = (global_variable::my_rank == 0) ? pmbp->pradvet->ebnd_acc : 0.0;
   }
   // Lz_tot: gas + radiation + ledger L_z of the clean scheme (LzTotal; with
-  // clean_cs_lz_tel the radiation's is that of its face momenta), last column
+  // lz_telescope the radiation's is that of its face momenta), last column
   const int nl = pdata->nhist;
   const Real lzt = pmbp->pradvet->LzTotal();   // (collective)
   pdata->label[nl] = "Lz_tot";

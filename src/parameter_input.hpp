@@ -118,9 +118,9 @@ class ParameterInput {
 
  private:
   std::string last_filename;  // last input file opened, to prevent duplicate reads
-  std::set<std::string> star_renamed;  // <problem>/he_*, hs_* read as star_*
+  std::set<std::string> key_renamed;  // old names read as new ones (VetAlias)
 
-  void CheckStarAlias(const std::map<std::string, std::string> &spelled);
+  void CheckKeyAlias(const std::map<std::string, std::string> &spelled);
 
   InputBlock* FindOrAddBlock(std::string name);
   InputBlock* GetPtrToBlock(std::string name);

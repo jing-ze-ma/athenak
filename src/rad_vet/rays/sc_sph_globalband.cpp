@@ -337,7 +337,7 @@ void RadiationVet::ScGlobalBandInit() {
   // vet_gd_halo_ipc (vgd_raw): kept-list exchanges GPU-driven over IPC, one receive
   // region per partner (largest dense receive segment); collective
   if (vgd_raw && vgd_ipc_on && vgd_hcomp > 0 && vgd_ipc_state == 0) {
-    // clean_rot_fuse: room for both cross-fade sets (ScGbHaloX)
+    // ring_fuse: room for both cross-fade sets (ScGbHaloX)
     size_t cs = 1;
     for (int p = 0; p < np; ++p) {cs = std::max<size_t>(cs, 1ULL*vgd_cspm[p]*vgd_n);}
     if (cln_rfuse) {cs *= 2;}
@@ -663,7 +663,7 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::ScGbHaloX
-//! \brief clean_rot_fuse (vgd_raw): compact exchange of shell i for both cross-fade
+//! \brief ring_fuse (vgd_raw): compact exchange of shell i for both cross-fade
 //! sets in one message per partner (current set's piece, then the other's); bitwise two
 //! ScGbHaloC calls. false (nothing done) unless both sets hold the kept lists.
 
@@ -828,7 +828,7 @@ bool RadiationVet::ScGbHaloX(const int i, const int ws) {
     int got = 0;
     MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
     if (got != rm.v[p+1] - rm.v[p]) {
-      ScFatal("clean_rot_fuse: sender and receiver kept lists disagree");
+      ScFatal("ring_fuse: sender and receiver kept lists disagree");
     }
     vgd_nbyte += static_cast<Real>(sm.v[p+1] - sm.v[p])*sizeof(Real);
     vgd_csvsent += static_cast<double>(sm.v[p+1] - sm.v[p]);

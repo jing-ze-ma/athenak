@@ -141,7 +141,7 @@ constexpr int CLN_F2 = 14;   // rays' flux through the low x2 face (not normalis
 constexpr int CLN_FX = 18;   // rays' flux through the low x1 face
 constexpr int CLN_F3 = 22;   // rays' flux through the low x3 face
 constexpr int CLN_G = 26;    // curvature of the rays' stress (y_r, y_theta)
-constexpr int CLN_JR = 28;   // J also below clean_ray_min E (CLN_J is 0 there)
+constexpr int CLN_JR = 28;   // J also below closure_ray_min E (CLN_J is 0 there)
 constexpr int CLN_FH = 29;   // cubed sphere: flux through the high x2, x3 face of a
                              // MeshBlock's last cell (+4; differs from a seam ghost's)
 constexpr int CLN_F1 = 37;   // rays' flux through an x1 boundary face
@@ -231,7 +231,7 @@ constexpr int CLW_Z = 35;
 constexpr int CLW_TM = 36;   // mg: coefficients of E_{j-1}, E_{j+1}, E_{k-1}, E_{k+1} (4)
 constexpr int CLW_L = 40;    // cubed sphere: lateral stress sums Y of face family q at
                              // CLW_L + 3 q (CsLateralStress)
-constexpr int CLW_SE = 49;   // clean_conv = budget: gross terms S of the E and gas rows
+constexpr int CLW_SE = 49;   // newton_conv = budget: gross terms S of the E and gas rows
 constexpr int CLW_SG = 50;   //   (their scales), the weighted B and a preconditioner
 constexpr int CLW_BW = 51;   //   input (SolveBiCGStab)
 constexpr int CLW_PW = 52;
@@ -290,7 +290,7 @@ struct SolveArgs {
   // cubed sphere: y in the cell's frame (r, theta, phi); g the geometry (CLG_*)
   bool cub;
   bool ys = false;    // clean_stag_lat_sums: lateral sums Y off the cubed sphere
-  bool lwb = false;   // clean_cs_lat_wb (CsLat)
+  bool lwb = false;   // flux_balance_lat (CsLat)
   DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
   DvceArray4D<Real> ae0;   // cubed sphere: pcoord's radial face area (DivW)
   CsGeoArrays g;

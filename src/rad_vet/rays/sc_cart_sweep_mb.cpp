@@ -83,7 +83,7 @@ void RadiationVet::ScCartSweepMB() {
 
   const int nring = st.nring;
   // vet_x1_periodic: npass sweeps, each pass entering with the exit plane of the one
-  // before; moments from the last pass.  clean_consistency: face sums of a neighbour's
+  // before; moments from the last pass.  closure_consistency: face sums of a neighbour's
   // cell go to spl (VetX1Move after)
   const int npass = vet_x1per ? vet_x1npass : 1, ngl = npass*nx1g;
   const bool x1src = vet_x1per && vet_x1src;
@@ -143,7 +143,7 @@ void RadiationVet::ScCartSweepMB() {
           fx[2] += g*m2;
           fx[3] += g*m3;
         };
-        Real ifc = 0.0;   // clean_consistency: the intensity at the face crossing
+        Real ifc = 0.0;   // closure_consistency: the intensity at the face crossing
         if (l == 0 && !wrap) {
           // physical x1 face: as the single-block sweep
           const int iin = up ? (i + 1) : (i - 1);

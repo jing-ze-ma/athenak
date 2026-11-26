@@ -69,7 +69,7 @@ void RadiationVet::ReportCounters() {
 //! step: stage-1 part weighted as in the stage-2 start (Heun 1/2), stage-2 parts pending
 //! until stage 2 is accepted (s = 0; a backward-Euler redo drops them, Time2Restore).
 //! Total and K1's sum in <rad_vet> (restart).  3-D spherical polar: s is the L_z that
-//! crossed the boundaries (CellMomentumChange's dlz), <rad_vet>/clean_lz_ledger.
+//! crossed the boundaries (CellMomentumChange's dlz), <rad_vet>/lz_ledger.
 
 void RadiationVet::LzBook(const Real s, const bool start) {
   if (t2_inprobe) return;   // a helper solve, put back (Time2RotCorrect)
@@ -95,7 +95,7 @@ void RadiationVet::LzBook(const Real s, const bool start) {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::LzTotal
 //! \brief history L_z: sum V R (p_phi + F_phi/c^2) of gas and radiation plus the L_z
-//! ledger (LzBook); 0 before the first solve; clean_cs_lz_tel: face momenta
+//! ledger (LzBook); 0 before the first solve; lz_telescope: face momenta
 
 Real RadiationVet::LzTotal() {
   if (!cln_init || !(sph_geom || cs_geom || cln_lzsp)) return 0.0;
@@ -378,7 +378,7 @@ void RadiationVet::Time2Report() {
   // RotAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_dt > 0.0) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   if (cln_ring) {
-    std::cout << " clean_rot_ring guard cells=" << cln_rguard_sum
+    std::cout << " ring guard cells=" << cln_rguard_sum
               << " off-boundary shifts=" << cln_roff_sum;
   }
   std::cout << std::endl;

@@ -38,7 +38,7 @@ namespace radvet {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::BuildClosure
 //! \brief builds the closure for t^{n+1}, once per step and dt (all stage solves end
-//! there); clean_closure = eddington: isotropic
+//! there); closure_form = eddington: isotropic
 
 void RadiationVet::BuildClosure() {
   if (cln_sphere) {
@@ -68,7 +68,7 @@ void RadiationVet::BuildClosure() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureEddington
-//! \brief clean_closure = eddington: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0
+//! \brief closure_form = eddington: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0
 
 void RadiationVet::ClosureEddington() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -95,7 +95,7 @@ void RadiationVet::ClosureEddington() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureIterate
-//! \brief clean_closure = iterate: closure from the formal solution of the current
+//! \brief closure_form = iterate: closure from the formal solution of the current
 //! iterate's E, T and F
 
 void RadiationVet::ClosureIterate() {
@@ -155,7 +155,7 @@ void RadiationVet::RayMoments(DvceArray5D<Real> dst, const bool solve) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureAfterSolve
-//! \brief clean_closure = extrap(2): store the ray moments of a converged solution: the
+//! \brief closure_form = extrap(2): store the ray moments of a converged solution: the
 //! step's last solve at t^{n+1}, extrap2 also stage 1 at its time.  extrap1: the stage-1
 //! closure's moments at t^n + (a21 + g) dt; only backward Euler solves here
 
@@ -189,7 +189,7 @@ void RadiationVet::ClosureAfterSolve() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RingSolveSet
-//! \brief clean_rot_ring = jump: the face half ranges use the swept set of the step's
+//! \brief ring = jump: the face half ranges use the swept set of the step's
 //! rotation block
 
 void RadiationVet::RingSolveSet() {
@@ -203,7 +203,7 @@ void RadiationVet::RingSolveSet() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RingJump
-//! \brief clean_rot_ring = jump: at a rotation-block end the moments jump to the next
+//! \brief ring = jump: at a rotation-block end the moments jump to the next
 //! block's; the next step does not extrapolate through it
 
 void RadiationVet::RingJump() {
@@ -215,7 +215,7 @@ void RadiationVet::RingJump() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureExtrap
-//! \brief clean_closure = extrap(2): the closure at the stage time from ray moments of
+//! \brief closure_form = extrap(2): the closure at the stage time from ray moments of
 //! converged solutions, extrapolated linearly in time (exact for S and inflow linear in
 //! t).  The line runs through t^{n-1} and t^n, or (stage 2, extrap2) t^n and stage 1.
 //! Cells whose extrapolate is not realisable keep the latest moments (counted); first
@@ -435,7 +435,7 @@ void RadiationVet::PredictState(const bool use_k1) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureSphere
-//! \brief exact closure of a uniformly bright sphere of radius R = clean_sphere_radius
+//! \brief exact closure of a uniformly bright sphere of radius R = closure_sphere_radius
 //! in vacuum.  Outside, the cone mu > mu_c = sqrt(1 - R^2/r^2): D_rr = (1 + mu_c +
 //! mu_c^2)/3, D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0, h+-_t = h+-_p =
 //! +-S/(pi (1 - mu_c)), S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1; k+^r = (D_rr, 0, 0),
@@ -561,7 +561,7 @@ void RadiationVet::TraceRays() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ClosureFill
 //! \brief cells without ray radiation take the mean closure (D, h+-, k+) of their valid
-//! neighbours, one layer per pass (clean_fill_passes passes).  clean_stag_thinf: the
+//! neighbours, one layer per pass (clean_fill_passes passes).  face_thin: the
 //! first layer's, next to the rays, weighted by their E, so that a neighbour the rays
 //! hardly light does not count as much as a beam; the deeper layers hold no radiation
 
@@ -641,7 +641,7 @@ void RadiationVet::ClosureFill() {
 //! \brief the closure a stage solve starts with
 
 void RadiationVet::StageClosure() {
-  // from the gas before the stage increments; clean_closure = iterate with no closure
+  // from the gas before the stage increments; closure_form = iterate with no closure
   // in place takes the predicted one
   if (cln_extrap > 0) {
     ClosureExtrap();

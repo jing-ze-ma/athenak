@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_closure_ring.cpp
-//! \brief clean_rot_ring: the closure of rotating direction sets, the ring of offsets of
+//! \brief ring: the closure of rotating direction sets, the ring of offsets of
 //! the older sets and the mixture.
 //!
 //!  called from: rad_vet_closure.cpp, rad_vet_restart.cpp, rad_vet_tasks.cpp,
@@ -38,7 +38,7 @@ extern bool g_vra_adv;   // vet_rotate_advance (rays/sc_directions.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RingUnion
-//! \brief clean_rot_ring, cubed-sphere sc rays: the direction union (cln_fvd) of sets
+//! \brief ring, cubed-sphere sc rays: the direction union (cln_fvd) of sets
 //! b, b+1 (slots blk mod 2) with cross-fade weights 1 - s, s
 
 void RadiationVet::RingUnion() {
@@ -61,7 +61,7 @@ void RadiationVet::RingUnion() {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RingMix
-//! \brief clean_rot_ring: raw moments q of the ring mix: current set (slot 0), next (qn,
+//! \brief ring: raw moments q of the ring mix: current set (slot 0), next (qn,
 //! weight s), older sets r (weights 1, the last 1 - s), J-weighted with r_r =
 //! J_{b-r}/J_b.  Invalid offsets (r_r < 0) skipped; false if the current set has no rays
 
@@ -115,7 +115,7 @@ bool RingMix(const RingL &rl, const DvceArray5D<Real> &rr,
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RingEma
-//! \brief clean_rot_ring with vet_rotate_avg_ema (production's form, RotAvgEma*,
+//! \brief ring with vet_rotate_avg_ema (production's form, RotAvgEma*,
 //! RotXfBlend): the raw moments q of (1 - s) A + s T in the normalised fields and J. A =
 //! the current set with the EMA offsets (e = rr's first nfr, its J entry the ratio r =
 //! J_avg/J_b), T = the next set with the EMA the coming boundary makes of this state's
@@ -161,7 +161,7 @@ bool RingEma(const RingL &rl, const DvceArray5D<Real> &rr,
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::RingFields
-//! \brief clean_rot_ring: the fields the ring carries, fm[n] = slot or -1; returns their
+//! \brief ring: the fields the ring carries, fm[n] = slot or -1; returns their
 //! number.  Left out: fields cln_s lacks, the stress parts of the face sums and (cubed
 //! sphere) CLN_G (mixed as 0).  file: the restart layout; files before version 7 keep the
 //! stress parts (and CLN_G on the cubed sphere)
@@ -182,7 +182,7 @@ int RadiationVet::RingFields(int *fm, const bool file) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RingShift
-//! \brief clean_rot_ring: block b's first build shifts the ring by the pending Delta:
+//! \brief ring: block b's first build shifts the ring by the pending Delta:
 //! d_1 = -Delta, d_j -= Delta, r_j' = r_{j-1}/R, r_1' = 1/R
 
 void RadiationVet::RingShift(const int64_t b) {
@@ -259,7 +259,7 @@ bool RadiationVet::FhBuilt() const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RingPreShift
-//! \brief before the dt_retry checkpoint: with clean_rot_ring = live, cross-fade and
+//! \brief before the dt_retry checkpoint: with ring = live, cross-fade and
 //! vet_gd_rotate_align every retry's build lies in one block, so a step starting on a
 //! block boundary shifts the ring here and the checkpoint skips offsets and Delta
 //! (cln_rfix).  RingBlk: the block of a build at time + dt
@@ -275,7 +275,7 @@ void RadiationVet::RingPreShift() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RingMoments
-//! \brief clean_rot_ring: closure of the rotating union of K = vet_rotate_avg sets with
+//! \brief ring: closure of the rotating union of K = vet_rotate_avg sets with
 //! cross-fade, sweeping only the current set b and the next b+1:
 //!   M = (1 - s)/K M_{b-K+1} + 1/K sum_{j=1}^{K-2} M_{b-j} + 1/K M_b + s/K M_{b+1}
 //! older sets from the current g = M/J plus offsets d_j = g_{b-j} - g_b,
@@ -351,14 +351,14 @@ void RadiationVet::RingMoments() {
   bool fh0 = true;
   const Real ray_min = cln_raymin;
   cln_raymin = 0.0;
-  // (J ratios only where both sets' J >= clean_ray_min E, so a source
+  // (J ratios only where both sets' J >= closure_ray_min E, so a source
   // hole's J ~ 1e-200 gives no huge ratio)
   const Real jmin = ray_min;
   auto iwr = iw;
   auto cs = cln_s;
   const RingL rl{cln_rl, cln_s, fm, nf, ol, ks, js, is};
   auto rr = cln_rr;
-  // clean_rot_fuse: sweep the live sets b, b+1 in one fused ScSweep (vgd_xff_now;
+  // ring_fuse: sweep the live sets b, b+1 in one fused ScSweep (vgd_xff_now;
   // own tables and intensities each); the loop below then takes each set's moments
   const bool fuse = vgd_on && cln_rfuse && !cln_scmem && ns == 2 && !fill && ScXffOk();
   // (the cut below the sets' shared slabs, ScRagThick: the same cut on every rank)
@@ -366,7 +366,7 @@ void RadiationVet::RingMoments() {
   if (vgd_on && cln_rfuse && !fuse && ns == 2 && !fill) {
     vgd_xff_nfb += 1.0;
     if (low && !vgd_rag_said && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> clean_rot_fuse: the ray cut (shell " << vray_icut << ") is "
+      std::cout << "<rad_vet> ring_fuse: the ray cut (shell " << vray_icut << ") is "
                 << "below the shells whose slabs the two sets share (" << vgd_rag_cut
                 << "): two sweeps per build while it does; a restart shares fewer shells"
                 << std::endl;
@@ -375,7 +375,7 @@ void RadiationVet::RingMoments() {
   }
   if (vgd_on && cln_rfuse && !fuse && !low && ns == 2 && !fill && !cln_rfuse_said &&
       global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> clean_rot_fuse: not taken (needs the sc rays, no "
+    std::cout << "<rad_vet> ring_fuse: not taken (needs the sc rays, no "
               << "reflecting top and a fused-sweep configuration, ScXffOk): two "
               << "sweeps per build" << std::endl;
     cln_rfuse_said = true;
@@ -615,13 +615,13 @@ void RadiationVet::RingSets(const Real tc, const int cyc) {
     const Real tau = (tc - (xf ? 0.0 : 0.5*dt))/vgd_rot_dt;
     b = static_cast<int64_t>(std::floor(tau));
     if (xf) s = tau - static_cast<Real>(b);
-    // clean_rot_ring = live: a build on a block boundary closes the block (s = 1)
+    // ring = live: a build on a block boundary closes the block (s = 1)
     if (cln_ring == 1 && s < 1.0e-9) {
       b -= 1;
       s = 1.0;
     }
   }
-  // clean_rot_ring with its history: the current set and the next one, (1 - s) and s;
+  // ring with its history: the current set and the next one, (1 - s) and s;
   // jump: the next one (weight 0) only at the build that closes the block
   const bool two = cln_ring && cln_rok;
   cln_rlast = (cln_ring == 2) &&

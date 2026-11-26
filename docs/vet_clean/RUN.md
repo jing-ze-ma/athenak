@@ -53,12 +53,12 @@ On a phi-periodic wedge the width must be a multiple of the ray set's azimuthal 
 7 x 18: 20 deg; LQ10: 90 deg; the default icosahedral set: 180 deg), else the run stops with a
 FATAL; a narrower wedge names `vet_gd_wall_sym = true` with `vet_gd_wall_interp = true`.
 
-The templates name `<rad_vet>/clean_verbose = 1`, which prints the per-solve `CLEAN`
+The templates name `<rad_vet>/verbose = 1`, which prints the per-solve `CLEAN`
 diagnostic lines (useful context for any `CLEAN WARNING`); your own decks can leave it at the
 default 0 ([OUTPUTS.md](OUTPUTS.md), section 4.2).
 
 On the first cycle the code relaxes the radiation field to its steady state in the initial
-gas (`clean_init = steady`). The log line `clean_init steady pass 1 ...` is a convenient
+gas (`steady_init = steady`). The log line `clean_init steady pass 1 ...` is a convenient
 fingerprint: a new binary, machine or compiler must reproduce it to a few digits.
 
 ### Restarts
@@ -86,7 +86,7 @@ Restarts are bitwise: N cycles straight and N/2 + restart + N/2 give identical o
 carries from step to step (the stage slopes, the ray-closure history, the ledgers).
 
 A key the restart file does not hold takes the fresh default when it corrects the scheme
-(the scheme's keys, `time2_*`, `merge_lat_mom`, `fofc_flag_exchange`, `clean_cs_lat_wb`
+(the scheme's keys, `time2_*`, `merge_lat_mom`, `fofc_flag_exchange`, `flux_balance_lat`
 ...), with a `### NOTE: ... the fix applies`; naming the old value keeps the old behaviour. A
 few keys (the angular set and its rotation and averaging, the closure history, the problem
 set-up) keep the restart default; the start-up log echoes it with the reason.

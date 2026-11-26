@@ -470,9 +470,9 @@ class RadiationVet {
   bool Time2RstAccept(const int nfile, const int ver);   // a file's channels fit (sets
                                                          // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
-  int t2_rcl = -1;              // closure channels of the file read (clean_closure =
+  int t2_rcl = -1;              // closure channels of the file read (closure_form =
                                 // iterate, RstNcl; -1: this run's own layout)
-  int t2_rskip = 0;             // a file's clean_rot_ring channels read with the ring off
+  int t2_rskip = 0;             // a file's ring channels read with the ring off
   bool t2_rstd3 = false;        // version-1 file: the fkin block is d only (no K1_d)
   int t2_rstv = 5;              // clean file version: <= 3 zero predictor / extrap2
                                 // channels and the ring in CLN_N ghosted slabs per
@@ -727,7 +727,7 @@ class RadiationVet {
   void FluxMemoryInc(const bool two, const Real c1, const Real c2, const Real w1,
                      const Real w0);
   void FluxMemoryRetry(const bool save);   // dt_retry: d to / from cln_rstd
-  int RingFields(int *fm, const bool file = false) const;   // clean_rot_ring
+  int RingFields(int *fm, const bool file = false) const;   // ring
   // time2_face_fct's two scratch slots of iw (clean: the line-solve slots)
   int Time2FctSlot(const int q) const;
   void Time2FctHalo(const int c);
@@ -739,13 +739,13 @@ class RadiationVet {
   int RingNd(const int nf) const {return vra_ema ? nf + 3 : nf;}
   void RingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
                    const bool pk, const bool have);
-  // closure components in the restart (extrap history, clean_rot_ring), RstSlot
+  // closure components in the restart (extrap history, ring), RstSlot
   // order; the cell layout keeps the first CLN_N - 1, CLN_JR is staggered only
   int RstNq() const;
   // ray intensity channels of the restart: the cs sc rays' (cln_fvi), and their last
   // build when a reflecting top mirrors it (cln_scmem: its top shell)
   int RstNfv() const;
-  int RstNcl() const;   // clean_closure = iterate: the closure in place (cln_s)
+  int RstNcl() const;   // closure_form = iterate: the closure in place (cln_s)
   void RingUnion();
   void FaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
                 const int fo);
@@ -802,14 +802,14 @@ class RadiationVet {
   Real SumCells(const DvceArray4D<Real> &a);
   void ClosureSphere();
 
-  Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
-  Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
-  Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
+  Real cln_c0 = 0.1;            // closure_w_c0: C1 below which w = 0
+  Real cln_c1 = 0.5;            // closure_w_c1: C1 above which w = 1
+  Real cln_tol = 1.0e-10;       // solver_tol: relative residual of the linear solve
   // clean_init_cnorm: the steady start's per-cell test (0 off)
   bool cln_insteady = false;    // in SteadyStart's passes
-  int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
+  int cln_maxit = 800;          // solver_maxit: BiCGStab iterations
   std::map<std::array<int, 7>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
-  int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
+  int cln_optn = 3;             // gas_opac_passes: refreshed in passes < N
   // the operator's rows (CLN_ST per active cell, PreconditionerSetup)
   DvceArray5D<Real> cln_st;
   //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
@@ -819,21 +819,21 @@ class RadiationVet {
   DvceArray5D<Real> cln_yl;     //   (in their own array: CLW_L is the F solve's scratch)
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks
-  int cln_maxnl = 50;           // clean_maxnl: Newton iterations
-  Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
-  bool cln_c1b = false;         // clean_clos1_budget
-  bool cln_bmn = false;         // clean_bud_maxnorm
-  bool cln_wbxl = false;        // clean_wb_exch_local
+  int cln_maxnl = 50;           // newton_maxit: Newton iterations
+  Real cln_tol_nl = 1.0e-11;    // newton_tol: Newton tolerance (relative dE, dT, dv)
+  bool cln_c1b = false;         // newton_closure_budget
+  bool cln_bmn = false;         // newton_maxnorm
+  bool cln_wbxl = false;        // update_exchange_local
   Real cln_flrun = 0.0;         // the last write-back's implicit_pos_floor creation
   int cln_flrid = -1;           // its cycle and t2s, 4 ncycle + t2_solve
-  bool cln_wbmc = false;        // clean_wb_mcap
-  int cln_wbfdg = 0;            // clean_wb_floor_diag (diagnostic)
-  int cln_dbginf = -1;          // clean_dbg_inf (test): the cycle of the injected inf
-  Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
+  bool cln_wbmc = false;        // update_mcap
+  int cln_wbfdg = 0;            // update_floor_diag (diagnostic)
+  int cln_dbginf = -1;          // dbg_inf (test): the cycle of the injected inf
+  Real cln_raymin = 1.0e-3;     // closure_ray_min: rays describe a cell when J >= this E
   // clean_ray_cut (RayCut): no rays below the shell where every deeper cell is
-  // diffusive (|grad S|/(chi S) < clean_ray_cut_r, none thinner than
+  // diffusive (|grad S|/(chi S) < ray_cut_r, none thinner than
   // vet_col_lat_cut_thin), less clean_ray_cut_margin optical depths, at
-  // tau_top >= clean_ray_cut_taumin; rises only after clean_ray_cut_wait builds
+  // tau_top >= clean_ray_cut_taumin; rises only after ray_cut_wait builds
   bool cln_rcut_on = false;
   int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
   Real cln_rcut_r = 0.003;
@@ -853,23 +853,23 @@ class RadiationVet {
                     //  C's last change)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
-  bool cln_lzt = false;     // clean_cs_lz_tel
-  bool cln_latwb = false;   // clean_cs_lat_wb
-  bool cln_thinf = false;   // clean_stag_thinf
+  bool cln_lzt = false;     // lz_telescope
+  bool cln_latwb = false;   // flux_balance_lat
+  bool cln_thinf = false;   // face_thin
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
   DvceArray3D<Real> cln_fsjt[3];   // (layout tile: the F join per tile, FluxTileArray)
   std::array<RingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
-  bool cln_fcone = false;   // clean_stag_fcone
-  bool cln_fclz = false;    // clean_stag_fcone_lz
-  bool cln_fcemx = false;   // clean_stag_fcone_emax
-  bool cln_lzsp = false;    // clean_lz_spin
-  DvceArray5D<Real> cln_fcx;   // (clean_lz_spin: fcone's cut withheld, by face)
-  DvceArray2D<Real> cln_cx[2];   // (clean_lz_spin, Cartesian: the cell centres x, y)
+  bool cln_fcone = false;   // flux_cone
+  bool cln_fclz = false;    // flux_cone_lz
+  bool cln_fcemx = false;   // flux_cone_emax
+  bool cln_lzsp = false;    // lz_spin
+  DvceArray5D<Real> cln_fcx;   // (lz_spin: fcone's cut withheld, by face)
+  DvceArray2D<Real> cln_cx[2];   // (lz_spin, Cartesian: the cell centres x, y)
   bool cln_fwbring = false;   // clean_stag_fwb_ring
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
-  int cln_xdfz = 0;         // clean_stag_xdonor_freeze
+  int cln_xdfz = 0;         // face_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)
   // clean L_z ledger (clean_cs_lz_abs = 2; VetLzKey): cln_lzl the L_z the gas does not
   // take, booked as the radiation's; its sums as the gas momentum's slopes K1 (cln_lzs1),
@@ -883,32 +883,32 @@ class RadiationVet {
   Real cln_ngnsw = 0.0;   // solves switched so far
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_opt = false;         // clean_stag_opac_update: opacities at the iterate's T
-  bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
-  bool cln_closit = false;      // clean_closure: predict | iterate
-  int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
+  bool cln_consist = false;     // closure_consistency: bracket C = F_ray - f(Ur), cell
+  bool cln_closit = false;      // closure_form: predict | iterate
+  int cln_extrap = 0;           // closure_form = extrap (1) | extrap2 (2)
                                 // | extrap1 (3, cell default)
-  bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
-  bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
-  Real cln_sph_r = 0.0;         // clean_sphere_radius
+  bool cln_edd = false;         // closure_form = eddington (D = I/3, no rays)
+  bool cln_sphere = false;      // closure_form = sphere (spherical polar)
+  Real cln_sph_r = 0.0;         // closure_sphere_radius
   static constexpr Real cln_trtol = 1.0e-13;   // residual stop of the exchange root
   int cln_wo_nc = 0;            // the slots of cln_w.o (BindWorkVecs)
   static constexpr int cln_hmax = 16;   // most variables of one ghost exchange
-  bool cln_budget = false;      // clean_conv = budget (staggered default): StageSolve
+  bool cln_budget = false;      // newton_conv = budget (staggered default): StageSolve
   bool cln_bon = false;         // this solve takes it (Newton passes with a valid K1)
   Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)
-  Real cln_bkap = 1.0;          // clean_conv_kappa
-  Real cln_bmax = 1.0e-5;       // clean_conv_max
+  Real cln_bkap = 1.0;          // newton_conv_kappa
+  Real cln_bmax = 1.0e-5;       // newton_conv_max
   DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
-  int cln_verbose = 0;          // clean_verbose: 1 = also the per-solve diagnostics
-  int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep
-  bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
-  int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
-  Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
+  int cln_verbose = 0;          // verbose: 1 = also the per-solve diagnostics
+  int cln_pcsweep = 0;          // solver_sweep: +1 a 2nd red pass, +2 a post-sweep
+  bool cln_steady = false;      // steady_init = steady: radiation relaxed before step 1
+  int cln_steady_n = 50;        // steady_n: most pre-solve passes
+  Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // steady_dtfac, _tol
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   std::array<int, 3> cln_mgt = {0, 0, 0};       //   its tiles' cells (layout_tile)
-  int cln_mgnl = 2;             //   most coarse levels (clean_stag_mg_levels)
+  int cln_mgnl = 2;             //   most coarse levels (solver_mg_levels)
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
                                 //   momentum flux
@@ -924,7 +924,7 @@ class RadiationVet {
   bool cln_faces_set = false;   // starting face fluxes set
   bool cln_rstold = false;      // restart from a file without the clean state
   bool cln_havec = false;       // a closure has been built
-  bool cln_cip = false;         // a closure is in place (clean_closure = iterate: the
+  bool cln_cip = false;         // a closure is in place (closure_form = iterate: the
                                 // last iterate's, restart state)
   // opac holds predicted opacities during the formal solution
   bool cln_opsaved = false;
@@ -937,12 +937,12 @@ class RadiationVet {
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; RingSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
-  // clean_rot_ring: the rotating union swept as the current and the next set only, the
+  // ring: the rotating union swept as the current and the next set only, the
   // K - 1 older sets carried as offsets of their ray moments (RingMoments)
-  int cln_ring = 0;             // clean_rot_ring = live (1: + the next set) | jump (2)
-  bool cln_rfuse = false;       // clean_rot_fuse: live ring's two sets in one sweep
+  int cln_ring = 0;             // ring = live (1: + the next set) | jump (2)
+  bool cln_rfuse = false;       // ring_fuse: live ring's two sets in one sweep
   bool cln_rfuse_said = false;
-  bool cln_ring_named = false;  // clean_rot_ring named in the input
+  bool cln_ring_named = false;  // ring named in the input
   bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
   bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments
   DvceArray5D<Real> cln_rnew;   // jump: moments of block b+1's window at the boundary
@@ -968,7 +968,7 @@ class RadiationVet {
   DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
   DvceArray5D<Real> cln_vf;     // cubed sphere: the F solve's cells, faces (m,18,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
-  // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
+  // closure_form = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
   // converged states at t^n (cln_mn), t^{n-1} (cln_mp), the end of the last step solved
   // (cln_mc) and the stage-1 solution (cln_m1), with their times and validity
   DvceArray5D<Real> cln_mn, cln_mp, cln_mc, cln_m1;
@@ -1345,7 +1345,7 @@ class RadiationVet {
   DvceArray5D<Real> cln_top;   // its last top shell: slot s, direction d at (s*nt + d/n1,
                                // i = d%n1), nt = ceil(n/n1) (ScTopCopy)
   void ScTopCopy();
-  int cln_rq = 0;               // clean_rot_ring, sc rays: slot swept (RingSets)
+  int cln_rq = 0;               // ring, sc rays: slot swept (RingSets)
   int cln_rqm = 0;              // its sp top-mirror slot (blk mod 2)
   void ScThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
   // vet_gd_theta_wall = vacuum (1) | extrap (2) at a physical theta wall (flag 3 / 4):

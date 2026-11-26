@@ -68,7 +68,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     Log("<" + b + ">/" + k + " = " + v + " (default on a fresh star start)");
   };
   add("rad_vet", "force_reference", "wb_arad");
-  add("rad_vet", "clean_init", "steady");
+  add("rad_vet", "steady_init", "steady");
   if (named("rad_vet", "implicit_flux_x1min")) {
     add("rad_vet", "implicit_bc_x1min", "flux");
   }

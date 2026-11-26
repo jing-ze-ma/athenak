@@ -95,7 +95,7 @@ const char *kDtrMinimal[] = {
   // (cln_fvi), with cln_fref_set (force_reference = clean recaptures), and the sc rays'
   // top shell a reflecting top mirrors (cln_top).  The closure's extrap history is left
   // alone: its flags go with the handles the attempt swapped and, on a first cycle, with
-  // cln_init. clean_rot_ring: the offsets and the pending Delta (a retried first step of
+  // cln_init. ring: the offsets and the pending Delta (a retried first step of
   // a block shifted the ring twice), and the swept directions with their weights the
   // step's solve reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites
   // them). (cln_rstd itself is that checkpoint: written only by DtRetryQuiesce,
@@ -381,7 +381,7 @@ struct Binder {
     ent->push_back(std::move(e));
   }
   template <class T> void view(const char *n, T &x) {
-    // (clean_rot_ring's offsets: in pinned host memory always, their copy skipped while
+    // (ring's offsets: in pinned host memory always, their copy skipped while
     // clean; the pending Delta, written every build, keeps a device clone: a pinned-host
     // one is a synchronous copy to the host per cycle)
     const bool rh = (pre + n == "vet.cln_rr");
@@ -593,7 +593,7 @@ void DtRetry::Build(Mesh *pm) {
   }
   // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
   // while it is clean (written only at rotation-block boundaries; RadiationVet::vra_gen)
-  // (and of clean_rot_ring's offsets cln_rr, written only at block boundaries, a fill
+  // (and of ring's offsets cln_rr, written only at block boundaries, a fill
   // or a restart: their writers bump vra_gen too)
   for (auto &e : ent_) {
     if (((host_ || hvet_) && e->name == "vet.vra_d") || e->name == "vet.cln_rr") {

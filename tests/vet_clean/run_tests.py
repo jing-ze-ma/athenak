@@ -110,9 +110,9 @@ def t_conservation_cs(c):
 
 # L_z-exact caps and cuts (read only when named)
 
-LZ_KEYS = {'rad_vet/clean_stag_fcone': 'true', 'rad_vet/clean_stag_fcone_lz': 'true',
-           'rad_vet/clean_stag_fcone_emax': 'true', 'rad_vet/clean_wb_mcap': 'true',
-           'rad_vet/clean_lz_spin': 'true', 'hydro/eos': 'general',
+LZ_KEYS = {'rad_vet/flux_cone': 'true', 'rad_vet/flux_cone_lz': 'true',
+           'rad_vet/flux_cone_emax': 'true', 'rad_vet/update_mcap': 'true',
+           'rad_vet/lz_spin': 'true', 'hydro/eos': 'general',
            'hydro/floor_from_ekin': 'true', 'hydro/vceil': 5e-3, 'units/length_cgs': 1.0,
            'units/mass_cgs': 1.0, 'units/time_cgs': 1.0}
 LZ_FC = {'rad_vet/floorcap_rho': 1e30, 'rad_vet/floorcap_v': 5e-3,
@@ -121,8 +121,8 @@ LZ_SP = dict(LZ_FC, **{'rad_vet/clean_stag_fwb_ring': 1})
 
 
 def t_conservation_lz(c):
-    """the closed rotating shells with every L_z-exact cap / cut on (clean_stag_fcone_lz,
-    clean_lz_spin, clean_stag_fcone_emax, clean_wb_mcap, floor_from_ekin with vceil 5e-3
+    """the closed rotating shells with every L_z-exact cap / cut on (flux_cone_lz,
+    lz_spin, flux_cone_emax, update_mcap, floor_from_ekin with vceil 5e-3
     below the shell's speeds; the floor-gas cap of every cell, floorcap_lz, on both
     meshes, on spherical polar with fwb_ring): energy, mass and L_z drifts as conservation_sp, plus
     dLz_gr (gas + radiation, no ledger); restart (8 + 8 = 16 cycles) and a forced dt_retry
@@ -153,15 +153,15 @@ def t_mpi_ranks(c):
     and hydro histories bitwise (maxdiff), no CLEAN WARNING; fcone_lz: its lines in the
     2-rank logs.  A collective that only one rank calls hangs (the run is stopped)."""
     fc = dict(LZ_FC, **{'rad_vet/floorcap_rho': 100.0, 'rad_vet/floorcap_lz_spin': 'true',
-                        'rad_vet/floorcap_report': 1, 'rad_vet/clean_verbose': 2,
-                        'rad_vet/clean_wb_floor_diag': 8, 'hydro/floor_audit': 1,
+                        'rad_vet/floorcap_report': 1, 'rad_vet/verbose': 2,
+                        'rad_vet/update_floor_diag': 8, 'hydro/floor_audit': 1,
                         'time/nlim': 6})
     sp = {'mesh/nx3': 16, 'meshblock/nx3': 8, 'mesh/nghost': 3}
     pay = {'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
            'units/time_cgs': 1.0, 'hydro/tfloor': 1.00001e-4, 'time/nlim': 6,
            'hydro/floor_pay': 'rad_column', 'hydro/floor_pay_skip': 'true',
            'hydro/dfloor_flux_limit': 'true', 'hydro/floor_audit': 1,
-           'hydro/floor_audit_worst': 'true', 'rad_vet/clean_verbose': 2}
+           'hydro/floor_audit_worst': 'true', 'rad_vet/verbose': 2}
     out = {'warnings': 0, 'fcone_lz': 0, 'files': 0}
     for tag, deck, o in (
             ('sp', 'shell_sp.athinput', dict(LZ_KEYS, **dict(fc, **dict(sp, **{
@@ -350,7 +350,7 @@ def restart_pair(c, deck, n, nr, over=None):
 
 def t_restart_fixes(c):
     """a restart file without a key that corrects the scheme takes the new default, with a
-    NOTE (recipe::Fix), and the old one when it is named; per key (cs clean_cs_lat_wb, cs
+    NOTE (recipe::Fix), and the old one when it is named; per key (cs flux_balance_lat, cs
     fofc_flag_exchange, merge_lat_mom / _blockend, time2_gtime_slope / _pos): a run with the old value,
     its restart file, the key's line removed from it.  named: that file restarted with the
     old value against the file as written: bitwise (maxdiff); fixed: without naming it: the
@@ -359,7 +359,7 @@ def t_restart_fixes(c):
     sp = {'mesh/nx3': 16, 'mesh/nghost': 3}
     fo = {'meshblock/nx2': 8, 'meshblock/nx3': 8, 'hydro/dfloor': 1e-12,
           'problem/cs2': 0.03, 'problem/rot': 4.0}
-    cases = (('lat_wb', 'shell_cs.athinput', {}, {'rad_vet/clean_cs_lat_wb': 'false'}, 4),
+    cases = (('lat_wb', 'shell_cs.athinput', {}, {'rad_vet/flux_balance_lat': 'false'}, 4),
              ('fofc', 'fofc_cs.athinput', fo, {'hydro/fofc_flag_exchange': 'false'}, 1),
              ('merge', 'merge_sp.athinput', {}, {'hydro/merge_lat_mom': 'rigid'}, 4),
              ('blockend', 'merge_sp.athinput', {'meshblock/nx2': 8, 'meshblock/nx3': 8},
@@ -436,7 +436,7 @@ def t_dt_retry(c):
 # star settings the layout test cannot take: the 2 x 2 difference (bound 1e-8) is 7e-8 on
 # the 60 deg wedge with GL 7 x 18 and 8e-8 with the budget norms; dfloor_keep_velocity
 # creates energy where the density floor acts (no floor_pay with this ideal gas)
-LAYOUT_OFF = {'rad_vet/clean_clos1_budget': 'false', 'rad_vet/clean_bud_maxnorm': 'false',
+LAYOUT_OFF = {'rad_vet/newton_closure_budget': 'false', 'rad_vet/newton_maxnorm': 'false',
               'rad_vet/vet_gd_wall_interp': 'false', 'rad_vet/vet_gd_wall_sym': 'false',
               'mesh/x3max': 1.5707963267948966, 'rad_vet/vet_gd_gl_nmu': 16,
               'rad_vet/vet_gd_gl_nphi': 32, 'hydro/dfloor_keep_velocity': 'false'}
@@ -487,7 +487,7 @@ def t_layout_tile(c):
 def t_layout_cs(c):
     """tile mode (8 x 8 tiles) on the cubed sphere, an optically thin rotating shell with
     turning rays (GL 10 x 12, EMA ring): one MeshBlock per panel vs 2 x 2, 8 cycles:
-    identical; dark: the same with clean_ray_min = 1 (most cells hold no rays).  The rays'
+    identical; dark: the same with closure_ray_min = 1 (most cells hold no rays).  The rays'
     flux through a lateral MeshBlock face is one value, the upper cell's.  dE, dLz of the
     2 x 2 run."""
     o = {'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
@@ -495,7 +495,7 @@ def t_layout_cs(c):
          'rad_vet/kappa_e': 0.1, 'rad_vet/kappa_s': 0.5, 'rad_vet/vet_gd_rotate_dt': 0.1,
          'rad_vet/vet_rotate_avg_ema_wb': 'true'}
     out = {'warnings': 0}
-    for tag, q in (('', {}), ('_dark', {'rad_vet/clean_ray_min': 1.0})):
+    for tag, q in (('', {}), ('_dark', {'rad_vet/closure_ray_min': 1.0})):
         a = c.run('shell_cs.athinput', 'mb1' + tag, dict(o, **q))
         b = c.run('shell_cs.athinput', 'mb22' + tag, dict(o, **dict(q, **{
             'meshblock/nx2': 8, 'meshblock/nx3': 8})))
@@ -584,8 +584,8 @@ def t_order_stiff(c):
     o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 10.0, 'time/tlim': tl,
          'hydro/rad_signal_speed': 'true', 'hydro/rad_signal_speed_diff': 'true',
          'rad_vet/c_light': cl, 'rad_vet/arad': ar, 'rad_vet/implicit_cfl': -1.0,
-         'rad_vet/clean_conv': 'strict', 'rad_vet/clean_tol': 1e-14,
-         'rad_vet/clean_tol_nl': 1e-13, 'rad_vet/time2_gtime_slope': 'true'}
+         'rad_vet/newton_conv': 'strict', 'rad_vet/solver_tol': 1e-14,
+         'rad_vet/newton_tol': 1e-13, 'rad_vet/time2_gtime_slope': 'true'}
     o.update({'rad_vet/kappa_' + s: kap for s in 'pef'})
     o.update({'problem/' + k: v for k, v in eig.items()})
     S = {'E': [], 'v': []}
@@ -1007,17 +1007,17 @@ def t_shell_force_cs(c):
 
 
 def t_eddington_cs(c):
-    """clean_closure = eddington on the cubed sphere with vet_gd named: no rays are
+    """closure_form = eddington on the cubed sphere with vet_gd named: no rays are
     swept, so the solve must not read their sums.  Drifts of the closed shell, 4 cycles;
-    restart bitwise; warnings; nogd: the largest difference from the run with vet_gd = false (clean_consistency off in both): the same scheme, D = I/3
+    restart bitwise; warnings; nogd: the largest difference from the run with vet_gd = false (closure_consistency off in both): the same scheme, D = I/3
     written with another round-off."""
-    o = {'rad_vet/clean_closure': 'eddington', 'time/nlim': 4,
+    o = {'rad_vet/closure_form': 'eddington', 'time/nlim': 4,
          'rad_vet/vet_gd': 'true'}   # not set by default then
     d = c.run('shell_cs.athinput', 'run', o)
     out = am_budget(d, 'cs')
     out['warnings'] = vett.warnings(open(os.path.join(d, 'run.log')).read())
     out['restart_maxdiff'] = restart_pair(c, 'shell_cs.athinput', 4, 2, o)['maxdiff']
-    o['rad_vet/clean_consistency'] = 'false'
+    o['rad_vet/closure_consistency'] = 'false'
     a = c.run('shell_cs.athinput', 'nc', o)
     b = c.run('shell_cs.athinput', 'nogd', dict(o, **{'rad_vet/vet_gd': 'false'}))
     out['nogd'] = vett.compare_dirs(a, b)[1]
@@ -1027,11 +1027,11 @@ def t_eddington_cs(c):
 def t_ray_clamp(c):
     """a cubed-sphere shell of 4 radial cells, whose near-tangent rays reach beyond the
     lateral band: with vet_gd_allow_clamp = false it must stop (fatal), with the fixed
-    set, and with the rotating one through clean_rot_ring (its sweeps made no such check)."""
+    set, and with the rotating one through ring (its sweeps made no such check)."""
     o = {'mesh/nx1': 4, 'meshblock/nx1': 4, 'time/nlim': 2}
     ring = {'rad_vet/vet_gd_rotate_dt': 0.5, 'rad_vet/vet_rotate_avg': 4,
             'rad_vet/vet_gd_rotate_xfade': 'true', 'rad_vet/vet_gd_rotate_align': 'true',
-            'rad_vet/clean_rot_ring': 'live'}
+            'rad_vet/ring': 'live'}
     out = {}
     for tag, q in (('fixed', {}), ('ring', ring)):
         try:
@@ -1046,21 +1046,21 @@ def t_ray_clamp(c):
 def t_ray_cut_slab(c):
     """the fused two-set sweep's shared slabs below the ray cut (star_small, live ring,
     2 ranks): a restart that shares them against one that sweeps the sets one by one
-    (clean_rot_fuse = false, nothing shared), against one whose stored cut is far above the
-    wanted one (clean_ray_cut_now: every build falls back to two sweeps, said once), and
-    with a forced dt_retry at factor 1; clean_ray_cut_wait = 0: the cut is the wanted one
+    (ring_fuse = false, nothing shared), against one whose stored cut is far above the
+    wanted one (ray_cut_now: every build falls back to two sweeps, said once), and
+    with a forced dt_retry at factor 1; ray_cut_wait = 0: the cut is the wanted one
     at every build in all arms, and moves.  Dumps bitwise (maxdiff)."""
     o = {'mesh/nx3': 16, 'meshblock/nx3': 8, 'rad_vet/vet_gd_rotate_dt': 1.0e4,
          'rad_vet/vet_rotate_avg': 4, 'rad_vet/vet_gd_rotate_xfade': 'true',
-         'rad_vet/vet_gd_rotate_align': 'true', 'rad_vet/clean_rot_ring': 'live',
-         'rad_vet/clean_rot_fuse': 'true', 'rad_vet/clean_ray_cut_wait': 0,
-         'rad_vet/clean_verbose': 1, 'time/dt_retry': 'true', 'time/nlim': 3,
+         'rad_vet/vet_gd_rotate_align': 'true', 'rad_vet/ring': 'live',
+         'rad_vet/ring_fuse': 'true', 'rad_vet/ray_cut_wait': 0,
+         'rad_vet/verbose': 1, 'time/dt_retry': 'true', 'time/nlim': 3,
          'rad_vet/vet_gd_wall_interp': 'true', 'rad_vet/vet_gd_wall_sym': 'true',
          'rad_vet/vet_gd_theta_seam_sym': 'true',   # (default with a fixed set only)
          'output9/file_type': 'rst', 'output9/dcycle': 3}
     exe, c.exe = c.exe, c.star
-    arms = (('shared', {}), ('nofuse', {'rad_vet/clean_rot_fuse': 'false'}),
-            ('low', {'rad_vet/clean_ray_cut_now': 230}),
+    arms = (('shared', {}), ('nofuse', {'rad_vet/ring_fuse': 'false'}),
+            ('low', {'rad_vet/ray_cut_now': 230}),
             ('retry', {'time/dt_retry_force_cycle': 5, 'time/dt_retry_force_fac': 1.0}))
     try:
         for tag in ('first',) + tuple(a[0] for a in arms):
@@ -1138,7 +1138,7 @@ def t_radwave(c):
         o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 0.3, 'time/tlim': tl,
              'hydro/rad_signal_speed': 'true',
              'hydro/rad_signal_speed_diff': 'false' if diff == 'false' else 'true',
-             'rad_vet/clean_clos1_budget': 'false', 'rad_vet/clean_bud_maxnorm': 'false',
+             'rad_vet/newton_closure_budget': 'false', 'rad_vet/newton_maxnorm': 'false',
              'rad_vet/c_light': cl, 'rad_vet/arad': ar, 'rad_vet/implicit_cfl': -1.0,
              'problem/radwave_amp': amp, 'output2/dt': tl/32}
         if diff == 'phase':
@@ -1214,7 +1214,7 @@ def t_wedge_sym(c):
                     'rad_vet/vet_gd_rotate_dt': 2.0, 'rad_vet/vet_gd_theta_seam_sym': 'true',
                     # (strict solves: with the budget keys the iterate is mirror-symmetric only
                     # to the time-error tolerance, and the turning set carries that seed on)
-                    'rad_vet/clean_clos1_budget': 'false', 'rad_vet/clean_bud_maxnorm': 'false'})
+                    'rad_vet/newton_closure_budget': 'false', 'rad_vet/newton_maxnorm': 'false'})
     d = c.run('shell_sp.athinput', 'th30rot', dict(r, **{'rad_vet/vet_gd_gl_nmu': 11}))
     m = vett.last_bin(d, 'vet')
     out['fth_rot'] = float(abs(m['vet_f2'].sum())/np.abs(m['vet_f1']).sum())
@@ -1457,14 +1457,14 @@ def t_ceiling_metric(c):
 # a non-finite iterate is rejected, never floored
 
 def t_inf_reject(c):
-    """the closed shell with rad_vet/clean_dbg_inf = 4: the first stage-1 write-back of
+    """the closed shell with rad_vet/dbg_inf = 4: the first stage-1 write-back of
     cycle 4 gives one cell a non-finite E iterate.  implicit_pos_floor must not raise it
     (no booking of a non-finite raise: nonfinite = implicit_pos_floor creation warnings
     that print inf or nan); the write-back's check rejects the stage, which is redone
     (rejected >= 1), and the run stays energy-exact (dE as conservation_sp)."""
     d = c.run('shell_sp.athinput', 'run', {
         'time/nlim': 8, 'rad_vet/implicit_pos_floor': 'true',
-        'rad_vet/implicit_pos_floor_cons': 'true', 'rad_vet/clean_dbg_inf': 4})
+        'rad_vet/implicit_pos_floor_cons': 'true', 'rad_vet/dbg_inf': 4})
     log = open(os.path.join(d, 'run.log')).read()
     cw = [ln for ln in log.splitlines() if 'CLEAN WARNING' in ln]
     out = am_budget(d, 'sp')
@@ -1480,8 +1480,8 @@ def t_cmdline_keys(c):
     a misspelt one stops the run (code 1) after the first cycle, as does a block that does
     not exist"""
     o = {'time/nlim': 2}
-    a = c.run('shell_sp.athinput', 'deck', dict(o, **{'rad_vet/clean_stag_opac_passes': 1}))
-    b = c.run('shell_sp.athinput', 'cmd', o, args=['rad_vet/clean_stag_opac_passes=1'])
+    a = c.run('shell_sp.athinput', 'deck', dict(o, **{'rad_vet/gas_opac_passes': 1}))
+    b = c.run('shell_sp.athinput', 'cmd', o, args=['rad_vet/gas_opac_passes=1'])
     out = dict(same=vett.compare_dirs(a, b)[1],
                note=open(os.path.join(b, 'run.log')).read().count('added from the command'))
     for t, k in (('typo', 'rad_vet/clean_stag_opac_pases=1'), ('block', 'rad_vett/x=1')):
@@ -1533,20 +1533,20 @@ def t_key_fatal(c):
 
 def t_restart_keys(c):
     """a restart with a -i deck that does not name a key the file stores with a value
-    other than the code default (rad_vet/clean_tol = 5e-11, default 1e-10): one CLEAN
+    other than the code default (rad_vet/solver_tol = 5e-11, default 1e-10): one CLEAN
     WARNING line with key, stored value and default (line); the deck naming it: no line
     (named); the run is that of the restart without a deck (same: dumps and hst)."""
-    o = {'time/nlim': 4, 'rad_vet/clean_tol': 5e-11, 'output9/file_type': 'rst',
+    o = {'time/nlim': 4, 'rad_vet/solver_tol': 5e-11, 'output9/file_type': 'rst',
          'output9/dcycle': 4}
     rst = os.path.abspath(sorted(vett.glob_rst(c.run('shell_sp.athinput', 'w', o)))[-1])
     go = {'time/nlim': 8, 'output9/dcycle': 100000}
     out = {}
-    for t, k in (('plain', {}), ('named', {'rad_vet/clean_tol': 5e-11})):
+    for t, k in (('plain', {}), ('named', {'rad_vet/solver_tol': 5e-11})):
         p = os.path.join(c.dir, t + '.athinput')
         vett.make_deck(os.path.join(DECKS, 'shell_sp.athinput'), p, k)
         d = c.run('shell_sp.athinput', t, go, restart=rst, args=['-i', p])
         out[t] = open(os.path.join(d, 'run.log')).read().count(
-            'CLEAN WARNING restart: rad_vet/clean_tol = 5e-11 from the restart file '
+            'CLEAN WARNING restart: rad_vet/solver_tol = 5e-11 from the restart file '
             '(code default 1e-10')
     out['line'] = out.pop('plain')
     out['same'] = vett.compare_dirs(c.run('shell_sp.athinput', 'nodeck', go, restart=rst),
@@ -1632,10 +1632,10 @@ def t_idort_beams(c):
     """two crossing beams in vacuum: E against the exact straight beams (L1 over the box;
     lum_top: the energy of the third row below the x1max face relative to the exact);
     flux_err: the largest |x1 energy flux through a row (sum of vet_phi1) / injected - 1|;
-    F_nocone: the largest |F|/(c E_max) without the cone cut (clean_stag_fcone = false)"""
+    F_nocone: the largest |F|/(c E_max) without the cone cut (flux_cone = false)"""
     d = c.run('idort_beams.athinput', 'run')
     n = vett.last_bin(c.run('idort_beams.athinput', 'nocone',
-                            {'rad_vet/clean_stag_fcone': 'false'}), 'vet')
+                            {'rad_vet/flux_cone': 'false'}), 'vet')
     m, Ex = vett.last_bin(d, 'vet'), beams_exact(d)
     E, x2 = m['vet_e'][0], vett.cell_centres(d)[1]
     cl = float(vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
@@ -1810,7 +1810,7 @@ def t_diffusion(c):
 
 def t_radshock(c, m=2):
     """the Lowrie & Edwards shocks of idort_radshock_m* (same reference) with the production
-    closure (clean_closure default, not eddington): L1 of rho, v, T_gas, T_rad; E > 0"""
+    closure (closure_form default, not eddington): L1 of rho, v, T_gas, T_rad; E > 0"""
     out = t_idort_radshock(c, m, 'rad_radshock_m%s.athinput')
     d = os.path.join(c.dir, 'run')
     out.update(Emin=float(vett.last_bin(d, 'vet')['vet_e'].min()), warnings=warn(d))
@@ -2192,7 +2192,7 @@ def main():
     p.add_argument('--keep', action='store_true', help='keep the run directories of passes')
     p.add_argument('--record', default='', help='write the measured values to this JSON')
     p.add_argument('--keys', default='', help="extra overrides of every run, e.g. "
-                   "'rad_vet/clean_tol=1e-9 hydro/rad_signal_speed_diff=true'")
+                   "'rad_vet/solver_tol=1e-9 hydro/rad_signal_speed_diff=true'")
     a = p.parse_args()
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]

@@ -171,7 +171,7 @@ bool CsSeamFace(const SolveArgs &x, const int dir, const int m, const int k,
 //! \brief cubed sphere: area A_n in the face momentum's A_n (P_R - P_L)/V_f: the face
 //! area, but on a seam face (mirror-image cells, whose volume variation adds in V_f)
 //! A_n = V_f/d, d = 2 |X| |r_hat.n_f| the chord of the mirror pair's centres
-//! clean_cs_lat_wb: a radial face takes the hydro's r^2 Omega (as V_f), not its vector
+//! flux_balance_lat: a radial face takes the hydro's r^2 Omega (as V_f), not its vector
 //! area r^2 |S| (|S|/Omega - 1 = O(dtheta^2) varies over the panel)
 
 KOKKOS_INLINE_FUNCTION
@@ -298,7 +298,7 @@ int CsSlot(const SolveArgs &x, const int dir, const int m, const int kf,
 //----------------------------------------------------------------------------------------
 //! \fn Real CsLat
 //! \brief cubed sphere: n.(Y_p + Y_p') of cell (k,j,i), n the face's normal, p, p' the
-//! other two face families (owner's axes).  clean_cs_lat_wb, a lateral face: n less its
+//! other two face families (owner's axes).  flux_balance_lat, a lateral face: n less its
 //! part along the cell's radial (centroid) direction, unit: the radial sum of a
 //! spherically symmetric P gives the face no force (the equiangular cells are not mirror
 //! images about it); O(dtheta^2) for a smooth P

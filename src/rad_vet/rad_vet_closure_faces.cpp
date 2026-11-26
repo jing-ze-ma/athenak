@@ -193,7 +193,7 @@ void RadiationVet::RayFaceSums() {
   auto bmi = ibm_i;
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
   // intensities in the mesh layout with ghosts (re-indexed by the wall map at a periodic
-  // seam); clean_rot_ring: two slots (sets blk mod 2) with cln_scmem
+  // seam); ring: two slots (sets blk mod 2) with cln_scmem
   const int ns2 = (cln_ring && cln_scmem) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   // gl: one radial MeshBlock (sp: no reflecting top): vgd_i itself plus exchanged first

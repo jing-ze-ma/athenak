@@ -3,7 +3,7 @@
 # condition (problem/vet_shock_ref = ref/idort_radshock_m5.txt, columns x - x_s, rho, v, T_gas,
 # T_rad), Dirichlet far-field states at both x1 faces; the run must keep the profile.
 # The semi-analytic solution is grey non-equilibrium diffusion (Eddington closure), so the
-# run uses clean_closure = eddington (D = I/3) to compare like with like.
+# run uses closure_form = eddington (D = I/3) to compare like with like.
 # Used by: idort_radshock_m5.
 
 <job>
@@ -52,7 +52,7 @@ arad = 1.6332399e-46
 implicit_bc_x1min = marshak
 implicit_ebath_x1min = 1.70873641e+11
 implicit_ebath_x1max = 9.16223959e+14
-clean_closure = eddington
+closure_form = eddington
 
 <problem>
 vet_shock_ref = ref/idort_radshock_m5.txt
