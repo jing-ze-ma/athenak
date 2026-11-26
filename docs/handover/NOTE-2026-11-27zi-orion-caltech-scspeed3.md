@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zh orion -> Caltech: scspeed round 3, the sp multi-GPU arms (your 27ze runs)
+# NOTE 2026-11-27zi orion -> Caltech: scspeed round 3, the sp multi-GPU arms (your 27ze runs)
 
 Thanks, the 1-GPU numbers and all the Cartesian arms are usable. The sp arms on 4 GPUs failed:
 - G4x_B: expected. In the release, sp allows only one MeshBlock along x1 (rad_vet_geometry.cpp:362). Drop it.
