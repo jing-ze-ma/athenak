@@ -155,8 +155,8 @@ to a first-order positive form only locally, where it is needed; every such even
   ceiling would act, and the faces of that cell take the first-order LLF flux.
   `dfloor_flux_limit` scales back the outflow of a nearly empty cell so that its density
   stays above the floor;
-- radiation energy $E$: the implicit operator is an M-matrix for any step (donor-cell and
-  smallest-donor parts), and Zalesak limiters on the explicit stage increment and on the
+- radiation energy $E$: the implicit operator is an M-matrix wherever the smallest donor share
+  suffices (every measured solve; not proven for every Eddington tensor), and Zalesak limiters on the explicit stage increment and on the
   written-back fluxes keep $E$ above `e_floor`;
 - time: a failed implicit stage is redone with backward Euler (first order, L-stable), and a
   step that still fails is taken again with a smaller dt (`time/dt_retry`);
@@ -300,8 +300,10 @@ described in section 1, the method in brief, under **Positivity**.
 
 - **Density** stays above its floor by construction
   (`dfloor_flux_limit`, above).
-- **Radiation energy $E$** is non-negative by construction of the implicit operator: it is an
-  M-matrix for any Eddington tensor and step (the kinetic share has $h^+\ge0\ge h^-$, the
+- **Radiation energy $E$** is non-negative where the implicit operator is an M-matrix: it is
+  one wherever the least donor share (capped at 1) suffices, which held in every measured solve
+  (stars on sp and cs, shells, radiative shocks; 0 faces with a wrong-signed coefficient), but
+  it is not proven for every Eddington tensor and step (the kinetic share has $h^+\ge0\ge h^-$, the
   advective flux takes the smallest donor share that keeps the M-matrix, the off-diagonal
   stress enters in donor-cell form). Zalesak limiters on the explicit stage increment and on
   the written-back fluxes keep $E$ above `e_floor`; they scale only the energy flux, so
