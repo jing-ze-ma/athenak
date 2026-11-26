@@ -111,8 +111,8 @@ void RadiationVet::FaceDonor(const bool first, const bool lat, const bool hold) 
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   cln_xd_on = false;
-  GhostDefer(cln_w, CLW_EK, 1);   // one exchange
-  GhostFill(cln_w, CLW_EO, 1);   // donors' E_old of the lag split
+  GhostDefer(cln_w, CLW_EK, 1, 1);   // one exchange, depth 1
+  GhostFill(cln_w, CLW_EO, 1, 0, 1);   // donors' E_old of the lag split
   if (lat) CsLateralStress(CLW_EK);
   // hold (face_xdonor_freeze): keep C, q and the explicit part of the last pass
   cln_xdh = hold;

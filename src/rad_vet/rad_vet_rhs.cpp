@@ -131,8 +131,8 @@ void RadiationVet::RightHandSide(const bool beta, const bool lat) {
     });
     // E_k's ghosts are those of its last change; BT, RE, GX in one exchange before the
     // lateral sums
-    GhostDefer(cln_w, CLW_BT, 4);
-    GhostFill(cln_w, rx ? CLW_JV+2 : CLW_GX, rx ? 2 : 1);
+    GhostDefer(cln_w, CLW_BT, 4, 1);   // (depth 1: read by the faces' cells)
+    GhostFill(cln_w, rx ? CLW_JV+2 : CLW_GX, rx ? 2 : 1, 0, 1);
     if (lat) CsLateralStress(CLW_EK);
   }
   if (beta) return;
