@@ -420,6 +420,7 @@ void RadiationVet::WriteBack() {
   DvceArray4D<Real> fw0 = cln_fwret[0], fw1 = cln_fwgpj[1] ? cln_fwret[1] : fw0;
   DvceArray4D<Real> fw2 = cln_fwgpj[2] ? cln_fwret[2] : fw0;
   const bool frj = cln_fcpj[1], frk = cln_fcpj[2], fwj = cln_fwgpj[1], fwk = cln_fwgpj[2];
+  const bool lre = cln_lre;
   DvceArray4D<Real> lzw, lzq;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -534,10 +535,11 @@ void RadiationVet::WriteBack() {
         if (eos.tfloor > 0.0) eos.ThermoAt(d, eos.tfloor, ef, p, chi_rho, chi_t, cv);
         const Real ei = x.w(m,CLW_EI,k,j,i);
         const Real av = 0.5*fmax(ei - fmax(ef, pgf*fmax(ei, 0.0)), 0.0);
-        const Real s = (a + b <= av) ? 1.0 : ((a > 0.0) ? fmin(fmax((-b + sqrt(fmax(b*b +
-                       4.0*a*av, 0.0)))/(2.0*a), 0.0), 1.0) : 0.0);
+        const Real at = av + (lre ? 0.5*fmax(x.w(m,CLW_X,k,j,i) - efl, 0.0) : 0.0);
+        const Real s = (a + b <= at) ? 1.0 : ((a > 0.0) ? fmin(fmax((-b + sqrt(fmax(b*b +
+                       4.0*a*at, 0.0)))/(2.0*a), 0.0), 1.0) : 0.0);
         for (int n = 0; n < 3; ++n) dm[n] += s*dr[n];
-        wkr = s*(b + s*a);
+        wkr = fmin(s*(b + s*a), av);   // (eint's part; line_return_e: E the rest)
         if (!prb) {
           if (s < 1.0) {
             Kokkos::atomic_add(&frc(0), 1.0);

@@ -573,6 +573,12 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       std::cout << "### FATAL ERROR: <rad_vet>/fwb_gas needs a uniform mesh" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // line_return_e (read only when named): the kinetic energy of the line returns
+    // (flux_cone_line, fwb_gas) beyond half the cell's eint above e_min is paid by the
+    // cell's E above e_floor (at most half of it), before the return is capped
+    if (pin->DoesParameterExist("rad_vet", "line_return_e")) {
+      cln_lre = pin->GetBoolean("rad_vet", "line_return_e");
+    }
     for (int d = 0; d < 3; ++d) {
       cln_fwgpj[d] = fwg && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ? 2 :
                      1))));
