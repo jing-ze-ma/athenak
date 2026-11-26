@@ -193,7 +193,8 @@ void RadiationVet::ScInit() {
     const LogicalLocation &l = pm->lloc_eachmb[pmy_pack->gids + m];
     vgd_x1lv[m] = l.lx1;
     xf_h(m) = (l.lx1 == 0 ? 1 : 0) + (l.lx1 == vgd_nb1 - 1 ? 2 : 0);
-    if (l.lx1 == vgd_nb1 - 1 && ibc_x1max == VET_IBC_REFLECT) {xf_h(m) += 4;}
+    if (l.lx1 == vgd_nb1 - 1 && ibc_x1max == VET_IBC_REFLECT &&
+        (vgd_slab != 1 || vet_bc_mirror_hi)) {xf_h(m) += 4;}
     xf_h(m) += 8*l.lx1;
     for (int g = 0; g < pm->nmb_total; ++g) {
       const LogicalLocation &o = pm->lloc_eachmb[g];
