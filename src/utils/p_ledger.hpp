@@ -156,6 +156,11 @@ inline void Mark(Mesh *pm, const char *name) {
     Discard(pm);
     return;
   }
+  // (no sum where the next mark always books the same class: the source marks before
+  // usrc_rest, and gap_pre, which Stage's own sum follows)
+  for (auto s : {"gap_pre", "psrc", "coord", "am", "ringavg"}) {
+    if (!std::strcmp(name, s)) return;
+  }
   Take(pm, Class(name), true);
 }
 
