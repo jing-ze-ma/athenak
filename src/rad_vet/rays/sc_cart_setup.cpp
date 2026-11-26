@@ -1227,8 +1227,8 @@ void RadiationVet::ScX1Load() {
 void RadiationVet::ScSlabFaceZero() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack, n = vgd_n;
-  if (vgd_rgs.extent_int(0) != 2*nmb || vgd_rgs.extent_int(1) != 5*n) {
-    Kokkos::realloc(vgd_rgs, 2*nmb, 5*n, indcs.nx3, indcs.nx2);
+  if (vgd_rgs.extent_int(0) != 2*nmb || vgd_rgs.extent_int(1) != 3*n) {
+    Kokkos::realloc(vgd_rgs, 2*nmb, 3*n, indcs.nx3, indcs.nx2);
   }
   auto cs = cln_s;
   const int nc = cs.extent_int(1);
@@ -1246,27 +1246,133 @@ void RadiationVet::ScSlabFaceZero() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScSlabFaceSum
-//! \brief the face sums of slab shell i (pass inw) from its rays' scalars, per cell in
-//! ray order (VetScSum's face groups): entry and exit and the outward rays' x1 crossing
-//! to the cell, the inward rays' crossing and every ray's foot-shift flux to the upwind
-//! cell (the periodic image at an x1 end)
+//! \brief the face sums of slab shell i (pass inw), per cell in ray order (the
+//! grouping differs from VetScSum's face groups, each slot gets its sums in the same
+//! order).  Group 0, x2 (x3): the upwind shell's intensity a ray's constant foot shift
+//! sh carries across the low face, the x3 (x2) part halved (S2 and S3 commute; no PLM
+//! term), read from the shell iu the sweep read (the periodic image at an x1 end).
+//! Group 1, x1: entry and exit and the outward rays' crossing to the cell, the inward
+//! rays' crossing to the upwind cell, from the shell kernel's scalars (vgd_rgs)
 
 void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, ks = indcs.ks, js = indcs.js;
-  const int nmb = pmy_pack->nmb_thispack, n = vgd_n, ib = l & 1;
+  const int nmb = pmy_pack->nmb_thispack, n = vgd_n, ib = l & 1, n1 = indcs.nx1;
+  const int wb = vgd_w, nx2b = indcs.nx2, nx3b = indcs.nx3;
   const int up = inw ? ((i < ie) ? i + 1 : (vet_x1per ? is : i))
                      : ((i > is) ? i - 1 : (vet_x1per ? ie : i));
+  // the rays of the sweep's typ 1 branch (no entry at an x1 end), their upwind shell,
+  // chord and foot as the shell kernel's
+  const int lcut = vgd_scut, x1p = vgd_x1p;
+  auto x1f_ = vgd_x1f;
+  auto cx1v = vgd_sx1v;
+  auto cx1f = vgd_sx1f;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const ScLG lg_ = vgd_lg;
   auto dir_ = vgd_dir;
   auto rg_ = vgd_rgs;
+  auto vi_ = vgd_i;
+  auto hl_ = vgd_hloc;
+  auto own_ = vgd_own;
+  const bool raw_ = vgd_raw;
+  auto wl_ = vgd_wall;
+  auto mp_ = vgd_map;
   auto cs = cln_s;
-  par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 3, 6, indcs.ks, indcs.ke, indcs.js,
+  par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 0, 1, indcs.ks, indcs.ke, indcs.js,
           indcs.je,
-  KOKKOS_LAMBDA(const int m, const int grp, const int k, const int j) {
-    VetScSum(grp, dir_, n, [&](const int r) {return (dir_(r,0) < 0.0) == inw;},
-             [](const int) {return 0.0;}, [](const int) {return 0.0;},
-             [&](const int q, const int r) {return rg_(ib*nmb + m,q*n + r,k-ks,j-js);},
-             ScSlabFaceW{cs, m, k, j, i, up}, false, false, false, true);
+  KOKKOS_LAMBDA(const int m, const int grp, const int kc, const int jc) {
+    const int k = kc - ks + wb, j = jc - js + wb;   // (band index space)
+    const int lcb = (x1f_(m) & 1) ? lcut : -1;
+    const bool img = (x1p == 2) && (inw ? (l == n1 - 1) : (l == lcb));
+    const bool ent = inw ? ((l == n1 - 1) && (x1f_(m) & 2) && !img)
+                         : ((l == lcb) && !img);
+    const int iu = img ? (inw ? is : ie) : (inw ? (i + 1) : (i - 1));
+    const Real r0 = cx1v(m,i);
+    const int sj_ = lg_.Sj(m, wb), sk_ = lg_.Sk(m, wb);
+    // the sweep's band read of shell iu (rays/sc_sph_sweep_body.inc rd; the slab has
+    // identity wall maps and no pole)
+    auto rd = [&](int kk, const int jj, const int dq) -> Real {
+      if (wl_(m,kk,jj) >= 8) {return 0.0;}   // beyond a vacuum face
+      int dd = dq;
+      if (!raw_ && nx3b == 1 && kk != wb) {
+        dd = mp_(m,kk,wb,dd);
+        kk = wb;
+      }
+      const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
+      const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
+      if (ek == 0 && ej == 0) {return vi_(m,dd,kk,jj,iu);}
+      const int oo = 3*(ek + 1) + (ej + 1);
+      const int sl = 8*m + ((oo < 4) ? oo : (oo - 1));
+      const int ow = raw_ ? own_(m,kk,jj,0) : 0;
+      const int nl = raw_ ? ((ow < 0) ? m : ow) : hl_(sl);
+      if (nl < 0) {return vi_(m,dd,kk,jj,iu);}
+      const int jn = raw_ ? ((ow < 0) ? jj : own_(m,kk,jj,2)) : (jj - ej*nx2b);
+      const int kn = raw_ ? ((ow < 0) ? kk : own_(m,kk,jj,1)) : (kk - ek*nx3b);
+      const int de = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dd) : dd;
+      return vi_(nl,de,kn,jn,iu);
+    };
+    Real f2[2][16] = {}, fn[2][16] = {};
+    for (int r = 0; r < n; ++r) {
+      const Real m1 = dir_(r,0), m2 = dir_(r,1), m3 = dir_(r,2);
+      if ((m1 < 0.0) != inw) {continue;}
+      const int u = (m1 > 0.0) ? 0 : 1;
+      auto add4 = [&](Real *fx, const Real q) {
+        fx[0] += q;
+        fx[1] += q*m1;
+        fx[2] += q*m2;
+        fx[3] += q*m3;
+      };
+      if (grp == 1) {
+        add4(f2[u] + 4, rg_(ib*nmb + m,r,kc-ks,jc-js));
+        add4((m1 > 0.0) ? (f2[0] + 8) : (fn[1] + 8), rg_(ib*nmb + m,n + r,kc-ks,jc-js));
+        add4(f2[u] + 4, rg_(ib*nmb + m,2*n + r,kc-ks,jc-js));
+        continue;
+      }
+      Real g12[2] = {0.0, 0.0};
+      if (!ent) {
+        const Real wd = dir_(r,3), amr = fabs(m1);
+        const Real ds = img ? (fabs(cx1f(m,inw ? (ie + 1) : is) - r0)/amr +
+                               (inw ? (cx1v(m,is) - cx1f(m,is))
+                                    : (cx1f(m,ie+1) - cx1v(m,ie)))/amr)
+                            : fabs(cx1v(m,iu) - r0)/amr;
+        const Real fjg = (j + sj_) - ds*m2/lg_.Dx2(mbsize, m);
+        const Real fkg = (k + sk_) - ((nx3b > 1) ? ds*m3/lg_.Dx3(mbsize, m) : 0.0);
+        const Real fj = fjg - sj_, fk = fkg - sk_, dxl = ds*amr;
+        const bool thr = (nx3b > 1);
+        const Real sh2 = fj - j, sh3 = thr ? (fk - k) : 0.0;
+        const int o2 = static_cast<int>(floor(sh2));
+        const int o3 = static_cast<int>(floor(sh3));
+        const Real a2 = sh2 - o2, a3 = sh3 - o3;
+        auto ipq = [&](const int dk, const int dj) {return rd(k + dk, j + dj, r);};
+        auto g2f = [&](const int q) {
+          return thr ? 0.5*(ipq(0,q) + (1.0 - a3)*ipq(o3,q) + a3*ipq(o3+1,q))
+                     : ipq(0,q);
+        };
+        auto g3f = [&](const int q) {
+          return 0.5*(ipq(q,0) + (1.0 - a2)*ipq(q,o2) + a2*ipq(q,o2+1));
+        };
+        for (int c = 0; c < (thr ? 2 : 1); ++c) {
+          const Real sh = (c == 0) ? sh2 : sh3, s = fabs(sh), fl = floor(s);
+          const int nn = static_cast<int>(fl), sg = (sh < 0.0) ? 1 : -1;
+          auto g = [&](const int q) {return (c == 0) ? g2f(q) : g3f(q);};
+          Real p = (s - fl)*g((sg > 0) ? (-1 - nn) : nn);
+          for (int q = 0; q < nn; ++q) {p += g((sg > 0) ? (-1 - q) : q);}
+          g12[c] = wd*amr*((c == 0) ? lg_.Dx2(mbsize, m)
+                                    : lg_.Dx3(mbsize, m))/dxl*sg*p;
+        }
+      }
+      add4(fn[u], g12[0]);
+      add4(fn[u] + 12, g12[1]);
+    }
+    const ScSlabFaceW w{cs, m, kc, jc, i, up};
+    for (int t = 0; t < 8; ++t) {
+      // group 0: slots 0..3 (x2), 12..15 (x3); group 1: 4..11 (x1 boundary, crossing)
+      const int nq = (grp == 0) ? ((t < 4) ? t : (t + 8)) : (t + 4);
+      w(VSS_F2, 0, nq, f2[0][nq]);
+      w(VSS_F2, 1, nq, f2[1][nq]);
+      w(VSS_FN, 0, nq, fn[0][nq]);
+      w(VSS_FN, 1, nq, fn[1][nq]);
+    }
   });
 }
 
