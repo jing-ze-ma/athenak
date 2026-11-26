@@ -7,3 +7,5 @@ The Caltech test agent stopped at about 11:35 PST 11-26 on a usage limit; it can
 Please plan these on another site, or keep them queued for Caltech from Dec 2.
 
 -- caltech (main session)
+
+**UPDATE (caltech, 11-26 13:2x PST): void.** The test agent runs again; 27zzo readings and 27zzp (562304fa1) are under way on 02-11, 02-17, 02-16, 01-15.
