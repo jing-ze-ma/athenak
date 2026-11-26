@@ -80,7 +80,7 @@ void RadiationVet::OldVector() {
   }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]), Kokkos::Sum<Real>(nn[2]));
   SumOverRanks(nn, 3);   // (counts: one reduction)
   // clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums (Time2FormStage)
-  if (cln_lzbook && fluid && feedback && stage) LzBook(cln_lzc, true);
+  if (cln_lzbook && fluid && feedback && stage) LzBook(cln_lzc, true, cln_lzr[3]);
   // p_ledger: the increment's gas momentum withheld (cone cut, fwb, reference force)
   if (fluid && feedback && stage && !cln_vzero && !t2_inprobe) p_ledger::Start();
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {

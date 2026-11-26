@@ -35,6 +35,12 @@
 //! CLEAN PLEDGER with the step's books (x 1/dt) and END = P(t + dt) - P(t) - sum of the
 //! books (round-off); the history takes them (Hist).  Reads the state only: a run with
 //! the ledger is bitwise the run without it.
+//! <hydro>/p_ledger_lz (read only when named; 3-D spherical polar with <rad_vet>): also
+//! L_z = gas + radiation (LzTotal less the L_z ledger) in slot 1, the same classes (hflx:
+//! am_bflx's torque of the x1 faces; cut, fwb and the reference force stay in rad), and
+//! the L_z ledger's growth lzb and its part rbt, the radiation's torque through the
+//! physical x1 faces (LzBook), so rad + lzb is the write-back's L_z error less the
+//! ledger; CLEAN LZLEDGER, user.hst LzL_* in place of Pr_*.
 
 #include <cmath>
 #include <cstdio>
@@ -47,6 +53,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "outputs/outputs.hpp"
 #include "parameter_input.hpp"
 #include "rad_vet/rad_vet.hpp"
@@ -54,7 +61,9 @@
 
 namespace p_ledger {
 constexpr int kNc = 9, kGap = kNc - 1;   // hflx ntel src rad cut fwb flr mrg gap
-inline bool on = false;
+inline bool on = false, lz = false;   // (p_ledger_lz)
+inline Real lb0[2], lrate[2];             // L_z ledger, its x1 torque at the base; rates
+inline Real lz0[2];   // gas, radiation L_z at the last step's end (p_ledger_lz0, restart)
 inline bool have_base = false, started = false;
 inline Real pg[3], pr[3], pn[3];          // gas, radiation at the last mark; gas of u1
 inline Real bg[kNc][3], br[kNc][3];       // this step's books: gas part, radiation part
@@ -114,6 +123,35 @@ inline void Sums(Mesh *pm, const DvceArray5D<Real> &u, const bool rad, Real out[
   }, repro::ReproRed<7, Kokkos::HostSpace>(v));
   repro::AllMerge(v.s, 7);
   for (int q = 0; q < 7; ++q) out[q] = v.s[q].Value();
+  if (lz && pp->pradvet != nullptr) {   // (p_ledger_lz: L_z, LzTotal's parts)
+    out[1] = pp->pradvet->LzTotal(1, &u);
+    out[4] = rad ? pp->pradvet->LzTotal(2) : 0.0;
+  }
+}
+
+//! p_ledger_lz: the L_z ledger and its x1-face torque part (LzBook), pending included
+inline void LzLedger(Mesh *pm, Real l[2]) {
+  auto *v = pm->pmb_pack->pradvet;
+  l[0] = (v != nullptr) ? v->cln_lzl + v->cln_lzp : 0.0;
+  l[1] = (v != nullptr) ? v->cln_lzr[0] + v->cln_lzr[4] : 0.0;
+}
+
+//! p_ledger_lz: the step's gas L_z through the physical x1 faces (am_bflx, RK-weighted)
+inline Real AmFlux(Mesh *pm) {
+  hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
+  if (pam == nullptr || pam->am_bflx.extent_int(0) == 0) return 0.0;
+  auto bf = pam->am_bflx;
+  auto &ic = pm->mb_indcs;
+  const int ks = ic.ks, js = ic.js, n2 = ic.nx2, nkj = ic.nx3*n2;
+  repro::ReproVal<1> v;
+  Kokkos::parallel_reduce("p_ledger_lz", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          pm->pmb_pack->nmb_thispack*2*nkj),
+  KOKKOS_LAMBDA(const int idx, repro::ReproVal<1> &a) {
+    const int m = idx/(2*nkj), s = (idx/nkj)%2, k = (idx%nkj)/n2 + ks, j = idx%n2 + js;
+    a.s[0].Add(bf(m,2,s,k,j));
+  }, repro::ReproRed<1, Kokkos::HostSpace>(v));
+  repro::AllMerge(v.s, 1);
+  return v.s[0].Value();
 }
 
 //! <hydro>/p_ledger on: the withheld slopes K1 the restart file keeps (p_ledger_k1, every
@@ -121,6 +159,10 @@ inline void Sums(Mesh *pm, const DvceArray5D<Real> &u, const bool rad, Real out[
 //! first step's stage-start shares of cut, fwb and the reference force stay in rad)
 inline void Init(ParameterInput *pin) {
   ppin = pin;
+  if (pin->DoesParameterExist("hydro", "p_ledger_lz0")) {   // (p_ledger_lz)
+    std::istringstream is(pin->GetString("hydro", "p_ledger_lz0"));
+    is >> lz0[0] >> lz0[1];
+  }
   if (pin->DoesParameterExist("hydro", "p_ledger_k1")) {
     std::istringstream is(pin->GetString("hydro", "p_ledger_k1"));
     for (int b = 0; b < 3; ++b) for (int q = 0; q < 3; ++q) is >> ws[b][0][q];
@@ -135,6 +177,11 @@ inline void Init(ParameterInput *pin) {
 inline void Take(Mesh *pm, const int c, const bool book) {
   Real s[7];
   Sums(pm, pm->pmb_pack->phydro->u0, true, s);
+  auto *v = pm->pmb_pack->pradvet;
+  if (lz && (v == nullptr || !v->cln_init)) {   // (a restart before LzTotal: the file's)
+    s[1] = lz0[0];
+    s[4] = lz0[1];
+  }
   for (int q = 0; q < 3; ++q) {
     if (book && have_base) {
       bg[c][q] += s[q] - pg[q];
@@ -145,6 +192,7 @@ inline void Take(Mesh *pm, const int c, const bool book) {
   }
   gross = s[6];
   for (int q = 0; q < 3 && !have_base; ++q) p0[q] = pg[q] + pr[q];
+  if (lz && !have_base) LzLedger(pm, lb0);
   have_base = true;
 }
 
@@ -179,7 +227,7 @@ inline void Discard(Mesh *pm) {
 inline void Withheld(const int b, const Real a[3], const int k, const Real h,
                      const bool book) {
   if (!on) return;
-  for (int q = 0; q < 3; ++q) {
+  for (int q = 0; q < (lz ? 1 : 3); ++q) {   // (p_ledger_lz: slot 1 is L_z)
     if (k >= 0) ws[b][k][q] = a[q]/h;
     if (!book) continue;
     bg[3][q] += a[q];
@@ -191,7 +239,7 @@ inline void Withheld(const int b, const Real a[3], const int k, const Real h,
 //! (DflMomentum): out of flr, a boundary flux (hflx, outward +)
 inline void Outflow(const Real a[3]) {
   if (!on) return;
-  for (int q = 0; q < 3; ++q) {
+  for (int q = 0; q < (lz ? 1 : 3); ++q) {
     bg[6][q] += a[q];
     bg[0][q] += a[q];
   }
@@ -278,6 +326,17 @@ inline void Commit(Mesh *pm) {
   if (!on) return;
   Take(pm, kGap, true);
   const Real dt = pm->dt;
+  Real lb[2];
+  if (lz) {   // (p_ledger_lz: the gas's x1 torque, out of ntel; the ledger's growth)
+    const Real hz = AmFlux(pm);
+    bg[0][1] += hz;
+    bg[1][1] += hz;
+    LzLedger(pm, lb);
+    for (int q = 0; q < 2; ++q) {
+      lrate[q] = (lb[q] - lb0[q])/dt;
+      lb0[q] = lb[q];
+    }
+  }
   const int nc = (pm->use_spherical_polar || pm->use_cubed_sphere) ? 1 : 3;
   for (int q = 0; q < 3; ++q) {   // dP = -hflx + the other books
     ptot[q] = pg[q] + pr[q];
@@ -292,7 +351,7 @@ inline void Commit(Mesh *pm) {
   std::memset(bg, 0, sizeof(bg));
   std::memset(br, 0, sizeof(br));
   if (ppin != nullptr) {
-    char t[32];
+    char t[64];
     std::string k;
     for (int b = 0; b < 3; ++b) {
       for (int q = 0; q < 3; ++q) {
@@ -301,6 +360,10 @@ inline void Commit(Mesh *pm) {
       }
     }
     ppin->SetString("hydro", "p_ledger_k1", k);
+    if (lz) {
+      std::snprintf(t, sizeof(t), "%.17e %.17e", pg[1], pr[1]);
+      ppin->SetString("hydro", "p_ledger_lz0", t);
+    }
   }
   if (global_variable::my_rank != 0) return;
   std::printf("CLEAN PLEDGER cycle %d dt %.6e", pm->ncycle, dt);
@@ -313,19 +376,26 @@ inline void Commit(Mesh *pm) {
   std::printf(" END");
   for (int q = 0; q < nc; ++q) std::printf(" %.6e", pend[q]);
   std::printf(" gross %.6e\n", gross);
+  if (!lz) return;
+  std::printf("CLEAN LZLEDGER cycle %d dt %.6e", pm->ncycle, dt);
+  for (int c = 0; c < kNc; ++c) std::printf(" %s %.6e", nm[c], rate[c][1]);
+  std::printf(" lzb %.6e rbt %.6e Lz %.16e END %.6e\n", lrate[0], lrate[1], ptot[1],
+              pend[1]);
 }
 
 //! the history columns P*_tot, P*_hflx, ..., P*_gap (rank 0 holds the global values)
 inline void Hist(HistoryData *pd, Mesh *pm) {
   if (!on) return;
   const bool cur = pm->use_spherical_polar || pm->use_cubed_sphere;
-  const char *cn[3] = {cur ? "Pr" : "Px", "Py", "Pz"};
+  const char *cn[3] = {cur ? "Pr" : "Px", lz ? "LzL" : "Py", "Pz"};
   const bool r0 = (global_variable::my_rank == 0);
-  for (int q = 0; q < (cur ? 1 : 3); ++q) {
-    for (int c = -1; c < kNc; ++c) {
+  for (int q = lz; q < (lz ? 2 : (cur ? 1 : 3)); ++q) {   // (p_ledger_lz: L_z alone)
+    for (int c = -1; c < kNc + 2*lz; ++c) {
       const int n = pd->nhist++;
-      pd->label[n] = std::string(cn[q]) + "_" + ((c < 0) ? "tot" : nm[c]);
-      pd->hdata[n] = r0 ? ((c < 0) ? ptot[q] : rate[c][q]) : 0.0;
+      pd->label[n] = std::string(cn[q]) + "_" + ((c < 0) ? "tot" : ((c < kNc) ? nm[c] :
+                     ((c == kNc) ? "lzb" : "rbt")));
+      pd->hdata[n] = r0 ? ((c < 0) ? ptot[q] : ((c < kNc) ? rate[c][q] :
+                                                  lrate[c - kNc])) : 0.0;
     }
   }
 }

@@ -70,22 +70,34 @@ void RadiationVet::ReportCounters() {
 //! until stage 2 is accepted (s = 0; a backward-Euler redo drops them, Time2Restore).
 //! Total and K1's sum in <rad_vet> (restart).  3-D spherical polar: s is the L_z that
 //! crossed the boundaries (CellMomentumChange's dlz), <rad_vet>/lz_ledger.
+//! p_ledger_lz: sr, the part of s that is the radiation's torque through the physical
+//! x1 faces, booked alike (cln_lzr; with its K1 in <rad_vet>/lz_ledger_rbt).
 
-void RadiationVet::LzBook(const Real s, const bool start) {
+void RadiationVet::LzBook(const Real s, const bool start, const Real sr) {
   if (t2_inprobe) return;   // a helper solve, put back (Time2RotCorrect)
+  const Real w = (t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0;
   if (t2_solve == VET_T2S_STAGE1) {
-    cln_lzp = (start ? 0.0 : cln_lzp) + ((t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0)*s;
+    cln_lzp = (start ? 0.0 : cln_lzp) + w*s;
+    cln_lzr[4] = (start ? 0.0 : cln_lzr[4]) + w*sr;
     return;
   }
   if (t2_solve == VET_T2S_STAGE2 && start) {
     cln_lzp += s;
+    cln_lzr[4] += sr;
     return;
   }
-  cln_lzl += (t2_solve == VET_T2S_STAGE2) ? cln_lzp : cln_lzp + s;
-  cln_lzp = 0.0;
+  const bool s2 = (t2_solve == VET_T2S_STAGE2);
+  cln_lzl += s2 ? cln_lzp : cln_lzp + s;
+  cln_lzr[0] += s2 ? cln_lzr[4] : cln_lzr[4] + sr;
+  cln_lzp = cln_lzr[4] = 0.0;
   const bool cs = (cln_lza == 2);
   cln_lzpin->SetReal("rad_vet", VetLzKey(cln_lzpin, cs, false), cln_lzl);
   cln_lzpin->SetReal("rad_vet", VetLzKey(cln_lzpin, cs, true), cln_lzs1);
+  if (cln_lzro) {
+    char t[64];
+    std::snprintf(t, sizeof(t), "%.17e %.17e", cln_lzr[0], cln_lzr[1]);
+    cln_lzpin->SetString("rad_vet", "lz_ledger_rbt", t);
+  }
   if (global_variable::my_rank == 0 && cln_verbose > 0 && !cln_insteady) {
     std::printf("CLEAN LZ%s cycle %d t2s %d ledger %.16e\n", cs ? "" : "B",
                 pmy_pack->pmesh->ncycle, t2_solve, cln_lzl);
@@ -95,18 +107,21 @@ void RadiationVet::LzBook(const Real s, const bool start) {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::LzTotal
 //! \brief history L_z: sum V R (p_phi + F_phi/c^2) of gas and radiation plus the L_z
-//! ledger (LzBook); 0 before the first solve; lz_telescope: face momenta
+//! ledger (LzBook); 0 before the first solve; lz_telescope: face momenta.  part 1: the
+//! gas's of ug (default u0) alone, 2: the radiation's alone (p_ledger_lz; spherical
+//! polar: each cell's halves of its x3 faces' F, which the restart file holds)
 
-Real RadiationVet::LzTotal() {
+Real RadiationVet::LzTotal(const int part, const DvceArray5D<Real> *ug) {
   if (!cln_init || !(sph_geom || cs_geom || cln_lzsp)) return 0.0;
   SolveArgs x = MakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
-  const bool fo = fl.on;
-  auto uh = fl.u0;
+  const bool fo = fl.on && part != 2;
+  auto uh = ug ? *ug : fl.u0;
   auto ur = u0;
   auto f2 = f0x2, f3 = f0x3;
   const bool tel = cln_lzt;
-  const Real ic2 = 1.0/(x.c*x.c);
+  const Real ic2 = (part == 1) ? 0.0 : 1.0/(x.c*x.c);
+  const bool fh = (part == 2) && x.sph;   // (its x3 faces' halves, as LzBook's dlz)
   const Real s = SumExact(pmy_pack, "cln_lztot",
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     Real p[3] = {0.0, 0.0, 0.0};
@@ -114,7 +129,8 @@ Real RadiationVet::LzTotal() {
     const Real r = LzArm(x, m, k, j, i);
     const Real v = CellVolume(x, m, k, j, i);
     if (!tel) {   // (Cartesian: x p_y - y p_x)
-      s0 += (x.sph || x.cub) ? v*r*(p[2] + ur(m,VET_F3,k,j,i)*ic2) :
+      const Real f = fh ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : ur(m,VET_F3,k,j,i);
+      s0 += (x.sph || x.cub) ? v*r*(p[2] + f*ic2) :
             v*(x.x1v(m,i)*(p[1] + ur(m,VET_F2,k,j,i)*ic2) -
                x.x2v(m,j)*(p[0] + ur(m,VET_F1,k,j,i)*ic2));
       return;
@@ -129,7 +145,7 @@ Real RadiationVet::LzTotal() {
     }
     s0 += v*r*p[2] + lr;
   });
-  return s + (cln_lzbook ? cln_lzl + cln_lzp : 0.0);
+  return s + ((cln_lzbook && part == 0) ? cln_lzl + cln_lzp : 0.0);
 }
 
 //----------------------------------------------------------------------------------------
