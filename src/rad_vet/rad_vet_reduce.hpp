@@ -231,6 +231,47 @@ std::array<Real, 2> GlobalSums(MeshBlockPack *pp, const char *name, const int n,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn std::array<Real, 3> GlobalSumsMax
+//! \brief GlobalSums' n <= 2 sums of f and the max over the active cells and ranks of
+//! g(m, k, j, i) >= 0, read after f updated the cell.  layout_invariant: one pass and one
+//! reduction (VetLayReduce's max slot rides in the same merge; the sums are those of
+//! GlobalSums); else GlobalSums, then the max in a pass of its own
+
+template <typename F, typename G>
+std::array<Real, 3> GlobalSumsMax(MeshBlockPack *pp, const char *name, const int n,
+                                  const F &f, const G &g) {
+  auto &indcs = pp->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pp->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  if (pp->pmesh->layout_invariant) {
+    VetBcgVal v;
+    auto *r = pp->pradvet;
+    const int nxb[3] = {nx1, nx2, nx3};   // (layout_invariant_mode = tile)
+    VetLayReduce(name, nmb*nkji, nkji, r->lay_part, r->lay_part_h,
+    KOKKOS_LAMBDA(const int idx, VetBcgVal &a) {
+      int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
+      const int i = idx - m*nkji - k*nji - j*nx1 + is;
+      f(m, k+ks, j+js, i, a.s0, a.s1);
+      a.mx = fmax(a.mx, g(m, k+ks, j+js, i));
+    }, v, nxb);
+    return {v.s0, v.s1, v.mx};
+  }
+  const auto d = GlobalSums(pp, name, n, f);
+  Real mx = 0.0;
+  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
+    a = fmax(a, g(m, k+ks, j+js, idx - m*nkji - k*nji - j*nx1 + is));
+  }, Kokkos::Max<Real>(mx));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &mx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  return {d[0], d[1], mx};
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real SumExact
 //! \brief GlobalSums' s0 by the exact accumulator (utils/repro_sum.hpp): no round-off of
 //! the sum, the same for every layout and rank count

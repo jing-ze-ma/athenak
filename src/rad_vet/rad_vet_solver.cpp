@@ -815,11 +815,29 @@ int RadiationVet::SolveBiCGStab() {
   // the recursive residual is confirmed on the true one (<= 10 tol), else restart
   Real rho = 1.0, alpha = 1.0, omega = 1.0, rr = 0.0, r0r0 = 0.0, rho_new = 0.0, bb = 0.0;
   int it0 = 0;
+  // clean_bud_maxnorm: max_i |r_i| of the vector a sum pass just formed, in the same
+  // reduction (GlobalSumsMax); rmx of r, smx of s
+  const bool mn = bud && cln_bmn;
+  Real rmx = 0.0, smx = 0.0;
+  auto gr = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    return fabs(w(m,sr,k,j,i));
+  };
+  auto gs = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    return fabs(w(m,ss,k,j,i));
+  };
+  // (g: device lambdas made above; none may be defined inside this generic lambda)
+  auto sums = [&](const char *nm, const int n, const auto &f, const auto &g) {
+    if (!mn) {
+      const auto d = GlobalSums(pmy_pack, nm, n, f);
+      return std::array<Real, 3>{d[0], d[1], 0.0};
+    }
+    return GlobalSumsMax(pmy_pack, nm, n, f, g);
+  };
   auto restart = [&](const int it, const bool force = false) {
     if (it == it0 + 1 && !force) return false;
     apply(sx, sr);
     const int n = (it < 0) ? 2 : 1;
-    const auto d = GlobalSums(pmy_pack, "cln_dot_rst", n,
+    const auto d = sums("cln_dot_rst", n,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0,
                   Real &s1) {
       for (int c = 0; c < nc; ++c) {   // (r = b - A x, r0 = r, p = v = 0)
@@ -830,7 +848,8 @@ int RadiationVet::SolveBiCGStab() {
         s0 += w(m,sr+c,k,j,i)*w(m,sr+c,k,j,i);
         if (n > 1) s1 += w(m,sb+c,k,j,i)*w(m,sb+c,k,j,i);
       }
-    });
+    }, gr);
+    rmx = d[2];
     rho = alpha = omega = 1.0;
     rr = r0r0 = rho_new = d[0];
     if (it < 0) bb = d[1];
@@ -841,27 +860,15 @@ int RadiationVet::SolveBiCGStab() {
   Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
   // clean_bud_maxnorm: the budget's tests on max_i |r_i|, the norm of the pass's own test
   // (an L2 norm above sqrt(N) t has its max above t: not reduced)
-  const bool mn = bud && cln_bmn;
   const Real sqn = std::sqrt(static_cast<Real>(pmy_pack->pmesh->nmb_total)*
                              (ie - is + 1)*(je - js + 1)*(ke - ks + 1));
-  auto vmax = [&](const int s) {
-    Real a = 0.0;
-    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-    Kokkos::parallel_reduce("cln_vmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                            (nmb1 + 1)*nkji),
-    KOKKOS_LAMBDA(const int idx, Real &mx) {
-      const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
-      const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
-      mx = fmax(mx, fabs(w(m,s,k,j,i)));
-    }, Kokkos::Max<Real>(a));
-    return GlobalReduce(a, true);
-  };
+
   // Eisenstat-Walker forcing (choice 2, safeguarded) on |r0|, the Newton residual of the
   // pass in the budget's norm
   if (bud && cln_ewr < -2.5) {
     tol = 0.1*cln_bmax;
   } else if (bud) {
-    const Real r0 = mn ? vmax(sr) : std::sqrt(rr);
+    const Real r0 = mn ? rmx : std::sqrt(rr);
     Real eta = 0.1;
     if (cln_ewr > 0.0) {
       eta = 0.9*SQR(r0/cln_ewr);
@@ -879,8 +886,8 @@ int RadiationVet::SolveBiCGStab() {
   // met, it is at round-off: converged
   constexpr Real cnt = 1.0e-10;
   const Real efl = e_floor;
-  auto conv = [&](const int s, const Real r2, const Real t) {
-    if (!(std::sqrt(r2) <= t) && !(mn && std::sqrt(r2) <= sqn*t && vmax(s) <= t)) {
+  auto conv = [&](const int s, const Real r2, const Real vm, const Real t) {
+    if (!(std::sqrt(r2) <= t) && !(mn && std::sqrt(r2) <= sqn*t && vm <= t)) {
       return false;
     }
     if (bud) return true;
@@ -903,8 +910,10 @@ int RadiationVet::SolveBiCGStab() {
     }, Kokkos::Max<Real>(a));
     return GlobalReduce(a, true) <= 1.0;
   };
-  if (conv(sr, rr, tol)) return 0;
-  auto done = [&](const int it) {return restart(it, true) && conv(sr, rr, 10.0*tol);};
+  if (conv(sr, rr, rmx, tol)) return 0;
+  auto done = [&](const int it) {
+    return restart(it, true) && conv(sr, rr, rmx, 10.0*tol);
+  };
 
   const Real eps = std::numeric_limits<Real>::epsilon();
   for (int it = 1; it <= cln_maxit; ++it) {
@@ -930,14 +939,16 @@ int RadiationVet::SolveBiCGStab() {
     }
     alpha = rho/r0v;
     const Real ma = -alpha;
-    const Real s2 = GlobalSums(pmy_pack, "cln_dot_s", 1,
+    const auto ds = sums("cln_dot_s", 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &) {
       for (int c = 0; c < nc; ++c) {   // (s = r - alpha v)
         w(m,ss+c,k,j,i) = 1.0*w(m,sr+c,k,j,i) + ma*w(m,sv+c,k,j,i);
         s0 += w(m,ss+c,k,j,i)*w(m,ss+c,k,j,i);
       }
-    })[0];
-    if (conv(ss, s2, tol)) {
+    }, gs);
+    const Real s2 = ds[0];
+    smx = ds[2];
+    if (conv(ss, s2, smx, tol)) {
       axpby(sx, sx, 1.0, sy, alpha);
       if (done(it)) return it;
       continue;
@@ -947,7 +958,7 @@ int RadiationVet::SolveBiCGStab() {
     const auto d = dots(2, {sq, sq, sq, ss});
     omega = (d[0] > 0.0) ? d[1]/d[0] : 0.0;
     const Real al_ = alpha, om = omega;
-    const auto e = GlobalSums(pmy_pack, "cln_dot_x", 2,
+    const auto e = sums("cln_dot_x", 2,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0,
                   Real &s1) {
       for (int c = 0; c < nc; ++c) {
@@ -956,10 +967,11 @@ int RadiationVet::SolveBiCGStab() {
         s0 += w(m,sr+c,k,j,i)*w(m,sr+c,k,j,i);
         s1 += w(m,sr0+c,k,j,i)*w(m,sr+c,k,j,i);
       }
-    });
+    }, gr);
     rr = e[0];
     rho_new = e[1];
-    if (conv(sr, rr, tol) && done(it)) return it;
+    rmx = e[2];
+    if (conv(sr, rr, rmx, tol) && done(it)) return it;
     if (omega == 0.0 && !restart(it)) return -it;
   }
   return -cln_maxit;
