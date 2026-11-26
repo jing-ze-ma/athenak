@@ -784,6 +784,7 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
     // messages (the send buffer is complete at the event: bitwise)
     ScPackEvtRecord(vgd_cur);
     ScRingFlush();
+    ScMidRun();   // the next shell's interior runs while the messages travel
     ScPackEvtWait(vgd_cur);
     vgd_hlp.tq.reset();
     auto &tq = vgd_hlp.tq;

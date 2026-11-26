@@ -610,6 +610,8 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
   // lean: wait for the pack alone (an event on the sweep's stream, not a fence)
   if (lean) {
     ScPackEvtRecord(DevExeSpace());
+    ScRingFlush();   // (lends the next shell its slab)
+    ScMidRun();   // the next shell's interior runs while the messages travel
     ScPackEvtWait(DevExeSpace());
   } else {
     Kokkos::fence();

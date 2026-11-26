@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -1629,6 +1630,19 @@ class RadiationVet {
     Kokkos::Timer tq;
   };
   ScHlPend vgd_hlp;
+  // sp sweep over MPI, interior / edge split: the next shell's interior items launched
+  // behind this shell's pack (ScHlBegin, ScGbHaloC), while the host posts and waits for
+  // the messages; the items whose stencil reaches the band are listed (vgd_edl, count
+  // vgd_edn) and run after the unpack
+  std::function<void()> vgd_mid;
+  void ScMidRun() {
+    if (vgd_mid) {
+      vgd_mid();
+      vgd_mid = nullptr;
+    }
+  }
+  DvceArray1D<int> vgd_edl;
+  Kokkos::View<int, DevMemSpace> vgd_edn;
   template <class V>
   bool ScHlBegin(V &a, const int nv, const int i0, const int ws);
   void ScHlEnd();
