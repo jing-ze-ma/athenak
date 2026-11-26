@@ -68,6 +68,7 @@ TaskStatus RadiationVet::GasUpdate(Driver *pdrive, int stage) {
   eint_ledger::Mark(pmy_pack->pmesh, "vet_post");
   // skip on a failed solve (dt_retry discards it; inf/NaN would poison the counters)
   if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
+  eint_ledger::Mark(pmy_pack->pmesh, "floorcap");
   FluidRefresh(pdrive);
   eint_ledger::Mark(pmy_pack->pmesh, "vet_c2p");
   TmrMark(9);
@@ -322,6 +323,7 @@ void RadiationVet::FluidRefresh(Driver *pdrive, bool lat) {
   if (lat && ph->pmlat != nullptr && ph->pmlat->on) {
     ph->pmlat->Average(ph->u0, ph->nhydro, ph->nhydro + ph->nscalars, 0, ph->phicc0,
                        ph->use_etotgrav);
+    eint_ledger::Mark(pmy_pack->pmesh, "mrglat");
   }
   (void) ph->RestrictU(pdrive, 0);
   (void) ph->InitRecv(pdrive, -1);    // stage < 0 suppresses InitFluxRecv

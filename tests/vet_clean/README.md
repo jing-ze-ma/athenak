@@ -76,6 +76,7 @@ is a FAIL with the path of its `run.log`.
 | `key_fatal` | `shell_sp`, `mhd_noise`, `wave_cart`, `mhd_rhse_ct` | keys the code would ignore, 2 cycles: `hydro/reconstruct = ppm4` and `mhd/reconstruct = wenoz` on spherical polar, `mhd/reconstruct = ppm4` with `wb_dirs = all` (Cartesian), `ix2_bc = polar` without `use_polar_boundary`, `use_polar_boundary` on a Cartesian mesh, `hydro/wb_rho` without `wellbalance_dynamic`, `mhd/fofc_rsolver = hlle` without `fofc`, `mhd/polar_emf_diss` without a polar boundary, `time/dt_retry_views = all` on the cubed sphere (`shell_cs`); `reconstruct = plm` named vs not named | each stops with its FATAL; plm named and not named identical (difference 0) |
 | `restart_keys` | `shell_sp` | a restart file storing `rad_vet/clean_tol = 5e-11` (default 1e-10), restarted with a `-i` deck that does not name it, one that does, and without a deck | one `CLEAN WARNING restart:` line with key, stored value and default; none when named; dumps identical to the restart without a deck |
 | `momentum_box` | `wave_cart` (8^3, periodic 3-D) | total linear momentum, gas (`hydro_u`) + radiation (face momenta of `vet_face` / c^2), every cycle for 8 cycles; radiation wave along the xyz diagonal, amplitude 1e-3, `radwave_eig = false`, `nghost = 3`, tile 8: `dP_cyc` = largest component of \|P - P_0\| / Σ\|p_gas\| per cycle, `dP_max` its maximum (quick and full, ~10 s) | **a report, not a criterion**: passes when the run completes, the numbers are finite and there is no `CLEAN WARNING` |
+| `p_ledger` | `wave_cart` (8^3, periodic 3-D), `shell_sp`, `shell_cs` | `hydro/p_ledger` (`CLEAN PLEDGER`): per step \|END\| / Σ V\|p\| of the Cartesian (box) and radial (shells) momentum ledger; the radiation update's \|dP\| in the box at amplitude 1e-3; the sp flux divergence's non-telescoping part; the shell_sp dumps and old history columns with and without the ledger | END, box_small_rad, sp_ntel, sp/cs gap <= 1e-13; 8 cycles; `Pr_*` columns present; bitwise 0; no `CLEAN WARNING` |
 
 ### IDORT literature tests
 
@@ -193,9 +194,9 @@ Notes on the results of this release:
   time-error tolerance, so the mirror symmetry holds only to that tolerance; the turning-set arm
   of `wedge_sym` therefore names them false, so it tests the mirror pairing under a `--keys` run.
 - **Linear momentum.** The scheme does not conserve linear momentum (gas + radiation) in
-  general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone`), the well-balancing residual (`clean_stag_fwb`) and the
+  general (`p_ledger` books it by operator class): the face-flux cone cut (`clean_stag_fcone`), the well-balancing residual (`clean_stag_fwb`) and the
   floor velocity rules (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling) change it
-  and are not booked. Where none of them acts the momentum exchange is exact; at amplitude
+  outside the flux form. Where none of them acts the momentum exchange is exact; at amplitude
   1e-3 in `momentum_box` none acts and dP is round-off (below 1e-16).
   In a non-linear box (amplitude 0.1) the cut changes P by up to ~4e-3 of Σ|p_gas| per
   cycle. `momentum_box` therefore reports dP (printed, and kept with `--record`) and does
