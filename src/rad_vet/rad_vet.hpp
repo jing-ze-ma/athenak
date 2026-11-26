@@ -204,7 +204,7 @@ class RadiationVet {
   // E-floor energy created by discarded attempts (rank-local), not in pos_cnt
   Real pos_un_drop = 0.0;
   int dtr_ncut = 0, dtr_maxcut = 8;   // DtRetry cuts of this cycle, limit
-  bool dtr_redo = false;   // this cycle's failed step is redone (clean: solved strictly)
+  bool dtr_redo = false;   // this cycle's failed step is redone (CLEAN RETRY)
   Real marshak_q{};             // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min{}, ibc_x1max{}; // VET_IBC_*
   // implicit_bc_x2min|x2max|x3min|x3max: auto (periodic on a periodic mesh, else

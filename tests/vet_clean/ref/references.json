@@ -101,7 +101,14 @@
   "equal": {
    "maxdiff": 0.0,
    "retries_fac1": 1,
-   "retries_fac05": 1
+   "retries_fac05": 1,
+   "redo_maxdiff": 0.0,
+   "redo05_warnings": 0,
+   "redo05_layout_maxdiff": 0.0,
+   "redo05_restart_maxdiff": 0.0
+  },
+  "min": {
+   "redo05_retry_lines": 1
   }
  },
  "layout_tile": {

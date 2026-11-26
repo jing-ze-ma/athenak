@@ -364,14 +364,14 @@ Real RadiationVet::NewtonUpdate() {
   cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   if (bud) {   // (the tolerance of the next test and solve; for settled, the level of a
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
-    // (a step dt_retry redoes, whose state just failed, is solved strictly too)
+    // (a step dt_retry redoes keeps it: its passes stall where a cut dt does not lower
+    // the change, and the strict tfl failed every cut; a converged redo: CLEAN RETRY)
     // (clean_clos1_budget, clean_bud_maxnorm: the time error down to
     // clean_tol_nl, as each relaxes the passes to it; at 10 clean_tol a step whose time
     // error is below, a 1e-6 wave's 1e-11 at a change of 1e-9, lost the wave's phase)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
     const Real tlo = (cln_c1b || cln_bmn) ? cln_tol_nl : tfl;
-    cln_tolb = (kok && !dtr_redo) ?
-               fmin(fmax(cln_bkap*ermax, tlo), cln_bmax) : tfl;
+    cln_tolb = kok ? fmin(fmax(cln_bkap*ermax, tlo), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
   // fwork: emission hc kP a T^4 of the new T for the face beta terms of the velocity
@@ -839,7 +839,7 @@ void RadiationVet::PassRows(const SolvePass &p) {
 bool RadiationVet::PassSolve(SolvePass &p) {
   // budget: a pass whose iterate gives the next closure is solved in the strict norm
   const bool cnext = (cln_closit && p.n + 1 < cln_maxpic) || (p.clos1 && p.n == 0);
-  if (cnext) cln_ewr = (cln_c1b && !dtr_redo) ? -3.0 : -2.0;
+  if (cnext) cln_ewr = cln_c1b ? -3.0 : -2.0;
   p.nit = SolveBiCGStab();
   if (cnext) cln_ewr = -1.0;
   p.nit_sum += std::abs(p.nit);
@@ -980,6 +980,11 @@ void RadiationVet::VerdictSolve(const SolvePass &p) {
     WorstCell(p.dnl, p.dnl0);
     if (fatal) RadVetFatal("<rad_vet> clean: a backward-Euler solve did not converge and "
                            "its last change exceeds <rad_vet>/implicit_resid_fatal");
+  }
+  if (dtr_redo && p.nit >= 0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN RETRY cycle %d t2s %d: the redone step's solve converged (last "
+                "change %.3e, tolerance %.3e)\n", pmy_pack->pmesh->ncycle, t2_solve,
+                p.dnl, cln_tolb);
   }
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos 0 mark 0 all 0 neg %d "
