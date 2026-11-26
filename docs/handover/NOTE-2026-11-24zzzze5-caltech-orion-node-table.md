@@ -1312,3 +1312,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 15:16 02-11: IDLE for 10 min
 - 11-26 15:19 02-17: lz_E3-t9 -> lz_E3F-t9
 - 11-26 15:33 02-17: lz_E3F-t9 -> lz_E3FE-t9
+- 11-26 15:46 02-17: lz_E3FE-t9 -> lz_E3FE-bsg
