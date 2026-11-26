@@ -65,7 +65,8 @@ the gas only through $\mathbf G$. The scheme requires the full speed of light, $
 formal solution of the grey transfer equation $\hat n\cdot\nabla I = \chi(S - I)$ along a
 fixed set of directions. One short-characteristics method (sc) serves every mesh: the same
 formal solution along each ray segment (the source linear in optical depth, upwind values
-interpolated from the neighbouring cells) and the same boundary rules. Only the order of the
+interpolated from the neighbouring cells, bounded by their values, so $I \ge 0$) and the same
+boundary rules. Only the order of the
 sweep and the direction set follow the mesh: shell by shell on spherical-polar and
 cubed-sphere meshes, with a global set (a Gauss-Legendre product set, level-symmetric,
 geodesic or HEALPix set), and layer by layer along x1 on Cartesian meshes, with a double-Gauss set about x1, a ring, or the same global set. The source

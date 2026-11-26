@@ -254,6 +254,8 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
   Kokkos::realloc(vet_cell, nmb, VETRAY_NC + VETRAY_NKP +
                   (cln_consist ? VETRAY_NFS : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
+  Kokkos::realloc(vray_cnt, 1);   // intensities < 0 clipped (ClosureFromRays reports)
+  Kokkos::deep_copy(vray_cnt, 0.0);
   if (mbpath) {
     ScCartInitMB(pin);   // the banded plane buffers live in vet_mbs
   } else {

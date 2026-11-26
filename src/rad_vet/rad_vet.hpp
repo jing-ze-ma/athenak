@@ -1069,7 +1069,7 @@ class RadiationVet {
   Real vray_ncall = 0.0, vray_nclamp = 0.0;
   DvceArray5D<Real> vray_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vray_cs_c;
-  DvceArray1D<Real> vray_cnt;  // (1): lateral reads clamped to the ghost band
+  DvceArray1D<Real> vray_cnt;  // (1): gd: lateral reads clamped; Cartesian: I < 0 clipped
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vray_cs
   void VetRaySource();   // ln chi, ln S of a vet_gd build
   void VetRayExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
