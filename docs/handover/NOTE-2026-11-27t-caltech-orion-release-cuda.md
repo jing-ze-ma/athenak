@@ -94,3 +94,16 @@ PASS mpi_ranks            19 s  warnings 0 fcone_lz 7 files 15 maxdiff_sp 0 maxd
 - rel 82231a337: 60 lines, PASS 60, FAIL 0: []
 
 - against b5ade8753: 59 common tests, printed values equal in 59, different in 0, only in rel-e ['large_step']
+
+## Summary for the push decision (27t)
+| check | result |
+|---|---|
+| build | CUDA 12.9 + g++ 13.2, star_vet e80fcc9c and suite ee84ed64, .prov 82231a337f4e5f5a5a4c314dfaaeda8e88b2ae14 |
+| tiny gate | the old deck FATALs on the removed key clean_face_hctau = false (by design); without that line: pass 1 3.720e-11 on both release and b5ade8753, user.hst identical |
+| suite (CUDA, 02-03; 4 lists + mpi_ranks on 2 H200) | 60 / 60 PASS, 0 FAIL, 0 SKIP |
+| against the b5ade8753 CUDA suite | 59 common tests: printed values equal in all 59, different in 0; new: large_step PASS (KE_r 8.09e-4, rho_min 87.4, dEgas 3.18e-4) |
+| lines changed by the key removal | none (no common test prints a different value) |
+| margins | star_smoke dev 1.1e-4 of the 2e-4 bound (55 %, worst L_intE); wedge_sym fphi 1.23e-9 / 2.48e-10 / 1.31e-9, fth 1.24e-16, fth_rot 2.67e-10 against the bounds in references.json (printed below) |
+| star restart (m35zams.00010, +2 cycles, 4 ranks) | hydro_w, vet, vet_face, vet_vet payloads identical, user / hydro hst printed-bitwise, against b5ade8753 |
+
+- wedge_sym bounds: {"max": {"fphi": 1e-08, "fth": 1e-08, "fth_rot": 1e-08}, "equal": {"wedge_fatal": 1, "theta_fatal": 1, "rot_fatal": 1, "warnings": 0}}
