@@ -199,10 +199,11 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
     // clean_stag_fschur: the faces beyond the line ends exact, not lagged.
     // clean_stag_fwb: each row less its streaming share w of its residual at the rays'
     // own state F_ray, so F_ray is the thin rows' exact steady state.  F_ray (lab frame):
-    // the rays' flux factor times the donor's old E plus the upwind advective a E; a
-    // physical face its F^H; also the memory G.  The thick share keeps its row, s takes
-    // 1/(1 + tau_f), tau_f = chi_f dx_f.  The residual s enters CLF_N + 1: the gas takes
-    // the absorption of F, not s, whose s V/c^2 is booked as the radiation's (L_z: dlz).
+    // the rays' flux factor times the donor's old E (no advective a E, as Phi's thin
+    // share); a physical face its F^H; also the memory G.  The thick share keeps its
+    // row, s takes 1/(1 + tau_f), tau_f = chi_f dx_f.  The residual s enters CLF_N + 1:
+    // the gas takes the absorption of F, not s, whose s V/c^2 is booked as the
+    // radiation's (L_z: dlz).
     // E and the energy flux memory G + d are unchanged.
     if (fwb && q == x.nf) {
       const SolveArgs *pw = DevArgs(x, 0);
