@@ -1256,6 +1256,17 @@ class RadiationVet {
       }
       return d(off(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj));
     }
+    // slab (m, i) for repeated interior reads of one thread: value (v, k, j) of an
+    // active cell (w <= k < w + nx3, w <= j < w + nx2) is d(b + v + n*(k + c3*j)),
+    // the element operator() returns (no band test needed there)
+    KOKKOS_INLINE_FUNCTION
+    int64_t Base(const int m, const int i, int &c3) const {
+      const int wl = wi(i);
+      const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
+      c3 = nx3 + bk0 + sb(m,1)*wl;
+      return off(m,i) - static_cast<int64_t>(n)*((w - bk0) +
+                                                 static_cast<int64_t>(c3)*(w - bj0));
+    }
     int extent_int(const int r) const {
       return (r == 0) ? nmb : (r == 1) ? n : (r == 2) ? (nx3 + 2*w) : (r == 3) ?
              (nx2 + 2*w) : c1;
