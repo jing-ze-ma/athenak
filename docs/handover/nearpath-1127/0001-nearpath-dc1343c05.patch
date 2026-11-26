@@ -1,0 +1,196 @@
+From dc1343c056f43dec6d5ef3af6ef244899640b079 Mon Sep 17 00:00:00 2001
+From: Jing-Ze Ma <jingzema0211@gmail.com>
+Date: Thu, 26 Nov 2026 08:45:02 +0100
+Subject: [PATCH] rad_vet sc: a near-tangent chord samples the cells it crosses
+ (sp and cs)
+
+The closing segment of a curved-mesh ray took chi and S only at its ends: the upwind
+point on the shell and the node.  A near-tangent chord, about sqrt(2 r dr) long, spans
+several lateral cells, and an opaque cell between its ends was not seen, so its emission
+was lost: E just outside a thick emitter was low by about 10 % and did not converge with
+resolution or ray count (OPEN_BUGS #10; the lateral rays are the ones joining an emitter
+to its lateral neighbours).  ScPathSeg integrates such a chord through the cells holding
+4 sub-points per lateral cell spanned (at most 16), chi and S constant per cell, and is
+taken where ln chi varies along it by more than ln kVetCornerRatio; elsewhere the
+segment rules (jump, split, corner) stand.  Only chords whose node-and-stencil lateral
+box on the crossed shells shows that contrast are sampled (ScBoxContrast).  The samples
+stay inside the stencil's read window (a read beyond it is clamped and counted, as the
+stencil's).  Spherical polar and cubed sphere alike.  Positive (all terms >= 0);
+closure only.  Clump deck (tau 20, 512 rays): E at 0-0.5 cell from the edge -9.6 % ->
+-7.2 % (sp, 0.5-1 cell -7.4 -> -3.8 %), -5.1 % -> -1.7 % (cs); 1 vs 2 x 2 MeshBlocks
+in tile mode unchanged (cs bitwise; sp 1 x 2 bitwise, 2 x 2 at the base's 1e-14).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_vet/rays/sc_cs_shell.inc       | 41 ++++++++++++++++++++
+ src/rad_vet/rays/sc_ray.hpp            | 53 ++++++++++++++++++++++++++
+ src/rad_vet/rays/sc_sph_sweep_body.inc | 37 ++++++++++++++++++
+ 3 files changed, 131 insertions(+)
+
+diff --git a/src/rad_vet/rays/sc_cs_shell.inc b/src/rad_vet/rays/sc_cs_shell.inc
+index 29d9a0a74..ffc14fedf 100644
+--- a/src/rad_vet/rays/sc_cs_shell.inc
++++ b/src/rad_vet/rays/sc_cs_shell.inc
+@@ -117,6 +117,47 @@
+             iv = ScSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
+                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim, iuu,
+                              idd);
++            // a chord over more than one lateral cell: its own cells (ScPathSeg), each
++            // sub-point's nearest stencil cell
++            // (sampled only where ln chi varies over the cells of the node's and the
++            // stencil's lateral box on the shells the chord crosses)
++            Real fk = 0.0, fj = 0.0;
++            int ka = k, kb = k, ja = j, jb = j;
++            for (int e = 0; e < st.n; ++e) {
++              fk += st.w[e]*st.k[e];
++              fj += st.w[e]*st.j[e];
++              ka = (st.k[e] < ka) ? st.k[e] : ka;
++              kb = (st.k[e] > kb) ? st.k[e] : kb;
++              ja = (st.j[e] < ja) ? st.j[e] : ja;
++              jb = (st.j[e] > jb) ? st.j[e] : jb;
++            }
++            const int npt = ScPathN(fmax(fabs(fj - j), fabs(fk - k)));
++            if (npt > 0 && ScBoxContrast(fC, ka, kb, ja, jb, i, iu,
++                                         (typ == 3) ? (i - 1) : i) > lcr) {
++              auto cell = [&](const Real sq, Real &lc, Real &ls) {
++                Real xq[3] = {r*rx - sq*nx, r*ry - sq*ny, r*rz - sq*nz};
++                const Real rq = sqrt(xq[0]*xq[0] + xq[1]*xq[1] + xq[2]*xq[2]);
++                for (int c = 0; c < 3; ++c) {xq[c] /= rq;}
++                ScCsSt sq4;
++                // (a cell beyond the band is dropped, counted as the stencil's)
++                if (!ScCsStencil(xq, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b, nc, h,
++                                 cm_, nb_, sq4) && cnt) {
++                  Kokkos::atomic_add(&cnt_(0), 1.0);
++                }
++                int kq = k, jq = j;
++                Real wm = 0.0;
++                for (int e = 0; e < sq4.n; ++e) {
++                  if (sq4.w[e] > wm) {wm = sq4.w[e]; kq = sq4.k[e]; jq = sq4.j[e];}
++                }
++                const int iq = (rq > cx1f(m,i+1)) ? (i + 1)
++                                                  : ((rq < cx1f(m,i)) ? (i - 1) : i);
++                lc = cv(m,0,kq,jq,iq);
++                ls = cv(m,1,kq,jq,iq);
++              };
++              const Real ip = ScPathSeg(cell, npt, ds, cv(m,0,k,j,i), lcr,
++                                        (ivu < 0.0) ? su : ivu);
++              if (ip >= 0.0) iv = ip;
++            }
+           }
+         }
+         va(m,d,k,j,i) = iv;
+diff --git a/src/rad_vet/rays/sc_ray.hpp b/src/rad_vet/rays/sc_ray.hpp
+index 6b57d756d..5ef82e248 100644
+--- a/src/rad_vet/rays/sc_ray.hpp
++++ b/src/rad_vet/rays/sc_ray.hpp
+@@ -187,6 +187,59 @@ Real ScSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
+   }
+ }
+ 
++//----------------------------------------------------------------------------------------
++//! \fn ScPathSeg
++//! \brief closing segment of a chord that crosses lateral cells (a near-tangent ray):
++//! chi and S of the cell holding each of n sub-points, piecewise constant, so an opaque
++//! cell between the upwind point and the node is seen (the ends alone miss it).
++//! cell(s, lc, ls): ln chi, ln S at distance s from the node; iu: the upwind intensity.
++//! Returns -1 where ln chi varies by less than lcr along the chord and at the node lc0
++//! (ScSegFinish's segment stands there).
++template <typename FP>
++KOKKOS_INLINE_FUNCTION
++Real ScPathSeg(const FP &cell, const int n, const Real ds, const Real lc0, const Real lcr,
++               const Real iu) {
++  const Real hs = ds/n;
++  Real tau = 0.0, acc = 0.0, lmn = lc0, lmx = lc0;
++  for (int q = 0; q < n; ++q) {
++    Real lc, ls;
++    cell((q + 0.5)*hs, lc, ls);
++    lmn = fmin(lmn, lc);
++    lmx = fmax(lmx, lc);
++    const Real dt = exp(lc)*hs;
++    acc += exp(-tau)*exp(ls)*(1.0 - exp(-dt));
++    tau += dt;
++  }
++  return (lmx - lmn > lcr) ? acc + iu*exp(-tau) : -1.0;
++}
++
++// max - min of ln chi (fC component 0) over the lateral box [ka, kb] x [ja, jb] on
++// shells i0, i1 and i2 (skipped where it repeats i0 or i1): the cheap test before
++// ScPathSeg samples a chord
++template <typename FC>
++KOKKOS_INLINE_FUNCTION
++Real ScBoxContrast(const FC &fC, const int ka, const int kb, const int ja, const int jb,
++                   const int i0, const int i1, const int i2) {
++  Real lmn = 1.0e300, lmx = -1.0e300;
++  const int is[3] = {i0, i1, i2};
++  for (int q = 0; q < ((i2 == i0 || i2 == i1) ? 2 : 3); ++q) {
++    for (int kk = ka; kk <= kb; ++kk) {
++      for (int jj = ja; jj <= jb; ++jj) {
++        const Real lc = fC(0, kk, jj, is[q]);
++        lmn = fmin(lmn, lc);
++        lmx = fmax(lmx, lc);
++      }
++    }
++  }
++  return lmx - lmn;
++}
++
++// sub-points of ScPathSeg: 4 per lateral cell the chord spans, at most 16
++KOKKOS_INLINE_FUNCTION
++int ScPathN(const Real span) {
++  return (span > 1.0) ? static_cast<int>(fmin(4.0*ceil(span), 16.0)) : 0;
++}
++
+ //----------------------------------------------------------------------------------------
+ // spherical-polar theta helpers
+ 
+diff --git a/src/rad_vet/rays/sc_sph_sweep_body.inc b/src/rad_vet/rays/sc_sph_sweep_body.inc
+index 015c32dd2..9a2fc904e 100644
+--- a/src/rad_vet/rays/sc_sph_sweep_body.inc
++++ b/src/rad_vet/rays/sc_sph_sweep_body.inc
+@@ -327,6 +327,43 @@
+               iv = ScSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
+                                s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
+                                idd);
++              // a chord over more than one lateral cell: its own cells (ScPathSeg)
++              // (sampled only where ln chi varies over the cells of the node's and the
++              // stencil's lateral box on the shells the chord crosses)
++              const int npt = ScPathN(fmax(fabs(fj - j), fabs(fk - k)));
++              const Real lcr = log(kVetCornerRatio);
++              if (npt > 0 && ScBoxContrast(fC, (k < k0) ? k : k0, (k > k1) ? k : k1,
++                                           (j < j0) ? j : j0, (j > j1) ? j : j1, i, iu,
++                                           (typ == 3) ? (i - 1) : i) > lcr) {
++                auto cell = [&](const Real sq, Real &lc, Real &ls) {
++                  const Real xq = r*st*cp - sq*nx, yq = r*st*sp - sq*ny;
++                  const Real zq = r*ct - sq*nz;
++                  const Real rq = sqrt(xq*xq + yq*yq + zq*zq);
++                  Real thq = acos(fmin(fmax(zq/rq, -1.0), 1.0));
++                  Real dpq = atan2(yq, xq) - ph;
++                  dpq -= twopi*floor((dpq + M_PI)/twopi);
++                  ScPoleChart(pol_, th, thq, dpq);
++                  const Real fjq = sth_ ? ScThFj(thn_, m, j, thq, c2w_, sj_)
++                                        : (j + sj_) + (thq - th)/lg_.Dx2(mbsize, m);
++                  // (inside the stencil's window; a read beyond it is clamped, counted)
++                  const Real jr = floor(fjq + 0.5) - sj_;
++                  const Real kr = floor(k + sk_ + 0.5 + dpq/lg_.Dx3(mbsize, m)) - sk_;
++                  if (jr < jlo_ || jr > jhi_ + 1 || kr < klo_ || kr > khi_ + 1) {
++                    Kokkos::atomic_add(&cnt_(0), 1.0);
++                  }
++                  const int jq = static_cast<int>(fmin(fmax(jr, Real(jlo_)),
++                                                       Real(jhi_ + 1)));
++                  const int kq = static_cast<int>(fmin(fmax(kr, Real(klo_)),
++                                                       Real(khi_ + 1)));
++                  const int iq = (rq > cx1f(m,i+1)) ? (i + 1)
++                                                    : ((rq < cx1f(m,i)) ? (i - 1) : i);
++                  lc = fC(0,kq,jq,iq);
++                  ls = fC(1,kq,jq,iq);
++                };
++                const Real ip = ScPathSeg(cell, npt, ds, csx(m,0,k,j,i), lcr,
++                                          (ivu < 0.0) ? su : ivu);
++                if (ip >= 0.0) iv = ip;
++              }
+             }
+           }
+           return iv;
+-- 
+2.51.0
+
