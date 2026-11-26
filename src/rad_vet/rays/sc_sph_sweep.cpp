@@ -87,7 +87,8 @@ void RadiationVet::ScSweep() {
   auto m3_ = vgd_m3;
   auto w3_ = vgd_w3;
   // the wall kernel (bodym) for mirror, vacuum and extrap theta walls
-  const bool thm = vgd_thmir || (vgd_thvac > 0);
+  const bool thm = vgd_thmir || (vgd_thvac > 0) ||
+                   (vgd_slab == 1 && (vet_x2open || vet_x3open));
   const bool bfc = vet_bc_face;   // vet_bc_diff = face
   const bool imir = (ibc_x1min == VET_IBC_REFLECT) && lcut == 0;
   constexpr bool spl = true;   // (the segment rule: split, emission and jump terms)

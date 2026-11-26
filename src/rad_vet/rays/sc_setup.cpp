@@ -102,9 +102,9 @@ void RadiationVet::ScInit() {
     ScFatal("outer x1 needs implicit_bc_x1max = marshak or "
             "reflect with scheme = clean");
   }
-  if (ibc_x2min == VET_IBC_MARSHAK || ibc_x2max == VET_IBC_MARSHAK ||
-      ibc_x3min == VET_IBC_MARSHAK || ibc_x3max == VET_IBC_MARSHAK) {
-    // the gd sweep has no vacuum transverse face (vet_sc has)
+  if (vgd_slab != 1 && (ibc_x2min == VET_IBC_MARSHAK || ibc_x2max == VET_IBC_MARSHAK ||
+                         ibc_x3min == VET_IBC_MARSHAK || ibc_x3max == VET_IBC_MARSHAK)) {
+    // the curved sweep has no vacuum transverse face (the Cartesian slab has)
     ScFatal("implicit_bc_x2*/x3* = marshak is not wired into the vet_gd sweep");
   }
   auto &indcs = pm->mb_indcs;
