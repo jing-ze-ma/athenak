@@ -899,3 +899,6 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 23:44 02-11: scl_F4 -> IDLE
 - 11-25 23:46 02-17: lz_MIXNL-bsg -> lz_X-m35
 - 11-25 23:49 01-17: nx_quick -> nx_full0 nx_full1 nx_full2 nx_full3
+- 11-25 23:50 02-17: lz_X-m35 -> lz_X-t9
+- 11-25 23:51 01-17: nx_full0 nx_full1 nx_full2 nx_full3 -> nx_full0 nx_full2 nx_full3
+- 11-25 23:51 02-09: b_ru2 b_rusuite rk_t9l62 -> b_nx2 b_nx2suite b_ru2 b_rusuite rk_t9l62
