@@ -1,0 +1,49 @@
+# SCSPEED sp2: the star3d_sp wedge (theta pi/3..2pi/3, phi 0..pi/3, both periodic) on r 1.5..4.2,
+# release default set (GL 7 x 18 staggered, 126 rays, named), uniform gas, radial cell dtau 0.25, fixed set.
+<job>
+basename = sp2
+<mesh>
+nx1 = 64
+x1min = 1.5
+x1max = 4.2
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 64
+x2min = 1.0471975511965976
+x2max = 2.0943951023931953
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 64
+x3min = 0.0
+x3max = 1.0471975511965976
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+<meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 64
+<time>
+nlim = 6
+tlim = 1e30
+dt_fixed = 1.0e-3
+ndiag = 1
+<hydro>
+eos = ideal
+gamma = 1.666666666666667
+<rad_vet>
+c_light = 100.0
+arad = 1.0
+e_floor = 1.0e-30
+kappa_p = 5.925925925925926
+vet_gd_gl_nmu = 7
+vet_gd_gl_nphi = 18
+vet_gd_gl_stagger = true
+vet_gd_rotate_dt = 0
+clean_verbose = 1
+<problem>
+pgen_name = rad_vet_beam
+vet_test = equil
+gas_rho = 1.0
+gas_eint = 1.5
+e_rad = 1.0
