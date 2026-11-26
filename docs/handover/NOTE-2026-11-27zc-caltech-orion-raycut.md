@@ -28,3 +28,13 @@
 - B1 written: 4 rst/bin
 - A2 written: 4 rst/bin
 - B2 written: 4 rst/bin
+
+## Cost, corrected (the post above printed s/cycle nan: with 20 cycles the bsg deck's log output (dt 1e4 s) writes no elapsed= line)
+- Timing from the end-of-run lines instead (whole run incl. the restart read and the first-step dumps; and the hesdirk2 clean stage-step wall of rank 0, 20 steps):
+  - A1: cpu time used 17.9533 s (0.898 s/cycle incl. start-up), clean stage steps 14.3238 s, srun wall 38 s
+  - B1: cpu time used 18.1048 s (0.905 s/cycle incl. start-up), clean stage steps 14.5 s, srun wall 44 s
+  - A2: cpu time used 17.8729 s (0.894 s/cycle incl. start-up), clean stage steps 14.3189 s, srun wall 38 s
+  - B2: cpu time used 18.0596 s (0.903 s/cycle incl. start-up), clean stage steps 14.4683 s, srun wall 39 s
+- B against A (means of the two pairs): cpu time +0.9 % (17.91 -> 18.08 s), stage-step wall +1.1 % (14.32 -> 14.48 s), fenced sweeps +8.5 % (1.612 -> 1.753 s), Krylov sum +1.8 % (677 -> 689 per 20 cycles), cut shell 131 -> 118 (13 shells deeper). A prints no ray-cut line because its cut stays at the stored 131; its log has the NOTE "clean_ray_cut_r = 0.01 ... is the old behaviour". Each pair repeats to 0.5 %. 0 CLEAN WARNING, 0 FATAL in all four arms.
+- The restarts still wrote the four t-start dumps (hydro_w/vet 00115, vet_vet/vet_face 00030) per arm despite dt 1e30; they were removed from rcut_1127 only (nothing under prod_*).
+- Verdict: CUDA build OK, gate 3.720e-11 PASS, quick 25/25 identical to rel6, cost of 0.003 on the bsg restart about +1 % per cycle (orion CPU: +1.0 %).
