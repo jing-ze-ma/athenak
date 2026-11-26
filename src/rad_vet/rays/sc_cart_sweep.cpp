@@ -45,101 +45,11 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rays/sc_segment.hpp"
 #include "rad_vet/rays/sc_cart_exchange.hpp"
+#include "rad_vet/rays/sc_cart_sum.hpp"
 
 namespace radvet {
 
 namespace {
-
-// per-cell sums of one vet_sc launch: moments of the up (u = 0) and down (u = 1) rays of
-// the cells iu, id and the face sums into them (f2) and into their upwind cells (fn),
-// added in ray order (per-cell and ray-parallel kernels give the same bits)
-struct VetScAcc {
-  Real ac[2][10] = {}, hp[2][3] = {}, kp[2][VETRAY_NKP] = {}, nl[2] = {};
-  Real f2[2][VETRAY_NFS] = {}, fn[2][VETRAY_NFS] = {};
-  // ray r of intensity iv in a cell of source s0; g the scalars of its face sums (entry,
-  // x2 and x3 interpolation flux, face crossing, exit), each times (1, mu)
-  template <class A>
-  KOKKOS_INLINE_FUNCTION void Add(const A &ang, const int r, const Real iv, const Real s0,
-                                  const Real g[5], const bool hrs, const bool kps,
-                                  const bool nls) {
-    const Real m1 = ang(r,0), m2 = ang(r,1), m3 = ang(r,2), wr = ang(r,3);
-    const bool up = (m1 > 0.0);
-    const int u = up ? 0 : 1;
-    auto add4 = [&](Real *fx, const Real q) {
-      fx[0] += q;
-      fx[1] += q*m1;
-      fx[2] += q*m2;
-      fx[3] += q*m3;
-    };
-    add4(f2[u] + 4, g[0]);
-    add4(fn[u], g[1]);
-    add4(fn[u] + 12, g[2]);
-    add4(up ? f2[0] + 8 : fn[1] + 8, g[3]);
-    add4(f2[u] + 4, g[4]);
-    Real *c = ac[u];
-    const Real a = wr*iv;
-    c[0] += a;
-    c[1] += a*m1*m1;
-    c[2] += a*m2*m2;
-    c[3] += a*m3*m3;
-    c[4] += a*m1*m2;
-    c[5] += a*m1*m3;
-    c[6] += a*m2*m3;
-    c[7] += a*m1;
-    c[8] += a*m2;
-    c[9] += a*m3;
-    if (hrs) {
-      hp[u][0] += a*fmax(m1, 0.0);
-      hp[u][1] += a*fmax(m2, 0.0);
-      hp[u][2] += a*fmax(m3, 0.0);
-    }
-    if (kps) {
-      const Real mu[3] = {m1, m2, m3};
-      for (int d = 0; d < 3; ++d) {
-        if (!(mu[d] > 0.0)) continue;
-        for (int b = 0; b < 3; ++b) kp[u][3*d+b] += a*mu[b]*mu[d];
-      }
-    }
-    if (nls) {nl[u] += wr*fabs(iv - s0);}
-  }
-  template <class V>
-  KOKKOS_INLINE_FUNCTION void Write(const V &vc, const int m, const int k, const int j,
-                                    const int iu, const int id, const int is,
-                                    const int ie, const bool mrlo, const bool mrhi,
-                                    const bool hrs, const bool kps, const bool nls,
-                                    const bool f2s) const {
-    for (int n = 0; n < 10; ++n) {
-      vc(m,VETRAY_J+n,k,j,iu) += ac[0][n];
-      vc(m,VETRAY_J+n,k,j,id) += ac[1][n];
-    }
-    if (hrs) {
-      for (int n = 0; n < 3; ++n) {
-        vc(m,VETRAY_HP1+n,k,j,iu) += hp[0][n];
-        vc(m,VETRAY_HP1+n,k,j,id) += hp[1][n];
-      }
-    }
-    if (kps) {
-      for (int n = 0; n < VETRAY_NKP; ++n) {
-        vc(m,VETRAY_KP+n,k,j,iu) += kp[0][n];
-        vc(m,VETRAY_KP+n,k,j,id) += kp[1][n];
-      }
-    }
-    if (nls) {
-      vc(m,VETRAY_NL,k,j,iu) += nl[0];
-      vc(m,VETRAY_NL,k,j,id) += nl[1];
-    }
-    if (f2s) {
-      const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
-      const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
-      for (int n = 0; n < VETRAY_NFS; ++n) {
-        vc(m,VETRAY_F2+n,k,j,iu) += f2[0][n];
-        vc(m,VETRAY_F2+n,k,j,id) += f2[1][n];
-        vc(m,VETRAY_F2+n,k,j,ium) += fn[0][n];
-        vc(m,VETRAY_F2+n,k,j,idp) += fn[1][n];
-      }
-    }
-  }
-};
 
 // periodic index in [0, n)
 KOKKOS_INLINE_FUNCTION
@@ -664,19 +574,24 @@ void RadiationVet::ScCartSweep() {
         rayf(m, k, j, r, g);
         for (int q = 0; q < 5; ++q) {rg_(m,q*nray + r,k,j) = g[q];}
       });
-      par_for("vet_vet_sweep_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-      KOKKOS_LAMBDA(const int m, const int k, const int j) {
-        VetScAcc a;
-        for (int r = 0; r < nray; ++r) {
-          const Real g[5] = {rg_(m,r,k,j), rg_(m,nray + r,k,j), rg_(m,2*nray + r,k,j),
-                             rg_(m,3*nray + r,k,j), rg_(m,4*nray + r,k,j)};
-          const int i = (ang_(r,0) > 0.0) ? iu : id;
-          a.Add(ang_, r, ip_(m,pw,r,k,j), vc_(m,VETRAY_SRC,k,j,i), g, hrs_, kps_, nls_);
-        }
-        if (accum) {
-          a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
-        }
-      });
+      // per-cell sums, one thread per (cell, group of sums); none in a pass that does
+      // not add to the moments
+      if (accum) {
+        const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
+        const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
+        par_for("vet_vet_sweep_sum", DevExeSpace(), 0, nmb1, 0, VETSUM_NG - 1, ks, ke, js,
+                je,
+        KOKKOS_LAMBDA(const int m, const int grp, const int k, const int j) {
+          VetScSum(grp, ang_, nray, [](const int) {return true;},
+                   [&](const int r) {return ip_(m,pw,r,k,j);},
+                   [&](const int r) {
+                     return vc_(m,VETRAY_SRC,k,j,(ang_(r,0) > 0.0) ? iu : id);
+                   },
+                   [&](const int q, const int r) {return rg_(m,q*nray + r,k,j);},
+                   VetScWriter(vc_, m, k, j, iu, id, ium, idp),
+                   hrs_, kps_, nls_, f2s_);
+        });
+      }
     } else {
       par_for("vet_vet_sweep", DevExeSpace(), 0, nmb1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -688,7 +603,9 @@ void RadiationVet::ScCartSweep() {
           a.Add(ang_, r, iv, vc_(m,VETRAY_SRC,k,j,i), g, hrs_, kps_, nls_);
         }
         if (accum) {
-          a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+          const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
+          const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
+          a.Emit(VetScWriter(vc_, m, k, j, iu, id, ium, idp), hrs_, kps_, nls_, f2s_);
         }
       });
     }
