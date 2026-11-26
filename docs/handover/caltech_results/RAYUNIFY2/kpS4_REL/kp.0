@@ -1,0 +1,454 @@
+# total 164.380019 s
+      6.761825       3336 cln_rhsaf
+      6.088096      30110 vet_vgd_shell
+      5.248930      57324 cln_pcr2
+      3.810903       1587 cln_drag
+      2.970915       3336 cln_fs0
+      2.723663      11266 cln_apply_st
+      2.626859       2160 cln_facecoef
+      2.227447      19108 cls_restrict
+      2.123900      60698 <deep_copy>
+      2.011578        127 cln_gd_fs
+      1.948154      21537 vet_lay_red2
+      1.838011       3989 cln_cslat
+      1.626292        870 cln_velocity
+      1.546461      30618 vet_vgd_ring
+      1.530421       1112 cln_rhs
+      1.431066       2224 cln_fsjo
+      1.232387      35584 cln_fsjr
+      1.210729       2619 cln_fwc
+      1.197110      58937 cln_hd_pack
+      1.192257      58937 cln_hd_unpack
+      1.069668        240 dfl_th
+      1.061591        892 Kokkos::View::initialization [] via memset
+      0.936354      57773 cln_ghost1
+      0.868682       3336 cln_fwb
+      0.866500        873 cln_stencil
+      0.857554       2619 cln_xdonor
+      0.852370      20856 cln_scale
+      0.806245        127 cln_gd
+      0.715901        242 cln_wbcell
+      0.656324       2224 cln_fs2
+      0.647791       9554 cln_dot
+      0.633471        726 cln_wbxc
+      0.630337       3336 cln_fs1
+      0.628947       1112 cln_fcone_l
+      0.589306       4552 cln_dot_x
+      0.589085       1109 cln_newton
+      0.572930       3336 cln_fs3
+      0.567401      19108 cls_prolong
+      0.549956       1112 cln_fs2p
+      0.549890       3336 cln_fs2f
+      0.538468      11266 cln_apply_st_sh
+      0.534331       1038 Kokkos::ViewFill-4D
+      0.529697        726 cln_real
+      0.519907        240 hflux_x3
+      0.492114        240 hflux_x2
+      0.478753        237 cln_extrap
+      0.474391       6672 cln_fwbs
+      0.451191       2160 cln_sbracket
+      0.429703        600 duale_post
+      0.415091       2224 cln_fsjf
+      0.404953      29983 vet_vgd_ipc_pack
+      0.397199        840 hyd_c2p_gen
+      0.394918       9277 cln_vmax
+      0.394513        240 hflux_x1
+      0.392403       3989 cln_cslat_sh
+      0.385566      29983 vet_vgd_hl_scatter
+      0.371727      30110 vet_vgd_ipc_k2
+      0.365301        479 mlat_avg
+      0.328508       3336 cln_fcone_f
+      0.327719        239 cln_wbprb
+      0.325342       5002 cln_dot_s
+      0.304206       1348 cln_beta
+      0.275743        242 HydroNudt2
+      0.274688        479 duale_led
+      0.264481        240 FOFC-flx
+      0.257538       3336 cln_fcone_b
+      0.248285       1354 cln_cstie
+      0.244276        127 cln_gd_thk
+      0.242916        726 cln_tiet
+      0.239811        873 cln_pcsetup
+      0.237154       1112 cln_fwbq
+      0.234727          2 Kokkos::View::initialization [rst-vett-mb] via memset
+      0.201295       5002 cln_pupdate
+      0.186126        445 vet_t2_ffct_r
+      0.185698       1712 cln_dot_rst
+      0.164380       1342 Kokkos::ViewCopy-4D
+      0.162842        357 vet_t2_gtime
+      0.158266        717 cln_opac
+      0.157795        836 cln_advcoef
+      0.153157        240 wbcache
+      0.150681        242 cln_old
+      0.148567       4062 cln_cstie2
+      0.147990         14 Kokkos::ViewCopy-5D
+      0.142718        240 h_update
+      0.135701         46 Kokkos::View::initialization [d_out_var_mirror] via memset
+      0.131517       1746 cls_galerkin
+      0.131206        241 duale_pay_col
+      0.130358        240 hydro_am_transport
+      0.124129        723 cln_slot
+      0.110351        242 cln_wbdiv
+      0.102887       1112 cln_fwbp
+      0.099791        244 vet_opacity
+      0.095420        240 FOFC-newu
+      0.092121       1016 cln_gd_chc
+      0.091344        239 cln_wbfr
+      0.090305        116 vet_t2_clnrsm
+      0.088218        242 cln_iter0
+      0.086085        720 cln_rayj
+      0.081324        240 spsrc
+      0.077594        121 HistSums_row
+      0.073887        635 vet_vgd_unpack
+      0.073100        123 cln_raymom
+      0.071884       1104 cln_smax
+      0.071295        635 vet_vgd_halo
+      0.069264        121 star_hist_row
+      0.068680        127 cln_raycut
+      0.067760         11 Kokkos::View::initialization [cc_outvar] via memset
+      0.066016        600 duale_pre
+      0.065171        240 FOFC-retest
+      0.065039        238 vet_t2_inc
+      0.061935       1572 SendBuff
+      0.061223       1572 RecvBuff
+      0.058817        844 star_bc
+      0.058754        239 cln_neint
+      0.057631        127 cln_gd_cel
+      0.056485       1104 cln_sfloor
+      0.053413       1109 cln_sbre
+      0.052880        240 star_grav_win
+      0.052602        240 dfl_f3
+      0.051522        240 dfl_f2
+      0.049494        479 duale_ledn
+      0.042777        242 cln_pos_flr_cons
+      0.040195        240 dfl_mom
+      0.039147        240 dfl_f1
+      0.038217        726 cln_wbface
+      0.038053        717 cln_sumc
+      0.035850        240 FOFC-etotgrav
+      0.034199        714 cln_dinc
+      0.033191        240 SeamFluxSendMPI
+      0.030288        240 SeamStateRecvRaw
+      0.030287        600 etotgravrem
+      0.028232        600 etotgravadd
+      0.028169        381 vet_vgd_hxb_mark
+      0.027269        239 vet_floorcap
+      0.026819       1112 cln_fs3_sh
+      0.024246        239 vet_floorcap_lz
+      0.022289        484 cln_bmax
+      0.021911        211 cln_cnorm
+      0.021848        127 cln_gd_lats
+      0.020393          2 Kokkos::View::initialization [rst-vets] via memset
+      0.019410        121 cln_lztot
+      0.017985        450 cln_axpby
+      0.017035        127 cln_gd_rb
+      0.016904        119 vet_t2_avg
+      0.016678       1112 cln_fwbr
+      0.016567        240 star_grav_fws_x
+      0.015665       1016 cln_gd_glc
+      0.015454        241 duale_pay
+      0.014792        360 cln_fill_n
+      0.014032        357 vet_t2_avgf
+      0.013244        119 vet_t2_gtime3
+      0.013095        119 cln_clositer
+      0.013059        262 vet_vgd_hxb_need
+      0.013014          1 Kokkos::View::initialization [vet_vgd_tab_w3] via memset
+      0.012520        719 Kokkos::ViewFill-1D
+      0.012470        239 cln_wbbnd
+      0.012422        127 vet_ray_src
+      0.012374        262 vet_vgd_hxb_rlist
+      0.011381        240 mlat_be_x2
+      0.011352        239 cln_wbclose
+      0.011233        240 etotgrav1
+      0.010374        240 etotgrav2
+      0.010295        240 etotgrav3
+      0.010127        238 vet_t2_ffct_abs
+      0.009728        242 cln_neg
+      0.009490        127 cln_gd_col
+      0.009442          2 vet_vgd_shl
+      0.009245        262 vet_vgd_hxb_slist
+      0.009135        127 vet_vgd_csw
+      0.008633       1112 Kokkos::View::initialization [cln_rmc] via memset
+      0.008447        240 FOFC-owner
+      0.008427        239 cln_copy
+      0.008373        240 FOFC-flag
+      0.008237        240 FOFC-count
+      0.007885        600 hydrobc_x1
+      0.007723        240 vet_arena_wbq0
+      0.007708        240 FOFC-reset
+      0.006744        262 vet_vgd_hxb_req
+      0.006656        600 hydrobc_etg
+      0.006445          1 Kokkos::View::initialization [vet_vgd_tab_m3] via memset
+      0.006057        240 hydro_am_bflx
+      0.005500          8 cln_predict
+      0.005352        119 vet_t2_gtime3g
+      0.005347        121 HistSums_blk
+      0.004533        127 cln_gd_chi
+      0.004347          1 Kokkos::View::initialization [vet_vgd_tab_mr] via memset
+      0.004206        240 SeamFluxSendLocal
+      0.003985        238 cln_bndacc
+      0.003979        121 star_hist_blk
+      0.003882        120 star_hflx_blk
+      0.003723        479 Kokkos::View::initialization [mlat_nfb] via memset
+      0.003573        480 Kokkos::View::initialization [dfl_c] via memset
+      0.003506        244 radvetbc_x1
+      0.003428        240 star_wallflux
+      0.003241        479 Kokkos::View::initialization [mlat_amin] via memset
+      0.003215         46 Kokkos::ViewCopy-3D
+      0.003031        479 Kokkos::View::initialization [mlat_cerr] via memset
+      0.002898          1 spcoord
+      0.002765        262 vet_vgd_hxb_bnd
+      0.002669        240 mlat_be_x3
+      0.002585          1 Kokkos::View::initialization [rst-fax] via memset
+      0.002468        120 star_hflx_row
+      0.002433          1 pf_rst_pack
+      0.002165        239 Kokkos::View::initialization [fcap_c] via memset
+      0.002161          1 Kokkos::View::initialization [vet_vgd_tab_mp] via memset
+      0.002141        240 Kokkos::View::initialization [dr_c] via memset
+      0.001800        240 Kokkos::View::initialization [fofc_xc] via memset
+      0.001740          4 mlat_diag
+      0.001550          2 vet_t2_clnrst
+      0.001410         46 Kokkos::View::initialization [d_out_var] via memset
+      0.001359          1 nan_check
+      0.001197          2 vet_face_out
+      0.001109          8 cln_steady_sum
+      0.001092          2 cln_hd_id
+      0.001068          1 star_col
+      0.001055          1 Kokkos::View::initialization [vet_arena] via memset
+      0.000953          2 vet_t2_ffct_e
+      0.000815          1 cln_tg
+      0.000672          1 Kokkos::View::initialization [star_phieff_mirror] via memset
+      0.000616          7 Kokkos::View::initialization [sbuf_dv]
+      0.000594          1 mlat_fi
+      0.000503          3 cln_steady_copy
+      0.000404          3 cln_steady_chg
+      0.000353          1 star_ic
+      0.000352          2 vet_vet_cln
+      0.000304          7 Kokkos::View::initialization [rbuf_dv]
+      0.000207          9 Kokkos::View::initialization [derived-var] via memset
+      0.000188          3 cln_f0
+      0.000165         32 Kokkos::View::initialization [_mirror] via memset
+      0.000146          1 Kokkos::View::initialization [cln_gd_ch] via memset
+      0.000137          1 star_ic_profile
+      0.000104          1 Kokkos::View::initialization [star_kt_mirror] via memset
+      0.000096         14 Kokkos::View::initialization [iin] via memset
+      0.000096          1 mlat_uni
+      0.000095         44 Kokkos::View::initialization [DualView::modified_flags] via memset
+      0.000095          1 Kokkos::View::initialization [star_T_mirror] via memset
+      0.000094         14 Kokkos::View::initialization [uin] via memset
+      0.000091         14 Kokkos::View::initialization [bin] via memset
+      0.000086          1 star_phi
+      0.000082          1 star_aref
+      0.000081          1 spcoord_add
+      0.000078          2 Kokkos::View::initialization [mlat_blockend.x1f] via memset
+      0.000073          1 star_phieff
+      0.000072          7 Kokkos::View::initialization [sbuf_dv_mirror]
+      0.000070          1 Kokkos::View::initialization [mlat_blockend.x3f] via memset
+      0.000070          1 Kokkos::View::initialization [mlat_blockend.x2f] via memset
+      0.000069          1 nan_irange
+      0.000064          2 Kokkos::View::initialization [cons] via memset
+      0.000064          1 star_icf
+      0.000062          7 Kokkos::View::initialization [rbuf_dv_mirror]
+      0.000060          2 Kokkos::View::initialization [cons1] via memset
+      0.000059          2 Kokkos::View::initialization [uflx.x1f] via memset
+      0.000059          2 Kokkos::View::initialization [uflx.x3f] via memset
+      0.000059          2 Kokkos::View::initialization [prim] via memset
+      0.000059          2 Kokkos::View::initialization [uflx.x2f] via memset
+      0.000059          2 Kokkos::View::initialization [utest] via memset
+      0.000058          3 Kokkos::View::initialization [cln_steady_f] via memset
+      0.000055          1 cln_hd_chk
+      0.000052          2 Kokkos::View::initialization [vet_u0] via memset
+      0.000051          2 Kokkos::View::initialization [vet_u1] via memset
+      0.000050          1 Kokkos::View::initialization [star_E_mirror] via memset
+      0.000050          6 Kokkos::View::initialization [cln_pcrl] via memset
+      0.000050          1 star_icf_profile
+      0.000049          2 Kokkos::View::initialization [cln_fsjt] via memset
+      0.000046          1 Kokkos::View::initialization [cln_gd_rf] via memset
+      0.000046          1 Kokkos::View::initialization [cln_steady_u] via memset
+      0.000045          1 Kokkos::View::initialization [cln_steady_g] via memset
+      0.000045          2 Kokkos::View::initialization [cln_mg] via memset
+      0.000044          2 Kokkos::View::initialization [cln_sga1] via memset
+      0.000044          2 Kokkos::View::initialization [cln_sga0] via memset
+      0.000042          2 Kokkos::View::initialization [cln_sgd1] via memset
+      0.000042          1 hyd_dtdiag
+      0.000040          2 Kokkos::View::initialization [cln_sgv] via memset
+      0.000040          1 Kokkos::View::initialization [star_F_mirror] via memset
+      0.000040          2 Kokkos::View::initialization [cln_sgd2] via memset
+      0.000038          1 vet_vgd_trig
+      0.000033          1 Kokkos::View::initialization [cln_hdl_rbuf] via memset
+      0.000032          1 Kokkos::View::initialization [cln_gd_gl] via memset
+      0.000031          3 Kokkos::View::initialization [phi_cc] via memset
+      0.000030          1 Kokkos::View::initialization [HistSums_row] via memset
+      0.000029          2 Kokkos::View::initialization [dxf.x1f] via memset
+      0.000029          2 Kokkos::View::initialization [volume] via memset
+      0.000029         14 Kokkos::View::initialization [uin_mirror] via memset
+      0.000028         14 Kokkos::View::initialization [bin_mirror] via memset
+      0.000027         14 Kokkos::View::initialization [iin_mirror] via memset
+      0.000026          2 Kokkos::View::initialization [cln_hdl_so] via memset
+      0.000026          2 Kokkos::View::initialization [dx2] via memset
+      0.000025          2 Kokkos::View::initialization [area.x1f] via memset
+      0.000025          2 Kokkos::View::initialization [y_ov_rC] via memset
+      0.000025          2 Kokkos::View::initialization [phi_fc.x1f] via memset
+      0.000025          2 Kokkos::View::initialization [x_ov_rD] via memset
+      0.000025          2 Kokkos::View::initialization [dx3] via memset
+      0.000025          2 Kokkos::View::initialization [dx1] via memset
+      0.000025          2 Kokkos::View::initialization [cln_hdl_ro] via memset
+      0.000025          2 Kokkos::View::initialization [phi_fc.x3f] via memset
+      0.000025          2 Kokkos::View::initialization [area.x3f] via memset
+      0.000025          2 Kokkos::View::initialization [area.x2f] via memset
+      0.000025          2 Kokkos::View::initialization [phi_fc.x2f] via memset
+      0.000025          2 Kokkos::View::initialization [dxf.x2f] via memset
+      0.000025          2 Kokkos::View::initialization [fofc_cnt] via memset
+      0.000025          1 Kokkos::View::initialization [cln_hdl_sc] via memset
+      0.000024          2 Kokkos::View::initialization [dxf.x3f] via memset
+      0.000024          2 Kokkos::View::initialization [z_ov_rC] via memset
+      0.000024          1 Kokkos::View::initialization [cln_hdl_sbuf] via memset
+      0.000023          1 Kokkos::View::initialization [cln_fwrs] via memset
+      0.000021          1 Kokkos::View::initialization [fcap_lxx] via memset
+      0.000021          1 Kokkos::View::initialization [cln_lzw] via memset
+      0.000021          1 Kokkos::View::initialization [cln_csl] via memset
+      0.000020          1 Kokkos::View::initialization [cln_hdl_x] via memset
+      0.000020          1 Kokkos::View::initialization [fcap_lxi] via memset
+      0.000020          1 Kokkos::View::initialization [phi_cc_wb] via memset
+      0.000019          1 Kokkos::View::initialization [cln_fwrw] via memset
+      0.000019          1 Kokkos::View::initialization [phi_fc_wb] via memset
+      0.000019          2 Kokkos::View::initialization [d] via memset
+      0.000019          1 Kokkos::View::initialization [star_seed_modes] via memset
+      0.000018          1 Kokkos::View::initialization [cln_hdl_y] via memset
+      0.000018          1 Kokkos::View::initialization [star_aref] via memset
+      0.000018          2 Kokkos::View::initialization [fofc] via memset
+      0.000016          1 Kokkos::View::initialization [cln_hdl_ld] via memset
+      0.000015          6 Kokkos::View::initialization [cln_pcrl_mirror] via memset
+      0.000015          2 Kokkos::View::initialization [vet_vgd_body] via memset
+      0.000014          1 Kokkos::View::initialization [star_hflx_row] via memset
+      0.000014          1 Kokkos::View::initialization [vet_vgd_tab_w] via memset
+      0.000014          1 Kokkos::View::initialization [star_phieff] via memset
+      0.000014          1 Kokkos::View::initialization [star_hist_row] via memset
+      0.000014          2 Kokkos::View::initialization [xx1f] via memset
+      0.000014          7 Kokkos::View::initialization [fc_outvar.x1f] via memset
+      0.000013          7 Kokkos::View::initialization [fc_outvar.x2f] via memset
+      0.000013          7 Kokkos::View::initialization [fc_outvar.x3f] via memset
+      0.000013          2 Kokkos::View::initialization [x1v] via memset
+      0.000013          1 Kokkos::View::initialization [cln_fwrb2] via memset
+      0.000012          2 Kokkos::View::initialization [vet_uflx.x1f] via memset
+      0.000012          2 Kokkos::View::initialization [x3v] via memset
+      0.000012          2 Kokkos::View::initialization [xx2f] via memset
+      0.000012          2 Kokkos::View::initialization [vet_uflx.x3f] via memset
+      0.000012          2 Kokkos::View::initialization [vet_uflx.x2f] via memset
+      0.000012          2 Kokkos::View::initialization [x2v] via memset
+      0.000012          2 Kokkos::View::initialization [xx3f] via memset
+      0.000012          1 Kokkos::View::initialization [cln_fwmu2] via memset
+      0.000012          1 Kokkos::View::initialization [cln_hdl_rd] via memset
+      0.000011          1 Kokkos::View::initialization [cln_hdl_sdp] via memset
+      0.000011          1 Kokkos::View::initialization [star_E] via memset
+      0.000011          1 Kokkos::View::initialization [cln_hdl_rc] via memset
+      0.000011          1 Kokkos::View::initialization [cln_hdl_rf] via memset
+      0.000011          1 Kokkos::View::initialization [cln_sgtg] via memset
+      0.000010          1 Kokkos::View::initialization [cln_hdl_sf] via memset
+      0.000010          1 Kokkos::View::initialization [star_kt] via memset
+      0.000010          1 Kokkos::View::initialization [star_F] via memset
+      0.000010          1 Kokkos::View::initialization [star_lin_fg] via memset
+      0.000010          1 Kokkos::View::initialization [star_T] via memset
+      0.000010          1 Kokkos::View::initialization [mb_gid] via memset
+      0.000009          1 Kokkos::View::initialization [HistSums_blk] via memset
+      0.000009          1 Kokkos::View::initialization [ru] via memset
+      0.000009          1 Kokkos::View::initialization [vet_vgd_hxb_oc] via memset
+      0.000009          1 Kokkos::View::initialization [cs_spanel_pairs] via memset
+      0.000009          1 Kokkos::View::initialization [star_hist_blk] via memset
+      0.000009          1 Kokkos::View::initialization [vet_vgd_ipc_prb] via memset
+      0.000009          1 Kokkos::View::initialization [cln_fwmq2] via memset
+      0.000008          1 Kokkos::View::initialization [star_hflx_blk] via memset
+      0.000008          1 Kokkos::View::initialization [vet_vgd_ipc_pslot] via memset
+      0.000008          1 Kokkos::View::initialization [cln_sgx] via memset
+      0.000007          1 Kokkos::View::initialization [star_lin_eg] via memset
+      0.000007          1 Kokkos::View::initialization [vet_gd_wall_sym] via memset
+      0.000007          1 Kokkos::View::initialization [vet_vgd_hxb_pcs] via memset
+      0.000007          1 Kokkos::View::initialization [cln_hdl_ldp] via memset
+      0.000007          1 Kokkos::View::initialization [star_lin_d] via memset
+      0.000007          1 Kokkos::View::initialization [vet_vgd_hxb_pst] via memset
+      0.000007          1 Kokkos::View::initialization [vet_vgd_ipc_psig] via memset
+      0.000007          1 Kokkos::View::initialization [vet_vgd_ipc_pcs] via memset
+      0.000007          1 Kokkos::View::initialization [vet_vgd_hxb_pci] via memset
+      0.000007          1 Kokkos::View::initialization [sp_phi_k0] via memset
+      0.000007          1 Kokkos::View::initialization [cln_hdl_ls] via memset
+      0.000007          1 Kokkos::View::initialization [areae.x1e] via memset
+      0.000007          1 Kokkos::View::initialization [star_lin_er] via memset
+      0.000007          1 Kokkos::View::initialization [star_lin_ff] via memset
+      0.000007          1 Kokkos::View::initialization [vet_vgd_hxb_pds] via memset
+      0.000006          1 Kokkos::View::initialization [star_seed_ylm] via memset
+      0.000006          1 Kokkos::View::initialization [cln_hdl_lf] via memset
+      0.000006          1 Kokkos::View::initialization [sp_glob_lev] via memset
+      0.000006          1 Kokkos::View::initialization [vet_vgd_ipc_phalf] via memset
+      0.000006          1 Kokkos::View::initialization [star_lin_f] via memset
+      0.000006          1 Kokkos::View::initialization [mb_lev] via memset
+      0.000006          1 Kokkos::View::initialization [excision_floor] via memset
+      0.000006          1 Kokkos::View::initialization [mbbcs] via memset
+      0.000006          1 Kokkos::View::initialization [ccons] via memset
+      0.000006          1 Kokkos::View::initialization [primfwb.x1f] via memset
+      0.000006          1 Kokkos::View::initialization [excision_flux] via memset
+      0.000006          1 Kokkos::View::initialization [star_wv] via memset
+      0.000006          1 Kokkos::View::initialization [mbsize] via memset
+      0.000006          1 Kokkos::View::initialization [star_lin_off] via memset
+      0.000006          1 Kokkos::View::initialization [cprim] via memset
+      0.000006          1 Kokkos::View::initialization [vet_gd_theta_seam_sym] via memset
+      0.000006          1 Kokkos::View::initialization [dxe.x1e] via memset
+      0.000006          1 Kokkos::View::initialization [primfwb.x3f] via memset
+      0.000006          1 Kokkos::View::initialization [presfwb.x3f] via memset
+      0.000006          1 Kokkos::View::initialization [vet_coarse_u0] via memset
+      0.000006          1 Kokkos::View::initialization [conswb] via memset
+      0.000006          1 Kokkos::View::initialization [areae.x3e] via memset
+      0.000006          1 Kokkos::View::initialization [cos_face_eta] via memset
+      0.000006          1 Kokkos::View::initialization [phi_fc] via memset
+      0.000006          1 Kokkos::View::initialization [dxe.x3e] via memset
+      0.000006          1 Kokkos::View::initialization [presfwb.x1f] via memset
+      0.000006          1 Kokkos::View::initialization [vetcsarea.x1f] via memset
+      0.000006          1 Kokkos::View::initialization [cos_face_xi] via memset
+      0.000006          1 Kokkos::View::initialization [sin_cell] via memset
+      0.000006          1 Kokkos::View::initialization [cos_cell] via memset
+      0.000006          1 Kokkos::View::initialization [vetcsarea.x2f] via memset
+      0.000006          1 Kokkos::View::initialization [vetcsarea.x3f] via memset
+      0.000006          1 Kokkos::View::initialization [sin_face_eta] via memset
+      0.000006          1 Kokkos::View::initialization [presfwb.x2f] via memset
+      0.000006          1 Kokkos::View::initialization [vetcsdxf.x2f] via memset
+      0.000006          1 Kokkos::View::initialization [primfwb.x2f] via memset
+      0.000006          1 Kokkos::View::initialization [primwb] via memset
+      0.000006          1 Kokkos::View::initialization [mb_panel] via memset
+      0.000006          1 Kokkos::View::initialization [vetcsdxf.x1f] via memset
+      0.000006          1 Kokkos::View::initialization [vetcsdxf.x3f] via memset
+      0.000006          1 Kokkos::View::initialization [preswb] via memset
+      0.000006          1 Kokkos::View::initialization [sin_face_xi] via memset
+      0.000006          1 Kokkos::View::initialization [dxe.x2e] via memset
+      0.000006          1 Kokkos::View::initialization [areae.x2e] via memset
+      0.000005          1 Kokkos::View::initialization [vet_vgd_ipc_pcs_mirror] via memset
+      0.000004          1 Kokkos::View::initialization [vet_vgd_pin_cnt] via memset
+      0.000004          1 Kokkos::View::initialization [vet_lay_part_h] via memset
+      0.000003          1 Kokkos::View::initialization [cs_spanel_pairs_mirror] via memset
+      0.000003          1 Kokkos::View::initialization [vet_vgd_tab_dir] via memset
+      0.000003          1 Kokkos::View::initialization [vet_vgd_hxb_hb] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_hxb_sp] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_hxb_pst_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_d_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_ipc_prb_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_hxb_pcs_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_er_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_ipc_pslot_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_f_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_ipc_phalf_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [sp_phi_k0_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_hxb_pci_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_seed_modes_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_eg_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_hxb_pds_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_vgd_ipc_psig_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_fg_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_ff_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_gd_theta_seam_sym_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [sp_glob_lev_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [vet_gd_wall_sym_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [mbbcs_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_lin_off_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [mbsize_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [mb_gid_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [star_seed_ylm_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [mb_panel_mirror] via memset
+      0.000002          1 Kokkos::View::initialization [mb_lev_mirror] via memset
