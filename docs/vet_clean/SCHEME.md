@@ -8,6 +8,38 @@ the decks and the exact criteria).
 
 ## 1. The method in brief
 
+### Why this scheme
+
+- **Second order in time and space.** Measured orders of the finest pair: 1.8 in time, 1.9-2.3
+  for cells and time step refined together, and 2 also where the gas-radiation exchange is stiff
+  (tests `order_time`, `order_space`, `order_stiff`; section 2, Properties;
+  worked examples in [Notebooks](../../tests/vet_clean/notebooks/README.md)). The implicit discrete-ordinates
+  radiation of Athena++ (Jiang 2021) is, as that paper states, first order in time.
+  What the order means: the error falls as a power of the cell size. With second order, 10 times
+  finer cells make the error 100 times smaller; with first order only 10 times smaller. Put the
+  other way: to make the error 10 times smaller, a second-order method needs cells about 3 times
+  finer, a first-order one 10 times finer. In 3-D the cost grows as the fourth power of the
+  resolution (three directions, and a time step that shrinks with the cell), so that is about 100
+  times the cost against 10,000 times. The same holds for the time step: a code whose radiation is
+  first order in time (backward Euler) needs much smaller steps for the same accuracy, or accepts a
+  larger error at the same cost.
+- **Many angles.** The Eddington tensor comes from rays along a fixed set of directions, 126 in
+  the star templates (Gauss-Legendre 7 x 18). Crossing beams pass through each other, and a clump
+  leaves a sharp shadow (0.6 % of the radiation left in its umbra); an M1 closure merges the
+  beams and fills the shadow (tests `idort_beams`, `shadow`).
+- **Speed.** 57 d of a blue supergiant (16.8 million cells) in 6.0 h on one node of 4 H200;
+  48-84 times faster in wall time than the Athena++ CPU runs of the same three stars, which
+  differ in hardware, angles and cells ([performance page](PERFORMANCE.md)). A step normally
+  costs one ray sweep; the implicit solve takes 53-73 % of a cycle, the rays 15-38 %. Maps and
+  movies of the runs: the Gallery page of the documentation site.
+- **Iterations per step.** A step has two implicit stages. In the four star runs a stage takes
+  2.2-4.1 Newton passes on average (mostly 2 to 5), each one linear solve of 5.5-7.4 BiCGStab
+  iterations on average, so 15-24 iterations per stage, plus one ray sweep per step. No step had
+  to be retried or redone (0 of 380,141 steps; from the runs' `CLEAN cycle` lines).
+- **Conservation and positivity.** Gas + radiation energy and mass are conserved to round-off,
+  $L_z$ exactly on the cubed sphere; linear momentum is not conserved in general. Density and
+  $E$ stay non-negative by construction, $E$ with counted backstops (section 2, Properties).
+
 **Equations.** Two-moment grey radiation transport for the radiation energy
 density $E$ and flux $\mathbf F$, in the mixed frame: lab-frame moments with
 comoving-frame opacities, keeping the $O(v/c)$ terms and the $O(\beta^2)$ terms that are
@@ -37,6 +69,15 @@ half-range fluxes (outgoing and incoming parts of the flux) and the rays' own fl
 each face, which the face fluxes use in optically thin regions. Normally a step costs one ray
 sweep: the second stage uses an extrapolation of the closure in time.
 
+**Rotating rays.** A fixed set of directions leaves ray effects: light from a hot spot or a
+compact source travels only along the directions of the set, and the closure carries that
+pattern. On the cubed sphere the set is rotated every `vet_gd_rotate_dt` of physical time
+(`auto` = 20 times the first time step), and the closure is an exponential moving average over
+the rotated sets (`vet_rotate_avg_ema`, 128), so the pattern averages out instead of being frozen
+into the solution. With `vet_rotate_avg_ema_wb = true` a static envelope keeps its closure and its
+equilibrium across a turn (section 2, well balance). Spherical-polar wedges use a fixed set
+(`vet_gd_rotate_dt = 0`, the default there); the RSG and HG runs rotate.
+
 **Staggered layout.** $E$ lives at cell centres; the radiation flux lives on the cell faces,
 one normal component per face. The face flux of a stage is a blend of
 
@@ -47,34 +88,11 @@ one normal component per face. The face flux of a stage is a blend of
 - the advective flux $\mathbf a E$ of radiation carried by the gas, and lagged terms (the
   off-diagonal stress and a consistency correction towards the rays' own thin-limit flux).
 
-**Time integration.** IMEX. The hydrodynamics is AthenaK's explicit Heun (`rk2`) integrator,
-unchanged. Radiation transport and the gas-radiation exchange are implicit, with Alexander's
-two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); its first stage sees the gas at
-$t^n + g\,\Delta t$ ($g = 1 - 1/\sqrt{2}$), not at the time of the explicit part, and the
-hydro's stage-2 flux state takes the exchange with the slope of the last step and of this
-stage (`time2_gtime_slope`); the coupling conditions make the IMEX scheme second order, also
-where the exchange is stiff. Backward Euler is the
-fallback (first step, or a step whose stage failed). At `cfl_number = 0.3` per direction the
-radiation does not limit the stability of the step; this is not general: in a linear analysis
-of a uniform medium the 1-D limit is 1.0 in the Courant number of the weighted signal
-speed below and 0.66 in that of the gas speed alone (where $P_{\rm rad}/P_{\rm gas} \approx
-7-10$ and $x \gg 1$); in 3-D with equal directions it is 0.34 per direction (the hydro's own).
-With `<hydro>/rad_signal_speed_diff = true` (production) the radiation enters the hydro time
-step only where it is trapped: the radiation part of the signal speed is weighted by
-$1 - e^{-x}$, $x = \tau_d\,c_{\rm eq}/c$ the grid-scale trapping parameter ($\tau_d$ the
-optical depth of a cell). Where $x \ll 1$ the radiation diffuses out of a cell faster than a
-sound wave crosses it and does not stiffen the gas, so dt is not limited by it. The weight
-is for accuracy; at cfl 0.3 stability does not need it.
-`<hydro>/rad_signal_speed_phase = true` weights it by $1 - e^{-x^2}$ instead: for $x \ll 1$ the
-radiation-pressure perturbation lags the compression by about $\pi/2$, so its restoring part is
-$O(x^2)$ and its $O(x)$ part only damps the wave; the linear root of the grid-scale mode
-stays at the gas speed until the mode is overdamped ($x \sim 0.3$); a resolved wave is
-trapped more at the same $x$. In thin gas ($c_{\rm eq}^2 \propto 1/\rho$) the
-linear weight's term grows as $\rho^{-1/2}$; this one stays far below $c_g$.
-Floor gas ($\rho$ below `rad_vet/floorcap_rho`) can be pinned at the floor-gas velocity cap;
-with `<hydro>/dt_floor_courant = C` (production 0.6) it takes one Courant bound on the sum of its
-signal rates, dt $\le C/\sum_d(|v_d| + c_d)/h_d$, instead of `cfl_number` per direction, so the
-floor atmosphere does not set the step of the star (test: `floor_dt`).
+**Time integration.** The scheme is second-order accurate in time. The hydrodynamics is
+AthenaK's explicit two-stage integrator (`rk2`); the radiation and the gas-radiation exchange
+are implicit, with a two-stage implicit Runge-Kutta method (`time2_tableau = sdirk2`). The two
+parts are coupled so that the whole step stays second order, also where the gas-radiation
+exchange is stiff.
 
 **Implicit stage solve.** In each stage the face momentum equation is eliminated face by face,
 which leaves a scalar system for $E$. It is solved by Newton passes: each pass is a
