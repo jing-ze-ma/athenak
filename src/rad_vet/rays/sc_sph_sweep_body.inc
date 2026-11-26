@@ -85,6 +85,7 @@
             // theta_wall = mirror (flag 2): a theta ghost reads its mirror row (no extra
             // capture: the closure stays below the launch limit)
 #if VET_VGD_BODY_MIR
+            if (slb_ && wl_(m,kk,jj) >= 8) {return 0.0;}   // slab: beyond a vacuum face
             if ((jj < wb || jj >= wb + nx2b) && wl_(m,kk,jj) >= 2) {
               const bool hi = (jj >= wb + nx2b);
               // vacuum (flag 3): zero; extrap (4): the edge row's (zero gradient)
@@ -223,7 +224,14 @@
             }
             // stencil and field reads of the shared upwind core
             const ScSt4 st4{k0, k1, j0, j1, uj, uk};
-            auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
+            auto fC = [&](const int c, int kk, int jj, const int ii) -> Real {
+#if VET_VGD_BODY_MIR
+              // slab, beyond a vacuum x2 (x3) face (flag 8 + 1 (x2) + 2 (x3)): the edge
+              // cell's chi and S
+              const int wf = slb_ ? wl_(m,kk,jj) : 0;
+              if (wf >= 8 && (wf & 1)) {jj = (jj < wb) ? wb : (wb + nx2b - 1);}
+              if (wf >= 8 && (wf & 2)) {kk = (kk < wb) ? wb : (wb + nx3b - 1);}
+#endif
               return csx(m,c,kk,jj,ii);
             };
             // active stencil cells straight from shell iu's slab (the element rd reads)

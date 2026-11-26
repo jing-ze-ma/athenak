@@ -109,10 +109,6 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
              "implicit_bc_x2min = implicit_bc_x2max (x3min, x3max) = marshak: the "
              "vacuum face of both the formal solution and the moment solve");
   }
-  if ((vet_x2open || vet_x3open) && mbpath) {
-    VetFatal("<rad_vet>/closure = sc with non-periodic x2 (x3) boundaries (vacuum "
-             "faces of the formal solution) needs a single MeshBlock on one rank");
-  }
   vet_nmu = pin->GetOrAddInteger("rad_vet", "vet_nmu", 4);
   vet_nphi = pin->GetOrAddInteger("rad_vet", "vet_nphi", 8);
   // vet_bc_inner / vet_bc_reflect (VetBcInit); vet_bc_bath: an x1 end with
@@ -980,14 +976,20 @@ void RadiationVet::ScSlabSelect() {
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
   need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
-  need(!vet_x2open && !vet_x3open, " vacuum x2/x3 faces;");
-  need(ibm_nr == 0 && !impl_beam_fs, " boundary beams / implicit_flux_beam = fs;");
+  need(ibm_nr == 0, " boundary beams;");
   need(ibc_x1min != VET_IBC_REFLECT && ibc_x1max != VET_IBC_REFLECT, " reflecting x1;");
   need(!(vsc_rot && ScRotOn()) || (cln_ring && vet_ring_n == 0),
        " rotating set without the ring, or a rotating vet_ring;");
   need(nb1 == 1, " several MeshBlocks along x1;");
   need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
   vgd_slab = lack.empty() ? 1 : 0;
+  // the Cartesian sweep has vacuum x2 (x3) faces on one MeshBlock only
+  if (!vgd_slab && (vet_x2open || vet_x3open) &&
+      (pm->nmb_total != 1 || global_variable::nranks != 1)) {
+    VetFatal("<rad_vet>/closure = sc with non-periodic x2 (x3) boundaries on the "
+             "Cartesian sweep (the slab lacks:" + lack + ") needs a single MeshBlock "
+             "on one rank");
+  }
   if (vgd_slab) {
     // the top bath of vet_bc_bath; the halo (compact masks, exact lists, IPC, band
     // ring) with sp's defaults, on the slab's read boxes (ScCand) and branch

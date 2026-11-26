@@ -160,11 +160,17 @@ void RadiationVet::ScTabCompute(const Real alpha, const int nthr) {
   }
   if (vgd_slab == 1) {
     // Cartesian slab: a periodic image is a translation (no wall, identity map) and the
-    // branch n . r_hat is n_1 everywhere
+    // branch n . r_hat is n_1 everywhere; band cells beyond a vacuum x2 (x3) face of the
+    // mesh: flag 8 + 1 (x2) + 2 (x3)
     for (int m = 0; m < nmb; ++m) {
+      const LogicalLocation &ll = pm->lloc_eachmb[pmy_pack->gids + m];
       for (int k = 0; k < c3; ++k) {
+        const int gk = ll.lx3*indcs.nx3 + k - vgd_w;
+        const int o3 = (vet_x3open && (gk < 0 || gk >= pm->mesh_indcs.nx3)) ? 2 : 0;
         for (int j = 0; j < c2; ++j) {
-          H.w(m,k,j) = 0;
+          const int gj = ll.lx2*indcs.nx2 + j - vgd_w;
+          const int o2 = (vet_x2open && (gj < 0 || gj >= pm->mesh_indcs.nx2)) ? 1 : 0;
+          H.w(m,k,j) = (o2 + o3 > 0) ? 8 + o2 + o3 : 0;
           for (int q = 0; q < n; ++q) {
             H.mp(m,k,j,q) = q;
             H.mr(m,k,j,q) = d[4*q];
