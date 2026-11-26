@@ -638,6 +638,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
               !pmy_pack->pmesh->multilevel &&
               recipe::Fix(pin, "hydro", "dfloor_flux_limit", "true", "false");
     rec("dfloor_flux_limit", use_dfl);
+    // <hydro>/dfloor_flux_pass (default true): the momentum DflMomentum takes leaves by a
+    // face floor flux (false: it vanishes, the old sink; p_ledger flr)
+    if (use_dfl) dfl_pass = pin->GetOrAddBoolean("hydro", "dfloor_flux_pass", true);
     // <hydro>/p_ledger (read only when named): the momentum ledger, utils/p_ledger.hpp
     if (pin->DoesParameterExist("hydro", "p_ledger")) {
       p_ledger::on = pin->GetBoolean("hydro", "p_ledger");
