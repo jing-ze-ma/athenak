@@ -1003,3 +1003,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 00:52 02-17: rf_ncu_cln_fs0 -> IDLE
 - 11-26 00:53 02-17: IDLE -> rf_ncu_cln_gd_fs
 - 11-26 00:54 02-17: rf_ncu_cln_gd_fs -> rf_ncu_cls_restrict
+- 11-26 00:55 02-09: lz_RST-N2-t9l62-b1 pa_lzan2 -> lz_RST-N2-t9l62-b2 pa_lzan2
+- 11-26 00:55 02-11: IDLE -> scl_S8
+- 11-26 00:55 02-17: rf_ncu_cls_restrict -> scl_S8
+- 11-26 00:57 01-17: IDLE for 10 min
+- 11-26 00:57 02-11: scl_S8 -> IDLE
+- 11-26 00:57 02-17: scl_S8 -> IDLE
+- 11-26 00:58 02-09: lz_RST-N2-t9l62-b2 pa_lzan2 -> lz_RST-N2-t9l62-k pa_lzan2
