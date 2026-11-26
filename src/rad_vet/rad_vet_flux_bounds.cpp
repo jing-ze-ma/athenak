@@ -26,6 +26,7 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
 #include "rad_vet/rad_vet_flux.hpp"
+#include "rad_vet/rad_vet_fluid.hpp"
 #include "utils/p_ledger.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
@@ -138,10 +139,26 @@ void RadiationVet::FluxCone(const int e, const int kd) {
     FluxCsShared();
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
-  if (wbc) Kokkos::deep_copy(sl, 0.0);
+  if (wbc) Kokkos::deep_copy(DevExeSpace(), sl, 0.0);
+  // (flux_cone_line: the withheld cut and the face's gas density, FluxBalanceProject)
+  DvceArray4D<Real> rs, rw;
+  if (cln_fcpj[0] && wbc) {
+    rs = ScratchView<DvceArray4D<Real>>("cln_fcrs", nmb1 + 1, u0.extent_int(2),
+                                        u0.extent_int(3), u0.extent_int(4));
+    rw = ScratchView<DvceArray4D<Real>>("cln_fcrw", nmb1 + 1, u0.extent_int(2),
+                                        u0.extent_int(3), u0.extent_int(4));
+  }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  const bool hf = fl.on;
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
+    const bool pj = cln_fcpj[d] && wbc;   // (passes: local)
+    if (pj) {
+      Kokkos::deep_copy(DevExeSpace(), rs, 0.0);
+      Kokkos::deep_copy(DevExeSpace(), rw, 0.0);
+    }
     SolveFor("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // a physical boundary face has no F equation: the gas takes its half cell's
@@ -153,12 +170,15 @@ void RadiationVet::FluxCone(const int e, const int kd) {
                       lf(x.w(m,CLW_CP,k-lin*dk,j-lin*dj,i-lin*di), d)*f;
       fc(m,CLF_N+2,k,j,i) = fs;
       if (spn) fcx(m,d,k,j,i) = 0.0;
+      if (pj && !bd) rw(m,k,j,i) = hf ? 0.5*(uh(m,IDN,k,j,i) + uh(m,IDN,k-dk,j-dj,i-di))
+                                      : 1.0;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
       // (lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
       if (spn && !bd && !fa(d) && !fg && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
       const bool wh = !bd && !fg && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
-      if (wh) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+      if (wh && pj) rs(m,k,j,i) = -(f - fs)*it;
+      if (wh && !pj) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
@@ -172,10 +192,11 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       // (the momentum withheld from the gas along each face family, signed, its own
       // cells' halves: fcone_lz, p_ledger)
       const bool rin = (d == 0) ? (i <= ie) : ((d == 1) ? (j <= je) : (k <= ke));
-      if (wh) SlotAdd(sl, 2 + d, m, k, j, i, (f - fs)*it*0.5*((rin ? CellVolume(x, m,
+      if (wh && !pj) SlotAdd(sl, 2 + d, m, k, j, i, (f - fs)*it*0.5*((rin ? CellVolume(x, m,
                       k, j, i) : 0.0) + (lin ? CellVolume(x, m, k-dk, j-dj, i-di) :
                       0.0))/(x.c*x.c));
     });
+    if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, false);
   }
   if (wbc) SlotSum(sl, fcc, 5);
   if (e == CLW_X) {

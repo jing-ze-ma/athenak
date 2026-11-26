@@ -126,7 +126,7 @@ Notes:
   am and user sources, less the reference force the radiation withholds from the gas
   (force_reference: the hydro's well-balanced background gives it); `Pr_rad`, the
   radiation update and write-back (boundary radiation stress, geometric terms); `Pr_cut`,
-  the cone cut the gas does not take (0 with `flux_cone_gas = true`); `Pr_fwb`, the
+  the cone cut the gas does not take (0 with `flux_cone_line = true`); `Pr_fwb`, the
   unprojected fwb residual's momentum (0 with `fwb_line`);
   `Pr_flr`, floors
   (dfloor_flux_limit, ConToPrim, floor-gas cap); `Pr_mrg`, the average of the merged
