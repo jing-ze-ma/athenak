@@ -15,7 +15,7 @@ again at a smaller size. The step is drawn under Code map (section 3).
 
 - **Second order in time and space.** Measured orders of the finest pair: 1.8 in time, 1.9-2.3
   for cells and time step refined together, and 2 also where the gas-radiation exchange is stiff
-  (tests `order_time`, `order_space`, `order_stiff`; section 2, Properties;
+  (tests `order_time`, `order_space`, `order_stiff`, `order_mhd`; section 2, Properties;
   worked examples in [Notebooks](../../tests/vet_clean/notebooks/README.md)). The implicit discrete-ordinates
   radiation of Athena++ (Jiang 2021) is, as that paper states, first order in time.
   What the order means: the error falls as a power of the cell size. With second order, 10 times
@@ -362,7 +362,7 @@ radiation-acoustic wave (64 cells, dt halved) the successive orders of E without
 2.0 in all three; from a study on this release, not a suite test).
 
 Test: `order_time` (order of the finest pair >= 1.7), `order_space` (linear
-radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7), `order_stiff` (trapped
+radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7), `order_mhd` (radiation-modified fast wave under `<mhd>`, non-stiff and stiff exchange and with Ohmic and ambipolar diffusion, time step halved, finest pair >= 1.7), `order_stiff` (trapped
 radiation-acoustic wave, time step halved, finest pair >= 1.7).
 
 ### Radiation-acoustic waves in every trapping regime
@@ -537,7 +537,7 @@ following. The properties of this section are not verified there.
 | spherical polar with the poles (full sphere, `<mesh>/use_polar_boundary`) under `vet_gd` | accepted, not tested | wedges clear of the poles; the full sphere on the cubed sphere (`*_cs`) |
 | stretched theta (`<mesh>/use_grid_stretch_theta`, `theta_plateau`) under `vet_gd` | accepted, not tested | uniform theta; radial stretching in the star decks |
 | several MeshBlocks along x1 under `vet_gd` | the sweep has the code, but the start-up check stops with a FATAL error on spherical polar and the cubed sphere (`meshblock/nx1` must equal `mesh/nx1`), so it cannot be reached | one MeshBlock along x1; several on a Cartesian mesh with `closure = vet_sc` (`idort_beams_mb`) |
-| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with `time2_tableau = hesdirk2` (the default with `<mhd>`) or `trbdf2`, tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `sdirk2`, the tableau of the star decks, is FATAL with MHD and matter coupling; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
+| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with every `time2_tableau` (`sdirk2`, the default, as on the stars: the stage-1 solve takes the field B^n + g (B* - B^n) through \|B\|^2/2, B* and the flux state's EMFs take the stage-2 CT update with the Heun weights; second order also where the exchange is stiff and with Ohmic and ambipolar diffusion explicit in the stages, `order_mhd`), tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
 
 ## 3. Code map
 

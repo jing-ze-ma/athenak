@@ -968,17 +968,20 @@ def t_mhd_radwave(c):
 
 def t_order_mhd(c):
     """the fast magnetosonic wave of mhd_radwave (P_rad/P_gas 1, along x1, 32 cells, one
-    period, strict solves), time step T/64 ... T/512: x = 1, x = 100 (the stiff exchange)
-    and x = 1 with Ohmic and ambipolar diffusion (explicit in the stages); successive
-    orders of E, v_x and the transverse field."""
+    period, strict solves), time step T/64 ... T/512: x = 1e-6 (exchange stiffness z = dt
+    (c kappa + 4 c kappa a T^3/(rho c_v)) 2.9 ... 0.36), x = 100 (stiff, z ~ 1e8) and x = 1
+    (z ~ 1e6) with Ohmic and ambipolar diffusion (explicit in the stages); successive
+    orders of E, v_x and the transverse field.  Strict solves where the exchange is stiff
+    (the thin wave does not reach them: its own tolerances)."""
     out = {}
-    for tag, x, eta, ead in (('', 1.0, 0.0, 0.0), ('_stiff', 100.0, 0.0, 0.0),
+    strict = {'rad_vet/newton_conv': 'strict', 'rad_vet/solver_tol': 1e-14,
+              'rad_vet/newton_tol': 1e-13}
+    for tag, x, eta, ead in (('', 1.0e-6, 0.0, 0.0), ('_stiff', 100.0, 0.0, 0.0),
                              ('_ni', 1.0, 0.02, 0.005)):
         o = mhd_wave_keys('fast', 1.0, x, 'x1', 32, eta, ead)[0]
         tl = o['time/tlim']
-        o.update({'time/cfl_number': 10.0, 'output1/dt': tl, 'output2/dt': tl,
-                  'rad_vet/newton_conv': 'strict',
-                  'rad_vet/solver_tol': 1e-14, 'rad_vet/newton_tol': 1e-13})
+        o.update({'time/cfl_number': 10.0, 'output1/dt': tl, 'output2/dt': tl})
+        o.update(strict if x > 1.0e-3 else {})
         S = {'E': [], 'v': [], 'B': []}
         for m in (64, 128, 256, 512):
             d = c.run('mhd_wave.athinput', 'T%d%s' % (m, tag),
