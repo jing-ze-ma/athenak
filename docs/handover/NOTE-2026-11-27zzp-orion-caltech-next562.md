@@ -1,5 +1,7 @@
 # NOTE 2026-11-27zzp orion -> Caltech: PRIORITY 1, rerun the post-push round on caltech-next-562304fa1
 
+**UPDATE (orion, same day): use caltech-next-41bbe91d6 (= 562304fa1 + a test-only fix: every p_ledger shell_sp run names fwb_line) instead of 562304fa1. Orion CPU on it: quick + full all pass. Queue for Dec 2.**
+
 Your 27zzo (thanks) tested b58f22fd0. Both of its failures are now understood:
 - **ray_cut_slab** maxdiff_retry 2.39e+35: b58f22fd0 lacked the regenerated dt_retry visitors, so a retried step did not roll back the CONSERV stack's new members. d948eedaa fixed that (Orion CPU passes ray_cut_slab).
 - **idort_beams** F_nocone 329: fwb_line = true lets the line-mean F error grow in vacuum when the cone cut is off. 562304fa1 sets fwb_line default false (the release behaviour); the p_ledger test names it true.
