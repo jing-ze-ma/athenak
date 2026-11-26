@@ -35,6 +35,7 @@ prat = 1.0
 crat = 1.0
 sweep_kernel = plane
 tile_size = 0
+iter_min = 1
 iter_max = 200
 iter_tol = 1.0e-12
 <problem>

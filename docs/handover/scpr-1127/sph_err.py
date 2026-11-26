@@ -11,8 +11,14 @@ import bin_convert as bc
 R, S = 0.6, 1.0; SIG = float(os.environ.get('SIG', '5.0'))
 a = sys.argv; f = bc.read_binary(a[1]); var = a[2]; sp = 'sp' in a
 assert f['n_mbs'] == 1, 'one MeshBlock expected'
+if var not in f['mb_data']:  # the PR names its J 'rad_J'
+    var = {'sc_rad_J': 'rad_J'}.get(var, var)
+if var not in f['mb_data']: sys.exit(f"{var} not in {list(f['mb_data'])}")
 J = np.asarray(f['mb_data'][var][0], dtype=float)
-x = np.asarray(f['mb_x1v'][0]); y = np.asarray(f['mb_x2v'][0]); z = np.asarray(f['mb_x3v'][0])
+def cc(c):  # cell centres of the single MeshBlock (uniform grid)
+    n = J.shape[{'1': 2, '2': 1, '3': 0}[c]]; lo, hi = f['x' + c + 'min'], f['x' + c + 'max']
+    return lo + (np.arange(n) + 0.5)*(hi - lo)/n
+x, y, z = cc('1'), cc('2'), cc('3')
 Z, Y, X = np.meshgrid(z, y, x, indexing='ij')
 if sp:
     r = X; X, Y, Z = r*np.sin(Y)*np.cos(Z), r*np.sin(Y)*np.sin(Z), r*np.cos(Y)
