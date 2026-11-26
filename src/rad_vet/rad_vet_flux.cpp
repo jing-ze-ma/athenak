@@ -23,6 +23,7 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
 #include "rad_vet/rad_vet_flux.hpp"
+#include "rad_vet/rad_vet_fluid.hpp"
 #include "utils/p_ledger.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
@@ -252,6 +253,25 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
             Kokkos::deep_copy(DevExeSpace(), rs, 0.0);
             Kokkos::deep_copy(DevExeSpace(), rw, 0.0);
           }
+          // (fwb_gas: the write-back's s and the faces' gas density, FluxBalanceProject's
+          // line shares into cln_fwret)
+          const bool gp = cln_fwgpj[d] && wbc && !pj;
+          DvceArray4D<Real> gs, gw;
+          if (gp) {
+            gs = ScratchView<DvceArray4D<Real>>("cln_fwgs", nmb1 + 1, u0.extent_int(2),
+                                                u0.extent_int(3), u0.extent_int(4));
+            gw = ScratchView<DvceArray4D<Real>>("cln_fwgw", nmb1 + 1, u0.extent_int(2),
+                                                u0.extent_int(3), u0.extent_int(4));
+            Kokkos::deep_copy(DevExeSpace(), gs, 0.0);
+            Kokkos::deep_copy(DevExeSpace(), gw, 0.0);
+            if (cln_fwret[d].extent_int(0) != nmb1 + 1) {
+              Kokkos::realloc(cln_fwret[d], nmb1 + 1, u0.extent_int(2), u0.extent_int(3),
+                              u0.extent_int(4));
+            }
+          }
+          FluidRef fl = FluidRef::Get(pmy_pack);
+          auto uh = fl.u0;
+          const bool hf = fl.on;
           SolveFor("cln_fwb", nmb1, ks, ke+ek, js, je+ej, is, ie+ei,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
             const SolveArgs &x = *pw;
@@ -273,6 +293,10 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
               return;
             }
             fd(m,CLF_N+1,k,j,i) += s/(x.h*x.c*x.c);
+            if (gp) {
+              gs(m,k,j,i) = s;
+              gw(m,k,j,i) = hf ? 0.5*(uh(m,IDN,k,j,i) + uh(m,IDN,k-ek,j-ej,i-ei)) : 1.0;
+            }
             const Real p = fd(m,CLF_TH,k,j,i)*s*0.5*(CellVolume(x, m, k, j, i) +
                            CellVolume(x, m, k-ek, j-ej, i-ei))/(x.c*x.c);
             if (!wbc) return;   // counters: the printed s, the write-back's
@@ -287,6 +311,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
                       CellVolume(x, m, k-ek, j-ej, i-ei) : 0.0)));
           });
           if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, wbc);
+          if (gp) FluxBalanceProject(d, CLF_N + 1, gs, gw, false, cln_fwret[d]);
         }
       }
       if (wbc) SlotSum(sl, fwc, 6);
@@ -556,7 +581,8 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
     if (p_ledger::on && cln_feedback && !cln_vzero) {   // (the gas's s, unprojected)
       const Real a[3] = {GlobalReduce(h(3), false), GlobalReduce(h(4), false),
                          GlobalReduce(h(5), false)};
-      p_ledger::Withheld(1, a, PSlope(t2_solve), dt_sub, !t2_inprobe);
+      for (int d = 0; d < 3; ++d) cln_fwwh[d] = a[d];   // (fwb_gas: WriteBack books)
+      if (!cln_fwgpj[0]) p_ledger::Withheld(1, a, PSlope(t2_solve), dt_sub, !t2_inprobe);
     }
   }
   if (rms) {   // clean_rst_mshare: once, at the old file's first solution

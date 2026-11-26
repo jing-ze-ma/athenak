@@ -1727,14 +1727,14 @@ def t_p_ledger(c):
            'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n, 'mesh/x3max': 1.0,
            'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8, 'time/tlim': 1e30,
            'time/nlim': 8, 'problem/radwave_dir': 'xyz', 'problem/radwave_eig': 'false',
-           'hydro/p_ledger': 'true', 'rad_vet/fwb_line': 'true', 'output1/dcycle': 1000000,
+           'hydro/p_ledger': 'true', 'rad_vet/fwb_gas': 'true', 'output1/dcycle': 1000000,
            'output2/dcycle': 1000000}
     out, w = {}, 0
     rel = lambda L, k: max(float(np.abs(r[k]*r['dt'][0]).max()/r['gross'][0]) for r in L)
     runs = [(t, 'wave_cart.athinput', dict(box, **{'problem/radwave_amp': a}))
             for t, a in (('box_small', 1e-3), ('box_violent', 0.1))]
     runs += [(g, 'shell_%s.athinput' % g, {'time/nlim': n, 'hydro/p_ledger': 'true',
-                                           'rad_vet/fwb_line': 'true'})
+                                           'rad_vet/fwb_gas': 'true'})
              for g in ('sp', 'cs')]
     for t, deck, o in runs:
         d = c.run(deck, t, o)
@@ -1744,7 +1744,7 @@ def t_p_ledger(c):
             out['%s_%s' % (t, k)] = rel(L, k)
         out[t + '_ncyc'] = len(L)
         w += vett.warnings(open(os.path.join(d, 'run.log')).read())
-    b = c.run('shell_sp.athinput', 'sp_off', {'time/nlim': n, 'rad_vet/fwb_line': 'true'})
+    b = c.run('shell_sp.athinput', 'sp_off', {'time/nlim': n, 'rad_vet/fwb_gas': 'true'})
     a = os.path.join(c.dir, 'sp')
     mx = 0.0
     for fa, fb in zip(vett.bins(a), vett.bins(b)):
@@ -1754,7 +1754,7 @@ def t_p_ledger(c):
     mx = max(mx, float(np.abs(ha[:, :len(lb)] - hb).max()) if la[:len(lb)] == lb else np.inf)
     out['hst_cols'] = int('Pr_tot' in la and 'Pr_gap' in la)
     out['bitwise'] = mx
-    lz = c.run('shell_sp.athinput', 'sp_lz', {'time/nlim': n, 'rad_vet/fwb_line': 'true',
+    lz = c.run('shell_sp.athinput', 'sp_lz', {'time/nlim': n, 'rad_vet/fwb_gas': 'true',
                                               'hydro/p_ledger_lz': 'true'})
     lg = open(os.path.join(lz, 'run.log')).read()
     zl = [[float(v) for v in re.findall(r' ([-+0-9.e]+)(?= |$)', ' ' + s)] for s in
@@ -1774,7 +1774,7 @@ def t_p_ledger(c):
     sub = copy.copy(c)
     sub.dir = os.path.join(c.dir, 'rst')
     restart_pair(sub, 'shell_sp.athinput', n, n//2, {'hydro/p_ledger': 'true',
-                                                     'rad_vet/fwb_line': 'true'})
+                                                     'rad_vet/fwb_gas': 'true'})
     pl = lambda d: re.findall(r'CLEAN PLEDGER cycle (\d+) (.*)', open(os.path.join(
         sub.dir, d, 'run.log')).read())
     st = dict(pl('straight'))

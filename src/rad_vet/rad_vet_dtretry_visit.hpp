@@ -378,6 +378,9 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_fcpj", cln_fcpj);
   for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_fcret[]", cln_fcret[q0_]);}
   v.value("cln_fcwh", cln_fcwh);
+  v.value("cln_fwgpj", cln_fwgpj);
+  for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_fwret[]", cln_fwret[q0_]);}
+  v.value("cln_fwwh", cln_fwwh);
   v.value("cln_fclz", cln_fclz);
   v.value("cln_fcemx", cln_fcemx);
   v.value("cln_lzsp", cln_lzsp);

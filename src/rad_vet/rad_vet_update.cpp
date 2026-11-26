@@ -409,13 +409,17 @@ void RadiationVet::WriteBack() {
   const bool lzb = cln_lzbook && feedback;
   // (flux_cone_line: each cell takes its halves of its faces' line shares of the cut,
   // the kinetic energy paid by its own eint, capped at half of eint above e_min; frc 0
-  // capped cells, 1 sum |dp| V not returned, 2..4 the returned P, FluxCone's cln_fcret)
-  const bool frl = cln_fcpj[0] && feedback && !x.vzero;
+  // capped cells, 1 sum |dp| V not returned, 2..4 the returned cut, 5..7 the returned fwb
+  // P; FluxCone's cln_fcret, FluxSolve's cln_fwret (fwb_gas))
+  const bool frc0 = cln_fcpj[0], frw0 = cln_fwgpj[0];
+  const bool frl = (frc0 || frw0) && feedback && !x.vzero;
   DvceArray1D<Real> frc;
-  if (frl) frc = DvceArray1D<Real>("cln_frc", 5);
+  if (frl) frc = DvceArray1D<Real>("cln_frc", 8);
   DvceArray4D<Real> fr0 = cln_fcret[0], fr1 = cln_fcpj[1] ? cln_fcret[1] : fr0;
   DvceArray4D<Real> fr2 = cln_fcpj[2] ? cln_fcret[2] : fr0;
-  const bool frj = cln_fcpj[1], frk = cln_fcpj[2];
+  DvceArray4D<Real> fw0 = cln_fwret[0], fw1 = cln_fwgpj[1] ? cln_fwret[1] : fw0;
+  DvceArray4D<Real> fw2 = cln_fwgpj[2] ? cln_fwret[2] : fw0;
+  const bool frj = cln_fcpj[1], frk = cln_fcpj[2], fwj = cln_fwgpj[1], fwk = cln_fwgpj[2];
   DvceArray4D<Real> lzw, lzq;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -503,7 +507,7 @@ void RadiationVet::WriteBack() {
       // the kinetic energy the gas gains (the E row's W at convergence); with wb_arad wr,
       // the reference work at the velocity after the kick, which E pays
       Real wk = 0.0, wr = 0.0, wkr = 0.0;
-      if (frl) {   // (flux_cone_line: the cell's share of the cut, its eint pays)
+      if (frl) {   // (flux_cone_line, fwb_gas: the cell's shares, its eint pays)
         const Real d = uh(m,IDN,k,j,i), vc = CellVolume(x, m, k, j, i);
         auto sh = [&](const DvceArray4D<Real> &r, const int dk, const int dj,
                       const int di) {
@@ -511,8 +515,11 @@ void RadiationVet::WriteBack() {
                        r(m,k+dk,j+dj,i+di)*(vc + CellVolume(x, m, k+dk, j+dj, i+di)))/
                  (vc*x.c*x.c);
         };
-        Real dr[3] = {sh(fr0, 0, 0, 1), frj ? sh(fr1, 0, 1, 0) : 0.0,
-                      frk ? sh(fr2, 1, 0, 0) : 0.0};
+        const Real rc[3] = {frc0 ? sh(fr0, 0, 0, 1) : 0.0, frj ? sh(fr1, 0, 1, 0) : 0.0,
+                            frk ? sh(fr2, 1, 0, 0) : 0.0};
+        const Real rw[3] = {frw0 ? sh(fw0, 0, 0, 1) : 0.0, fwj ? sh(fw1, 0, 1, 0) : 0.0,
+                            fwk ? sh(fw2, 1, 0, 0) : 0.0};
+        Real dr[3] = {rc[0] + rw[0], rc[1] + rw[1], rc[2] + rw[2]};
         const Real pr = dr[0];   // (sp, cs: radial; on the cubed sphere along r_hat)
         if (x.cub) {
           Real q[3][3];
@@ -536,9 +543,11 @@ void RadiationVet::WriteBack() {
             Kokkos::atomic_add(&frc(0), 1.0);
             Kokkos::atomic_add(&frc(1), (1.0 - s)*sqrt(2.0*a*d)*vc);
           }
-          const Real pc[3] = {pr, x.sph || x.cub ? 0.0 : dr[1], x.sph || x.cub ? 0.0 :
-                              dr[2]};
-          for (int n = 0; n < 3; ++n) Kokkos::atomic_add(&frc(2+n), s*pc[n]*vc);
+          for (int n = 0; n < 3; ++n) {   // (P components: sp, cs radial only)
+            if (n > 0 && (x.sph || x.cub)) break;
+            Kokkos::atomic_add(&frc(2+n), s*rc[n]*vc);
+            Kokkos::atomic_add(&frc(5+n), s*rw[n]*vc);
+          }
         }
       }
       for (int n = 0; n < 3; ++n) {
@@ -759,17 +768,21 @@ void RadiationVet::WriteBack() {
                   pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1], r[2], r[3]);
     }
   }
-  if (frl) {   // flux_cone_line: the cut returned less what eint could not pay (counted)
+  if (frl) {   // the cut / fwb returned less what eint could not pay (counted)
     auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), frc);
-    Real c[5];
-    for (int n = 0; n < 5; ++n) c[n] = GlobalReduce(hc(n), false);
+    Real c[8];
+    for (int n = 0; n < 8; ++n) c[n] = GlobalReduce(hc(n), false);
     if (global_variable::my_rank == 0 && c[0] > 0.0) {
       std::printf("CLEAN FCLINE cycle %d t2s %d: %.0f cells capped (eint pays the returned "
-                  "cut), momentum not returned sum |dp| V %.6e (p_ledger cut)\n",
+                  "cut / fwb), momentum not returned sum |dp| V %.6e (p_ledger cut, fwb)\n",
                   pmy_pack->pmesh->ncycle, t2_solve, c[0], c[1]);
     }
-    const Real a[3] = {cln_fcwh[0] - c[2], cln_fcwh[1] - c[3], cln_fcwh[2] - c[4]};
-    p_ledger::Withheld(0, a, PSlope(t2_solve), h, !t2_inprobe);
+    for (int b = 0; b < 2; ++b) {
+      if (!(b ? frw0 : frc0)) continue;
+      const Real *wh = b ? cln_fwwh : cln_fcwh;
+      const Real a[3] = {wh[0] - c[2+3*b], wh[1] - c[3+3*b], wh[2] - c[4+3*b]};
+      p_ledger::Withheld(b, a, PSlope(t2_solve), h, !t2_inprobe);
+    }
   }
   if (p_ledger::on && feedback && !x.vzero && fref != VET_FREF_NONE) {
     // (p_ledger: the reference force the gas does not take, h sum V rf; P components)

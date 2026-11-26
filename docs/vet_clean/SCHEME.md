@@ -292,10 +292,15 @@ to the gas at the face:
   `cut`); the `floor_momentum` exch box (arad 1e-12) still redoes steps with it, so it is
   off by default (`flux_cone_gas = true`, the cut given at each face, fails that box
   outright); a physical boundary face's cut is the radiation's boundary flux;
-- the residual of the well-balanced face rows (`clean_stag_fwb`): booked in the ledger
-  (class `fwb`); with `fwb_line` (not the default: undamped line-mean F in vacuum) its mean along every mesh line of the directions whose faces carry P (x1 on
-  spherical polar and cubed sphere, x1, x2, x3 on a Cartesian mesh) is removed, so it adds
-  no P (the phi rings' torque: `clean_stag_fwb_ring`).
+- the residual of the well-balanced face rows (`clean_stag_fwb`): F keeps it whole (the
+  thin rows' pull towards the rays' flux), and with `fwb_gas = true` the gas of every
+  mesh line of the directions whose faces carry P (x1 on spherical polar and cubed sphere,
+  x1, x2, x3 on a Cartesian mesh) gives up the line's net s V/c^2, shared by the faces' gas
+  density, its internal energy paying the kinetic energy (capped, counted), so fwb adds no P
+  (class `fwb`; the phi rings' torque: `clean_stag_fwb_ring`). Neither is the default: the
+  line's net s is the discrete balance's own force in a static envelope (the gas taking it
+  breaks well-balance: `wb_sp` v/c_s 2.5e-3), and removing the line mean from F
+  (`fwb_line`) leaves the line-mean F error undamped in vacuum; the default books fwb.
 
 `dfloor_flux_limit`'s held cells send the momentum they lose by a face floor flux to the
 cells their outflow went to (a physical face's share is a boundary flux), as far as a

@@ -866,6 +866,9 @@ class RadiationVet {
   bool cln_fcpj[3] = {false, false, false};   // flux_cone_line: the projected dirs
   DvceArray4D<Real> cln_fcret[3];   // (flux_cone_line: each face's line share, -q rho_f)
   Real cln_fcwh[3] = {0.0, 0.0, 0.0};   // (the write-back's cut withheld, P components)
+  bool cln_fwgpj[3] = {false, false, false};   // fwb_gas: the dirs whose net s returns
+  DvceArray4D<Real> cln_fwret[3];   // (fwb_gas: each face's line share, -q rho_f)
+  Real cln_fwwh[3] = {0.0, 0.0, 0.0};   // (the write-back's fwb withheld, P components)
   bool cln_fclz = false;    // flux_cone_lz
   bool cln_fcemx = false;   // flux_cone_emax
   bool cln_lzsp = false;    // lz_spin

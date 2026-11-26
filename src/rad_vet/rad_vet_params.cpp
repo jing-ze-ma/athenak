@@ -562,6 +562,21 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       cln_fwbpj[d] = fln && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ?
                      2 : 1)) && !pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart")));
     }
+    // fwb_gas (default false; uniform mesh; off with fwb_line): F keeps fwb's s whole
+    // (the thin rows' pull towards F_ray), and the gas of each mesh line of the
+    // directions whose faces carry P gives up the line's net s V/c^2, shared by the
+    // faces' gas density, each cell's eint paying its kinetic energy (capped, counted;
+    // WriteBack).  Not the default: in a static envelope the line's net s is the
+    // discrete balance's own force, and giving it to the gas breaks well-balance
+    const bool fwg = cln_fwb && !fln && pin->GetOrAddBoolean("rad_vet", "fwb_gas", false);
+    if (fwg && pml->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_vet>/fwb_gas needs a uniform mesh" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (int d = 0; d < 3; ++d) {
+      cln_fwgpj[d] = fwg && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ? 2 :
+                     1))));
+    }
     // flux_cone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
     // (FluxCone)
