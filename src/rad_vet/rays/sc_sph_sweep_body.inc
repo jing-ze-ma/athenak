@@ -44,6 +44,9 @@
         if (inw == (mr >= 0.0)) {return false;}
         bool dfd = false;
         // the ray of direction d through cell (k, j, i) on source csx, intensities vix
+        // slab, closure_consistency (sfs_): the ray's face-sum scalars (entry, x2 and x3
+        // foot-shift flux, x1 face crossing, exit), as the Cartesian sweep's
+        Real gq[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
         auto solve = [&](const DvceArray5D<Real> &csx, const ScIView &vix) -> Real {
           auto rd0 = [&](int kk, const int jj, const int ii, int dq) -> Real {
             // axisymmetric (nx3 = 1): a phi band column is the own column with the
@@ -142,9 +145,11 @@
                                  : (sqrt(fmax(rtop*rtop - p2, 0.0)) - zr);
             const bool rfl = (x1f_(m) & 4);
             const Real sbl = exp(csx(m,1,k,j,i-1));
-            iv = ScTopInflow(ch0, ds, s0, sbl, tbh || rfl || psrc,
-                             rfl ? vix(m,d,k,j,i+1)
-                                 : (psrc ? fmax(1.5*s0 - 0.5*sbl, 1.0e-300) : itop));
+            const Real tin = rfl ? vix(m,d,k,j,i+1)
+                                 : (psrc ? fmax(1.5*s0 - 0.5*sbl, 1.0e-300) : itop);
+            iv = ScTopInflow(ch0, ds, s0, sbl, tbh || rfl || psrc, tin);
+            // (a mirrored face carries no entry, as the Cartesian sweep)
+            if (sfs_ && !rfl) {gq[0] = dir_(d,3)*nx*((tbh || psrc) ? tin : 0.0);}
           } else if (!slb_ && !inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
@@ -332,8 +337,11 @@
               // periodic first pass: the face S
               const Real ie0 = psrc ? fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i+1)), 0.0)
                                     : iemit;
+              Real fc = 0.0;
               iv = ScInnerFace(st4, fC, i, true, ie0 + bmv(), bfc, cx1f(m,i), cx1v(m,i),
-                               cx1v(m,i+1), p2, ch0, ds, s0);
+                               cx1v(m,i+1), p2, ch0, ds, s0, -1.0, 0.0,
+                               sfs_ ? &fc : nullptr);
+              gq[0] = dir_(d,3)*nx*fc;
             } else if (typ == 2 && imir) {
               // reflecting inner face: first-shell inward intensity in the nearest
               // specular direction (inward stencil cells) times the flux ratio
@@ -362,9 +370,11 @@
             } else if (typ == 2) {
               // diffusion intensity S + mu (-dS/dtau_r) at the inner face; vet_bc_diff =
               // face: face S = 1.5 S_a - 0.5 S_b (cell S is O(dtau_cell) low)
+              Real fc = 0.0;
               iv = ScInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
                                cx1v(m,i+1), p2, ch0, ds, s0, slb_ ? fabs(mr) : -1.0,
-                               bmv());
+                               bmv(), sfs_ ? &fc : nullptr);
+              gq[0] = dir_(d,3)*nx*fc;
             } else {
               // one intensity per (cell, direction), of the pass n_d . r_hat selects;
               // stencil cells of the other pass are dropped, weights renormalised
@@ -417,15 +427,56 @@
               const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
               const int id2 = 2*i - iu;
               const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
+              Real fc = 0.0;
               iv = ScSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
                                s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
-                               idd);
+                               idd, sfs_ ? &fc : nullptr);
+              if (sfs_) {
+                // x1: the intensity where the segment crosses the face; x2 (x3): the
+                // upwind shell's intensity the foot shift sh carries across the low
+                // face, the x3 (x2) part halved (S2 and S3 commute)
+                const Real wd = dir_(d,3), amr = fabs(mr), dxl = ds*amr;
+                gq[3] = wd*nx*fmax(fc, 0.0);
+                const bool thr = (nx3b > 1);
+                const Real sh2 = fj - j, sh3 = thr ? (fk - k) : 0.0;
+                const int o2 = static_cast<int>(floor(sh2));
+                const int o3 = static_cast<int>(floor(sh3));
+                const Real a2 = sh2 - o2, a3 = sh3 - o3;
+                auto ipq = [&](const int dk, const int dj) {
+                  return rd(k + dk, j + dj, iu);
+                };
+                auto g2f = [&](const int q) {
+                  return thr ? 0.5*(ipq(0,q) + (1.0 - a3)*ipq(o3,q) + a3*ipq(o3+1,q))
+                             : ipq(0,q);
+                };
+                auto g3f = [&](const int q) {
+                  return 0.5*(ipq(q,0) + (1.0 - a2)*ipq(q,o2) + a2*ipq(q,o2+1));
+                };
+                for (int c = 0; c < (thr ? 2 : 1); ++c) {
+                  const Real sh = (c == 0) ? sh2 : sh3, s = fabs(sh), fl = floor(s);
+                  const int nn = static_cast<int>(fl), sg = (sh < 0.0) ? 1 : -1;
+                  auto g = [&](const int q) {return (c == 0) ? g2f(q) : g3f(q);};
+                  Real p = (s - fl)*g((sg > 0) ? (-1 - nn) : nn);
+                  for (int q = 0; q < nn; ++q) {p += g((sg > 0) ? (-1 - q) : q);}
+                  gq[1 + c] = wd*amr*((c == 0) ? lg_.Dx2(mbsize, m)
+                                               : lg_.Dx3(mbsize, m))/dxl*sg*p;
+                }
+              }
             }
+          }
+          // exit through an x1 boundary face (not periodic): the half cell at chi_0, S_0
+          if (sfs_ && !x1pr_ && (inw ? ((x1f_(m) & 1) && l == lcb)
+                                     : ((x1f_(m) & 2) && l == n1 - 1))) {
+            const Real ex = exp(-ch0*fabs(cx1f(m,inw ? i : (i + 1)) - r)/fabs(mr));
+            gq[4] = dir_(d,3)*nx*(iv*ex + (1.0 - ex)*s0);
           }
           return iv;
         };
         const Real v = solve(cs_, vi_);
         if (dfd) {return true;}
         vi_(m,d,k,j,i) = v;
+        for (int q = 0; q < 5 && sfs_; ++q) {
+          rgs_((l & 1)*nmbt_ + m,q*n + d,k-ks,j-js) = gq[q];
+        }
         return false;
       };

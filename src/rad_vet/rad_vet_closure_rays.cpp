@@ -204,6 +204,13 @@ void RadiationVet::ClosureFromSc() {
       q[CLN_HM+b] = hm[b];
     }
     q[CLN_JR] = q[CLN_J];
+    // (Cartesian slab: the face sums the sweep made, ScSlabFaceSum)
+    for (int c = 0; c < 4 && slb; ++c) {
+      q[CLN_F2+c] = cs(m,CLN_F2+c,k,j,i);
+      q[CLN_FX+c] = cs(m,CLN_FX+c,k,j,i);
+      q[CLN_F3+c] = cs(m,CLN_F3+c,k,j,i);
+      if (CLN_F1 + c < cs.extent_int(1)) {q[CLN_F1+c] = cs(m,CLN_F1+c,k,j,i);}
+    }
     for (int c = 0; c < 10 && slb; ++c) {
       vc_(m,VETRAY_J+c,k,j,i) = (c == 0) ? q[CLN_J] : ((c < 7) ? q[CLN_D11+c-1]
                                                               : hp[c-7] + hm[c-7]);

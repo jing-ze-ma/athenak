@@ -132,6 +132,14 @@ void RadiationVet::ScSweep() {
   auto bmi_ = ibm_i;
   const int bmn_ = slb_ ? ibm_nr : 0;
   const Kokkos::Array<int, 4> bmr_ = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
+  // slab, closure_consistency: the face sums in the sweep (ScSlabFaceSum), per shell from
+  // the rays' scalars in vgd_rgs (two shells: the next shell's interior may run while a
+  // shell is summed); zeroed per pass, so only a set's last x1 pass counts
+  const bool sfs_ = slb_ && cln_consist;
+  const bool x1pr_ = vet_x1per;
+  const int nmbt_ = nmb1 + 1;
+  if (sfs_ && !vgd_xff_prep) {ScSlabFaceZero();}
+  auto rgs_ = vgd_rgs;
   // the fused sweep counts as two sweeps, a list-only preparation as none
   if (!vgd_xff_prep) {vgd_hsweep += vgd_xff_now ? 2 : 1;}
   // vet_gd_shell_list: per pass the (m, k, j, d) whose n . r_hat (face midpoints) lies
@@ -681,6 +689,8 @@ void RadiationVet::ScSweep() {
         run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
                  "vet_vgd_shell");
       }
+      // slab: the shell's face sums, after its interior and edge items (ScSlabFaceSum)
+      if (sfs_) {ScSlabFaceSum(i, l, inw);}
       if (rga) {
         // the previous shell has been read (stream order): save its inward band
         // (inward pass), its interior back to the compact slab, lend the next shell a
