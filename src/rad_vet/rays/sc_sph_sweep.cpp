@@ -458,6 +458,60 @@ void RadiationVet::ScSweep() {
       }
 #endif
     };
+    // interior / edge split of a shell (vgd_mid): edge = false runs the codes cl(c),
+    // c in [c0, c1), deferring those whose stencil reaches the band to the list vgd_edl;
+    // edge = true runs that list (the codes are independent: same bits as one launch)
+    auto run_split = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
+                         const int i, const int l, const bool edge) {
+      if (c1 <= c0) {return;}
+      if (vgd_edl.extent_int(0) < c1 - c0) {Kokkos::realloc(vgd_edl, c1 - c0);}
+      if (!vgd_edn.is_allocated()) {
+        vgd_edn = Kokkos::View<int, DevMemSpace>("vet_vgd_edn");
+      }
+      auto L_ = cl;
+      auto E_ = vgd_edl;
+      auto En_ = vgd_edn;
+      const std::false_type f_;
+#if defined(KOKKOS_ENABLE_CUDA)
+      const ScBodygT *bp_ = bgp;
+      const ScBodymgT *bq_ = bgq;
+#else
+      const ScBodyT *bp_ = bdp;
+      const ScBodymT *bq_ = bmp;
+#endif
+      auto item = KOKKOS_LAMBDA(const int t0, int &m, int &k, int &j, int &d) {
+        int t = t0;
+        d = t % n;
+        t /= n;
+        m = t/nkj;
+        t -= m*nkj;
+        k = ks + t/nj;
+        j = js + (t % nj);
+      };
+      if (edge) {
+        Kokkos::parallel_for("vet_vgd_shell_edge", ScShellPol(vgd_cur, 0, c1 - c0),
+        KOKKOS_LAMBDA(const int c) {
+          if (c >= En_()) {return;}
+          int m, k, j, d;
+          item(E_(c), m, k, j, d);
+          if (bq_ != nullptr) {
+            (*bq_)(m, k, j, d, i, l, f_, f_);
+          } else {
+            (*bp_)(m, k, j, d, i, l, f_, f_);
+          }
+        });
+        return;
+      }
+      Kokkos::deep_copy(vgd_cur, vgd_edn, 0);
+      Kokkos::parallel_for("vet_vgd_shell_int", ScShellPol(vgd_cur, c0, c1),
+      KOKKOS_LAMBDA(const int c) {
+        int m, k, j, d;
+        item(L_(c), m, k, j, d);
+        const bool df = (bq_ != nullptr) ? (*bq_)(m, k, j, d, i, l, true, f_)
+                                         : (*bp_)(m, k, j, d, i, l, true, f_);
+        if (df) {E_(Kokkos::atomic_fetch_add(&En_(), 1)) = L_(c);}
+      });
+    };
     const int nsh = n1 - lcut;
     // vet_gd_halo_exact: read marks of shell i's band in this pass (when its record
     // does not match; same decision on every rank): the ghosts read by inward shell i-1
@@ -551,6 +605,9 @@ void RadiationVet::ScSweep() {
     // several MeshBlocks along x1: levels in the pass's order, each from the boundary
     // shell handed on (wall maps couple all directions: no wavefront)
     const int nst = vgd_nb1;
+    // remote partners over MPI: the interior / edge split (vgd_mid), so the next shell's
+    // interior runs while this shell's messages travel
+    const bool ppl = vgd_hmpi && vgd_ipc_state != 1 && !xffs && nst == 1;
     for (int qq = 0; qq < nst*nsh; ++qq) {
       const int q = qq % nsh, lv = inw ? (nst - 1 - qq/nsh) : qq/nsh;
       if (nst > 1 && q == 0 && qq > 0) {ScX1Hand(!inw);}
@@ -588,6 +645,9 @@ void RadiationVet::ScSweep() {
       if (xffs) {
         // both cross-fade sets, one launch
         run_xff(i, l);
+      } else if (ppl && q > 0) {
+        // the interior ran behind the previous exchange: the deferred edge items
+        run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l, true);
       } else {
         // shell list: only this pass's (and level's) (m, k, j, d)
         run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
@@ -619,6 +679,15 @@ void RadiationVet::ScSweep() {
         }
       }
       const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
+      if (ppl && q + 1 < nsh) {
+        // the next shell's interior, behind this shell's pack (after the ring ops that
+        // lend it its slab)
+        const int ln = inw ? (l - 1) : (l + 1);
+        vgd_mid = [&, ln, lv]() {
+          run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], is + ln,
+                    ln, false);
+        };
+      }
       // the shell is complete on every block: its lateral band (exact, not lagged)
       Kokkos::Timer th;
       vgd_hinw = inw;
@@ -664,6 +733,7 @@ void RadiationVet::ScSweep() {
         }
       }
       if (rga) {ScRingFlush();}
+      ScMidRun();   // (not run by the exchange: after it)
       // the next kernel is stream-ordered behind the unpack: no fence needed
       vgd_thalo += th.seconds();
     }
