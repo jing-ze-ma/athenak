@@ -737,4 +737,264 @@ void RadiationVet::CleanStagBracket() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn SolvePass RadiationVet::CleanPassSetup
+//! \brief what the passes of this stage solve iterate on, their cap and tolerances
+
+SolvePass RadiationVet::CleanPassSetup() {
+  SolvePass p;
+  // Newton iteration on the gas coupling, Picard passes on the lagged slopes and (with
+  // clean_closure = iterate, at most clean_maxpic) the closure; one linear solve
+  // without these.  clean_closure = extrap(2): the stage-1 solve takes the closure of
+  // its own first iterate once (pass 1), else the step is first order in time.
+  p.clos1 = (cln_extrap > 0) && (t2_solve == VET_T2S_STAGE1);
+  p.iterate = cln_feedback || cln_closit || p.clos1;
+  p.t2stage = (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2);
+  p.converged = !p.iterate;
+  p.nmax = p.iterate ? cln_maxnl : 1;
+  // lagged slopes settle only to the linear tolerance.  clean_conv = budget: the pass's
+  // tolerance (CleanNewtonUpdate), the first solve's from the floor (restarts bitwise)
+  p.tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
+  cln_tolb = p.tol_nl;
+  // budget norm and time error only in gas-coupled Newton passes with K1 = f(U^n) known;
+  // otherwise the strict test
+  cln_bon = cln_budget && p.iterate && cln_feedback && (t2_ok || cln_k1ok) &&
+            t2_solve != VET_T2S_NONE && !cln_vzero &&
+            t2k1.extent_int(0) >= pmy_pack->nmb_thispack;
+  cln_ewr = -1.0;
+  return p;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanFirstPass
+//! \brief the first iterate: E, T, opacity, beta, drag, donor fluxes; resets of the
+//! solve's passes
+
+void RadiationVet::CleanFirstPass() {
+  const bool opu = cln_opt && cln_feedback;
+  CleanFirstIterate();
+  cln_fsk = false;
+  cln_csyok = false;   // lateral sums' coefficients once per closure
+  if (opu) CleanStageOpacity();
+  if (cln_feedback) CleanAdvectiveCoefficients();
+  // the drag's face flux from the first iterate's beta and emission (a restart, failed
+  // stage or discarded attempt does not carry the last solve's)
+  if (cln_feedback) CleanRightHandSide(true);
+  if (cln_feedback) CleanStagDrag(true);
+  // clean_stag_xdonor: q of the first iterate with its drag share b (CLW_L holds E_k's
+  // lateral sums after the first drag)
+  CleanStagXDonor(true, !cln_feedback);
+  cln_gpic = false;   // clean_gas_newton_switch: the solve's history
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanPassClosure
+//! \brief pass p.n: closure, opacities and donor fluxes of the iterate, in the passes
+//! that take them
+
+void RadiationVet::CleanPassClosure(SolvePass &p) {
+  const bool opu = cln_opt && cln_feedback;
+  p.clos = (cln_closit && p.n < cln_maxpic) || (p.clos1 && p.n == 1);
+  // opacities of the iterate's T, in passes < clean_stag_opac_passes
+  p.opr = opu && p.n > 0 && p.n < cln_optn;
+  if (p.clos) {
+    cln_csyok = false;
+    CleanClosureIterate();
+    if (!p.opr) CleanFaceCoefficients();   // (else in CleanStageOpacity)
+    if (cln_consist && !p.opr) CleanStagBracket();
+    if (cln_feedback) CleanAdvectiveCoefficients();
+  }
+  if (p.opr) {
+    CleanStageOpacity();
+    CleanStagDrag(false);
+    CleanAdvectiveCoefficients();
+  }
+  // clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums unless the
+  // closure, bracket or opacity refresh rewrote them (and on the cubed sphere)
+  if (p.n > 0) CleanStagXDonor(false, p.clos || p.opr || !cln_feedback,
+                               cln_xdfz > 0 && p.n >= cln_xdfz);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanPassRows
+//! \brief a pass's linear system: right-hand side, operator rows, preconditioner
+
+void RadiationVet::CleanPassRows(const SolvePass &p) {
+  // after the xdonor: the lateral sums of E_k are its
+  CleanRightHandSide(false, !(p.n > 0 && cln_xd_on));
+  // the first iterate's T from the pass's gas row, then its RHS
+  if (p.n == 0 && cln_feedback) {
+    CleanNewtonUpdate();
+    CleanRightHandSide();
+  }
+  CleanPreconditionerSetup();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationVet::CleanPassSolve
+//! \brief a pass's linear solve for E; false: the passes end here (no iteration, or a
+//! failed linear solve)
+
+bool RadiationVet::CleanPassSolve(SolvePass &p) {
+  // budget: a pass whose iterate gives the next closure is solved in the strict norm
+  const bool cnext = (cln_closit && p.n + 1 < cln_maxpic) || (p.clos1 && p.n == 0);
+  if (cnext) cln_ewr = (cln_c1b && !dtr_redo) ? -3.0 : -2.0;
+  p.nit = CleanBiCGStab();
+  if (cnext) cln_ewr = -1.0;
+  p.nit_sum += std::abs(p.nit);
+  ++p.nsolve;
+  cln_nsolve += 1.0;
+  cln_nit += std::abs(p.nit);
+  if (p.nit < 0) p.dnl = std::numeric_limits<Real>::infinity();
+  // implicit_lin_maxit: a linear solve that ends at its cap leaves its iterate to the
+  // pass, which is then not the last one
+  p.lp = p.nit < 0 && p.n + 1 < p.nmax;
+  return p.iterate && (p.nit >= 0 || p.lp);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanPassUpdate
+//! \brief a pass's updates: E and gas temperature (change p.de), then face fluxes, gas
+//! momentum and drag (change p.dv)
+
+void RadiationVet::CleanPassUpdate(SolvePass &p) {
+  if (!p.t2stage && p.n + 1 == p.nmax) {   // for CleanWorstCell
+    auto sv = Kokkos::subview(cln_w.s, Kokkos::ALL, std::make_pair(CLW_EK,
+                              CLW_EK + 1), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+    Kokkos::realloc(cln_wci, sv.extent(0), 1, sv.extent(2), sv.extent(3),
+                    sv.extent(4));
+    Kokkos::deep_copy(cln_wci, sv);
+  }
+  p.de = CleanNewtonUpdate();
+  if (cln_bon) p.tol_nl = cln_tolb;
+  p.dv = 0.0;
+  if (cln_feedback) p.dv = CleanVelocityUpdate();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationVet::CleanPassSettled
+//! \brief the stop test of the passes; also the stall switch clean_gas_newton_switch
+
+bool RadiationVet::CleanPassSettled(SolvePass &p) {
+  p.dnl0 = (p.n + 1 == p.nmax) ? p.dnl : -1.0;
+  p.dnl = fmax(p.de, p.dv);
+  // clean_gas_newton_switch = W: a stalled solve (pass + 1 >= _min and > W, the
+  // minimum over the last W passes >= clean_stall_fac x the one before, up at least
+  // twice in the window) drops the gas Newton slope for its remaining passes: the gas
+  // T takes the bracketed root of its row, a contraction (Newton cycles where c_v
+  // jumps, e.g. H ionisation).  Deterministic in the passes: restarts bitwise.
+  if (!cln_gpic) {
+    p.rhist.push_back(p.dnl);
+    constexpr int nw = 4;
+    if (p.n + 1 >= 6) {
+      Real mwin = 1.0e300, mpre = 1.0e300;
+      int nup = 0;
+      for (int q = 0; q <= p.n; ++q) {
+        if (q > p.n - nw) {
+          mwin = fmin(mwin, p.rhist[q]);
+          if (p.rhist[q] > p.rhist[q-1]) ++nup;
+        } else {
+          mpre = fmin(mpre, p.rhist[q]);
+        }
+      }
+      if (mwin >= 0.5*mpre && nup >= 2) {
+        cln_gpic = true;
+        cln_ngnsw += 1.0;
+        if (global_variable::my_rank == 0) {
+          std::printf("CLEAN GNSW cycle %d t2s %d pass %d: stalled, the gas Newton "
+                      "slope off (%.0f so far)\n", pmy_pack->pmesh->ncycle, t2_solve,
+                      p.n, cln_ngnsw);
+        }
+      }
+    }
+  }
+  // strict test: stop at 0.1 x the first pass's change, at most 1e-4
+  if (!cln_bon && p.n == 0) p.trel = fmin(0.1*p.dnl, 1.0e-4);
+  p.tol_nl = fmax(p.tol_nl, p.trel);
+  // clean_verbose >= 2: each pass's changes against the tolerance it is tested with
+  if (cln_verbose > 1 && global_variable::my_rank == 0) {
+    std::printf("CLEAN PASS cycle %d t2s %d pass %d it %d de %.3e dv %.3e tol %.3e "
+                "fe %.3e fv %.3e%s%s\n", pmy_pack->pmesh->ncycle, t2_solve, p.n,
+                p.nit, p.de, p.dv, p.tol_nl, cln_fe, cln_fv, p.clos ? " clos" : "",
+                p.opr ? " opac" : "");
+  }
+  if (p.lp) {
+    p.de0 = p.de;
+    p.dv0 = p.dv;
+    return false;
+  }
+  if (p.Settled(p.de, p.de0, cln_fe) && p.Settled(p.dv, p.dv0, cln_fv) &&
+      !(p.clos1 && p.n == 0)) {
+    p.converged = true;
+    return true;
+  }
+  p.de0 = p.de;
+  p.dv0 = p.dv;
+  return false;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanSolveEnd
+//! \brief the solution of the passes: its iterate, realizability and positivity counts
+
+void RadiationVet::CleanSolveEnd(SolvePass &p) {
+  if (p.iterate) CleanCopyIterate();
+  // R1, R2 of the solution, counted
+  CleanStagRealizable();
+  p.nfirst = {cln_nr1, cln_nr2};
+  if (!p.converged) {
+    p.nit = -std::abs(p.nit) - 1;
+  }
+
+  // positivity of the solution
+  p.nneg = CleanCountNegative();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanVerdictSolve
+//! \brief what an unconverged solve means (a failed stage, dt_retry, FATAL or a warning),
+//! and the CLEAN line of the solve
+
+void RadiationVet::CleanVerdictSolve(const SolvePass &p) {
+  if (p.nit < 0) cln_nfail += 1.0;
+  if (p.nneg > 0) cln_nneg += 1.0;
+  // an unconverged backward-Euler solve fails the cycle: with <time>/dt_retry it is
+  // retaken at a smaller dt (a failed stage is redone by backward Euler via t2_fail);
+  // without, the run stops if the last change exceeds implicit_resid_fatal
+  if (p.nit < 0 && !p.t2stage) {
+    const bool fatal = !dtr_on && impl_res_fatal > 0.0 && !(p.dnl <= impl_res_fatal);
+    if (dtr_on) {
+      if (!dtr_fail) {
+        dtr_why = 1;
+        dtr_resid = -1.0;
+      }
+      dtr_fail = true;
+    }
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN WARNING cycle %d: backward-Euler solve not converged (%s, %d "
+                  "so far; last change %.3e)\n", pmy_pack->pmesh->ncycle,
+                  dtr_on ? "dt_retry" : (fatal ? "no dt_retry: > implicit_resid_fatal" :
+                  "no dt_retry: accepted"), static_cast<int>(cln_nfail), p.dnl);
+    }
+    CleanWorstCell(p.dnl, p.dnl0);
+    if (fatal) CleanFatal("<rad_vet> clean: a backward-Euler solve did not converge and "
+                          "its last change exceeds <rad_vet>/implicit_resid_fatal");
+  }
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos 0 mark 0 all 0 neg %d "
+                "r1 %d r2 %d first %d %d guard %d solves %d\n",
+                pmy_pack->pmesh->ncycle, t2_solve, p.nit, p.nit_sum, p.nneg, cln_nr1,
+                cln_nr2, p.nfirst[0], p.nfirst[1], cln_nguard, p.nsolve);
+  }
+  if (cln_mclc.extent_int(0) == 1) {   // last pass's face momentum terms at the cap
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_mclc);
+    const Real n = CleanReduce(h(0), false);
+    if (global_variable::my_rank == 0 && cln_verbose > 0 && n > 0.0) {
+      std::printf(
+          "CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap h chi_f "
+          "E in the last pass\n", pmy_pack->pmesh->ncycle, t2_solve, n);
+    }
+  }
+}
+
 }  // namespace radvet

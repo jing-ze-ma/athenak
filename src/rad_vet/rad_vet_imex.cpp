@@ -543,4 +543,71 @@ bool RadiationVet::VsrcNoes() const {
   return (t2_solve != VET_T2S_STAGE1) && (t2_solve != VET_T2S_STAGE2);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::RunStage
+//! \brief one implicit stage: the vet_* task lists (rad_vet_tasks.cpp)
+
+void RadiationVet::RunStage(Driver *pdrive, const int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  pdrive->ExecuteTaskList(pm, "vet_before_stagen", stage);
+  pdrive->ExecuteTaskList(pm, "vet_stagen", stage);
+  pdrive->ExecuteTaskList(pm, "vet_after_stagen", stage);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationVet::Time2Stage
+//! \brief after the hydro's stage `stage`: the implicit radiation solve of the stage;
+//! false: it failed (the step goes back to U^n and through BackwardEuler)
+
+bool RadiationVet::Time2Stage(Driver *pdrive, const int stage) {
+  if (stage == 1) {Time2GasTime(pdrive, 1);}   // (sdirk2 only)
+  Time2FormStage(stage, pmy_pack->pmesh->dt);
+  RunStage(pdrive, 1);
+  if (t2_fail) return false;
+  if (stage == 1) {
+    Time2GasTime(pdrive, 3);
+    EbndStage1();
+  }
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::Time2Accept
+//! \brief both stages accepted: the end of the step's radiation
+
+void RadiationVet::Time2Accept(Driver *pdrive) {
+  // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
+  t2_solve = radvet::VET_T2S_NONE;
+  t2_nstep += 1.0;
+  (void) ApplyClosureLimits(pdrive, 1);
+  (void) NewTimeStep(pdrive, 1);
+  t2_dtprev = pmy_pack->pmesh->dt;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::BackwardEuler
+//! \brief the step's radiation by backward Euler after the hydro stages: no valid slope
+//! (first step), a failed stage, or no hesdirk2; under hesdirk2 it stores K1
+
+void RadiationVet::BackwardEuler(Driver *pdrive) {
+  // hesdirk2 without a valid slope: backward Euler, which stores K1
+  const bool vetbe2 = (time_scheme == VET_TIME_HESDIRK2);
+  t2_solve = vetbe2 ? VET_T2S_BESTORE : VET_T2S_NONE;
+  int nsub = SetSubsteps(pmy_pack->pmesh->dt);
+  CleanBndAcc(0, 0.0, 0.0, 0.0, pmy_pack->pmesh->dt);   // (history: boundary energy)
+  for (int nst=0; nst<nsub; ++nst) {
+    for (int stage=1; stage<=(nstage); ++stage) {
+      RunStage(pdrive, stage);
+    }
+    (void) ApplyClosureLimits(pdrive, 1);
+  }
+  (void) NewTimeStep(pdrive, 1);
+  if (vetbe2) {
+    t2_solve = VET_T2S_NONE;
+    t2_ok = true;
+    t2_nbe += 1.0;
+    t2_dtprev = pmy_pack->pmesh->dt;
+  }
+}
+
 }  // namespace radvet

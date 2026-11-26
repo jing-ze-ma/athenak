@@ -638,6 +638,25 @@ class RadiationVet {
   void VetFree();
   // ---- scheme = clean: the implicit stage solve (rad_vet_clean*.cpp)
   TaskStatus CleanSolve(Driver *d, int stage);
+  // the step's radiation (rad_vet_imex.cpp), called by Driver::Execute
+  void RunStage(Driver *pdrive, const int stage);
+  bool Time2Stage(Driver *pdrive, const int stage);
+  void Time2Accept(Driver *pdrive);
+  void BackwardEuler(Driver *pdrive);
+  // the steps of CleanSolve, in order (rad_vet_tasks.cpp)
+  void CleanSolveBegin();
+  void CleanStageClosure();
+  SolvePass CleanPassSetup();
+  void CleanFirstPass();
+  void CleanPassClosure(SolvePass &p);
+  void CleanPassRows(const SolvePass &p);
+  bool CleanPassSolve(SolvePass &p);
+  void CleanPassUpdate(SolvePass &p);
+  bool CleanPassSettled(SolvePass &p);
+  void CleanSolveEnd(SolvePass &p);
+  void CleanVerdictSolve(const SolvePass &p);
+  void CleanUpdateState(const SolvePass &p);
+  void CleanVerdictState(const SolvePass &p);
   void CleanInit();
   void CleanPreflight(ParameterInput *pin);
   void CleanCsGeometry();

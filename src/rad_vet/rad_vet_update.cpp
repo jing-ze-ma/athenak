@@ -842,4 +842,58 @@ void RadiationVet::CleanWriteBack() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanUpdateState
+//! \brief the new state (CleanWriteBack)
+
+void RadiationVet::CleanUpdateState(const SolvePass &p) {
+  // a failed solve or a probe does not change the energy flux's memory
+  cln_dok = (p.nit >= 0) && !t2_inprobe;
+  CleanWriteBack();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanVerdictState
+//! \brief what the new state means: gas eint below its floor (a failed stage, dt_retry or
+//! a warning); K1 and the reference force of an accepted solve
+
+void RadiationVet::CleanVerdictState(const SolvePass &p) {
+  // a write-back that leaves gas eint < 0 is rejected like a failed solve (stage redone
+  // by backward Euler, a backward-Euler step by dt_retry)
+  if (cln_feedback && cln_neint > 0 && !p.t2stage && dtr_on) {
+    if (!dtr_fail) {
+      dtr_why = 4;   // reason eint<=0
+      dtr_resid = cln_neint;
+    }
+    dtr_fail = true;
+  }
+  if (cln_feedback && cln_neint > 0 && !p.t2stage && !dtr_on && !t2_inprobe &&
+      global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: backward-Euler step accepted with %d "
+                "cells of gas eint below 0 / its floor, E < 0 or not finite (no "
+                "dt_retry)\n", pmy_pack->pmesh->ncycle, t2_solve, cln_neint);
+  }
+  if (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2) {
+    // implicit_pos_floor(_cons): an E < 0 raised by the conservative write-back floor
+    // does not fail the stage (counted)
+    const bool flr = impl_pos_floor;
+    t2_fail = (p.nit < 0) || (p.nneg > 0 && !flr) || (cln_feedback && cln_neint > 0) ||
+              (t2_solve == VET_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail);
+    if (cln_lzbook && cln_feedback && t2_solve == VET_T2S_STAGE2 && !t2_fail) {
+      CleanLzBook(0.0, false);   // the accepted stage 2's L_z, pending until here
+    }
+  }
+  // K1 = f(U^n) for the next predictor and time error: from an accepted backward-Euler
+  // or stage-2 solve; a failed one leaves none (BE redo and auto-BE steps keep the last)
+  if (t2_solve == VET_T2S_BESTORE || t2_solve == VET_T2S_STAGE2) {
+    cln_k1ok = (p.nit >= 0) && !dtr_fail && !(t2_solve == VET_T2S_STAGE2 && t2_fail);
+  }
+  // force_reference = clean: the reference is the force of the converged, accepted first
+  // coupled solve (each iterate recaptures it; a failed one is redone)
+  if (force_ref == VET_FREF_CLEAN && cln_feedback && !cln_vzero && p.nit >= 0 &&
+      p.nneg == 0 && !(p.t2stage && t2_fail) && !dtr_fail && !t2_inprobe) {
+    cln_fref_set = true;
+  }
+}
+
 }  // namespace radvet
