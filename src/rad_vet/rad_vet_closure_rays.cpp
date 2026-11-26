@@ -30,9 +30,10 @@ namespace radvet {
 //! \brief clean_ray_cut: first swept shell vray_icut (global min over columns); below
 //! it the closure is the diffusion limit (ThickI, error O(R^2),
 //! R = |grad S|/(chi S)).
-//! A column's cut: 10 optical depths below its lowest cell with R >= 0.01 or thinner than
-//! one optical depth.  Moves down at once, up after clean_ray_cut_wait builds (both
-//! in the restart file).  sc rays only; no cut with several MeshBlocks along x1
+//! A column's cut: 10 optical depths below its lowest cell with R >= clean_ray_cut_r
+//! or thinner than one optical depth.  Moves down at once, up after clean_ray_cut_wait
+//! builds (both in the restart file).  sc rays only; no cut with several MeshBlocks
+//! along x1
 
 void RadiationVet::RayCut() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -44,6 +45,7 @@ void RadiationVet::RayCut() {
                                                   (pmy_pack->pmesh->multi_d ? 2 : 1);
   SolveArgs x = MakeArgs();
   auto cs_ = vray_cs;
+  const Real rr = cln_rcut_r;
   int lmin = n1;
   Kokkos::parallel_reduce("cln_raycut", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           pmy_pack->nmb_thispack*nk*nj),
@@ -64,7 +66,7 @@ void RadiationVet::RayCut() {
         }
         r2 += g*g;
       }
-      if (!(sqrt(r2) < 0.01*exp(cs_(m,0,k,j,i)))) break;
+      if (!(sqrt(r2) < rr*exp(cs_(m,0,k,j,i)))) break;
     }
     int lc = i - is;
     for (Real t = 0.0; lc > 0 && t < 10.0;) t += tc(is + --lc);
