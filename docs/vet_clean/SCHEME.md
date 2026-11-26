@@ -16,7 +16,7 @@ again at a smaller size.
 
 The radiation solve, the closure and the files are drawn on [WORKFLOW.md](WORKFLOW.md) (code layout).
 
-### Why this scheme
+### Features
 
 - **Second order in time and space.** Measured orders of the finest pair: 1.8 in time, 1.9-2.3
   for cells and time step refined together, and 2 also where the gas-radiation exchange is stiff
