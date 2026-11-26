@@ -1191,3 +1191,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 04:06 02-03: IDLE for 10 min
 - 11-26 04:08 02-17: IDLE for 10 min
 - 11-26 04:10 01-17: IDLE for 10 min
+- 11-26 04:40 01-15: hll_W1R2 -> IDLE
