@@ -1678,7 +1678,10 @@ def t_p_ledger(c):
     box_small (amplitude 1e-3) and box_violent (0.1, where the cone cut and fwb act).
     bitwise: the dumps and the old history columns of shell_sp with the ledger against the
     run without it (0: the ledger only reads); restart_lines: the CLEAN PLEDGER lines of
-    shell_sp restarted after 4 cycles that differ from the straight run's (0)."""
+    shell_sp restarted after 4 cycles that differ from the straight run's (0).
+    p_ledger_lz (shell_sp): CLEAN LZLEDGER's |END| over the sum of its |books| (lz_end),
+    the LzL_* columns (lz_cols), its dumps and old columns against the run without it
+    (lz_bitwise 0) and its restarted lines (lz_restart_lines 0)."""
     n = 8
     box = {'mesh/nghost': 3, 'mesh/nx1': n, 'mesh/nx2': n, 'mesh/nx3': n,
            'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n, 'mesh/x3max': 1.0,
@@ -1709,6 +1712,22 @@ def t_p_ledger(c):
     mx = max(mx, float(np.abs(ha[:, :len(lb)] - hb).max()) if la[:len(lb)] == lb else np.inf)
     out['hst_cols'] = int('Pr_tot' in la and 'Pr_gap' in la)
     out['bitwise'] = mx
+    lz = c.run('shell_sp.athinput', 'sp_lz', {'time/nlim': n,
+                                              'hydro/p_ledger_lz': 'true'})
+    lg = open(os.path.join(lz, 'run.log')).read()
+    zl = [[float(v) for v in re.findall(r' ([-+0-9.e]+)(?= |$)', ' ' + s)] for s in
+          re.findall(r'CLEAN LZLEDGER cycle \d+ dt (.*)', lg)]
+    # (dt, the books, Lz, END: END over sum |books| + |Lz|/dt)
+    out['lz_end'] = max(abs(z[-1])/max(sum(abs(v) for v in z[1:-2]) + abs(z[-2])/z[0],
+                                       1e-300) for z in zl)
+    w += vett.warnings(lg)
+    lzh, lzd = vett.read_hst(vett.hsts(lz)[-1])
+    out['lz_cols'] = int('LzL_rbt' in lzh and 'Pr_tot' not in lzh)
+    mz = float(np.abs(lzd[:, :len(lb)] - hb).max()) if lzh[:len(lb)] == lb else np.inf
+    for fa, fb in zip(vett.bins(lz), vett.bins(b)):
+        A, B = vett.read_bin(fa), vett.read_bin(fb)
+        mz = max([mz] + [float(np.abs(A[k] - B[k]).max()) for k in A['_names']])
+    out['lz_bitwise'] = mz
     os.makedirs(os.path.join(c.dir, 'rst'), exist_ok=True)   # (4 + 4 against 8: the lines)
     sub = copy.copy(c)
     sub.dir = os.path.join(c.dir, 'rst')
@@ -1717,6 +1736,13 @@ def t_p_ledger(c):
         sub.dir, d, 'run.log')).read())
     st = dict(pl('straight'))
     out['restart_lines'] = sum(st.get(k) != v for k, v in pl('restarted'))
+    sub.dir = os.path.join(c.dir, 'rst_lz')
+    os.makedirs(sub.dir, exist_ok=True)
+    restart_pair(sub, 'shell_sp.athinput', n, n//2, {'hydro/p_ledger_lz': 'true'})
+    pz = lambda d: re.findall(r'CLEAN LZLEDGER cycle (\d+) (.*)', open(os.path.join(
+        sub.dir, d, 'run.log')).read())
+    sz = dict(pz('straight'))
+    out['lz_restart_lines'] = sum(sz.get(k) != v for k, v in pz('restarted')) + (not sz)
     out['warnings'] = w
     return out
 

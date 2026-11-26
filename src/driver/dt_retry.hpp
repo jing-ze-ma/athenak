@@ -218,7 +218,8 @@ class CounterKeep {
     std::int64_t ni[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};   // its integer counters
     DvceArray1D<Real> pos, acl, opn, fcp;   // (fcp: <rad_vet>/floorcap's fcap_cnt)
     bool hpos = false, hacl = false, hopn = false, hfcp = false;
-    Real lz[2] = {0, 0};   // (<rad_vet>'s L_z ledger cln_lzl and its pending cln_lzp)
+    Real lz[4] = {0, 0, 0, 0};   // (<rad_vet>'s L_z ledger cln_lzl, its pending cln_lzp;
+                                 // cln_lzr's)
     Real ffl = 0;   // (<rad_vet>'s time2_face_fct 'left' cells, t2_ffct_left)
     Real pay[2] = {0, 0};   // (floor_pay's paid / unpaid, DualEnergy hc, hydro + MHD)
   };

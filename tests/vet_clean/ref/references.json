@@ -992,9 +992,13 @@
    "cs_fwb": 1e-13,
    "cs_flr": 1e-13,
    "cs_mrg": 1e-13,
-   "cs_gap": 1e-13
+   "cs_gap": 1e-13,
+   "lz_end": 1e-12
   },
   "equal": {
+   "lz_cols": 1,
+   "lz_bitwise": 0.0,
+   "lz_restart_lines": 0,
    "box_small_ncyc": 8,
    "box_violent_ncyc": 8,
    "sp_ncyc": 8,

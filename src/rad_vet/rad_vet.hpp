@@ -882,9 +882,14 @@ class RadiationVet {
   // K2 (cln_lzs2), stage-start increment (cln_lzc) and stage-1 part pending (cln_lzp).
   // 3-D spherical polar: the L_z that crossed the radial boundaries.
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
+  // <hydro>/p_ledger_lz: of the ledger the radiation's torque through the physical x1
+  // faces (FaceStress rb), booked alike: l, K1, K2, increment, pending
+  bool cln_lzro = false;
+  Real cln_lzr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
   ParameterInput *cln_lzpin = nullptr;
-  void LzBook(const Real s, const bool start);
-  Real LzTotal();   // gas + radiation + ledger L_z
+  void LzBook(const Real s, const bool start, const Real sr = 0.0);
+  // gas + radiation + ledger L_z (part 1: gas of ug or u0 alone, 2: radiation alone)
+  Real LzTotal(const int part = 0, const DvceArray5D<Real> *ug = nullptr);
   bool cln_gpic = false;   // a stalled solve's passes without the gas Newton slope
   Real cln_ngnsw = 0.0;   // solves switched so far
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG

@@ -275,6 +275,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     in_(m,n,k,j,i) = v;
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
+  cln_lzr[3] = c1*cln_lzr[1] + (two ? c2*cln_lzr[2] : 0.0);
   p_ledger::Inc(c1, two ? c2 : 0.0);
   FluxMemoryInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
   Time2FaceFct(stage, c1, c2);
@@ -373,7 +374,7 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
   }
   FluxMemoryKeep(false);
   RayHistory(false);
-  cln_lzp = 0.0;   // (the L_z ledger: the failed stages' pending part, LzBook)
+  cln_lzp = cln_lzr[4] = 0.0;   // (the L_z ledger: the failed stages' pending, LzBook)
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
@@ -439,6 +440,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
     cln_lzc = c*cln_lzs1;   // (clean_cs_lz_abs = 2)
+    cln_lzr[3] = c*cln_lzr[1];
     p_ledger::Inc(c, 0.0);
   }
   Mesh *pmesh = pmy_pack->pmesh;
@@ -457,6 +459,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
     cln_lzs1 = cln_lzs2;   // (clean_cs_lz_abs = 2)
+    cln_lzr[1] = cln_lzr[2];
     p_ledger::Inc(0.0, 0.0, 1);
     if (t2_pfst && t2pf1.extent_int(0) > 0) {
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);

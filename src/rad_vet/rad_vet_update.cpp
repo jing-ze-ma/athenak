@@ -416,8 +416,11 @@ void RadiationVet::WriteBack() {
   DvceArray4D<Real> fr0 = cln_fcret[0], fr1 = cln_fcpj[1] ? cln_fcret[1] : fr0;
   DvceArray4D<Real> fr2 = cln_fcpj[2] ? cln_fcret[2] : fr0;
   const bool frj = cln_fcpj[1], frk = cln_fcpj[2];
-  DvceArray4D<Real> lzw;
+  DvceArray4D<Real> lzw, lzq;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
+                                                 u0.extent_int(3), u0.extent_int(4));
+  const bool lzr = lzb && cln_lzro;   // (p_ledger_lz: lzw's x1-face torque, cln_lzr)
+  if (lzr) lzq = ScratchView<DvceArray4D<Real>>("cln_lzq", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
   // (prb, clean_wb_fct's probe: no side effects, each cell's E without its face
   // transport, e + qf, into cln_wbfp 3 for WbFct, before the cells' write-back)
@@ -490,6 +493,13 @@ void RadiationVet::WriteBack() {
       if (fm) fmd(m,k,j,i) = RadialPart(x, m, k, j, i, dm);
       if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = 0.0;   // frozen gas momentum
       if (lzb) lzw(m,k,j,i) = dlz;   // clean_cs_lz_abs = 2: LzBook
+      if (lzr) {
+        Real rb = 0.0;
+        for (int s = 0; s < 2 && !x.vzero && (i == is || i == ie); ++s) {
+          FaceStress(xh, CLW_X, 2, m, k+s, j, i, true, &rb);
+        }
+        lzq(m,k,j,i) = 0.5*h*x.vol(m,k,j,i)*x.x1v(m,i)*x.tg(m,2,j)*rb;
+      }
       // the kinetic energy the gas gains (the E row's W at convergence); with wb_arad wr,
       // the reference work at the velocity after the kick, which E pays
       Real wk = 0.0, wr = 0.0, wkr = 0.0;
@@ -782,9 +792,10 @@ void RadiationVet::WriteBack() {
     p_ledger::Withheld(2, a, PSlope(t2_solve), h, !t2_inprobe);
   }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
-    const Real s = SumCells(lzw);
+    const Real s = SumCells(lzw), sr = lzr ? SumCells(lzq) : 0.0;
     if (slopes) (t2_solve == VET_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
-    LzBook(s, t2_solve == VET_T2S_STAGE2);
+    if (slopes) cln_lzr[(t2_solve == VET_T2S_STAGE1) ? 2 : 1] = sr/h;
+    LzBook(s, t2_solve == VET_T2S_STAGE2, sr);
   }
   // xt_exact: the stage's closure |dE + de + dK + h div Phi| over E + E_old + eint, max
   // over the cells

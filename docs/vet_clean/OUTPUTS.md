@@ -134,6 +134,17 @@ Notes:
   other rates) dt = 0 to the round-off of the sums (the `END` of `CLEAN PLEDGER`); `ntel`,
   `fwb`, `mrg` (`merge_lat_mom = radial`) and `gap` are round-off. On a
   Cartesian mesh the columns are `Px_*`, `Py_*`, `Pz_*`.
+- With `hydro/p_ledger_lz = true` (3-D spherical polar) twelve `LzL_*` columns take the
+  place of the `Pr_*` ones: `LzL_tot`, gas + radiation L_z (sum V R m_phi plus each cell's
+  halves of its x3 faces' V R F / c^2: `Lz_tot` less the L_z ledger, with the face F), g
+  cm^2/s; the step's rates (g cm^2/s^2) of the same
+  classes (`LzL_hflx`: the gas's torque through the physical x1 faces, `Lz_hflx`; cut, fwb
+  and the reference force stay in `LzL_rad`); `LzL_lzb`, the L_z ledger's growth (`CLEAN
+  LZB`), and `LzL_rbt`, its part that is the radiation's torque through the physical x1
+  faces (the off-diagonal stress D_{r phi} E of the x3 faces' torque form). So `LzL_rad` +
+  `LzL_lzb` is the write-back's L_z the ledger does not hold, and `LzL_lzb - LzL_rbt` the
+  ledger's other items (cone cut, update_mcap cap, reference torque, lz_spin's return).
+  `CLEAN LZLEDGER` prints the same per step with `END`.
 
 ## 2. Event log `<basename>.log`
 

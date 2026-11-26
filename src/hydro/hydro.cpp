@@ -648,6 +648,18 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         p_ledger::Init(pin);
       }
     }
+    // <hydro>/p_ledger_lz (read only when named): with it the L_z classes (p_ledger.hpp)
+    if (pin->DoesParameterExist("hydro", "p_ledger_lz")) {
+      p_ledger::lz = pin->GetBoolean("hydro", "p_ledger_lz");
+      if (p_ledger::lz && !(pmy_pack->pmesh->use_spherical_polar &&
+                            pmy_pack->pmesh->three_d && pin->DoesBlockExist("rad_vet"))) {
+        std::cout << "### FATAL ERROR: <hydro>/p_ledger_lz needs a 3-D spherical-polar "
+                  << "mesh and <rad_vet>" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (p_ledger::lz && !p_ledger::on) p_ledger::Init(pin);
+      p_ledger::on = p_ledger::on || p_ledger::lz;
+    }
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
       pbval_dfl->SetVectorPairs(1, {});   // (the factor is a scalar)

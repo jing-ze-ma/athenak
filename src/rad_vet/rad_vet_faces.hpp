@@ -577,11 +577,13 @@ void CsSeamCoef(const SolveArgs &x, const int n, const int q, const int m,
 //----------------------------------------------------------------------------------------
 //! \fn Real FaceStress
 //! \brief d_b(D_{dir,b} E) at a face (E = work vector e): the normal part from the two
-//! cells (if normal), plus off physical boundaries the transverse part over four cells
+//! cells (if normal), plus off physical boundaries the transverse part over four cells.
+//! rb (spherical polar x3 faces): adds the torque form's terms at the physical x1 faces
 
 CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real FaceStress(const SolveArgs &x, const int e, const int dir, const int m,
-                const int k, const int j, const int i, const bool normal) {
+                const int k, const int j, const int i, const bool normal,
+                Real *rb = nullptr) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   Real div = 0.0;
   const FaceMet fm = FaceMetric(x, dir, m, k, j, i);
@@ -630,6 +632,13 @@ Real FaceStress(const SolveArgs &x, const int e, const int dir, const int m,
       if (b == 0) {
         div += (x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*pe(j,i+1) -
                 x.area[0](m,k,j,i)*x.x1f(m,i)*pe(j,i))*x.tg(m,2,j)/vr;
+        auto ph = [&](const int s) {   // (a physical x1 face of the MeshBlock)
+          return (s ? i == x.ie : i == x.is) && x.mbc(m,s) != BoundaryFlag::block &&
+                 x.mbc(m,s) != BoundaryFlag::periodic;
+        };
+        if (rb) *rb += ((ph(1) ? x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*pe(j,i+1) : 0.0) -
+                        (ph(0) ? x.area[0](m,k,j,i)*x.x1f(m,i)*pe(j,i) : 0.0))*
+                       x.tg(m,2,j)/vr;
       } else {
         div += (x.area[1](m,k,j+1,i)*x.tg(m,3,j+1)*pe(j+1,i) -
                 x.area[1](m,k,j,i)*x.tg(m,3,j)*pe(j,i))*x.x1v(m,i)/vr;

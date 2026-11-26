@@ -82,7 +82,7 @@ void RadiationVet::OldVector() {
   nn[1] = GlobalReduce(nn[1], false);
   nn[2] = GlobalReduce(nn[2], false);
   // clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums (Time2FormStage)
-  if (cln_lzbook && fluid && feedback && stage) LzBook(cln_lzc, true);
+  if (cln_lzbook && fluid && feedback && stage) LzBook(cln_lzc, true, cln_lzr[3]);
   // p_ledger: the increment's gas momentum withheld (cone cut, fwb, reference force)
   if (fluid && feedback && stage && !cln_vzero && !t2_inprobe) p_ledger::Start();
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {

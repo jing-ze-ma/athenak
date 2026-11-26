@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -670,6 +671,13 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         v = 0.0;
         pin->SetReal("rad_vet", key, 0.0);
       }
+    }
+    // <hydro>/p_ledger_lz: the ledger's x1-face torque part (LzBook), l and K1 restart
+    cln_lzro = cln_lzbook && pin->DoesParameterExist("hydro", "p_ledger_lz") &&
+               pin->GetBoolean("hydro", "p_ledger_lz");
+    if (cln_lzro && pin->DoesParameterExist("rad_vet", "lz_ledger_rbt")) {
+      std::istringstream is(pin->GetString("rad_vet", "lz_ledger_rbt"));
+      is >> cln_lzr[0] >> cln_lzr[1];
     }
     // newton_closure_budget (default; false: the strict norm): a pass whose iterate the next
     // pass takes the closure of in the budget's norm, to 0.1 newton_conv_max, the floor of

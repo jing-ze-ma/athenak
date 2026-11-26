@@ -884,6 +884,8 @@ void CounterKeep::Save(Mesh *pm, int slot) {
     s.hfcp = SnapView(pvet->fcap_cnt.d_view, s.fcp);
     s.lz[0] = pvet->cln_lzl;
     s.lz[1] = pvet->cln_lzp;
+    s.lz[2] = pvet->cln_lzr[0];
+    s.lz[3] = pvet->cln_lzr[4];
     s.ffl = pvet->t2_ffct_left;
   }
   s.have = true;
@@ -907,6 +909,8 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
     BackView(pvet->fcap_cnt.d_view, s.fcp, s.hfcp);
     pvet->cln_lzl = s.lz[0];   // (the discarded attempt's bookings, LzBook)
     pvet->cln_lzp = s.lz[1];
+    pvet->cln_lzr[0] = s.lz[2];
+    pvet->cln_lzr[4] = s.lz[3];
   }
   nrb_[why] += 1;
 }
