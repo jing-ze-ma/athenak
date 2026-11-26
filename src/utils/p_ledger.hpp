@@ -19,11 +19,16 @@
 //!   src   coordinate, physics, am and user sources, the polar ring average (named
 //!         physical sources: gravity, the geometric terms, the sponge),
 //!   rad   the radiation update and write-back: the radiation's boundary stress and
-//!         geometric terms (physical), the face-flux cone cut, the fwb residual, the
-//!         reference force (not given to the gas),
+//!         geometric terms (physical),
+//!   cut   the face-flux cone cut the gas does not take (clean_stag_fcone_gas = false),
+//!   fwb   the fwb residual's momentum where it is not projected out,
 //!   flr   floors: dfloor_flux_limit's momentum, ConToPrim, the floor-gas cap,
 //!   mrg   the hydro's merged lateral cells (merge_lat) average,
 //!   gap   any other change between marks (0 when the marks cover the step).
+//! cut, fwb and the reference force the radiation withholds from the gas (force_reference:
+//! the hydro's well-balanced background gives it, booked to src) are the write-back's
+//! sums (Withheld) moved out of rad, and the stage starts' shares of them (the slopes'
+//! increments, as LzBook's).
 //! The first cycle's start (gap_cycle) takes the baseline: the start-up is not booked.
 //! The RK average u0 = gam0 u0 + gam1 u1 (Stage) scales the gas books by gam0, so they
 //! are the change in the step's final state.  Per accepted step (Commit), rank 0 prints
@@ -45,12 +50,15 @@
 #include "utils/repro_sum.hpp"
 
 namespace p_ledger {
-constexpr int kNc = 7;   // hflx ntel src rad flr mrg gap
+constexpr int kNc = 9, kGap = kNc - 1;   // hflx ntel src rad cut fwb flr mrg gap
 inline bool on = false;
 inline bool have_base = false, started = false;
 inline Real pg[3], pr[3], pn[3];          // gas, radiation at the last mark; gas of u1
 inline Real bg[kNc][3], br[kNc][3];       // this step's books: gas part, radiation part
 inline Real p0[3], rate[kNc][3], ptot[3], pend[3], gross = 0.0;   // the last step's
+inline Real ws[3][2][3], wc[3][3];   // withheld b (cut, fwb, fref): slopes K1, K2; increment
+inline const char *nm[kNc] = {"hflx", "ntel", "src", "rad", "cut", "fwb", "flr", "mrg",
+                              "gap"};
 
 inline int Class(const char *n) {
   const char *src[] = {"psrc", "coord", "am", "ringavg", "usrc_rest", "vet_post"};
@@ -58,9 +66,9 @@ inline int Class(const char *n) {
   if (!std::strcmp(n, "flux")) return 1;
   for (auto s : src) if (!std::strcmp(n, s)) return 2;
   if (!std::strcmp(n, "vet_ravg")) return 3;
-  for (auto s : flr) if (!std::strcmp(n, s)) return 4;
-  if (!std::strcmp(n, "mrglat")) return 5;
-  return 6;
+  for (auto s : flr) if (!std::strcmp(n, s)) return 6;
+  if (!std::strcmp(n, "mrglat")) return 7;
+  return kGap;
 }
 
 //! the exact sums of gas momentum (u, components 0..2), radiation momentum (3..5) and
@@ -138,7 +146,35 @@ inline void Discard(Mesh *pm) {
   std::memset(bg, 0, sizeof(bg));
   std::memset(br, 0, sizeof(br));
   have_base = false;
-  Take(pm, 6, false);
+  Take(pm, kGap, false);
+}
+
+//! a write-back's sum a of the gas momentum the radiation step withholds (b: 0 the cone
+//! cut, 1 the fwb residual, 2 the reference force; P components), out of rad to cut, fwb,
+//! src; k >= 0 also the stage's slope K_{k+1} = a/h (probe: the slope only)
+inline void Withheld(const int b, const Real a[3], const int k, const Real h,
+                     const bool book) {
+  if (!on) return;
+  for (int q = 0; q < 3; ++q) {
+    if (k >= 0) ws[b][k][q] = a[q]/h;
+    if (!book) continue;
+    bg[3][q] += a[q];
+    bg[(b == 2) ? 2 : 4 + b][q] -= a[q];
+  }
+}
+
+//! the stage start's increment c1 K1 + c2 K2 of the withheld slopes (Time2FormStage),
+//! k1 = 1: K1 <- K2 (an accepted probe); Start books it as the stage start adds it
+inline void Inc(const Real c1, const Real c2, const int k1 = 0) {
+  for (int b = 0; b < 3; ++b) {
+    for (int q = 0; q < 3; ++q) {
+      if (k1) ws[b][0][q] = ws[b][1][q];
+      wc[b][q] = c1*ws[b][0][q] + c2*ws[b][1][q];
+    }
+  }
+}
+inline void Start() {
+  for (int b = 0; b < 3; ++b) Withheld(b, wc[b], -1, 1.0, true);
 }
 
 //! before the RK update of a stage: u0 -> gam0 u0 + gam1 u1 scales the gas books; the
@@ -149,7 +185,7 @@ inline void Stage(MeshBlockPack *pp, const Real gam0, const Real gam1, const Rea
                   const DvceArray5D<Real> &u1) {
   if (!on) return;
   Mesh *pm = pp->pmesh;
-  Take(pm, 6, true);
+  Take(pm, kGap, true);
   if (stage == 1) {
     Real s[7];
     Sums(pm, u1, false, s);
@@ -206,10 +242,10 @@ inline void Stage(MeshBlockPack *pp, const Real gam0, const Real gam1, const Rea
 //! an accepted step: the books x 1/dt to rate, END, the CLEAN PLEDGER line
 inline void Commit(Mesh *pm) {
   if (!on) return;
-  Take(pm, 6, true);
+  Take(pm, kGap, true);
   const Real dt = pm->dt;
   const int nc = (pm->use_spherical_polar || pm->use_cubed_sphere) ? 1 : 3;
-  for (int q = 0; q < 3; ++q) {   // dP = -hflx + ntel + src + rad + flr + mrg + gap
+  for (int q = 0; q < 3; ++q) {   // dP = -hflx + the other books
     ptot[q] = pg[q] + pr[q];
     pend[q] = ptot[q] - p0[q] + bg[0][q];
     rate[0][q] = bg[0][q]/dt;
@@ -223,7 +259,6 @@ inline void Commit(Mesh *pm) {
   std::memset(br, 0, sizeof(br));
   if (global_variable::my_rank != 0) return;
   std::printf("CLEAN PLEDGER cycle %d dt %.6e", pm->ncycle, dt);
-  const char *nm[kNc] = {"hflx", "ntel", "src", "rad", "flr", "mrg", "gap"};
   for (int c = 0; c < kNc; ++c) {
     std::printf(" %s", nm[c]);
     for (int q = 0; q < nc; ++q) std::printf(" %.6e", rate[c][q]);
@@ -240,7 +275,6 @@ inline void Hist(HistoryData *pd, Mesh *pm) {
   if (!on) return;
   const bool cur = pm->use_spherical_polar || pm->use_cubed_sphere;
   const char *cn[3] = {cur ? "Pr" : "Px", "Py", "Pz"};
-  const char *nm[kNc] = {"hflx", "ntel", "src", "rad", "flr", "mrg", "gap"};
   const bool r0 = (global_variable::my_rank == 0);
   for (int q = 0; q < (cur ? 1 : 3); ++q) {
     for (int c = -1; c < kNc; ++c) {
