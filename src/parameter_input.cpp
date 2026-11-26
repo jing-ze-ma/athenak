@@ -196,7 +196,7 @@ static void VetAlias(std::string &block, std::string &name, std::string &value) 
     {"clean_sphere_radius", "closure_sphere_radius"}, {"clean_stag_fcone", "flux_cone"},
     {"clean_stag_fcone_emax", "flux_cone_emax"}, {"clean_stag_fcone_gas", "flux_cone_gas"},
     {"clean_stag_fcone_lz", "flux_cone_lz"},
-    {"clean_stag_mg_levels", "solver_mg_levels"},
+    {"clean_stag_fwb_line", "fwb_line"}, {"clean_stag_mg_levels", "solver_mg_levels"},
     {"clean_stag_opac_passes", "gas_opac_passes"}, {"clean_stag_thinf", "face_thin"},
     {"clean_stag_xdonor_freeze", "face_xdonor_freeze"}, {"clean_tol", "solver_tol"},
     {"clean_tol_nl", "newton_tol"}, {"clean_verbose", "verbose"},
