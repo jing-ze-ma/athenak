@@ -1023,3 +1023,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 01:06 02-17: lz_RST-N2b-m35mms-b1 -> lz_RST-N2b-m35mms-b2
 - 11-26 01:07 02-11: lz_RST-N2b-bsg-k -> lz_RST-N2b-t9l62-a
 - 11-26 01:07 02-17: lz_RST-N2b-m35mms-b2 -> lz_RST-N2b-m35mms-k
+- 11-26 01:08 02-17: lz_RST-N2b-m35mms-k -> lz_RST-N2b-m35zams-b1
+- 11-26 01:09 02-17: lz_RST-N2b-m35zams-b1 -> lz_RST-N2b-m35zams-b2
+- 11-26 01:10 02-11: lz_RST-N2b-t9l62-a -> lz_RST-N2b-t9l62-b1
+- 11-26 01:10 02-17: lz_RST-N2b-m35zams-b2 -> IDLE
