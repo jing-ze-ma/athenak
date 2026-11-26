@@ -10,8 +10,8 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 
 - energy and mass conserved to round-off (floors paid from the radiation: hydro with
   `eos = general`; with an ideal gas the energy of the floors is only counted);
-- angular momentum L_z: exact on the cubed sphere; on spherical polar exact except where the
-  face-flux cone cut acts (booked), and there too with `clean_stag_fcone_lz` + `clean_lz_spin`;
+- angular momentum L_z: exact on the cubed sphere and on spherical polar (there the cone cut's
+  L_z goes to the gas: `clean_stag_fcone_lz` + `clean_lz_spin`, the default);
 - linear momentum: not conserved in general (cone cut, well-balancing residual, floor velocity
   rules; not booked), and not a discrete invariant on spherical-polar / cubed-sphere meshes;
 - density positive by construction; radiation energy by the implicit operator and limiters

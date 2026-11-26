@@ -44,7 +44,7 @@ The radiation solve, the closure and the files are drawn on [WORKFLOW.md](WORKFL
   iterations on average, so 15-24 iterations per stage, plus one ray sweep per step. No step had
   to be retried or redone (0 of 380,141 steps; from the solver's per-stage log lines).
 - **Conservation and positivity.** Gas + radiation energy and mass are conserved to round-off,
-  $L_z$ exactly on the cubed sphere; linear momentum is not conserved in general. Second order
+  $L_z$ exactly on the cubed sphere and spherical polar; linear momentum is not conserved in general. Second order
   with local first-order fallbacks where positivity needs them, all counted (Positivity, below;
   section 2, Properties).
 
@@ -185,7 +185,7 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 |---|---|
 | energy (gas + radiation) | exact; floors are paid from the radiation |
 | mass | exact |
-| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger), exact there too with `clean_stag_fcone_lz` + `clean_lz_spin` |
+| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact, the face-flux cone cut's L_z goes to the gas (`clean_stag_fcone_lz` + `clean_lz_spin`, default; the ledger books only the radial boundaries' torque); Cartesian: not a scheme property (both keys off) |
 | linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to below 1e-8 of the sound speed |
@@ -238,7 +238,7 @@ open stellar boundaries remove mass by design, and the history records it.
 
 Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
 
-### Angular momentum $L_z$: exact on the cubed sphere; on spherical polar exact except where the cone cut acts
+### Angular momentum $L_z$: exact on the cubed sphere and on spherical polar
 
 On a spherical-polar mesh the azimuthal radiation stress is written in torque form, so it
 cancels between neighbouring cells; `clean_stag_fwb_ring = 1`
@@ -254,12 +254,12 @@ exactly what the step changes, `Lz_tot` is constant by construction; the scheme'
 error is the growth of the ledger, i.e. the drift of gas + radiation alone (`dLz_gr` in the
 test output).
 
-- Spherical polar, production keys: the face-flux realisability cut (`clean_stag_fcone`)
-  removes momentum the gas does not take, and its $L_z$ goes into the ledger. On the test shell
-  this happens on the first cycles of a fresh start and amounts to about 6e-7 of the gas
-  $L_z$; the ledger is constant afterwards.
-  With `clean_stag_fcone_lz` and `clean_lz_spin` (test `conservation_lz`) the gas takes the
-  cut's $L_z$, which is then exact without a ledger (1e-15); not the production setting.
+- Spherical polar: the face-flux realisability cut (`clean_stag_fcone`) takes a cell's excess
+  from the faces without an $L_z$ arm first, and the gas takes the $L_z$ of the arm faces' cut
+  as one rigid rotation (`clean_stag_fcone_lz`, `clean_lz_spin`, default on curved meshes):
+  gas + radiation $L_z$ is exact without a ledger (test shell: `dLz_gr` 1e-15). With both
+  keys false (the release before) the cut's $L_z$ went into the ledger, 6e-7 of the gas $L_z$
+  on the test shell, on the first cycles of a fresh start.
 - Cubed sphere: the ledger stays at round-off (1e-17), so gas + radiation $L_z$ is conserved
   without one. Here the radiation's $L_z$ is that of the face momenta; the larger `dLz_gr`
   the test prints (6e-5) uses the cell-centred flux vector and is a diagnostic mismatch, not
