@@ -157,7 +157,6 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
     if (osc) opac_(m,VET_OP_S,k,j,i) = d*os;
   });
 
-  if (!rsla_done) RSLACheck();
   return TaskStatus::complete;
 }
 

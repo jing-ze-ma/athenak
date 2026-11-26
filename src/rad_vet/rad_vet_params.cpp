@@ -274,7 +274,14 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     // reach (covered by the bound's band); halo depth cap and ray cut only at kept values
     {"rad_vet/cs_cross_mono", ""}, {"rad_vet/clean_nl_print", ""},
     {"rad_vet/vet_gd_reach", ""}, {"rad_vet/clean_halo_depth", "=0"},
-    {"rad_vet/clean_ray_cut", "=true"}};
+    {"rad_vet/clean_ray_cut", "=true"},
+    // one value in use: no reduced speed of light (so no RSLA check), the explicit
+    // face-flux prefactor, the SC flux axis, the backward-Euler path by time_scheme,
+    // the floor-cap counters by the mesh cell volume
+    {"rad_vet/chat_over_c", "=1"}, {"rad_vet/rsla_force", "=false"},
+    {"rad_vet/rsla_vmax", "=-1"}, {"rad_vet/rsla_warn", "=0.1"},
+    {"rad_vet/scaled_prefactor", "=20"}, {"rad_vet/vet_axis", "=flux"},
+    {"rad_vet/time2_be_only", "=false"}, {"rad_vet/floorcap_mesh_vol", "=true"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;

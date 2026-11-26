@@ -16,7 +16,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("dtr_why", dtr_why);
   v.value("dtr_resid", dtr_resid);
   v.value("c_light", c_light);
-  v.value("chat_over_c", chat_over_c);
   v.value("chat", chat);
   v.value("e_floor", e_floor);
   v.value("opacity_type", opacity_type);
@@ -59,12 +58,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("fcap_report", fcap_report);
   v.value("fcap_lz", fcap_lz);
   v.value("fcap_spin", fcap_spin);
-  v.value("fcap_mvol", fcap_mvol);
   v.dual("fcap_cnt", fcap_cnt);
-  v.value("rsla_warn", rsla_warn);
-  v.value("rsla_vmax", rsla_vmax);
-  v.value("rsla_force", rsla_force);
-  v.value("rsla_done", rsla_done);
   v.value("coupling", coupling);
   v.value("gas_feedback", gas_feedback);
   v.value("arad", arad);
@@ -99,7 +93,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vsc_beta", vsc_beta);
   v.value("vsc_gd", vsc_gd);
   v.value("vsc_gdmir", vsc_gdmir);
-  v.value("vet_axis_flux", vet_axis_flux);
   v.value("vet_full", vet_full);
   v.value("vet_nguard", vet_nguard);
   v.value("vet_ncell", vet_ncell);

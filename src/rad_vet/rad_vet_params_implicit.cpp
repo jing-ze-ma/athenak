@@ -82,15 +82,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   recipe::Old(pin, "rad_vet", "time_scheme", "be");
   (void) pin->GetOrAddString("rad_vet","time_scheme",
                              (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
-  // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted;
-  // time2_be_only: the same under time_scheme = hesdirk2
-  const std::string tsn = pin->GetString("rad_vet","time_scheme");
-  if (tsn.compare("be") == 0) {
-    t2_beonly = h2ok;
-  } else if (tsn.compare("hesdirk2") == 0 &&
-             pin->DoesParameterExist("rad_vet","time2_be_only")) {
-    t2_beonly = pin->GetBoolean("rad_vet","time2_be_only");
-  }}
+  // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted
+  t2_beonly = h2ok && pin->GetString("rad_vet","time_scheme").compare("be") == 0;}
   trans_on = false;
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_vet","implicit_cfl",-1.0);
@@ -285,11 +278,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::cout << "<rad_vet> time_scheme = be: the hesdirk2 backward-Euler path on "
                    "every step" << std::endl;
     }
-  } else if (time_scheme == VET_TIME_HESDIRK2 && t2_beonly &&
-             global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> time2_be_only = true: every step takes the backward-Euler "
-                 "path"
-              << std::endl;
   }
   if (time_scheme == VET_TIME_BE) {t2_beonly = false; return;}
 

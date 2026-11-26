@@ -139,23 +139,19 @@ void RadiationVet::FloorGasCap() {
   auto eos = fl.eos;
   const bool etg = fl.use_etotgrav;
   auto phicc = fl.phicc0;
-  // cell volume for the energy counters (spherical polar; 1 elsewhere)
-  const bool hv = pmy_pack->pmesh->use_spherical_polar;
-  auto &x1f = pmy_pack->pcoord->xx1f;
-  auto &x2f = pmy_pack->pcoord->xx2f;
-  auto &x3f = pmy_pack->pcoord->xx3f;
   auto cnt_ = fcap_cnt;
   const Real rc = fcap_rho, vc = fcap_v;
   const Real ar = arad;
-  const bool mv = fcap_mvol, flz = fcap_lz, sph = hv;
+  const bool flz = fcap_lz, sph = pmy_pack->pmesh->use_spherical_polar;
   auto mbs = pmy_pack->pmb->mb_size;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   // the cubed sphere: the metric norm of the covariant m2, m3 (FloorCapMomentum)
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   auto cosc = cub ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("fcap_c",1,1,1);
   auto pnl = pmy_pack->pmb->mb_panel.d_view;
-  SolveArgs x;
-  if (mv) x = MakeArgs();
+  // the counters by the mesh cell volume, |dp| and L_z in the frame of y (CellVolume,
+  // LzArm)
+  SolveArgs x = MakeArgs();
   // (floorcap_lz_spin: dOmega = X/I, from the state before the cap)
   const bool spn = fcap_spin;
   Real dom = 0.0;
@@ -192,9 +188,7 @@ void RadiationVet::FloorGasCap() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
     if (!(dd > 0.0) || (!(dd < rc) && dom == 0.0)) return;
-    const Real wv = mv ? CellVolume(x, m, k, j, i) :
-        (hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
-               /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k))) : 1.0);
+    const Real wv = CellVolume(x, m, k, j, i);
     Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
     const Real c = cub ? cosc(m,k,j) : 0.0;
     const Real pm[3] = {m1, m2, m3};
@@ -238,15 +232,9 @@ void RadiationVet::FloorGasCap() {
       const Real dke = (1.0 - fs*fs)*ekin;
       // book the removed momentum |dp| V and its L_z
       Real p[3] = {m1, m2, m3};
-      if (mv) GasMomentum(x, uh, m, k, j, i, p);
-      SlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
-                         p[2]*p[2]) : sqrt(msq))*wv);
-      if (mv) {
-        SlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*LzArm(x, m, k, j, i)*p[2]*wv);
-      } else if (hv) {
-        SlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
-                           sin(0.5*(x2f(m,j) + x2f(m,j+1)))*wv);
-      }
+      GasMomentum(x, uh, m, k, j, i, p);
+      SlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2])*wv);
+      SlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*LzArm(x, m, k, j, i)*p[2]*wv);
       m1 *= fs; m2 *= fs; m3 *= fs;
       uh(m,IM1,k,j,i) = m1; uh(m,IM2,k,j,i) = m2; uh(m,IM3,k,j,i) = m3;
       ekin -= dke;

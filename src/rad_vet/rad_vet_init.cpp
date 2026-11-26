@@ -137,8 +137,8 @@ void RadiationVet::InitArrays() {
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, ns, c3, c2, c1);
   }
   Mesh *pm = pmy_pack->pmesh;
-  if (pm->multilevel || chat != c_light) {
-    RadVetFatal("<rad_vet>/scheme = clean currently needs a uniform mesh and chat = c");
+  if (pm->multilevel) {
+    RadVetFatal("<rad_vet>/scheme = clean currently needs a uniform mesh");
   }
   // boundaries: open (bath, beam; outflow without a bath), reflect, periodic and an
   // imposed x1 flux.  The imposed flux is the face's whole energy flux, taken with no E

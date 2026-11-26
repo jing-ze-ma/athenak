@@ -51,13 +51,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       << std::endl << "<rad_vet>/c_light must be positive" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  chat_over_c = pin->GetOrAddReal("rad_vet","chat_over_c",1.0);
-  if (!(chat_over_c > 0.0) || chat_over_c > 1.0) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/chat_over_c must be in (0,1]" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  chat = chat_over_c*c_light;
+  chat = c_light;   // (no reduced speed of light: chat_over_c was removed)
   // transport: implicit only
   {std::string tr = pin->GetOrAddString("rad_vet","transport","explicit");
   if (tr.compare("implicit") != 0) {
@@ -166,7 +160,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u->SetVectorPairs(VET_NVAR, {{VET_F2, VET_F3}});
 
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_vet>: c=" << c_light << " chat/c=" << chat_over_c
+    std::cout << "<rad_vet>: c=" << c_light
               << " closure=" << ((vet_sc || vgd_on) ? "sc" : "analytic")
               << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e

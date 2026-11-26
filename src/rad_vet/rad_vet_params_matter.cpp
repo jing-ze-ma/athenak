@@ -245,22 +245,16 @@ void RadiationVet::ReadMatterKeys(ParameterInput *pin) {
     // GnomonicPhiHat; the part along it is kept, also where it alone exceeds
     // floorcap_v), so that L_z is exact
     fcap_lz = pin->GetOrAddBoolean("rad_vet","floorcap_lz",fcap_lz);
-    // floorcap_lz_spin (default false; needs floorcap_lz, floorcap_mesh_vol): the
-    // cap scales the whole velocity, so |v| <= floorcap_v, and gives the L_z it removes
-    // to the gas at or above floorcap_rho as one rigid rotation (FloorGasCap)
+    // floorcap_lz_spin (default false; needs floorcap_lz): the cap scales the whole
+    // velocity, so |v| <= floorcap_v, and gives the L_z it removes to the gas at or
+    // above floorcap_rho as one rigid rotation (FloorGasCap)
     fcap_spin = pin->GetOrAddBoolean("rad_vet","floorcap_lz_spin",fcap_spin);
-    if (pin->DoesParameterExist("rad_vet","floorcap_report")) {
-      fcap_report = pin->GetInteger("rad_vet","floorcap_report");
-    }
-    // floorcap_mesh_vol: counters weighted by the mesh cell volume, |dp| and L_z in the
-    // frame of y (CellVolume, LzArm)
-    {
-      fcap_mvol = pin->GetOrAddBoolean("rad_vet","floorcap_mesh_vol",
-                                       fix("floorcap_mesh_vol", "true", "false"));
-    }
-    if (fcap_spin && !(fcap_lz && fcap_mvol)) {
-      std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz_spin needs floorcap_lz and "
-                << "floorcap_mesh_vol" << std::endl;
+    // floorcap_report N (read only when named, default 25): the counters every N cycles
+    fcap_report = pin->DoesParameterExist("rad_vet","floorcap_report") ?
+                  pin->GetInteger("rad_vet","floorcap_report") : 25;
+    if (fcap_spin && !fcap_lz) {
+      std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz_spin needs floorcap_lz"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (fcap_rho > 0.0 && (!coupling || !(arad > 0.0))) {
@@ -377,12 +371,6 @@ void RadiationVet::ReadMatterKeys(ParameterInput *pin) {
       << "gas_feedback = true: it modifies the momentum handed to the gas" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-
-  // RSLA start-up check
-  rsla_warn = pin->GetOrAddReal("rad_vet","rsla_warn",0.1);
-  rsla_vmax = pin->GetOrAddReal("rad_vet","rsla_vmax",-1.0);
-  rsla_force = pin->GetOrAddBoolean("rad_vet","rsla_force",false);
-  rsla_done = false;
 }
 
 }  // namespace radvet

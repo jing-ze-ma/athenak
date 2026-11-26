@@ -128,15 +128,6 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
       VetFatal("<rad_vet>/vet_bc_diff must be cell or face");
     }
   }
-  {std::string ax = pin->GetOrAddString("rad_vet", "vet_axis", "flux");
-  if (ax.compare("flux") == 0) {
-    vet_axis_flux = true;
-  } else if (ax.compare("eigen") == 0) {
-    vet_axis_flux = false;
-  } else {
-    VetFatal("<rad_vet>/vet_axis = '" + ax + "' not implemented (flux | eigen)");
-  }
-  }
   vet_full = true;
   if (vet_nmu < 1 || vet_nphi < 1) {VetFatal("<rad_vet>/vet_nmu, vet_nphi must be >= 1");}
   // vet_x1_periodic: periodic x1 sweep, up to vet_x1_npass passes, each entering from

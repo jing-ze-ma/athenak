@@ -167,14 +167,13 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `rad_vet/opacity` | `const`, `powerlaw`, `user` or `table` (Rosseland and Planck tables named in `<problem>`). | `table` with `problem/star_opac_table`, else `const` | all: `table` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/kappa_p`, `kappa_e`, `kappa_f`, `kappa_s` | Constant opacities per unit mass: Planck (emission), energy mean (absorption), flux mean, scattering. | 0, = kappa_p, = kappa_p, 0 | not named | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/c_light`, `arad` | Speed of light and radiation constant in code units. The start-up log compares them with the values `<units>` implies. | required | per deck | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/chat_over_c` | Reduced speed of light; the scheme needs 1 (FATAL otherwise). | 1.0 | all: `1.0` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/temp_unit_kelvin`, `rho_unit_cgs`, `kappa_unit` | Unit conversions for the table lookup: K per code temperature, g/cm^3 per code density, code opacity per cm^2/g. | 1.0 | per deck | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/coupling`, `gas_feedback` | Gas-radiation exchange on; exchange acts back on the gas. | true | all: `true` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/force_reference`, `force_reference_work` | `wb_arad`: well-balanced radiative envelope; the problem generator supplies the reference radiative acceleration, the gas receives only the residual force; its work is paid as `split` (required by the scheme). | `none` (star_vet: `wb_arad`); `auto` (= `split` there) | all: `wb_arad`, `split` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/e_floor` | Floor of E (code units). | FLT_MIN | all: `1.0e-4` | `rad_vet/rad_vet_geometry.cpp` (constructor) |
 | `rad_vet/floorcap_rho`, `floorcap_v` | (hydro only.) Floor-gas cap: in cells with rho below `floorcap_rho`, |v| is capped at `floorcap_v` and T at max(T_rad, floor); the removed energy goes to E (momentum is removed and reported). | off | all: `1e-14`, `3e7` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `rad_vet/floorcap_lz` | The floor-gas velocity cap scales only the momentum without L_z: spherical polar r / theta, Cartesian the part off phi_hat = (-y, x)/R, the cubed sphere the part off phi_hat in the metric of the covariant momentum (`GnomonicPhiHat`, p_phi = m_a phi^a). The phi part is kept, also where it alone exceeds `floorcap_v`, so L_z is exact. (The cap itself measures \|v\| in the metric norm on the cubed sphere.) | false (recorded) | all: `true` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
-| `rad_vet/floorcap_lz_spin` | With `floorcap_lz`: the floor-gas cap scales the whole velocity (so \|v\| <= `floorcap_v` in floor gas, which then cannot set dt through a kept v_phi), and the L_z X it removes goes to the gas at or above `floorcap_rho` as one rigid rotation dOmega = X/I, I = sum rho V R^2 (per cell, then in a fixed order: layout-invariant in tile mode); E_rad of each receiving cell pays its kinetic-energy change. L_z and E exact, no ledger. FATAL without `floorcap_lz` and `floorcap_mesh_vol`, or when the cap removes L_z and no gas is at or above `floorcap_rho`. | false (recorded) | all: `true`, with `floorcap_lz` and `floorcap_mesh_vol = true` | `rad_vet/rad_vet_params_matter.cpp` (constructor), `rad_vet/rad_vet_gas.cpp` (`FloorGasCap`) |
+| `rad_vet/floorcap_lz_spin` | With `floorcap_lz`: the floor-gas cap scales the whole velocity (so \|v\| <= `floorcap_v` in floor gas, which then cannot set dt through a kept v_phi), and the L_z X it removes goes to the gas at or above `floorcap_rho` as one rigid rotation dOmega = X/I, I = sum rho V R^2 (per cell, then in a fixed order: layout-invariant in tile mode); E_rad of each receiving cell pays its kinetic-energy change. L_z and E exact, no ledger. FATAL without `floorcap_lz`, or when the cap removes L_z and no gas is at or above `floorcap_rho`. | false (recorded) | all: `true`, with `floorcap_lz` | `rad_vet/rad_vet_params_matter.cpp` (constructor), `rad_vet/rad_vet_gas.cpp` (`FloorGasCap`) |
 | `hydro/dfloor`, `pfloor`, `tfloor` | Hydro floors. `hydro/floor_pay = rad_column` pays the internal energy they create from the radiation (needs `hydro/eos = general`). | FLT_MIN | per deck | `eos/eos.cpp`, `hydro/dual_energy.cpp` |
 | `hydro/floor_pay_skip` | Pay also the energy that the density floor and the velocity ceiling change. Needs `floor_pay`. | true (general EOS with `<rad_vet>`) | all: `true` | `hydro/dual_energy.cpp` |
 | `hydro/floor_from_ekin` | (hydro only.) General-EOS hydro: the primitive recovery keeps E; the velocity ceiling's kinetic energy becomes heat, and a kinetic-energy-dominated cell below e(rho, tfloor) pays the deficit from its own r and theta kinetic energy where that covers it. The phi momentum (L_z) is never scaled (where the phi part alone exceeds `vceil`, the r / theta part goes to 0 and |v| = |v_phi| may stay above `vceil`; Cartesian phi_hat = (-y, x)/R); cells it cannot pay take the floors as before (paid by `floor_pay`). Removes r / theta momentum there (booked: `CLEAN FLOORMOM`). FATAL with another EOS or `dual_energy`. | false (recorded) | not named | `eos/eos.cpp` (constructor) |
@@ -202,7 +201,7 @@ round-off change at the restart.
 | key | meaning | default | production | read in |
 |---|---|---|---|---|
 | `rad_vet/clean_verbose` | 0: the `CLEAN cycle` lines, `CLEAN WARNING` lines and event lines (`CLEAN WORST`, `GNSW`, `KPOS` without a face slope); 1: also the per-solve diagnostics (`CLEAN MCAP`, `OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT` write-back closure, the ray cut); 2: also a `CLEAN PASS` line per pass of every solve (Krylov its, the changes de / dv, the tolerance they are tested against, the round-off levels fe / fv, `clos` / `opac` where the pass took a closure / opacity refresh). `CLEAN WARNING` lines always print. | 0 (read only when named) | all: `1` | `rad_vet/rad_vet_params.cpp` (constructor) |
-| `rad_vet/floorcap_report` | Print the cumulative floor-gas cap counters every N cycles. | 0 = never | all: `25` | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
+| `rad_vet/floorcap_report` | With `floorcap_rho`: print the cumulative floor-gas cap counters every N cycles (0 = never). | 25 (read only when named) | all: default | `rad_vet/rad_vet_params_matter.cpp` (constructor) |
 | `time/ndiag` | Print the cycle line every N cycles. | 1 | all: `50` | `driver/driver.cpp` |
 | `hydro/floor_audit` | Print the floor events and their payment every N cycles (`floor_audit cycle` lines). Needs `eos = general`. | 0 | all: `1` | `hydro/dual_energy.cpp` |
 | `hydro/floor_audit_worst` | With each `floor_audit` report, every rank prints its cell of the largest energy the inversion created ((E_after - E_before) x vol): its place and its density, total / internal energy, kinetic energy by component and potential before and after (`floor_audit_worst` lines). No effect on the state. Needs `floor_audit`. | false (read only when named) | not named (diagnosis) | `hydro/dual_energy.cpp` |
@@ -233,35 +232,38 @@ another value: FATAL with the key to name).
 | `clean_layout` = `staggered` | `clean_lin_cnorm` = `1e-10` | `clean_lin_pass` = `true` |
 | `clean_maxpic` = `12` | `clean_nl_norm` = `global` | `clean_pass_damp` = `0` |
 | `clean_pred_stage` = `false` | `clean_pred_xch` = `true` | `clean_predict` = `true` |
-| `clean_ray_cut_margin` = `10` | `clean_ray_cut_taumin` = `0` | `clean_rays` = `sc` |
-| `clean_retry_budget` = `true` | `clean_ring_jmin` = `true` | `clean_rot_ring_fill_rst` = `true` |
-| `clean_rst_mshare` = `true` | `clean_source_convex` = `true` | `clean_stag_central` = `true` |
-| `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` | `clean_stag_eicarry` = `true` |
-| `clean_stag_fcone_gas` = `false` | `clean_stag_flim` = `false` | `clean_stag_fs_line` = `pcr` |
-| `clean_stag_fs_pcr_cs` = `true` | `clean_stag_fs_pcr` = `true` | `clean_stag_fwb_cart` = `false` |
-| `clean_stag_fwb_line` = `false` | `clean_stag_fwb_stage` = `false` | `clean_stag_fwb_t2` = `false` |
-| `clean_stag_lat_sums` = `true` | `clean_stag_mg_color` = `mirror` | `clean_stag_opac_drag` = `true` |
-| `clean_stag_opac_update` = `true` | `clean_stag_pcr` = `true` | `clean_stag_rayratio` = `false` |
-| `clean_stag_tie_gid` = `true` | `clean_stag_vimp_cs` = `true` | `clean_stag_vimp` = `true` |
-| `clean_stag_xdonor` = `lag` | `clean_stag_xsrc` = `true` | `clean_stall_fac` = `0.5` |
-| `clean_troot_rtol` = `1e-13` | `clean_vel_settled` = `false` | `clean_w_face_min` = `false` |
-| `clean_w_fse_tau` = `true` | `clean_w_fse` = `true` | `clean_wb_fct` = `true` |
-| `clean_wb_floor_fail` = `false` | `clean_xt_cons` = `false` | `clean_xt_exact` = `cons` |
-| `clean_xt_norm` = `false` | `dbg_energy_tally` = `false` | `doppler_face` = `donor` |
-| `implicit_am_cs` = `true` | `implicit_enthalpy` = `plm` | `implicit_pos_floor_cons` = `true` |
-| `implicit_pos_floor_gas_keep` = `1` | `implicit_pos_gas_cons` = `true` | `implicit_pos_gas_frac` = `1e-3` |
-| `implicit_pos_gas` = `true` | `implicit_predictor_tcap` = `1.1` | `implicit_predictor` = `step` |
-| `polar_ring_avg` = `false` | `restart_pack_per_mb` = `true` | `scheme` = `clean` |
-| `time2_cfl_post` = `true` | `time2_face_fct` = `true` | `time2_fref_wacc` = `true` |
-| `time2_gtime_mom` = `true` | `time2_k1_redist` = `0` | `time2_k1_stiff` = `0` |
-| `vet_col_lat_cut_thin` = `1` | `vet_gd_halo_compact` = `2` | `vet_gd_rotate_align` = `true` |
-| `vet_gd_rotate_stretch` = `0.02` | `vet_gd_rotate_t0` = `0` | `vet_gd_rotate_xfade_m` = `0` |
-| `vet_gd_twin` = `false` | `vet_interp` = `auto` | `vet_rotate_avg_ema_change_j` = `true` |
-| `vet_rotate_avg_ema_change` = `0.05` | `vet_rotate_avg_ema_dema` = `false` | `vet_rotate_avg_ema_diag` = `0` |
-| `vet_rotate_avg_ema_lc` = `0` | `vet_rotate_avg_ema_tau` = `0` | `vet_rotate_avg_weight` = `j` |
-| `vet_scatter_form` = `ma` | `vet_scatter_j` = `relaxed` | `vet_seg_plateau` = `false` |
-| `vet_seg` = `jump` | `vet_source_noesrc_h2be` = `true` | `vet_tensor` = `full` |
-| `zalesak_active` = `true` | `zalesak_halo_skip` = `true` | |
+| `chat_over_c` = `1` | `clean_ray_cut_margin` = `10` | `clean_ray_cut_taumin` = `0` |
+| `clean_rays` = `sc` | `clean_retry_budget` = `true` | `clean_ring_jmin` = `true` |
+| `clean_rot_ring_fill_rst` = `true` | `clean_rst_mshare` = `true` | `clean_source_convex` = `true` |
+| `clean_stag_central` = `true` | `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` |
+| `clean_stag_eicarry` = `true` | `clean_stag_fcone_gas` = `false` | `clean_stag_flim` = `false` |
+| `clean_stag_fs_line` = `pcr` | `clean_stag_fs_pcr` = `true` | `clean_stag_fs_pcr_cs` = `true` |
+| `clean_stag_fwb_cart` = `false` | `clean_stag_fwb_line` = `false` | `clean_stag_fwb_stage` = `false` |
+| `clean_stag_fwb_t2` = `false` | `clean_stag_lat_sums` = `true` | `clean_stag_mg_color` = `mirror` |
+| `clean_stag_opac_drag` = `true` | `clean_stag_opac_update` = `true` | `clean_stag_pcr` = `true` |
+| `clean_stag_rayratio` = `false` | `clean_stag_tie_gid` = `true` | `clean_stag_vimp` = `true` |
+| `clean_stag_vimp_cs` = `true` | `clean_stag_xdonor` = `lag` | `clean_stag_xsrc` = `true` |
+| `clean_stall_fac` = `0.5` | `clean_troot_rtol` = `1e-13` | `clean_vel_settled` = `false` |
+| `clean_w_face_min` = `false` | `clean_w_fse` = `true` | `clean_w_fse_tau` = `true` |
+| `clean_wb_fct` = `true` | `clean_wb_floor_fail` = `false` | `clean_xt_cons` = `false` |
+| `clean_xt_exact` = `cons` | `clean_xt_norm` = `false` | `dbg_energy_tally` = `false` |
+| `doppler_face` = `donor` | `floorcap_mesh_vol` = `true` | `implicit_am_cs` = `true` |
+| `implicit_enthalpy` = `plm` | `implicit_pos_floor_cons` = `true` | `implicit_pos_floor_gas_keep` = `1` |
+| `implicit_pos_gas` = `true` | `implicit_pos_gas_cons` = `true` | `implicit_pos_gas_frac` = `1e-3` |
+| `implicit_predictor` = `step` | `implicit_predictor_tcap` = `1.1` | `polar_ring_avg` = `false` |
+| `restart_pack_per_mb` = `true` | `rsla_force` = `false` | `rsla_vmax` = `-1` |
+| `rsla_warn` = `0.1` | `scaled_prefactor` = `20` | `scheme` = `clean` |
+| `time2_be_only` = `false` | `time2_cfl_post` = `true` | `time2_face_fct` = `true` |
+| `time2_fref_wacc` = `true` | `time2_gtime_mom` = `true` | `time2_k1_redist` = `0` |
+| `time2_k1_stiff` = `0` | `vet_axis` = `flux` | `vet_col_lat_cut_thin` = `1` |
+| `vet_gd_halo_compact` = `2` | `vet_gd_rotate_align` = `true` | `vet_gd_rotate_stretch` = `0.02` |
+| `vet_gd_rotate_t0` = `0` | `vet_gd_rotate_xfade_m` = `0` | `vet_gd_twin` = `false` |
+| `vet_interp` = `auto` | `vet_rotate_avg_ema_change` = `0.05` | `vet_rotate_avg_ema_change_j` = `true` |
+| `vet_rotate_avg_ema_dema` = `false` | `vet_rotate_avg_ema_diag` = `0` | `vet_rotate_avg_ema_lc` = `0` |
+| `vet_rotate_avg_ema_tau` = `0` | `vet_rotate_avg_weight` = `j` | `vet_scatter_form` = `ma` |
+| `vet_scatter_j` = `relaxed` | `vet_seg` = `jump` | `vet_seg_plateau` = `false` |
+| `vet_source_noesrc_h2be` = `true` | `vet_tensor` = `full` | `zalesak_active` = `true` |
+| `zalesak_halo_skip` = `true` |  |  |
 
 Removed keys whose value follows from the run (FATAL when named otherwise):
 
@@ -319,7 +321,7 @@ staggered multigrid preconditioner), `clean_clos1_budget` (true), `clean_bud_max
 
 Tests and diagnostics: `clean_dbg_inf`, `time2_dbg_fail`, `dbg_gas_force`, `clean_wb_floor_diag`,
 `implicit_timers`. State kept in restart files: `rst_version`, `clean_ray_cut_now`,
-`clean_ray_cut_count`. Number of `<rad_vet>` keys the code reads: 138 (user 73, physics 32,
+`clean_ray_cut_count`. Number of `<rad_vet>` keys the code reads: 130 (user 71, physics 26,
 scheme and solver 20, tests 8, pgen / state 5).
 
 Removed study and debug keys stop the run with a message when named with another value than

@@ -61,8 +61,7 @@ class RadiationVet {
 
   // parameters read from <rad_vet>
   Real c_light{};      // speed of light in code units (required)
-  Real chat_over_c{};  // reduced speed of light factor (default 1)
-  Real chat{};         // = chat_over_c * c_light
+  Real chat{};         // = c_light (no reduced speed of light)
   Real e_floor{};      // floor on E
 
   // opacities per unit mass (code units): kappa0, or kappa0 (rho/rho_ref)^a (T/t_ref)^b
@@ -103,13 +102,9 @@ class RadiationVet {
   int fcap_report = 0;
   bool fcap_lz = false;     // floorcap_lz: the velocity cap keeps the L_z momentum
   bool fcap_spin = false;   // floorcap_lz_spin: its L_z X the dense gas's dOmega = X/I
-  bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CellVolume and LzArm
   DualArray1D<Real> fcap_cnt;   // removed: 0 n_v, 1 n_t, 2 dKE, 3 dEint, 4 |dp|V, 5 dL_zV
   void FloorGasCap();
 
-  // RSLA check: v_max*tau_max/chat once, on the first opacity (rsla_vmax <= 0: measure)
-  Real rsla_warn{}, rsla_vmax{};
-  bool rsla_force{}, rsla_done{};
 
   // matter coupling
   bool coupling{};     // run the implicit local solve at all
@@ -174,7 +169,6 @@ class RadiationVet {
   void VetRotSet(const Real beta);
   void VetScRotAvgSetup();     // vet_sc's averaged fields (vet_cell)
   void ScCartSweep();    // build with the current set
-  bool vet_axis_flux = false;  // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full = false;     // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   static constexpr Real vet_eig_min = 0.0;   // full: eigenvalue floor of D
   Real vet_nguard{}, vet_ncell{}; // full: cell-calls the guard changed D / all cell-calls
@@ -416,7 +410,7 @@ class RadiationVet {
   int t2_abe_left = 0;          // skipped steps left in the current run
   bool t2_abe_now = false;      // this cycle skips the stages
   // time_scheme = be runs as hesdirk2 with every step a time2_auto_be skip step
-  // (Time2AutoBeBegin); also time2_be_only = true under hesdirk2
+  // (Time2AutoBeBegin)
   bool t2_beonly = false;
   // the next step's hydro CFL dt is taken again after the radiation
   // update, on the gas it wrote (a backward-Euler kick can exceed the pre-coupling CFL)
@@ -580,7 +574,6 @@ class RadiationVet {
   void SetX1maxBathColumns(const DvceArray3D<Real> &eb);
   void SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi);
   //! print v_max*tau_max/chat once, from the first Opacity task with a filled array
-  void RSLACheck();
   // ---- implicit transport (rad_vet_params_implicit.cpp)
   //! read the implicit-solver parameters, allocate its arrays
   void ImplicitInit(ParameterInput *pin);

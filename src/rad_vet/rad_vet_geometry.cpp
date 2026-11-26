@@ -645,15 +645,6 @@ void RadiationVet::CheckGeometry(ParameterInput *pin) {
   st_edges = true;
   impl_prec = 0;
   e_floor = pin->GetOrAddReal("rad_vet","e_floor",(FLT_MIN));
-
-  // removed explicit face-flux options: only their old defaults are accepted
-  if (pin->DoesParameterExist("rad_vet","scaled_prefactor") &&
-      pin->GetReal("rad_vet","scaled_prefactor") != 20.0) {
-    std::cout << "### FATAL ERROR: <rad_vet>/scaled_prefactor = "
-              << pin->GetString("rad_vet","scaled_prefactor") << " was removed (only 20)"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
 }
 
 }  // namespace radvet

@@ -760,7 +760,6 @@ void RadiationVet::ScCartSweep() {
   }
 
   // (3) the uniaxial projection (chi, n) of D = K/J
-  const bool axflux = vet_axis_flux;
   par_for("vet_vet_proj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real jj = vc_(m,VETRAY_J,k,j,i);
@@ -774,12 +773,11 @@ void RadiationVet::ScCartSweep() {
       a[0][1] = a[1][0] = vc_(m,VETRAY_K11+3,k,j,i)*ij;
       a[0][2] = a[2][0] = vc_(m,VETRAY_K11+4,k,j,i)*ij;
       a[1][2] = a[2][1] = vc_(m,VETRAY_K11+5,k,j,i)*ij;
-      // axis: the formal solution's own flux direction (vet_axis = flux) or the
-      // principal axis of D (eigen)
+      // axis: the formal solution's own flux direction, else the principal axis of D
       Real h1 = vc_(m,VETRAY_H1,k,j,i), h2 = vc_(m,VETRAY_H1+1,k,j,i);
       Real h3 = vc_(m,VETRAY_H1+2,k,j,i);
       Real hm = sqrt(h1*h1 + h2*h2 + h3*h3);
-      if (axflux && hm > 1.0e-8*jj) {
+      if (hm > 1.0e-8*jj) {
         n1 = h1/hm;
         n2 = h2/hm;
         n3 = h3/hm;
