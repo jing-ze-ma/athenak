@@ -1717,7 +1717,8 @@ def t_p_ledger(c):
     round-off on every mesh; on the periodic box rad is too (no wall, no geometric term):
     box_small (amplitude 1e-3) and box_violent (0.1, where the cone cut and fwb act).
     bitwise: the dumps and the old history columns of shell_sp with the ledger against the
-    run without it (0: the ledger only reads)."""
+    run without it (0: the ledger only reads); restart_lines: the CLEAN PLEDGER lines of
+    shell_sp restarted after 4 cycles that differ from the straight run's (0)."""
     n = 8
     box = {'mesh/nghost': 3, 'mesh/nx1': n, 'mesh/nx2': n, 'mesh/nx3': n,
            'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n, 'mesh/x3max': 1.0,
@@ -1748,6 +1749,14 @@ def t_p_ledger(c):
     mx = max(mx, float(np.abs(ha[:, :len(lb)] - hb).max()) if la[:len(lb)] == lb else np.inf)
     out['hst_cols'] = int('Pr_tot' in la and 'Pr_gap' in la)
     out['bitwise'] = mx
+    os.makedirs(os.path.join(c.dir, 'rst'), exist_ok=True)   # (4 + 4 against 8: the lines)
+    sub = copy.copy(c)
+    sub.dir = os.path.join(c.dir, 'rst')
+    restart_pair(sub, 'shell_sp.athinput', n, n//2, {'hydro/p_ledger': 'true'})
+    pl = lambda d: re.findall(r'CLEAN PLEDGER cycle (\d+) (.*)', open(os.path.join(
+        sub.dir, d, 'run.log')).read())
+    st = dict(pl('straight'))
+    out['restart_lines'] = sum(st.get(k) != v for k, v in pl('restarted'))
     out['warnings'] = w
     return out
 

@@ -39,6 +39,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <sstream>
+#include <string>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -46,6 +48,7 @@
 #include "coordinates/coordinates.hpp"
 #include "hydro/hydro.hpp"
 #include "outputs/outputs.hpp"
+#include "parameter_input.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "utils/repro_sum.hpp"
 
@@ -57,6 +60,7 @@ inline Real pg[3], pr[3], pn[3];          // gas, radiation at the last mark; ga
 inline Real bg[kNc][3], br[kNc][3];       // this step's books: gas part, radiation part
 inline Real p0[3], rate[kNc][3], ptot[3], pend[3], gross = 0.0;   // the last step's
 inline Real ws[3][2][3], wc[3][3];   // withheld b (cut, fwb, fref): slopes K1, K2; increment
+inline ParameterInput *ppin = nullptr;   // (the run's: the slopes K1 in p_ledger_k1)
 inline const char *nm[kNc] = {"hflx", "ntel", "src", "rad", "cut", "fwb", "flr", "mrg",
                               "gap"};
 
@@ -110,6 +114,21 @@ inline void Sums(Mesh *pm, const DvceArray5D<Real> &u, const bool rad, Real out[
   }, repro::ReproRed<7, Kokkos::HostSpace>(v));
   repro::AllMerge(v.s, 7);
   for (int q = 0; q < 7; ++q) out[q] = v.s[q].Value();
+}
+
+//! <hydro>/p_ledger on: the withheld slopes K1 the restart file keeps (p_ledger_k1, every
+//! accepted step), so the ledger restarts bitwise; a file without them: NOTE, 0 (the
+//! first step's stage-start shares of cut, fwb and the reference force stay in rad)
+inline void Init(ParameterInput *pin) {
+  ppin = pin;
+  if (pin->DoesParameterExist("hydro", "p_ledger_k1")) {
+    std::istringstream is(pin->GetString("hydro", "p_ledger_k1"));
+    for (int b = 0; b < 3; ++b) for (int q = 0; q < 3; ++q) is >> ws[b][0][q];
+  } else if (global_variable::restart_run && global_variable::my_rank == 0) {
+    std::printf("### NOTE <hydro>/p_ledger: the restart file holds no p_ledger_k1; the "
+                "first step's stage-start shares of cut, fwb and the reference force are "
+                "booked as rad\n");
+  }
 }
 
 //! book the change since the previous mark to class c (book = false: baseline only)
@@ -257,6 +276,17 @@ inline void Commit(Mesh *pm) {
   }
   std::memset(bg, 0, sizeof(bg));
   std::memset(br, 0, sizeof(br));
+  if (ppin != nullptr) {
+    char t[32];
+    std::string k;
+    for (int b = 0; b < 3; ++b) {
+      for (int q = 0; q < 3; ++q) {
+        std::snprintf(t, sizeof(t), "%s%.17e", k.empty() ? "" : " ", ws[b][0][q]);
+        k += t;
+      }
+    }
+    ppin->SetString("hydro", "p_ledger_k1", k);
+  }
   if (global_variable::my_rank != 0) return;
   std::printf("CLEAN PLEDGER cycle %d dt %.6e", pm->ncycle, dt);
   for (int c = 0; c < kNc; ++c) {
