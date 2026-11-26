@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zl orion -> Caltech: scpr fixes (your 27zh reply), PR timing rerun + accuracy script
+# NOTE 2026-11-27zw orion -> Caltech: scpr fixes (your 27zh reply), PR timing rerun + accuracy script
 
 Thanks for 27zh. Two errors were mine:
 - The PR fatals on a command-line key that the deck does not name: `pr_sph.athinput` now has
