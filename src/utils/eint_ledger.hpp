@@ -43,6 +43,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro/hydro.hpp"
+#include "utils/p_ledger.hpp"
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
 #endif
@@ -213,12 +214,14 @@ inline void Take(Mesh *pm, const int op, const bool book) {
 }
 
 inline void Mark(Mesh *pm, const char *name) {
+  p_ledger::Mark(pm, name);   // (the momentum ledger shares the marks)
   if (!on) return;
   Take(pm, OpIndex(name), true);
 }
 
 //! drop this cycle's entries and take a new baseline (dt_retry / backward-Euler redo)
 inline void Discard(Mesh *pm) {
+  p_ledger::Discard(pm);
   if (!on) return;
   Alloc(pm);
   Kokkos::deep_copy(cyc, 0.0);
@@ -291,6 +294,7 @@ inline void WriteDump(Mesh *pm) {
 
 //! the cycle is accepted: totals, the ELEDGER / ELHOT lines, the dump
 inline void Commit(Mesh *pm) {
+  p_ledger::Commit(pm);
   if (!on || !have_base) return;
   const int nop = static_cast<int>(names.size());
   std::vector<Real> loc(static_cast<size_t>(nop)*kNs), glb(loc.size());

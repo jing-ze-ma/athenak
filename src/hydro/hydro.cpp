@@ -26,6 +26,7 @@
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
 #include "utils/fofc_flags.hpp"
+#include "utils/p_ledger.hpp"
 #include "utils/recipe.hpp"
 #include "hydro/hydro_mergelat.hpp"
 #include "hydro/hydro_ringavg.hpp"
@@ -637,6 +638,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
               !pmy_pack->pmesh->multilevel &&
               recipe::Fix(pin, "hydro", "dfloor_flux_limit", "true", "false");
     rec("dfloor_flux_limit", use_dfl);
+    // <hydro>/p_ledger (read only when named): the momentum ledger, utils/p_ledger.hpp
+    if (pin->DoesParameterExist("hydro", "p_ledger")) {
+      p_ledger::on = pin->GetBoolean("hydro", "p_ledger");
+    }
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
       pbval_dfl->SetVectorPairs(1, {});   // (the factor is a scalar)
