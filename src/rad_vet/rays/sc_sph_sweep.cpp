@@ -647,6 +647,12 @@ void RadiationVet::ScSweep() {
         }
       } else {
         vgd_rg_lastx = false;
+#if defined(KOKKOS_ENABLE_CUDA)
+        // IPC: the ring ops of this hook touch only the shells before and after this
+        // one (an acquire never takes the slot just released), so they run before the
+        // exchange, which is then the one fused kernel vet_vgd_ipc_x (same bits)
+        if (rga && vgd_ipc_state == 1) {ScRingFlush();}
+#endif
         ScHalo(vgd_i, n, i, i, wsx, true);
         if (rga && inw) {
           // record of the values to save from this shell's inward band: the exchange's
