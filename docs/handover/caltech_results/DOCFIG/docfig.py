@@ -81,7 +81,7 @@ def fr1(a):
     s, f, i, L, D = a; fn = D + '/f_%05d.png' % i
     if not os.path.exists(fn): draw(s, load(s, f), L, fn)
 def strip():
-    S = ['bsg', 'm35mms', 'm35zams', 't9l62', 't9mlt']; N = dict(bsg='bsg', m35mms='m35mms', m35zams='m35zams', t9l62='t9l62', t9mlt='t9mlt (MLT)')
+    S = ['bsg', 'm35mms', 'm35zams', 't9l62', 't9mlt']; N = dict(bsg='M20 BSG', m35mms='M35 MMS', m35zams='M35 ZAMS', t9l62='M56 LBV (radiative IC)', t9mlt='M56 LBV')
     fig, ax = plt.subplots(2, 5, figsize=(15, 6.4)); fig.subplots_adjust(left=0.045, right=0.985, top=0.95, bottom=0.10, wspace=0.34, hspace=0.34)
     for j, s in enumerate(S):
         d = load(s, files(s)[-1]); L = lims(s, [len(files(s)) - 1])
