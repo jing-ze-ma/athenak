@@ -1160,3 +1160,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 03:00 02-03: lz_X4N-bsg -> IDLE
 - 11-26 03:00 02-09: vk_q4_B4 -> IDLE
 - 11-26 03:00 02-11: IDLE -> lz_X4L-bsg lz_X4L-m35 lz_X4-m35
+- 11-26 03:04 02-17: lz_NNE-bsg -> IDLE
