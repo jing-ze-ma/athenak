@@ -39,7 +39,7 @@ of `src/rad_vet/`.
 
 - Documentation: <https://jing-ze-ma.github.io/athenak-vet-docs/> (download, build on CPUs
   and GPUs, run, the method and its properties, tests, 3-D stars).
-- Worked problems with notebooks: <https://github.com/jing-ze-ma/athenak-vet-gallery>.
+- Worked problems with notebooks: <https://github.com/jing-ze-ma/athenak-vet-notebooks>.
 - The same text, in this repository: [docs/vet_clean/QUICKSTART.md](docs/vet_clean/QUICKSTART.md).
 
 ## Code papers
