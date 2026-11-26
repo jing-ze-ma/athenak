@@ -1,0 +1,2 @@
+2026-11-26 01:51:39 start NB-t9 hpc-sm-01-17 BIN athena_nx2_3c681d9d1 md5=db1df2c24124bab94de4def450678438 ARGS: -i /resnick/groups/carnegie_poc/jingze/lzab_1127/deck_nx2_t9l62.athinput time/nlim=300 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 output2/dcycle=300
+2026-11-26 02:05:55 rc=0 ended: Terminating on cycle limit wall=856 s CW 0 FATAL 0 DT_RETRY 0

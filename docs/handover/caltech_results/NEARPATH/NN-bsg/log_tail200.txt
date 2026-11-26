@@ -1,0 +1,200 @@
+CLEAN XT cycle 286 t2s 2 write-back closure 8.107e-04
+CLEAN cycle 286 t2s 3 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 286 t2s 3 faces 28356608 radiation momentum sum |dp| 2.190738e+28 x1 faces sum dp -5.062154e+27
+CLEAN XT cycle 286 t2s 3 write-back closure 5.775e-05
+CLEAN LZB cycle 286 t2s 3 ledger -1.0045520845752374e+34
+CLEAN FLOORMOM cycle 286: other 1089416 dp -9.090030479583952e+10 -3.605022188280115e+06 -1.016068782803803e+10 |dp| 9.090030e+10 1.625174e+09 9.959319e+12
+CLEAN FALLBACK cycle 286: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1089416 (mass 1.102e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 287 [update] cell-c2p 9630121984 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 198091180 skip_de 2.306857583e+25 skip_dm 1.682337091e+10 above_table_top 0
+<hydro> floor_audit cycle 287 [refresh] cell-c2p 1.444518298e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 198848000 skip_de 2.319763711e+25 skip_dm 1.691710188e+10 above_table_top 0
+<hydro> floor_audit cycle 287 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1790547978 unflagged 0
+CLEAN cycle 287 t2s 2 it 2 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 287 t2s 2 faces 28356608 radiation momentum sum |dp| 2.218976e+28 x1 faces sum dp -5.360502e+27
+CLEAN XT cycle 287 t2s 2 write-back closure 5.790e-04
+CLEAN cycle 287 t2s 3 it 4 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 287 t2s 3 faces 28356608 radiation momentum sum |dp| 2.194120e+28 x1 faces sum dp -5.196677e+27
+CLEAN XT cycle 287 t2s 3 write-back closure 1.857e-05
+CLEAN LZB cycle 287 t2s 3 ledger -1.0120521188392496e+34
+CLEAN FLOORMOM cycle 287: other 1089036 dp -9.018650258761479e+10 -3.554165047196898e+06 -1.043773744747067e+10 |dp| 9.018650e+10 1.620103e+09 9.958969e+12
+CLEAN FALLBACK cycle 287: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1089036 (mass 1.101e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 288 [update] cell-c2p 9663676416 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 198633640 skip_de 2.313322535e+25 skip_dm 1.687035381e+10 above_table_top 0
+<hydro> floor_audit cycle 288 [refresh] cell-c2p 1.449551462e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 199394576 skip_de 2.32627969e+25 skip_dm 1.696445613e+10 above_table_top 0
+<hydro> floor_audit cycle 288 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1797305969 unflagged 0
+CLEAN cycle 288 t2s 2 it 3 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 288 t2s 2 faces 28356608 radiation momentum sum |dp| 2.225514e+28 x1 faces sum dp -5.506737e+27
+CLEAN XT cycle 288 t2s 2 write-back closure 4.754e-04
+CLEAN cycle 288 t2s 3 it 4 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 288 t2s 3 faces 28356608 radiation momentum sum |dp| 2.198836e+28 x1 faces sum dp -5.333662e+27
+CLEAN XT cycle 288 t2s 3 write-back closure 1.574e-05
+CLEAN LZB cycle 288 t2s 3 ledger -1.0211893456942716e+34
+CLEAN FLOORMOM cycle 288: other 1088780 dp -8.939693993058870e+10 -4.061136713073461e+06 -8.824783954340464e+09 |dp| 8.939694e+10 1.617117e+09 9.959016e+12
+CLEAN FALLBACK cycle 288: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1088780 (mass 1.101e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 289 [update] cell-c2p 9697230848 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 199176020 skip_de 2.319786531e+25 skip_dm 1.691733003e+10 above_table_top 0
+<hydro> floor_audit cycle 289 [refresh] cell-c2p 1.454584627e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 199940976 skip_de 2.332793684e+25 skip_dm 1.701179606e+10 above_table_top 0
+<hydro> floor_audit cycle 289 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1804055488 unflagged 0
+CLEAN cycle 289 t2s 2 it 2 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 289 t2s 2 faces 28356608 radiation momentum sum |dp| 2.231595e+28 x1 faces sum dp -5.636656e+27
+CLEAN XT cycle 289 t2s 2 write-back closure 6.177e-04
+CLEAN cycle 289 t2s 3 it 2 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 289 t2s 3 faces 28356608 radiation momentum sum |dp| 2.202944e+28 x1 faces sum dp -5.445540e+27
+CLEAN XT cycle 289 t2s 3 write-back closure 4.411e-05
+CLEAN LZB cycle 289 t2s 3 ledger -1.0300095600826436e+34
+CLEAN FLOORMOM cycle 289: other 1088496 dp -8.881751100194873e+10 -3.741649654388478e+06 -6.874881208317930e+09 |dp| 8.881751e+10 1.615796e+09 9.959355e+12
+CLEAN FALLBACK cycle 289: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1088496 (mass 1.101e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 290 [update] cell-c2p 9730785280 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 199718280 skip_de 2.326249162e+25 skip_dm 1.696429636e+10 above_table_top 0
+<hydro> floor_audit cycle 290 [refresh] cell-c2p 1.459617792e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 200487212 skip_de 2.339305793e+25 skip_dm 1.705912223e+10 above_table_top 0
+<hydro> floor_audit cycle 290 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1810808259 unflagged 0
+CLEAN cycle 290 t2s 2 it 2 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 290 t2s 2 faces 28356608 radiation momentum sum |dp| 2.236495e+28 x1 faces sum dp -5.741472e+27
+CLEAN XT cycle 290 t2s 2 write-back closure 6.061e-04
+CLEAN cycle 290 t2s 3 it 4 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 290 t2s 3 faces 28356608 radiation momentum sum |dp| 2.205562e+28 x1 faces sum dp -5.536371e+27
+CLEAN XT cycle 290 t2s 3 write-back closure 1.241e-05
+CLEAN LZB cycle 290 t2s 3 ledger -1.0386571884538941e+34
+CLEAN FLOORMOM cycle 290: other 1088060 dp -8.837841363326147e+10 -2.865684142246211e+06 -6.258558383259792e+09 |dp| 8.837841e+10 1.615343e+09 9.958488e+12
+CLEAN FALLBACK cycle 290: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1088060 (mass 1.100e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 291 [update] cell-c2p 9764339712 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 200260324 skip_de 2.332709158e+25 skip_dm 1.701124353e+10 above_table_top 0
+<hydro> floor_audit cycle 291 [refresh] cell-c2p 1.464650957e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 201033228 skip_de 2.345815359e+25 skip_dm 1.710642992e+10 above_table_top 0
+<hydro> floor_audit cycle 291 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1817525467 unflagged 0
+CLEAN cycle 291 t2s 2 it 1 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 291 t2s 2 faces 28242435 radiation momentum sum |dp| 2.239127e+28 x1 faces sum dp -5.818936e+27
+CLEAN XT cycle 291 t2s 2 write-back closure 7.541e-04
+CLEAN cycle 291 t2s 3 it 2 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 291 t2s 3 faces 28241950 radiation momentum sum |dp| 2.206064e+28 x1 faces sum dp -5.600911e+27
+CLEAN XT cycle 291 t2s 3 write-back closure 2.859e-05
+CLEAN LZB cycle 291 t2s 3 ledger -1.0465611254008779e+34
+CLEAN FLOORMOM cycle 291: other 1087760 dp -8.818063466433064e+10 -3.190546392154431e+06 -5.121099822960073e+09 |dp| 8.818063e+10 1.616642e+09 9.958401e+12
+CLEAN FALLBACK cycle 291: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1087760 (mass 1.100e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 292 [update] cell-c2p 9797894144 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 200802200 skip_de 2.339166854e+25 skip_dm 1.705817415e+10 above_table_top 0
+<hydro> floor_audit cycle 292 [refresh] cell-c2p 1.469684122e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 201579112 skip_de 2.352323293e+25 skip_dm 1.715372575e+10 above_table_top 0
+<hydro> floor_audit cycle 292 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1824249583 unflagged 0
+CLEAN cycle 292 t2s 2 it 1 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 292 t2s 2 faces 28225024 radiation momentum sum |dp| 2.236864e+28 x1 faces sum dp -5.846638e+27
+CLEAN XT cycle 292 t2s 2 write-back closure 9.769e-04
+CLEAN cycle 292 t2s 3 it 0 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 292 t2s 3 faces 28225024 radiation momentum sum |dp| 2.202144e+28 x1 faces sum dp -5.626437e+27
+CLEAN XT cycle 292 t2s 3 write-back closure 4.238e-05
+CLEAN LZB cycle 292 t2s 3 ledger -1.0536964352295722e+34
+CLEAN FLOORMOM cycle 292: other 1087392 dp -8.819507427244064e+10 -3.081663391459099e+06 -4.814245214455208e+09 |dp| 8.819507e+10 1.618018e+09 9.957689e+12
+CLEAN FALLBACK cycle 292: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1087392 (mass 1.100e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 293 [update] cell-c2p 9831448576 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 201343884 skip_de 2.345622379e+25 skip_dm 1.710508893e+10 above_table_top 0
+<hydro> floor_audit cycle 293 [refresh] cell-c2p 1.474717286e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 202124820 skip_de 2.358829169e+25 skip_dm 1.720100661e+10 above_table_top 0
+<hydro> floor_audit cycle 293 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1830956123 unflagged 0
+CLEAN cycle 293 t2s 2 it 0 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 293 t2s 2 faces 28225024 radiation momentum sum |dp| 2.219252e+28 x1 faces sum dp -5.743346e+27
+CLEAN XT cycle 293 t2s 2 write-back closure 1.009e-03
+CLEAN cycle 293 t2s 3 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 293 t2s 3 faces 28225024 radiation momentum sum |dp| 2.185361e+28 x1 faces sum dp -5.494067e+27
+CLEAN XT cycle 293 t2s 3 write-back closure 7.206e-05
+CLEAN LZB cycle 293 t2s 3 ledger -1.0587114867652521e+34
+CLEAN FLOORMOM cycle 293: other 1086916 dp -8.843534451453276e+10 -3.153365264731460e+06 -4.621039088630048e+09 |dp| 8.843534e+10 1.619964e+09 9.956025e+12
+CLEAN FALLBACK cycle 293: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1086916 (mass 1.099e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 294 [update] cell-c2p 9865003008 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 201885296 skip_de 2.352074639e+25 skip_dm 1.715197988e+10 above_table_top 0
+<hydro> floor_audit cycle 294 [refresh] cell-c2p 1.479750451e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 202670324 skip_de 2.365332558e+25 skip_dm 1.724826937e+10 above_table_top 0
+<hydro> floor_audit cycle 294 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1837640998 unflagged 0
+CLEAN cycle 294 t2s 2 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 294 t2s 2 faces 28225024 radiation momentum sum |dp| 2.189022e+28 x1 faces sum dp -5.479979e+27
+CLEAN XT cycle 294 t2s 2 write-back closure 1.179e-03
+CLEAN cycle 294 t2s 3 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 294 t2s 3 faces 28225024 radiation momentum sum |dp| 2.157788e+28 x1 faces sum dp -5.241124e+27
+CLEAN XT cycle 294 t2s 3 write-back closure 1.080e-04
+CLEAN LZB cycle 294 t2s 3 ledger -1.0626483177952244e+34
+CLEAN FLOORMOM cycle 294: other 1086480 dp -8.888878692349544e+10 -2.953633557348213e+06 -4.107813693741378e+09 |dp| 8.888879e+10 1.622040e+09 9.954917e+12
+CLEAN FALLBACK cycle 294: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1086480 (mass 1.099e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 295 [update] cell-c2p 9898557440 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 202426456 skip_de 2.358524143e+25 skip_dm 1.719885081e+10 above_table_top 0
+<hydro> floor_audit cycle 295 [refresh] cell-c2p 1.484783616e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 203215644 skip_de 2.371834087e+25 skip_dm 1.729551852e+10 above_table_top 0
+<hydro> floor_audit cycle 295 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1844328276 unflagged 0
+CLEAN cycle 295 t2s 2 it 5 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 295 t2s 2 faces 28225024 radiation momentum sum |dp| 2.152911e+28 x1 faces sum dp -5.131021e+27
+CLEAN XT cycle 295 t2s 2 write-back closure 9.212e-04
+CLEAN cycle 295 t2s 3 it 0 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 295 t2s 3 faces 28225024 radiation momentum sum |dp| 2.125856e+28 x1 faces sum dp -4.924046e+27
+CLEAN XT cycle 295 t2s 3 write-back closure 9.075e-05
+CLEAN LZB cycle 295 t2s 3 ledger -1.0648331432797402e+34
+CLEAN FLOORMOM cycle 295: other 1086176 dp -8.948043797921875e+10 -3.604426879754398e+06 -4.263442267940800e+09 |dp| 8.948044e+10 1.624206e+09 9.955384e+12
+CLEAN FALLBACK cycle 295: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1086176 (mass 1.098e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 296 [update] cell-c2p 9932111872 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 202967468 skip_de 2.364971959e+25 skip_dm 1.724570921e+10 above_table_top 0
+<hydro> floor_audit cycle 296 [refresh] cell-c2p 1.489816781e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 203760808 skip_de 2.378333813e+25 skip_dm 1.734275448e+10 above_table_top 0
+<hydro> floor_audit cycle 296 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1851015545 unflagged 0
+CLEAN cycle 296 t2s 2 it 4 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 296 t2s 2 faces 28225024 radiation momentum sum |dp| 2.117873e+28 x1 faces sum dp -4.782774e+27
+CLEAN XT cycle 296 t2s 2 write-back closure 1.295e-03
+CLEAN cycle 296 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 296 t2s 3 faces 28225024 radiation momentum sum |dp| 2.094023e+28 x1 faces sum dp -4.590207e+27
+CLEAN XT cycle 296 t2s 3 write-back closure 6.919e-05
+CLEAN LZB cycle 296 t2s 3 ledger -1.0651223778236026e+34
+CLEAN FLOORMOM cycle 296: other 1085656 dp -9.023372967665616e+10 -3.999195341069247e+06 -3.036373541072095e+09 |dp| 9.023373e+10 1.626007e+09 9.954444e+12
+CLEAN FALLBACK cycle 296: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1085656 (mass 1.098e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 297 [update] cell-c2p 9965666304 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 203508196 skip_de 2.371416028e+25 skip_dm 1.729254039e+10 above_table_top 0
+<hydro> floor_audit cycle 297 [refresh] cell-c2p 1.494849946e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 204305736 skip_de 2.384830526e+25 skip_dm 1.738996851e+10 above_table_top 0
+<hydro> floor_audit cycle 297 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1857702276 unflagged 0
+CLEAN cycle 297 t2s 2 it 4 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 297 t2s 2 faces 28225024 radiation momentum sum |dp| 2.086853e+28 x1 faces sum dp -4.471772e+27
+CLEAN XT cycle 297 t2s 2 write-back closure 1.311e-03
+CLEAN cycle 297 t2s 3 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 297 t2s 3 faces 28225024 radiation momentum sum |dp| 2.065467e+28 x1 faces sum dp -4.301584e+27
+CLEAN XT cycle 297 t2s 3 write-back closure 2.174e-05
+CLEAN LZB cycle 297 t2s 3 ledger -1.0671643704478029e+34
+CLEAN FLOORMOM cycle 297: other 1085228 dp -9.094148152897569e+10 -4.326123236729295e+06 -1.906057707480872e+09 |dp| 9.094148e+10 1.628195e+09 9.954335e+12
+CLEAN FALLBACK cycle 297: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1085228 (mass 1.097e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 298 [update] cell-c2p 9999220736 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 204048696 skip_de 2.377857387e+25 skip_dm 1.733935196e+10 above_table_top 0
+<hydro> floor_audit cycle 298 [refresh] cell-c2p 1.49988311e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 204850464 skip_de 2.391324867e+25 skip_dm 1.743716532e+10 above_table_top 0
+<hydro> floor_audit cycle 298 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1864389901 unflagged 0
+CLEAN cycle 298 t2s 2 it 4 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 298 t2s 2 faces 28225024 radiation momentum sum |dp| 2.060431e+28 x1 faces sum dp -4.216384e+27
+CLEAN XT cycle 298 t2s 2 write-back closure 1.071e-03
+CLEAN cycle 298 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 298 t2s 3 faces 28225024 radiation momentum sum |dp| 2.040657e+28 x1 faces sum dp -4.077746e+27
+CLEAN XT cycle 298 t2s 3 write-back closure 9.394e-05
+CLEAN LZB cycle 298 t2s 3 ledger -1.0703649148020867e+34
+CLEAN FLOORMOM cycle 298: other 1084732 dp -9.165489347205038e+10 -5.277798702754093e+06 -4.514072597229119e+08 |dp| 9.165489e+10 1.630424e+09 9.953341e+12
+CLEAN FALLBACK cycle 298: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1084732 (mass 1.097e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 299 [update] cell-c2p 1.003277517e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 204588916 skip_de 2.384295592e+25 skip_dm 1.738614053e+10 above_table_top 0
+<hydro> floor_audit cycle 299 [refresh] cell-c2p 1.504916275e+10 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 205394976 skip_de 2.397816722e+25 skip_dm 1.748434404e+10 above_table_top 0
+<hydro> floor_audit cycle 299 pay: paid 0 unpaid 0 given_to_rad 1.557747716e+20 cells 139600 | fofc_retest: retested 1871075837 unflagged 0
+CLEAN cycle 299 t2s 2 it 4 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 299 t2s 2 faces 28225024 radiation momentum sum |dp| 2.038886e+28 x1 faces sum dp -4.037858e+27
+CLEAN XT cycle 299 t2s 2 write-back closure 1.129e-03
+CLEAN cycle 299 t2s 3 it 0 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 299 t2s 3 faces 28225024 radiation momentum sum |dp| 2.020115e+28 x1 faces sum dp -3.906909e+27
+CLEAN XT cycle 299 t2s 3 write-back closure 3.250e-05
+CLEAN LZB cycle 299 t2s 3 ledger -1.0748610487585404e+34
+CLEAN FLOORMOM cycle 299: other 1084276 dp -9.218995673906000e+10 -5.827202251818012e+06 1.562533888776950e+09 |dp| 9.218996e+10 1.632263e+09 9.952761e+12
+CLEAN FALLBACK cycle 299: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 1084276 (mass 1.097e+08) floor_pay 0.000e+00 (unpaid 0.000e+00)
+<time> dt_retry: 300 checkpoints (2.557195e+00 s, 1.317958e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (vet_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<restart> rst/bsg3d.00001.rst: the cell and face variables written at 15.8 s
+<restart> rst/bsg3d.00001.rst: rad_vet hesdirk2 slope written at 20.6 s
+<restart> rst/bsg3d.00001.rst: hydro w0 density and velocities written at 20.7 s
+<restart> rst/bsg3d.00001.rst: rad_signal_speed inputs written at 21.1 s
+<restart> rst/bsg3d.00001.rst: rad_vet applied face flux written at 21.2 s
+<restart> rst/bsg3d.00001.rst: all (file closed) written at 21.2 s
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=4e+10 energy created x vol=-2e+20 | FOFC first-order cell-stages=2e+09
+<hydro> dfloor_flux_limit: outflow-limited cell-stages (all attempts)=3e+09, their x1 momentum x vol removed=-1e+31, kinetic energy x vol made heat=4e+36
+<hydro> floor momentum ledger, accepted steps, RK-weighted: other 411057212 dp -1.968279369082026e+14 -3.687302112763358e+10 -9.562417125184137e+12 |dp| 1.992273e+14 7.841197e+12 3.367069e+15
+<hydro> floor_pay skip cells (dfloor/vceil, all attempts, RK-weighted): energy change x vol=5e+25 mass change x vol=3e+10
+elapsed=3.558865e+02 cycle=300 time=5.047297e+04 dt=1.688301e+02
+
+Terminating on cycle limit
+time=5.047297e+04 cycle=300
+tlim=4.924800e+06 nlim=300
+
+MeshBlock-cycles = 1200
+cpu time used  = 3.221740e+02
+main loop time (before the final outputs) = 2.936465e+02
+zone-cycles/cpu_second = 1.562251e+07
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_vet> vet_gd: 3.070000e+02 builds checked; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_vet> vet_gd: rank 0 fenced seconds: source 1.192899e+00, sweeps 1.205553e+02 (of which per-shell halo+walls 7.492774e-01, of which MPI wait 4.809921e-01), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_vet> vet_gd halo (rank 0): exchanges 7.554900e+04, bytes sent 1.518036e+11 (2.009340e+06 per exchange), post 2.479737e-02 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_vet> vet_gd ragged band (rank 0): out-of-slab accesses 0.000000e+00
+<rad_vet> vet_gd_band_ring (rank 0): sweeps 3.070000e+02, dense band saves 0.000000e+00, save store 6.177591e-02 GB
+<rad_vet> (rank 0) vet_gd halo lists 0.000000e+00 made, 2.378513e+02 MB of 4.096000e+03 (key 4096, GPU: <= free/2); exchanges by list 7.401400e+04, dense 0.000000e+00
+<rad_vet> (rank 0) vet_gd_halo_exact lists made 2.700000e+02, fallbacks 0.000000e+00 (marked reads outside the masks' region 0.000000e+00), read ghosts with an unsent source 0.000000e+00; received values per list: exact/mask 0.000000e+00
+<rad_vet> (rank 0) exact-list batches 2.700000e+02 (group 1, 1.794812e-01 s, list reallocs 1.290000e+03); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_vet> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_vet> vet-positivity: gas cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | hydro EOS floors energy created=-1.557748e+20
+<rad_vet> time_scheme=hesdirk2: stage steps=2.990000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=5.980000e+02 skipped(no face flux)=0.000000e+00 K1 flux from U^n=0.000000e+00 limited cells=5.663673e+08 max rounds=1.250000e+02 withheld E x vol=1.459446e+43 left (Q<=0)=0.000000e+00 emptied (E < 1.000000e-01 E^n) cells=2.000000e+00 min E/E^n=1.000000e-01 (rank 0: rounds=2.070000e+02 R exchanges=2.070000e+02)
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 2.856946e+02 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 1.788821e+00 | discarded dt_retry attempts 0.000000e+00
