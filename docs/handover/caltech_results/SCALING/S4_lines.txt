@@ -1,0 +1,373 @@
+CLEAN ray cut cycle 0 shell -1 -> 154 (want 154)
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1
+CLEAN cycle 0 t2s 0 it 8 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1
+CLEAN cycle 0 t2s 0 it 4 (sum 4) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1
+elapsed=3.314761e+01 cycle=0 time=0.000000e+00 dt=1.654553e+02
+CLEAN cycle 0 t2s 1 it 29 (sum 174) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN ray cut cycle 0 shell 154 -> 149 (want 149)
+elapsed=3.425143e+01 cycle=1 time=1.654553e+02 dt=1.650378e+02
+CLEAN cycle 1 t2s 2 it 10 (sum 58) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 1 t2s 3 it 10 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+elapsed=3.520082e+01 cycle=2 time=3.304931e+02 dt=1.647093e+02
+CLEAN ray cut cycle 2 shell 149 -> 148 (want 148)
+CLEAN cycle 2 t2s 2 it 6 (sum 40) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 2 t2s 3 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=3.609385e+01 cycle=3 time=4.952024e+02 dt=1.646438e+02
+CLEAN cycle 3 t2s 2 it 6 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 3 t2s 3 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=3.685262e+01 cycle=4 time=6.598461e+02 dt=1.647797e+02
+CLEAN ray cut cycle 4 shell 148 -> 147 (want 147)
+CLEAN cycle 4 t2s 2 it 0 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 4 t2s 3 it 6 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+elapsed=3.756153e+01 cycle=5 time=8.246258e+02 dt=1.649049e+02
+CLEAN cycle 5 t2s 2 it 4 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 5 t2s 3 it 6 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+elapsed=3.826917e+01 cycle=6 time=9.895307e+02 dt=1.648910e+02
+CLEAN cycle 6 t2s 2 it 4 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 6 t2s 3 it 5 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+elapsed=3.896570e+01 cycle=7 time=1.154422e+03 dt=1.649107e+02
+CLEAN cycle 7 t2s 2 it 5 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 7 t2s 3 it 6 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+elapsed=3.968391e+01 cycle=8 time=1.319332e+03 dt=1.649806e+02
+CLEAN cycle 8 t2s 2 it 1 (sum 25) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 8 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.048385e+01 cycle=9 time=1.484313e+03 dt=1.650893e+02
+CLEAN cycle 9 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 9 t2s 3 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.126907e+01 cycle=10 time=1.649402e+03 dt=1.652386e+02
+CLEAN cycle 10 t2s 2 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 10 t2s 3 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.205836e+01 cycle=11 time=1.814641e+03 dt=1.654225e+02
+CLEAN cycle 11 t2s 2 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 11 t2s 3 it 0 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.282897e+01 cycle=12 time=1.980063e+03 dt=1.656332e+02
+CLEAN cycle 12 t2s 2 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 12 t2s 3 it 0 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.359938e+01 cycle=13 time=2.145697e+03 dt=1.658661e+02
+CLEAN cycle 13 t2s 2 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 13 t2s 3 it 0 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.438409e+01 cycle=14 time=2.311563e+03 dt=1.661095e+02
+CLEAN ray cut cycle 14 shell 147 -> 148 (want 148)
+CLEAN cycle 14 t2s 2 it 0 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 14 t2s 3 it 0 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.516322e+01 cycle=15 time=2.477672e+03 dt=1.663464e+02
+CLEAN cycle 15 t2s 2 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 15 t2s 3 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.595843e+01 cycle=16 time=2.644019e+03 dt=1.665651e+02
+CLEAN cycle 16 t2s 2 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 16 t2s 3 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.672963e+01 cycle=17 time=2.810584e+03 dt=1.667553e+02
+CLEAN cycle 17 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 17 t2s 3 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.749187e+01 cycle=18 time=2.977339e+03 dt=1.668392e+02
+CLEAN cycle 18 t2s 2 it 0 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 18 t2s 3 it 0 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.826103e+01 cycle=19 time=3.144178e+03 dt=1.668564e+02
+CLEAN cycle 19 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 19 t2s 3 it 0 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.902987e+01 cycle=20 time=3.311035e+03 dt=1.668756e+02
+CLEAN cycle 20 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 20 t2s 3 it 0 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=4.979375e+01 cycle=21 time=3.477910e+03 dt=1.668982e+02
+CLEAN cycle 21 t2s 2 it 0 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 21 t2s 3 it 1 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.054840e+01 cycle=22 time=3.644808e+03 dt=1.669271e+02
+CLEAN cycle 22 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 22 t2s 3 it 1 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.130316e+01 cycle=23 time=3.811736e+03 dt=1.669672e+02
+CLEAN cycle 23 t2s 2 it 0 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 23 t2s 3 it 1 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.207490e+01 cycle=24 time=3.978703e+03 dt=1.669409e+02
+CLEAN cycle 24 t2s 2 it 0 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 24 t2s 3 it 1 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.282564e+01 cycle=25 time=4.145644e+03 dt=1.668808e+02
+CLEAN cycle 25 t2s 2 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 25 t2s 3 it 1 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.354655e+01 cycle=26 time=4.312524e+03 dt=1.668217e+02
+CLEAN cycle 26 t2s 2 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 26 t2s 3 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.427184e+01 cycle=27 time=4.479346e+03 dt=1.667684e+02
+CLEAN cycle 27 t2s 2 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 27 t2s 3 it 1 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.501389e+01 cycle=28 time=4.646115e+03 dt=1.667264e+02
+CLEAN cycle 28 t2s 2 it 9 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 28 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.576522e+01 cycle=29 time=4.812841e+03 dt=1.666976e+02
+CLEAN cycle 29 t2s 2 it 10 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 29 t2s 3 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.651452e+01 cycle=30 time=4.979539e+03 dt=1.666839e+02
+CLEAN cycle 30 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 30 t2s 3 it 1 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.725461e+01 cycle=31 time=5.146223e+03 dt=1.666921e+02
+CLEAN cycle 31 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 31 t2s 3 it 1 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.798137e+01 cycle=32 time=5.312915e+03 dt=1.667295e+02
+CLEAN cycle 32 t2s 2 it 9 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 32 t2s 3 it 1 (sum 27) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.874734e+01 cycle=33 time=5.479644e+03 dt=1.667987e+02
+CLEAN cycle 33 t2s 2 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 33 t2s 3 it 2 (sum 29) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=5.951266e+01 cycle=34 time=5.646443e+03 dt=1.668923e+02
+CLEAN cycle 34 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 34 t2s 3 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.023919e+01 cycle=35 time=5.813335e+03 dt=1.669999e+02
+CLEAN cycle 35 t2s 2 it 8 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 35 t2s 3 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.097411e+01 cycle=36 time=5.980335e+03 dt=1.671132e+02
+CLEAN cycle 36 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 36 t2s 3 it 2 (sum 28) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.173287e+01 cycle=37 time=6.147448e+03 dt=1.672258e+02
+CLEAN cycle 37 t2s 2 it 9 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 37 t2s 3 it 2 (sum 28) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.249317e+01 cycle=38 time=6.314674e+03 dt=1.673345e+02
+CLEAN cycle 38 t2s 2 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 38 t2s 3 it 2 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.322275e+01 cycle=39 time=6.482009e+03 dt=1.674369e+02
+CLEAN cycle 39 t2s 2 it 7 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 39 t2s 3 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.395247e+01 cycle=40 time=6.649446e+03 dt=1.675310e+02
+CLEAN cycle 40 t2s 2 it 7 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 40 t2s 3 it 1 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.468280e+01 cycle=41 time=6.816977e+03 dt=1.676123e+02
+CLEAN cycle 41 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 41 t2s 3 it 2 (sum 28) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.544286e+01 cycle=42 time=6.984589e+03 dt=1.676789e+02
+CLEAN cycle 42 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 42 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.619473e+01 cycle=43 time=7.152268e+03 dt=1.677300e+02
+CLEAN cycle 43 t2s 2 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 43 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.694107e+01 cycle=44 time=7.319998e+03 dt=1.677663e+02
+CLEAN cycle 44 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 44 t2s 3 it 2 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.769287e+01 cycle=45 time=7.487764e+03 dt=1.677908e+02
+CLEAN cycle 45 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 45 t2s 3 it 1 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.841610e+01 cycle=46 time=7.655555e+03 dt=1.678089e+02
+CLEAN cycle 46 t2s 2 it 7 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 46 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.915883e+01 cycle=47 time=7.823364e+03 dt=1.678232e+02
+CLEAN cycle 47 t2s 2 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 47 t2s 3 it 2 (sum 27) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=6.992353e+01 cycle=48 time=7.991187e+03 dt=1.678326e+02
+CLEAN cycle 48 t2s 2 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 48 t2s 3 it 3 (sum 30) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.069187e+01 cycle=49 time=8.159020e+03 dt=1.678372e+02
+CLEAN cycle 49 t2s 2 it 9 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 49 t2s 3 it 3 (sum 29) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.145720e+01 cycle=50 time=8.326857e+03 dt=1.678379e+02
+CLEAN cycle 50 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 50 t2s 3 it 2 (sum 25) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.220627e+01 cycle=51 time=8.494695e+03 dt=1.678357e+02
+CLEAN cycle 51 t2s 2 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 51 t2s 3 it 2 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.295652e+01 cycle=52 time=8.662530e+03 dt=1.678320e+02
+CLEAN cycle 52 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 52 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.369710e+01 cycle=53 time=8.830362e+03 dt=1.678282e+02
+CLEAN cycle 53 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 53 t2s 3 it 3 (sum 25) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.444466e+01 cycle=54 time=8.998191e+03 dt=1.678256e+02
+CLEAN cycle 54 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 54 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.518500e+01 cycle=55 time=9.166016e+03 dt=1.678250e+02
+CLEAN cycle 55 t2s 2 it 5 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 55 t2s 3 it 4 (sum 28) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.593811e+01 cycle=56 time=9.333841e+03 dt=1.678272e+02
+CLEAN cycle 56 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 56 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.667892e+01 cycle=57 time=9.501668e+03 dt=1.678327e+02
+CLEAN cycle 57 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 57 t2s 3 it 2 (sum 27) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.743194e+01 cycle=58 time=9.669501e+03 dt=1.678415e+02
+CLEAN cycle 58 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 58 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.817429e+01 cycle=59 time=9.837342e+03 dt=1.678536e+02
+CLEAN cycle 59 t2s 2 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 59 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.890731e+01 cycle=60 time=1.000520e+04 dt=1.678684e+02
+CLEAN cycle 60 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 60 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=7.964103e+01 cycle=61 time=1.017306e+04 dt=1.678855e+02
+CLEAN cycle 61 t2s 2 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 61 t2s 3 it 4 (sum 28) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.039604e+01 cycle=62 time=1.034095e+04 dt=1.679043e+02
+CLEAN cycle 62 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 62 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.113476e+01 cycle=63 time=1.050885e+04 dt=1.679242e+02
+CLEAN cycle 63 t2s 2 it 6 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 63 t2s 3 it 2 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.188339e+01 cycle=64 time=1.067678e+04 dt=1.679449e+02
+CLEAN cycle 64 t2s 2 it 6 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 64 t2s 3 it 2 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.261732e+01 cycle=65 time=1.084472e+04 dt=1.679660e+02
+CLEAN cycle 65 t2s 2 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 65 t2s 3 it 3 (sum 27) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.337139e+01 cycle=66 time=1.101269e+04 dt=1.679872e+02
+CLEAN cycle 66 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 66 t2s 3 it 4 (sum 26) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.411800e+01 cycle=67 time=1.118068e+04 dt=1.680083e+02
+CLEAN cycle 67 t2s 2 it 9 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 67 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.486235e+01 cycle=68 time=1.134868e+04 dt=1.680291e+02
+CLEAN cycle 68 t2s 2 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 68 t2s 3 it 4 (sum 29) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.561759e+01 cycle=69 time=1.151671e+04 dt=1.680497e+02
+CLEAN cycle 69 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 69 t2s 3 it 2 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.635128e+01 cycle=70 time=1.168476e+04 dt=1.680701e+02
+CLEAN cycle 70 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 70 t2s 3 it 3 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.709141e+01 cycle=71 time=1.185283e+04 dt=1.680901e+02
+CLEAN cycle 71 t2s 2 it 9 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 71 t2s 3 it 4 (sum 25) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.783634e+01 cycle=72 time=1.202092e+04 dt=1.681095e+02
+CLEAN cycle 72 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 72 t2s 3 it 2 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.856347e+01 cycle=73 time=1.218903e+04 dt=1.681284e+02
+CLEAN cycle 73 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 73 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=8.931170e+01 cycle=74 time=1.235716e+04 dt=1.681467e+02
+CLEAN cycle 74 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 74 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.004300e+01 cycle=75 time=1.252531e+04 dt=1.681641e+02
+CLEAN cycle 75 t2s 2 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 75 t2s 3 it 2 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.078083e+01 cycle=76 time=1.269347e+04 dt=1.681808e+02
+CLEAN cycle 76 t2s 2 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 76 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.152251e+01 cycle=77 time=1.286165e+04 dt=1.681966e+02
+CLEAN cycle 77 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 77 t2s 3 it 5 (sum 25) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.226760e+01 cycle=78 time=1.302985e+04 dt=1.682116e+02
+CLEAN cycle 78 t2s 2 it 6 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 78 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.301047e+01 cycle=79 time=1.319806e+04 dt=1.682257e+02
+CLEAN cycle 79 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 79 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.374899e+01 cycle=80 time=1.336629e+04 dt=1.682385e+02
+CLEAN cycle 80 t2s 2 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 80 t2s 3 it 2 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.446806e+01 cycle=81 time=1.353453e+04 dt=1.682502e+02
+CLEAN cycle 81 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 81 t2s 3 it 3 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.521535e+01 cycle=82 time=1.370278e+04 dt=1.682611e+02
+CLEAN cycle 82 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 82 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.595910e+01 cycle=83 time=1.387104e+04 dt=1.682715e+02
+CLEAN cycle 83 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 83 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.669833e+01 cycle=84 time=1.403931e+04 dt=1.682780e+02
+CLEAN cycle 84 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 84 t2s 3 it 2 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.742539e+01 cycle=85 time=1.420759e+04 dt=1.682845e+02
+CLEAN cycle 85 t2s 2 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 85 t2s 3 it 2 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.816712e+01 cycle=86 time=1.437587e+04 dt=1.682925e+02
+CLEAN cycle 86 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 86 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.888793e+01 cycle=87 time=1.454416e+04 dt=1.683018e+02
+CLEAN cycle 87 t2s 2 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 87 t2s 3 it 2 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=9.960932e+01 cycle=88 time=1.471247e+04 dt=1.683123e+02
+CLEAN cycle 88 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 88 t2s 3 it 3 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.003352e+02 cycle=89 time=1.488078e+04 dt=1.683237e+02
+CLEAN cycle 89 t2s 2 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 89 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.010841e+02 cycle=90 time=1.504910e+04 dt=1.683358e+02
+CLEAN cycle 90 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 90 t2s 3 it 4 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.018084e+02 cycle=91 time=1.521744e+04 dt=1.683486e+02
+CLEAN cycle 91 t2s 2 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 91 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.025387e+02 cycle=92 time=1.538579e+04 dt=1.683619e+02
+CLEAN cycle 92 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 92 t2s 3 it 2 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.033087e+02 cycle=93 time=1.555415e+04 dt=1.683758e+02
+CLEAN cycle 93 t2s 2 it 0 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 93 t2s 3 it 2 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.040822e+02 cycle=94 time=1.572252e+04 dt=1.683902e+02
+CLEAN cycle 94 t2s 2 it 1 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 94 t2s 3 it 3 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.048495e+02 cycle=95 time=1.589091e+04 dt=1.684050e+02
+CLEAN cycle 95 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 95 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.056229e+02 cycle=96 time=1.605932e+04 dt=1.684199e+02
+CLEAN cycle 96 t2s 2 it 0 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 96 t2s 3 it 4 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.063801e+02 cycle=97 time=1.622774e+04 dt=1.684346e+02
+CLEAN cycle 97 t2s 2 it 0 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 97 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.071526e+02 cycle=98 time=1.639617e+04 dt=1.684454e+02
+CLEAN cycle 98 t2s 2 it 0 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 98 t2s 3 it 2 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.079152e+02 cycle=99 time=1.656462e+04 dt=1.684564e+02
+CLEAN cycle 99 t2s 2 it 0 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 99 t2s 3 it 2 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.086710e+02 cycle=100 time=1.673307e+04 dt=1.684676e+02
+CLEAN cycle 100 t2s 2 it 0 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 100 t2s 3 it 2 (sum 24) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.094466e+02 cycle=101 time=1.690154e+04 dt=1.684772e+02
+CLEAN cycle 101 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 101 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.102139e+02 cycle=102 time=1.707002e+04 dt=1.684732e+02
+CLEAN cycle 102 t2s 2 it 0 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 102 t2s 3 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.109871e+02 cycle=103 time=1.723849e+04 dt=1.684692e+02
+CLEAN cycle 103 t2s 2 it 0 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 103 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.117571e+02 cycle=104 time=1.740696e+04 dt=1.684653e+02
+CLEAN cycle 104 t2s 2 it 0 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 104 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.125262e+02 cycle=105 time=1.757543e+04 dt=1.684615e+02
+CLEAN cycle 105 t2s 2 it 1 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 105 t2s 3 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.132982e+02 cycle=106 time=1.774389e+04 dt=1.684581e+02
+CLEAN cycle 106 t2s 2 it 0 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 106 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.140561e+02 cycle=107 time=1.791235e+04 dt=1.684553e+02
+CLEAN cycle 107 t2s 2 it 0 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 107 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.148172e+02 cycle=108 time=1.808080e+04 dt=1.684533e+02
+CLEAN cycle 108 t2s 2 it 2 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 108 t2s 3 it 3 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.155781e+02 cycle=109 time=1.824926e+04 dt=1.684522e+02
+CLEAN cycle 109 t2s 2 it 0 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN cycle 109 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.163401e+02 cycle=110 time=1.841771e+04 dt=1.684521e+02
+CLEAN cycle 110 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 110 t2s 3 it 3 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.170618e+02 cycle=111 time=1.858616e+04 dt=1.684532e+02
+CLEAN cycle 111 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 111 t2s 3 it 5 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.177915e+02 cycle=112 time=1.875461e+04 dt=1.684554e+02
+CLEAN cycle 112 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 112 t2s 3 it 6 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.185144e+02 cycle=113 time=1.892307e+04 dt=1.684589e+02
+CLEAN cycle 113 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 113 t2s 3 it 5 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.192421e+02 cycle=114 time=1.909153e+04 dt=1.684635e+02
+CLEAN cycle 114 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 114 t2s 3 it 2 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.199595e+02 cycle=115 time=1.925999e+04 dt=1.684693e+02
+CLEAN cycle 115 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 115 t2s 3 it 4 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.206801e+02 cycle=116 time=1.942846e+04 dt=1.684760e+02
+CLEAN cycle 116 t2s 2 it 7 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 116 t2s 3 it 3 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.214027e+02 cycle=117 time=1.959694e+04 dt=1.684837e+02
+CLEAN cycle 117 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 117 t2s 3 it 2 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.221266e+02 cycle=118 time=1.976542e+04 dt=1.684921e+02
+CLEAN cycle 118 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 118 t2s 3 it 2 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.228460e+02 cycle=119 time=1.993391e+04 dt=1.685012e+02
+CLEAN cycle 119 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN cycle 119 t2s 3 it 3 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+elapsed=1.541988e+02 cycle=120 time=2.010241e+04 dt=1.685108e+02
+cpu time used  = 1.210510e+02
+zone-cycles/cpu_second = 1.663155e+07
+<rad_vet> vet_gd: 1.270000e+02 builds checked; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_vet> vet_gd: rank 0 fenced seconds: source 2.445657e+00, sweeps 7.461184e+00 (of which per-shell halo+walls 2.950433e-01, of which MPI wait 2.032500e+00), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 8.769042e+01 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 1.071308e+00 | discarded dt_retry attempts 0.000000e+00

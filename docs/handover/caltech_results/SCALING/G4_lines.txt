@@ -1,0 +1,66 @@
+elapsed=1.137131e+01 cycle=29657 time=4.924800e+06 dt=1.636277e+02
+CLEAN cycle 29657 t2s 2 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 63 first 0 63 guard 0 solves 4
+CLEAN cycle 29657 t2s 3 it 7 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 63 first 0 63 guard 0 solves 3
+elapsed=1.408292e+01 cycle=29658 time=4.924964e+06 dt=1.636599e+02
+CLEAN cycle 29658 t2s 2 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 65 first 0 65 guard 0 solves 4
+CLEAN cycle 29658 t2s 3 it 2 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 59 first 0 59 guard 0 solves 4
+elapsed=1.486437e+01 cycle=29659 time=4.925127e+06 dt=1.637364e+02
+CLEAN cycle 29659 t2s 2 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 60 first 0 60 guard 0 solves 4
+CLEAN cycle 29659 t2s 3 it 2 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 61 first 0 61 guard 0 solves 4
+elapsed=1.562192e+01 cycle=29660 time=4.925291e+06 dt=1.636544e+02
+CLEAN cycle 29660 t2s 2 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 62 first 0 62 guard 0 solves 4
+CLEAN cycle 29660 t2s 3 it 5 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 63 first 0 63 guard 0 solves 2
+elapsed=1.627815e+01 cycle=29661 time=4.925455e+06 dt=1.635770e+02
+CLEAN cycle 29661 t2s 2 it 2 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 66 first 0 66 guard 0 solves 4
+CLEAN cycle 29661 t2s 3 it 5 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 65 first 0 65 guard 0 solves 2
+elapsed=1.694073e+01 cycle=29662 time=4.925618e+06 dt=1.635454e+02
+CLEAN cycle 29662 t2s 2 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 61 first 0 61 guard 0 solves 4
+CLEAN cycle 29662 t2s 3 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 73 first 0 73 guard 0 solves 3
+elapsed=1.765974e+01 cycle=29663 time=4.925782e+06 dt=1.635045e+02
+CLEAN cycle 29663 t2s 2 it 2 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 67 first 0 67 guard 0 solves 4
+CLEAN cycle 29663 t2s 3 it 9 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 68 first 0 68 guard 0 solves 3
+elapsed=1.840120e+01 cycle=29664 time=4.925945e+06 dt=1.634518e+02
+CLEAN cycle 29664 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 67 first 0 67 guard 0 solves 4
+CLEAN cycle 29664 t2s 3 it 7 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 66 first 0 66 guard 0 solves 2
+elapsed=1.913755e+01 cycle=29665 time=4.926109e+06 dt=1.634162e+02
+CLEAN cycle 29665 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 70 first 0 70 guard 0 solves 4
+CLEAN cycle 29665 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 73 first 0 73 guard 0 solves 2
+elapsed=1.978760e+01 cycle=29666 time=4.926272e+06 dt=1.633979e+02
+CLEAN cycle 29666 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 74 first 0 74 guard 0 solves 4
+CLEAN cycle 29666 t2s 3 it 7 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 74 first 0 74 guard 0 solves 3
+elapsed=2.050849e+01 cycle=29667 time=4.926436e+06 dt=1.634118e+02
+CLEAN cycle 29667 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 73 first 0 73 guard 0 solves 4
+CLEAN cycle 29667 t2s 3 it 2 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 74 first 0 74 guard 0 solves 4
+elapsed=2.127067e+01 cycle=29668 time=4.926599e+06 dt=1.634539e+02
+CLEAN cycle 29668 t2s 2 it 1 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 73 first 0 73 guard 0 solves 4
+CLEAN cycle 29668 t2s 3 it 5 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 74 first 0 74 guard 0 solves 2
+elapsed=2.191376e+01 cycle=29669 time=4.926762e+06 dt=1.635324e+02
+CLEAN cycle 29669 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 77 first 0 77 guard 0 solves 4
+CLEAN cycle 29669 t2s 3 it 8 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 71 first 0 71 guard 0 solves 3
+elapsed=2.263948e+01 cycle=29670 time=4.926926e+06 dt=1.636128e+02
+CLEAN cycle 29670 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 76 first 0 76 guard 0 solves 4
+CLEAN cycle 29670 t2s 3 it 2 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 77 first 0 77 guard 0 solves 4
+elapsed=2.340765e+01 cycle=29671 time=4.927090e+06 dt=1.635620e+02
+CLEAN cycle 29671 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 77 first 0 77 guard 0 solves 4
+CLEAN cycle 29671 t2s 3 it 7 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 75 first 0 75 guard 0 solves 2
+elapsed=2.407225e+01 cycle=29672 time=4.927253e+06 dt=1.635440e+02
+CLEAN cycle 29672 t2s 2 it 1 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 82 first 0 82 guard 0 solves 4
+CLEAN cycle 29672 t2s 3 it 5 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 79 first 0 79 guard 0 solves 2
+elapsed=2.472877e+01 cycle=29673 time=4.927417e+06 dt=1.635708e+02
+CLEAN cycle 29673 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 77 first 0 77 guard 0 solves 4
+CLEAN cycle 29673 t2s 3 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 81 first 0 81 guard 0 solves 3
+elapsed=2.545300e+01 cycle=29674 time=4.927580e+06 dt=1.636109e+02
+CLEAN cycle 29674 t2s 2 it 1 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 79 first 0 79 guard 0 solves 4
+CLEAN cycle 29674 t2s 3 it 8 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 77 first 0 77 guard 0 solves 3
+elapsed=2.618647e+01 cycle=29675 time=4.927744e+06 dt=1.636307e+02
+CLEAN cycle 29675 t2s 2 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 79 first 0 79 guard 0 solves 4
+CLEAN cycle 29675 t2s 3 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 78 first 0 78 guard 0 solves 3
+elapsed=2.690228e+01 cycle=29676 time=4.927908e+06 dt=1.636411e+02
+CLEAN cycle 29676 t2s 2 it 1 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 75 first 0 75 guard 0 solves 4
+CLEAN cycle 29676 t2s 3 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 69 first 0 69 guard 0 solves 3
+elapsed=3.078236e+01 cycle=29677 time=4.928071e+06 dt=1.636551e+02
+cpu time used  = 1.941102e+01
+zone-cycles/cpu_second = 1.728628e+07
+<rad_vet> vet_gd: 2.000000e+01 builds checked; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_vet> vet_gd: rank 0 fenced seconds: source 5.400166e-01, sweeps 1.633578e+00 (of which per-shell halo+walls 5.654012e-02, of which MPI wait 4.871479e-01), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.580514e+01 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
