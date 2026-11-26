@@ -95,3 +95,44 @@
   - So the fix raises E just outside the photosphere by about 0.6-0.8 % on bsg (per-cell max 1.3 %).
   - That is the direction OPEN_BUGS #10 expects, though much smaller than the 10 % clump deficit, as the bsg photosphere is not a near-tangent emitter edge.
 - t9l62 (NBE-t9 / NNE-t9) is running on 01-17; its E profile follows.
+
+## E rerun, t9l62 (NBE-t9 / NNE-t9, 01-17 alone, vet dump at cycle 300; both rc 0, 0 CW / FATAL)
+### t9: vet_e (E) NN vs NB at the last cycle; shell means and per-cell relative difference
+- all cells: max |rel| 1.805e-01, mean |rel| 1.893e-02
+| r [cm] | shell-mean E NB | NN/NB - 1 (shell mean) | max |rel| in shell |
+|---|---|---|---|
+| 4.8256e+12 | 5.1150e+06 | -6.936e-11 | 9.791e-08 |
+| 5.2035e+12 | 3.6912e+06 | -2.257e-09 | 6.797e-08 |
+| 5.6109e+12 | 1.2122e+06 | -7.204e-08 | 1.035e-07 |
+| 6.0503e+12 | 1.3021e+05 | +1.100e-06 | 1.744e-06 |
+| 6.5241e+12 | 5.5145e+02 | +5.123e-03 | 1.835e-02 |
+| 7.0350e+12 | 1.9300e+02 | +1.345e-02 | 3.330e-02 |
+| 7.5859e+12 | 1.5115e+02 | +1.020e-02 | 3.739e-02 |
+| 8.1800e+12 | 1.2242e+02 | +7.990e-03 | 5.733e-02 |
+| 8.8205e+12 | 1.0102e+02 | +6.435e-03 | 4.782e-02 |
+| 9.5113e+12 | 8.4209e+01 | +5.241e-03 | 3.320e-02 |
+| 1.0256e+13 | 7.0630e+01 | +4.224e-03 | 1.831e-02 |
+| 1.1059e+13 | 5.9530e+01 | +3.368e-03 | 4.051e-02 |
+| 1.1925e+13 | 5.0380e+01 | +2.654e-03 | 4.920e-02 |
+| 1.2859e+13 | 4.2766e+01 | +2.057e-03 | 5.470e-02 |
+| 1.3866e+13 | 3.6388e+01 | +1.577e-03 | 6.314e-02 |
+| 1.4952e+13 | 3.1023e+01 | +1.209e-03 | 1.085e-01 |
+| 1.6123e+13 | 2.6491e+01 | +9.288e-04 | 1.095e-01 |
+| 1.7385e+13 | 2.2651e+01 | +6.997e-04 | 1.137e-01 |
+| 1.8747e+13 | 1.9389e+01 | +4.976e-04 | 1.460e-01 |
+| 2.0215e+13 | 1.6611e+01 | +3.088e-04 | 1.672e-01 |
+| 2.1798e+13 | 1.4241e+01 | +1.447e-04 | 1.805e-01 |
+| 2.3505e+13 | 1.2215e+01 | +1.689e-05 | 1.676e-01 |
+| 2.5345e+13 | 1.0482e+01 | -8.823e-05 | 1.462e-01 |
+| 2.7330e+13 | 8.9979e+00 | -1.901e-04 | 1.265e-01 |
+| 2.9470e+13 | 7.7273e+00 | -2.854e-04 | 1.115e-01 |
+| 3.1778e+13 | 6.6386e+00 | -3.712e-04 | 1.046e-01 |
+| 3.4267e+13 | 5.7047e+00 | -4.208e-04 | 1.043e-01 |
+| 3.6950e+13 | 4.9027e+00 | -4.627e-04 | 1.009e-01 |
+| 3.9844e+13 | 4.2142e+00 | -4.996e-04 | 9.722e-02 |
+| 4.2964e+13 | 3.6230e+00 | -5.275e-04 | 9.389e-02 |
+| 4.6328e+13 | 3.1151e+00 | -5.466e-04 | 9.113e-02 |
+| 4.9956e+13 | 2.6785e+00 | -5.609e-04 | 8.834e-02 |
+| 5.3868e+13 | 2.3033e+00 | -5.725e-04 | 8.525e-02 |
+| 5.6130e+13 | 2.1211e+00 | -5.648e-04 | 8.311e-02 |
+- Reading: on t9l62 the fix raises E just outside the photosphere by about 1.5 % in the shell mean (per-cell max up to 3-6 % there). It decays outward to +0.1 % at 1.6e13 cm, and turns to -0.05 % in the outer wind region, where per-cell differences reach 10-18 %. Roughly twice the bsg effect.
