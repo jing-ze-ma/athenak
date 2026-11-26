@@ -1,0 +1,68 @@
+# SCPR: ours (aa2646b92) Cartesian rays, the same homogeneous sphere: hot_blob R 0.6 sharp edge,
+# chi = rho kappa = 0.3125*16 = 5, a T^4 = 1 inside; background rho 1e-12; gas frozen; vacuum faces.
+<job>
+basename = oursph
+<mesh>
+nx1 = 64
+x1min = -1.0
+x1max = 1.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 64
+x2min = -1.0
+x2max = 1.0
+ix2_bc = outflow
+ox2_bc = outflow
+nx3 = 64
+x3min = -1.0
+x3max = 1.0
+ix3_bc = outflow
+ox3_bc = outflow
+<meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 64
+<time>
+nlim = 1
+tlim = 1.0e-8
+dt_fixed = 1.0e-8
+ndiag = 1
+<hydro>
+eos = ideal
+gamma = 1.666666666666667
+<rad_vet>
+c_light = 100.0
+arad = 1.0
+e_floor = 1.0e-30
+kappa_p = 16.0
+gas_feedback = false
+vet_scatter = false
+implicit_bc_x1min = marshak
+implicit_bc_x1max = marshak
+implicit_bc_x2min = marshak
+implicit_bc_x2max = marshak
+implicit_bc_x3min = marshak
+implicit_bc_x3max = marshak
+vet_bc_bath = true
+vet_sc_set = gd
+vet_gd_gl_nmu = 8
+vet_gd_gl_nphi = 20
+vet_gd_gl_stagger = false
+vet_gd_rotate_dt = 0
+clean_verbose = 1
+<problem>
+pgen_name = rad_vet_beam
+vet_test = hot_blob
+blob_rho = 0.3125
+blob_temp = 1.0
+bg_rho = 1.0e-12
+bg_temp = 1.0e-3
+blob_edge = 1.0e-9
+blob_a1 = 0.6
+blob_a2 = 0.6
+blob_a3 = 0.6
+<output1>
+file_type = bin
+bin_double = true
+variable = vet_vsc
+dt = 1.0e-8
