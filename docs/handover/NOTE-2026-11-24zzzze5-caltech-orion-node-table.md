@@ -740,3 +740,8 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 16:03 01-15: IDLE for 10 min
 - 11-25 16:10 02-03: IDLE -> pg_t9f
 - 11-25 16:10 02-09: IDLE -> pg_t9f
+- 11-25 16:11 02-03: pg_t9f -> pg_m3 pg_m3
+- 11-25 16:11 02-09: pg_t9f -> IDLE
+- 11-25 16:11 02-11: IDLE -> pg_m3 pg_m3 pg_m3
+- 11-25 16:12 02-03: pg_m3 pg_m3 -> IDLE
+- 11-25 16:12 02-11: pg_m3 pg_m3 pg_m3 -> IDLE
