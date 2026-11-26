@@ -857,14 +857,16 @@ void Hydro::DfloorFluxInit() {
     const auto &f = (d == 0) ? uflx.x1f : ((d == 1) ? uflx.x2f : uflx.x3f);
     Kokkos::realloc(q, nmb, f.extent_int(2), f.extent_int(3), f.extent_int(4));
   }
-  for (int c = 0; c < ((cs || pm->use_spherical_polar) ? 1 : 3); ++c) {
-    Kokkos::realloc(dfl_g[c], nmb, 1, n3, n2, n1);
+  for (int c = 0; c < 4; ++c) {
+    if (c == 3 || c < ((cs || pm->use_spherical_polar) ? 1 : 3)) {
+      Kokkos::realloc(dfl_g[c], nmb, 1, n3, n2, n1);
+    }
   }
   pbval_dfl->InitializeBuffers(1);
-  if (cs) {   // the panel-seam faces (bits: x2 lo / hi, x3 lo / hi); 5: DflMomentum's g
-    pbval_dfs->InitializeBuffers(6);
-    pdfl_fs = new DvceFaceFld5D<Real>("dfl_fs", nmb, 6, n3, n2, n1);
-    Kokkos::realloc(pdfl_fs->x1f, nmb, 6, 1, 1, 1);
+  if (cs) {   // the panel-seam faces (bits: x2 lo / hi, x3 lo / hi); 5, 6: DflMomentum's
+    pbval_dfs->InitializeBuffers(7);   // g and donor rho
+    pdfl_fs = new DvceFaceFld5D<Real>("dfl_fs", nmb, 7, n3, n2, n1);
+    Kokkos::realloc(pdfl_fs->x1f, nmb, 7, 1, 1, 1);
     Kokkos::realloc(dfl_sm, nmb);
     auto hm = Kokkos::create_mirror_view(dfl_sm);
     const int nb_[4] = {8, 12, 24, 28};
@@ -969,7 +971,7 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
         r3(m,q,kf,j,i) = DflSpec(q, u0_, w0_, wd, th, gen, gm1, m, kc, j, i);
       }
     });
-    pbval_dfs->InitFluxSeamRecv(6);
+    pbval_dfs->InitFluxSeamRecv(7);
     pbval_dfs->PackAndSendFluxSeamCC(*pdfl_fs);
     while (pbval_dfs->RecvAndUnpackFluxSeamCC(*pdfl_fs) != TaskStatus::complete) {}
     pbval_dfs->ClearFluxSend();
@@ -1053,10 +1055,12 @@ void Hydro::DflMomentum() {
   auto &size = pmy_pack->pmb->mb_size;
   auto pnl = pmy_pack->pmb->mb_panel.d_view;
   auto bcs = pmy_pack->pmb->mb_bcs;
-  auto u0_ = u0, th = dfl_th;
+  auto u0_ = u0, th = dfl_th, w0_ = w0;
   auto q1 = pdfl_f0->x1f, q2 = pdfl_f0->x2f, q3 = pdfl_f0->x3f;
-  for (int c = 0; c < nc; ++c) Kokkos::deep_copy(DevExeSpace(), dfl_g[c], 0.0);
-  auto g0 = dfl_g[0], g1 = curv ? g0 : dfl_g[1], g2 = curv ? g0 : dfl_g[2];
+  for (int c = 0; c < 4; ++c) {
+    if (c == 3 || c < nc) Kokkos::deep_copy(DevExeSpace(), dfl_g[c], 0.0);
+  }
+  auto g0 = dfl_g[0], g1 = curv ? g0 : dfl_g[1], g2 = curv ? g0 : dfl_g[2], g3 = dfl_g[3];
   // the outflow weight of the face of cell (k,j,i) along d (0..2), side s (0 lo, 1 hi):
   // A F before the limiter out of the cell (Cartesian per volume); bd: physical face
   auto wout = [=] KOKKOS_FUNCTION (const int m, const int d, const int s, const int k,
@@ -1124,6 +1128,7 @@ void Hydro::DflMomentum() {
     const Real dm[3] = {m1 - u0_(m,IM1,k,j,i), m2 - u0_(m,IM2,k,j,i),
                         m3 - u0_(m,IM3,k,j,i)};
     g0(m,0,k,j,i) = dm[0]*v/qa;
+    g3(m,0,k,j,i) = u0_(m,IDN,k,j,i);
     if (!curv) {g1(m,0,k,j,i) = dm[1]/qa; g2(m,0,k,j,i) = dm[2]/qa;}
     const Real bw = qb/qa*(curv ? v : sz.dx1*sz.dx2*sz.dx3);
     b0 += dm[0]*bw;
@@ -1132,11 +1137,13 @@ void Hydro::DflMomentum() {
      Kokkos::Sum<Real>(ob[1]), Kokkos::Sum<Real>(ob[2]));
   dfl_dp[0] += dp;
   dfl_dp[1] += dk;
+  if (!dfl_pass) return;   // (dfloor_flux_pass = false: the momentum taken vanishes)
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, ob, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   p_ledger::Outflow(ob);
-  for (int c = 0; c < nc; ++c) {   // (g of the donors into the ghosts)
+  for (int c = 0; c < 4; ++c) {   // (g and rho of the donors into the ghosts)
+    if (c != 3 && c >= nc) continue;
     while (pbval_dfl->InitRecv(1) == TaskStatus::incomplete) {}
     while (pbval_dfl->PackAndSendCC(dfl_g[c], dfl_thc) == TaskStatus::incomplete) {}
     while (pbval_dfl->RecvAndUnpackCC(dfl_g[c], dfl_thc) == TaskStatus::incomplete) {}
@@ -1152,20 +1159,31 @@ void Hydro::DflMomentum() {
     par_for("dfl_grec2", DevExeSpace(), 0, nmb - 1, ks, ke, 0, 1, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
       r2(m,5,k,sd ? je + 1 : js,i) = g0(m,0,k,sd ? je : js,i);
+      r2(m,6,k,sd ? je + 1 : js,i) = g3(m,0,k,sd ? je : js,i);
     });
     par_for("dfl_grec3", DevExeSpace(), 0, nmb - 1, 0, 1, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int sd, const int j, const int i) {
       r3(m,5,sd ? ke + 1 : ks,j,i) = g0(m,0,sd ? ke : ks,j,i);
+      r3(m,6,sd ? ke + 1 : ks,j,i) = g3(m,0,sd ? ke : ks,j,i);
     });
-    pbval_dfs->InitFluxSeamRecv(6);
+    pbval_dfs->InitFluxSeamRecv(7);
     pbval_dfs->PackAndSendFluxSeamCC(*pdfl_fs);
     while (pbval_dfs->RecvAndUnpackFluxSeamCC(*pdfl_fs) != TaskStatus::complete) {}
     pbval_dfs->ClearFluxSend();
     pbval_dfs->ClearFluxRecv();
   }
-  // every cell takes g of each donor whose outflow came in, times that weight
-  par_for("dfl_gin", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // every cell at least as dense as the donor takes g of each donor whose outflow came
+  // in, times that weight (a lighter cell does not: that P is not moved, counted), so no
+  // floor gas is driven by the held gas's momentum
+  Real drop = 0.0;
+  const int nji = nx2*nx1;
+  Kokkos::parallel_reduce("dfl_gin", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nx3*nji),
+  KOKKOS_LAMBDA(const int idx, Real &sd) {
+    const int m = idx/(nx3*nji), k = (idx/nji)%nx3 + ks, j = (idx/nx1)%nx2 + js;
+    const int i = idx%nx1 + is;
+    const auto &sz = size.d_view(m);
+    const Real vol0 = sz.dx1*sz.dx2*sz.dx3;   // (Cartesian: the weights are per volume)
     Real in[3] = {0.0, 0.0, 0.0};
     for (int d = 0; d < nd; ++d) {
       for (int s = 0; s < 2; ++s) {
@@ -1179,15 +1197,35 @@ void Hydro::DflMomentum() {
                         ((d == 2) ? ((k == ks && !s) ? 4 : ((k == ke && s) ? 8 : 0)) : 0);
         const bool srec = cs && bit != 0 && (sm(m) & bit);
         const int kf = k + s*(d == 2), jf = j + s*(d == 1), iff = i + s*(d == 0);
-        in[0] += w*(srec ? ((d == 1) ? r2(m,5,kf,jf,iff) : r3(m,5,kf,jf,iff))
-                         : g0(m,0,kn,jn,in_));
+        const Real rd = srec ? ((d == 1) ? r2(m,6,kf,jf,iff) : r3(m,6,kf,jf,iff))
+                             : g3(m,0,kn,jn,in_);
+        const Real ga = srec ? ((d == 1) ? r2(m,5,kf,jf,iff) : r3(m,5,kf,jf,iff))
+                             : g0(m,0,kn,jn,in_);
+        if (u0_(m,IDN,k,j,i) < rd) {
+          sd += w*fabs(ga)*(curv ? 1.0 : vol0);
+          continue;
+        }
+        in[0] += w*ga;
         if (!curv) {in[1] += w*g1(m,0,kn,jn,in_); in[2] += w*g2(m,0,kn,jn,in_);}
       }
     }
     const Real iv = curv ? 1.0/vol(m,k,j,i) : 1.0;
-    u0_(m,IM1,k,j,i) += in[0]*iv;
-    if (!curv) {u0_(m,IM2,k,j,i) += in[1]; u0_(m,IM3,k,j,i) += in[2];}
-  });
+    // (the kinetic energy it adds at most 1e-2 of the cell's eint: else scaled, the rest
+    // not moved, counted)
+    const Real d = u0_(m,IDN,k,j,i), dq[3] = {in[0]*iv, in[1], in[2]};
+    Real a = 0.0, b = 0.0;
+    for (int n = 0; n < nc; ++n) {
+      a += 0.5*dq[n]*dq[n]/d;
+      b += u0_(m,IM1+n,k,j,i)*dq[n]/d;
+    }
+    const Real cap = 1.0e-2*fmax(w0_(m,IEN,k,j,i), 0.0);
+    const Real s = (a + b <= cap) ? 1.0 : ((a > 0.0) ? fmin(fmax((-b + sqrt(fmax(b*b +
+                   4.0*a*cap, 0.0)))/(2.0*a), 0.0), 1.0) : 0.0);
+    if (s < 1.0) sd += (1.0 - s)*sqrt(2.0*a*d)/iv*(curv ? 1.0 : vol0);
+    u0_(m,IM1,k,j,i) += s*dq[0];
+    if (!curv) {u0_(m,IM2,k,j,i) += s*dq[1]; u0_(m,IM3,k,j,i) += s*dq[2];}
+  }, Kokkos::Sum<Real>(drop));
+  dfl_dp[2] += drop;
 }
 
 } // namespace hydro

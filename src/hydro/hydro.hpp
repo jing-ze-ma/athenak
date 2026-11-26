@@ -456,12 +456,13 @@ class Hydro {
   // limited cell-stages, dfl_dp[2] the x1 momentum x vol and the kinetic energy x vol
   // (made heat) DflMomentum took from them
   bool use_dfl = false;
-  Real dfl_n = 0.0, dfl_dp[2] = {0.0, 0.0};
+  bool dfl_pass = true;   // dfloor_flux_pass: DflMomentum's P goes out by the floor flux
+  Real dfl_n = 0.0, dfl_dp[3] = {0.0, 0.0, 0.0};   // (2: P a lighter cell did not take)
   MeshBoundaryValuesCC *pbval_dfl = nullptr, *pbval_dfs = nullptr;
   DvceArray5D<Real> dfl_th, dfl_thc;
   DvceFaceFld5D<Real> *pdfl_fs = nullptr;   // cubed sphere: the seam record
   DvceFaceFld4D<Real> *pdfl_f0 = nullptr;   // the mass fluxes before the limiter
-  DvceArray5D<Real> dfl_g[3];               // DflMomentum: the removed P per outflow
+  DvceArray5D<Real> dfl_g[4];   // DflMomentum: the removed P per outflow; 3 donor rho
   DvceArray1D<int> dfl_sm;                  // cubed sphere: the seam faces of each block
   void DfloorFluxInit();
   void DfloorFluxLimit(Driver *d, int stage);

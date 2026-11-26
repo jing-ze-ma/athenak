@@ -1292,14 +1292,16 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     }
     if (pmesh->pmb_pack->phydro != nullptr && pmesh->pmb_pack->phydro->use_dfl) {
       auto *ph = pmesh->pmb_pack->phydro;
-      Real dn[3] = {ph->dfl_n, ph->dfl_dp[0], ph->dfl_dp[1]};
+      Real dn[4] = {ph->dfl_n, ph->dfl_dp[0], ph->dfl_dp[1], ph->dfl_dp[2]};
 #if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, dn, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, dn, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
       if (global_variable::my_rank == 0) {
         std::cout << "<hydro> dfloor_flux_limit: outflow-limited cell-stages (all "
                   << "attempts)=" << dn[0] << ", their x1 momentum x vol removed="
-                  << dn[1] << ", kinetic energy x vol made heat=" << dn[2] << std::endl;
+                  << dn[1] << ", kinetic energy x vol made heat=" << dn[2]
+                  << ", momentum a lighter cell did not take (not moved) |dp| x vol="
+                  << dn[3] << std::endl;
       }
     }
     if (pmesh->pmb_pack->phydro != nullptr) pmesh->pmb_pack->phydro->dual.LedgerTotal();

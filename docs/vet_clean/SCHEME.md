@@ -291,7 +291,10 @@ to the gas at the face:
   no P (the phi rings' torque: `clean_stag_fwb_ring`).
 
 `dfloor_flux_limit`'s held cells send the momentum they lose by a face floor flux to the
-cells their outflow went to (a physical face's share is a boundary flux). What remains
+cells their outflow went to (a physical face's share is a boundary flux), as far as a
+receiver at least as dense as the donor can take it without gaining more than 1e-2 of its
+internal energy as kinetic energy (else that part is not moved, counted: fed into floor
+gas, the held gas's momentum drove it and collapsed the bsg time step). What remains
 is the floor-gas momentum the primitive recovery and the floor-gas cap remove (`floorcap`,
 `dfloor_keep_velocity`, the velocity ceiling: class `flr`; 3e-18 of the gross sum per step
 on the tiny BSG, where none of them acts), and with
