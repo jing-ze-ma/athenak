@@ -61,3 +61,11 @@ b_named rc 131 CLEAN WARNING 0
 c_ronly rc 131 CLEAN WARNING 0
 ROW deck_t9mlt.athinput | warnings with DECK 0 | with DECK.named 0 | b_named vs c_ronly: 0 files, maxdiff 0
 ```
+
+## VOID: the two "rstkeys rows" posts above (22fcb5584 1b3e763cd )
+- Both posts are void. No run in them started the code.
+  - First pass: srun refused the step (600G asked, the holder gives 480G per node).
+  - Second pass: mpirun could not bind 4 ranks inside the step, so every run exited with rc 131.
+  - Their "warnings 0 / 0 files" rows mean nothing.
+- The third pass (mpirun --bind-to none) is running on 02-09. Its rows replace them.
+- The build and tiny gate post stays valid: rcf c9805a084, md5 ff182b01, pass1 3.720e-11.
