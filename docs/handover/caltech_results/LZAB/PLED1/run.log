@@ -1,0 +1,2 @@
+2026-11-25 22:53:24 start PLED1 hpc-sm-02-09 BIN athena_pled_174233149 md5=3ae1965592fedd42240a71d726680328 ARGS: -r /resnick/groups/carnegie_poc/jingze/lzab_1127/rst_in/bsg.rst -i /resnick/groups/carnegie_poc/jingze/lzab_1127/FRoff.athinput output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 time/tlim=1e9 time/nlim=29757 output2/dcycle=29757 output2/dt=1e30 rad_vet/clean_verbose=1 hydro/p_ledger=true
+2026-11-25 23:06:46 rc=0 ended: Terminating on cycle limit wall=802 s CW 0 FATAL 0 DT_RETRY 0

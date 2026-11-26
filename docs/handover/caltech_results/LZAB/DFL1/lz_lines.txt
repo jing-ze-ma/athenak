@@ -1,0 +1,300 @@
+CLEAN FCONE cycle 29657 t2s 2 faces 193140 momentum cut sum |dF| V/c^2 4.552037e+25
+CLEAN FCONE cycle 29657 t2s 3 faces 195036 momentum cut sum |dF| V/c^2 4.807379e+25
+CLEAN LZB cycle 29657 t2s 3 ledger -5.6851023396855221e+42
+CLEAN FCONE cycle 29658 t2s 2 faces 197080 momentum cut sum |dF| V/c^2 4.902371e+25
+CLEAN FCONE cycle 29658 t2s 3 faces 196355 momentum cut sum |dF| V/c^2 4.824554e+25
+CLEAN LZB cycle 29658 t2s 3 ledger -5.6835133358690120e+42
+CLEAN FCONE cycle 29659 t2s 2 faces 198305 momentum cut sum |dF| V/c^2 4.953198e+25
+CLEAN FCONE cycle 29659 t2s 3 faces 197394 momentum cut sum |dF| V/c^2 4.883136e+25
+CLEAN LZB cycle 29659 t2s 3 ledger -5.6819323520493589e+42
+CLEAN FCONE cycle 29660 t2s 2 faces 199615 momentum cut sum |dF| V/c^2 5.002838e+25
+CLEAN FCONE cycle 29660 t2s 3 faces 198601 momentum cut sum |dF| V/c^2 4.921112e+25
+CLEAN LZB cycle 29660 t2s 3 ledger -5.6803590566251240e+42
+CLEAN FCONE cycle 29661 t2s 2 faces 200613 momentum cut sum |dF| V/c^2 5.039248e+25
+CLEAN FCONE cycle 29661 t2s 3 faces 199689 momentum cut sum |dF| V/c^2 4.950778e+25
+CLEAN LZB cycle 29661 t2s 3 ledger -5.6787933697734286e+42
+CLEAN FCONE cycle 29662 t2s 2 faces 201858 momentum cut sum |dF| V/c^2 5.074402e+25
+CLEAN FCONE cycle 29662 t2s 3 faces 200833 momentum cut sum |dF| V/c^2 4.983922e+25
+CLEAN LZB cycle 29662 t2s 3 ledger -5.6772359863392639e+42
+CLEAN FCONE cycle 29663 t2s 2 faces 203123 momentum cut sum |dF| V/c^2 5.108786e+25
+CLEAN FCONE cycle 29663 t2s 3 faces 201742 momentum cut sum |dF| V/c^2 5.013234e+25
+CLEAN LZB cycle 29663 t2s 3 ledger -5.6756889675493085e+42
+CLEAN FCONE cycle 29664 t2s 2 faces 203729 momentum cut sum |dF| V/c^2 5.139351e+25
+CLEAN FCONE cycle 29664 t2s 3 faces 202702 momentum cut sum |dF| V/c^2 5.041735e+25
+CLEAN LZB cycle 29664 t2s 3 ledger -5.6741513241041565e+42
+CLEAN FCONE cycle 29665 t2s 2 faces 204654 momentum cut sum |dF| V/c^2 5.169846e+25
+CLEAN FCONE cycle 29665 t2s 3 faces 203553 momentum cut sum |dF| V/c^2 5.071598e+25
+CLEAN LZB cycle 29665 t2s 3 ledger -5.6726213262080515e+42
+CLEAN FCONE cycle 29666 t2s 2 faces 205426 momentum cut sum |dF| V/c^2 5.200111e+25
+CLEAN FCONE cycle 29666 t2s 3 faces 204067 momentum cut sum |dF| V/c^2 5.104546e+25
+CLEAN LZB cycle 29666 t2s 3 ledger -5.6711018191762314e+42
+CLEAN FCONE cycle 29667 t2s 2 faces 205905 momentum cut sum |dF| V/c^2 5.232341e+25
+CLEAN FCONE cycle 29667 t2s 3 faces 204324 momentum cut sum |dF| V/c^2 5.135382e+25
+CLEAN LZB cycle 29667 t2s 3 ledger -5.6695918510714036e+42
+CLEAN FCONE cycle 29668 t2s 2 faces 206236 momentum cut sum |dF| V/c^2 5.263440e+25
+CLEAN FCONE cycle 29668 t2s 3 faces 204980 momentum cut sum |dF| V/c^2 5.160512e+25
+CLEAN LZB cycle 29668 t2s 3 ledger -5.6680897322601570e+42
+CLEAN FCONE cycle 29669 t2s 2 faces 207111 momentum cut sum |dF| V/c^2 5.291746e+25
+CLEAN FCONE cycle 29669 t2s 3 faces 205339 momentum cut sum |dF| V/c^2 5.175045e+25
+CLEAN LZB cycle 29669 t2s 3 ledger -5.6665966185814439e+42
+CLEAN FCONE cycle 29670 t2s 2 faces 207513 momentum cut sum |dF| V/c^2 5.308314e+25
+CLEAN FCONE cycle 29670 t2s 3 faces 206246 momentum cut sum |dF| V/c^2 5.201013e+25
+CLEAN LZB cycle 29670 t2s 3 ledger -5.6651122368394677e+42
+CLEAN FCONE cycle 29671 t2s 2 faces 208388 momentum cut sum |dF| V/c^2 5.326567e+25
+CLEAN FCONE cycle 29671 t2s 3 faces 206784 momentum cut sum |dF| V/c^2 5.211295e+25
+CLEAN LZB cycle 29671 t2s 3 ledger -5.6636392008865469e+42
+CLEAN FCONE cycle 29672 t2s 2 faces 209014 momentum cut sum |dF| V/c^2 5.345025e+25
+CLEAN FCONE cycle 29672 t2s 3 faces 207381 momentum cut sum |dF| V/c^2 5.230680e+25
+CLEAN LZB cycle 29672 t2s 3 ledger -5.6621760924504809e+42
+CLEAN FCONE cycle 29673 t2s 2 faces 209737 momentum cut sum |dF| V/c^2 5.360627e+25
+CLEAN FCONE cycle 29673 t2s 3 faces 208009 momentum cut sum |dF| V/c^2 5.249092e+25
+CLEAN LZB cycle 29673 t2s 3 ledger -5.6607229047091406e+42
+CLEAN FCONE cycle 29674 t2s 2 faces 210312 momentum cut sum |dF| V/c^2 5.381657e+25
+CLEAN FCONE cycle 29674 t2s 3 faces 208656 momentum cut sum |dF| V/c^2 5.266873e+25
+CLEAN LZB cycle 29674 t2s 3 ledger -5.6592791720837426e+42
+CLEAN FCONE cycle 29675 t2s 2 faces 210912 momentum cut sum |dF| V/c^2 5.400789e+25
+CLEAN FCONE cycle 29675 t2s 3 faces 209430 momentum cut sum |dF| V/c^2 5.285945e+25
+CLEAN LZB cycle 29675 t2s 3 ledger -5.6578441622152745e+42
+CLEAN FCONE cycle 29676 t2s 2 faces 211549 momentum cut sum |dF| V/c^2 5.419464e+25
+CLEAN FCONE cycle 29676 t2s 3 faces 209901 momentum cut sum |dF| V/c^2 5.301253e+25
+CLEAN LZB cycle 29676 t2s 3 ledger -5.6564192602131897e+42
+CLEAN FCONE cycle 29677 t2s 2 faces 212346 momentum cut sum |dF| V/c^2 5.436872e+25
+CLEAN FCONE cycle 29677 t2s 3 faces 211077 momentum cut sum |dF| V/c^2 5.321215e+25
+CLEAN LZB cycle 29677 t2s 3 ledger -5.6550044025356626e+42
+CLEAN FCONE cycle 29678 t2s 2 faces 213518 momentum cut sum |dF| V/c^2 5.458290e+25
+CLEAN FCONE cycle 29678 t2s 3 faces 212280 momentum cut sum |dF| V/c^2 5.341020e+25
+CLEAN LZB cycle 29678 t2s 3 ledger -5.6535988713696346e+42
+CLEAN FCONE cycle 29679 t2s 2 faces 214650 momentum cut sum |dF| V/c^2 5.479988e+25
+CLEAN FCONE cycle 29679 t2s 3 faces 213765 momentum cut sum |dF| V/c^2 5.363504e+25
+CLEAN LZB cycle 29679 t2s 3 ledger -5.6522027004010845e+42
+CLEAN FCONE cycle 29680 t2s 2 faces 215975 momentum cut sum |dF| V/c^2 5.501886e+25
+CLEAN FCONE cycle 29680 t2s 3 faces 214676 momentum cut sum |dF| V/c^2 5.384258e+25
+CLEAN LZB cycle 29680 t2s 3 ledger -5.6508165142234995e+42
+CLEAN FCONE cycle 29681 t2s 2 faces 216881 momentum cut sum |dF| V/c^2 5.524439e+25
+CLEAN FCONE cycle 29681 t2s 3 faces 215390 momentum cut sum |dF| V/c^2 5.404181e+25
+CLEAN LZB cycle 29681 t2s 3 ledger -5.6494401421127993e+42
+CLEAN FCONE cycle 29682 t2s 2 faces 217835 momentum cut sum |dF| V/c^2 5.543825e+25
+CLEAN FCONE cycle 29682 t2s 3 faces 216708 momentum cut sum |dF| V/c^2 5.428909e+25
+CLEAN LZB cycle 29682 t2s 3 ledger -5.6480728620777722e+42
+CLEAN FCONE cycle 29683 t2s 2 faces 218984 momentum cut sum |dF| V/c^2 5.563441e+25
+CLEAN FCONE cycle 29683 t2s 3 faces 217899 momentum cut sum |dF| V/c^2 5.442319e+25
+CLEAN LZB cycle 29683 t2s 3 ledger -5.6467141462917527e+42
+CLEAN FCONE cycle 29684 t2s 2 faces 219877 momentum cut sum |dF| V/c^2 5.582915e+25
+CLEAN FCONE cycle 29684 t2s 3 faces 217963 momentum cut sum |dF| V/c^2 5.459881e+25
+CLEAN LZB cycle 29684 t2s 3 ledger -5.6453665178691679e+42
+CLEAN FCONE cycle 29685 t2s 2 faces 220503 momentum cut sum |dF| V/c^2 5.603954e+25
+CLEAN FCONE cycle 29685 t2s 3 faces 218587 momentum cut sum |dF| V/c^2 5.472331e+25
+CLEAN LZB cycle 29685 t2s 3 ledger -5.6440295859913893e+42
+CLEAN FCONE cycle 29686 t2s 2 faces 221069 momentum cut sum |dF| V/c^2 5.628932e+25
+CLEAN FCONE cycle 29686 t2s 3 faces 219517 momentum cut sum |dF| V/c^2 5.491396e+25
+CLEAN LZB cycle 29686 t2s 3 ledger -5.6427020926779333e+42
+CLEAN FCONE cycle 29687 t2s 2 faces 221433 momentum cut sum |dF| V/c^2 5.629900e+25
+CLEAN FCONE cycle 29687 t2s 3 faces 220328 momentum cut sum |dF| V/c^2 5.505345e+25
+CLEAN LZB cycle 29687 t2s 3 ledger -5.6413852361732371e+42
+CLEAN FCONE cycle 29688 t2s 2 faces 222159 momentum cut sum |dF| V/c^2 5.636333e+25
+CLEAN FCONE cycle 29688 t2s 3 faces 219920 momentum cut sum |dF| V/c^2 5.487991e+25
+CLEAN LZB cycle 29688 t2s 3 ledger -5.6400804575284957e+42
+CLEAN FCONE cycle 29689 t2s 2 faces 222141 momentum cut sum |dF| V/c^2 5.626492e+25
+CLEAN FCONE cycle 29689 t2s 3 faces 220313 momentum cut sum |dF| V/c^2 5.489614e+25
+CLEAN LZB cycle 29689 t2s 3 ledger -5.6387873856364582e+42
+CLEAN FCONE cycle 29690 t2s 2 faces 222390 momentum cut sum |dF| V/c^2 5.622586e+25
+CLEAN FCONE cycle 29690 t2s 3 faces 219748 momentum cut sum |dF| V/c^2 5.471868e+25
+CLEAN LZB cycle 29690 t2s 3 ledger -5.6375042513797888e+42
+CLEAN FCONE cycle 29691 t2s 2 faces 221968 momentum cut sum |dF| V/c^2 5.610413e+25
+CLEAN FCONE cycle 29691 t2s 3 faces 219816 momentum cut sum |dF| V/c^2 5.464082e+25
+CLEAN LZB cycle 29691 t2s 3 ledger -5.6362313724682607e+42
+CLEAN FCONE cycle 29692 t2s 2 faces 221722 momentum cut sum |dF| V/c^2 5.599448e+25
+CLEAN FCONE cycle 29692 t2s 3 faces 219220 momentum cut sum |dF| V/c^2 5.448087e+25
+CLEAN LZB cycle 29692 t2s 3 ledger -5.6349678163877370e+42
+CLEAN FCONE cycle 29693 t2s 2 faces 221388 momentum cut sum |dF| V/c^2 5.587996e+25
+CLEAN FCONE cycle 29693 t2s 3 faces 218955 momentum cut sum |dF| V/c^2 5.434621e+25
+CLEAN LZB cycle 29693 t2s 3 ledger -5.6337132667128120e+42
+CLEAN FCONE cycle 29694 t2s 2 faces 221141 momentum cut sum |dF| V/c^2 5.573432e+25
+CLEAN FCONE cycle 29694 t2s 3 faces 218393 momentum cut sum |dF| V/c^2 5.422318e+25
+CLEAN LZB cycle 29694 t2s 3 ledger -5.6324688677563707e+42
+CLEAN FCONE cycle 29695 t2s 2 faces 220449 momentum cut sum |dF| V/c^2 5.563752e+25
+CLEAN FCONE cycle 29695 t2s 3 faces 217611 momentum cut sum |dF| V/c^2 5.412482e+25
+CLEAN LZB cycle 29695 t2s 3 ledger -5.6312335489999361e+42
+CLEAN FCONE cycle 29696 t2s 2 faces 219966 momentum cut sum |dF| V/c^2 5.554713e+25
+CLEAN FCONE cycle 29696 t2s 3 faces 217482 momentum cut sum |dF| V/c^2 5.403769e+25
+CLEAN LZB cycle 29696 t2s 3 ledger -5.6300097573301744e+42
+CLEAN FCONE cycle 29697 t2s 2 faces 219395 momentum cut sum |dF| V/c^2 5.548411e+25
+CLEAN FCONE cycle 29697 t2s 3 faces 216918 momentum cut sum |dF| V/c^2 5.399185e+25
+CLEAN LZB cycle 29697 t2s 3 ledger -5.6287980163609224e+42
+CLEAN FCONE cycle 29698 t2s 2 faces 219121 momentum cut sum |dF| V/c^2 5.543675e+25
+CLEAN FCONE cycle 29698 t2s 3 faces 216622 momentum cut sum |dF| V/c^2 5.393470e+25
+CLEAN LZB cycle 29698 t2s 3 ledger -5.6275981333209707e+42
+CLEAN FCONE cycle 29699 t2s 2 faces 218962 momentum cut sum |dF| V/c^2 5.539211e+25
+CLEAN FCONE cycle 29699 t2s 3 faces 216773 momentum cut sum |dF| V/c^2 5.390920e+25
+CLEAN LZB cycle 29699 t2s 3 ledger -5.6264104093625738e+42
+CLEAN FCONE cycle 29700 t2s 2 faces 219178 momentum cut sum |dF| V/c^2 5.537309e+25
+CLEAN FCONE cycle 29700 t2s 3 faces 216724 momentum cut sum |dF| V/c^2 5.386392e+25
+CLEAN LZB cycle 29700 t2s 3 ledger -5.6252353960735523e+42
+CLEAN FCONE cycle 29701 t2s 2 faces 218866 momentum cut sum |dF| V/c^2 5.532255e+25
+CLEAN FCONE cycle 29701 t2s 3 faces 215906 momentum cut sum |dF| V/c^2 5.375756e+25
+CLEAN LZB cycle 29701 t2s 3 ledger -5.6240732962368085e+42
+CLEAN FCONE cycle 29702 t2s 2 faces 218366 momentum cut sum |dF| V/c^2 5.520055e+25
+CLEAN FCONE cycle 29702 t2s 3 faces 215411 momentum cut sum |dF| V/c^2 5.363016e+25
+CLEAN LZB cycle 29702 t2s 3 ledger -5.6229253044786040e+42
+CLEAN FCONE cycle 29703 t2s 2 faces 217624 momentum cut sum |dF| V/c^2 5.505567e+25
+CLEAN FCONE cycle 29703 t2s 3 faces 214640 momentum cut sum |dF| V/c^2 5.349507e+25
+CLEAN LZB cycle 29703 t2s 3 ledger -5.6217896534605588e+42
+CLEAN FCONE cycle 29704 t2s 2 faces 216559 momentum cut sum |dF| V/c^2 5.492797e+25
+CLEAN FCONE cycle 29704 t2s 3 faces 213395 momentum cut sum |dF| V/c^2 5.332260e+25
+CLEAN LZB cycle 29704 t2s 3 ledger -5.6206669621103833e+42
+CLEAN FCONE cycle 29705 t2s 2 faces 215715 momentum cut sum |dF| V/c^2 5.484231e+25
+CLEAN FCONE cycle 29705 t2s 3 faces 211988 momentum cut sum |dF| V/c^2 5.320609e+25
+CLEAN LZB cycle 29705 t2s 3 ledger -5.6195564427947131e+42
+CLEAN FCONE cycle 29706 t2s 2 faces 214454 momentum cut sum |dF| V/c^2 5.475775e+25
+CLEAN FCONE cycle 29706 t2s 3 faces 211220 momentum cut sum |dF| V/c^2 5.313877e+25
+CLEAN LZB cycle 29706 t2s 3 ledger -5.6184570518312901e+42
+CLEAN FCONE cycle 29707 t2s 2 faces 213592 momentum cut sum |dF| V/c^2 5.461477e+25
+CLEAN FCONE cycle 29707 t2s 3 faces 210652 momentum cut sum |dF| V/c^2 5.300865e+25
+CLEAN LZB cycle 29707 t2s 3 ledger -5.6173714392212354e+42
+CLEAN FCONE cycle 29708 t2s 2 faces 212502 momentum cut sum |dF| V/c^2 5.445237e+25
+CLEAN FCONE cycle 29708 t2s 3 faces 209981 momentum cut sum |dF| V/c^2 5.287431e+25
+CLEAN LZB cycle 29708 t2s 3 ledger -5.6162974465941369e+42
+CLEAN FCONE cycle 29709 t2s 2 faces 211960 momentum cut sum |dF| V/c^2 5.430726e+25
+CLEAN FCONE cycle 29709 t2s 3 faces 208957 momentum cut sum |dF| V/c^2 5.270086e+25
+CLEAN LZB cycle 29709 t2s 3 ledger -5.6152373408581229e+42
+CLEAN FCONE cycle 29710 t2s 2 faces 210963 momentum cut sum |dF| V/c^2 5.421443e+25
+CLEAN FCONE cycle 29710 t2s 3 faces 207823 momentum cut sum |dF| V/c^2 5.256147e+25
+CLEAN LZB cycle 29710 t2s 3 ledger -5.6141898720652744e+42
+CLEAN FCONE cycle 29711 t2s 2 faces 210078 momentum cut sum |dF| V/c^2 5.408653e+25
+CLEAN FCONE cycle 29711 t2s 3 faces 207564 momentum cut sum |dF| V/c^2 5.250184e+25
+CLEAN LZB cycle 29711 t2s 3 ledger -5.6131559024057197e+42
+CLEAN FCONE cycle 29712 t2s 2 faces 209528 momentum cut sum |dF| V/c^2 5.398690e+25
+CLEAN FCONE cycle 29712 t2s 3 faces 207330 momentum cut sum |dF| V/c^2 5.238167e+25
+CLEAN LZB cycle 29712 t2s 3 ledger -5.6121355954186800e+42
+CLEAN FCONE cycle 29713 t2s 2 faces 209628 momentum cut sum |dF| V/c^2 5.394786e+25
+CLEAN FCONE cycle 29713 t2s 3 faces 207087 momentum cut sum |dF| V/c^2 5.227743e+25
+CLEAN LZB cycle 29713 t2s 3 ledger -5.6111285990949397e+42
+CLEAN FCONE cycle 29714 t2s 2 faces 209700 momentum cut sum |dF| V/c^2 5.396960e+25
+CLEAN FCONE cycle 29714 t2s 3 faces 206852 momentum cut sum |dF| V/c^2 5.223936e+25
+CLEAN LZB cycle 29714 t2s 3 ledger -5.6101355825256232e+42
+CLEAN FCONE cycle 29715 t2s 2 faces 209201 momentum cut sum |dF| V/c^2 5.390395e+25
+CLEAN FCONE cycle 29715 t2s 3 faces 206968 momentum cut sum |dF| V/c^2 5.232615e+25
+CLEAN LZB cycle 29715 t2s 3 ledger -5.6091559293949780e+42
+CLEAN FCONE cycle 29716 t2s 2 faces 209053 momentum cut sum |dF| V/c^2 5.388117e+25
+CLEAN FCONE cycle 29716 t2s 3 faces 206996 momentum cut sum |dF| V/c^2 5.230879e+25
+CLEAN LZB cycle 29716 t2s 3 ledger -5.6081896956695083e+42
+CLEAN FCONE cycle 29717 t2s 2 faces 209423 momentum cut sum |dF| V/c^2 5.389786e+25
+CLEAN FCONE cycle 29717 t2s 3 faces 207340 momentum cut sum |dF| V/c^2 5.231951e+25
+CLEAN LZB cycle 29717 t2s 3 ledger -5.6072371626135523e+42
+CLEAN FCONE cycle 29718 t2s 2 faces 209721 momentum cut sum |dF| V/c^2 5.388787e+25
+CLEAN FCONE cycle 29718 t2s 3 faces 207280 momentum cut sum |dF| V/c^2 5.228216e+25
+CLEAN LZB cycle 29718 t2s 3 ledger -5.6062987289573947e+42
+CLEAN FCONE cycle 29719 t2s 2 faces 209552 momentum cut sum |dF| V/c^2 5.384712e+25
+CLEAN FCONE cycle 29719 t2s 3 faces 207306 momentum cut sum |dF| V/c^2 5.232370e+25
+CLEAN LZB cycle 29719 t2s 3 ledger -5.6053759853876993e+42
+CLEAN FCONE cycle 29720 t2s 2 faces 209308 momentum cut sum |dF| V/c^2 5.383480e+25
+CLEAN FCONE cycle 29720 t2s 3 faces 207146 momentum cut sum |dF| V/c^2 5.228448e+25
+CLEAN LZB cycle 29720 t2s 3 ledger -5.6044686603018687e+42
+CLEAN FCONE cycle 29721 t2s 2 faces 209199 momentum cut sum |dF| V/c^2 5.384789e+25
+CLEAN FCONE cycle 29721 t2s 3 faces 206844 momentum cut sum |dF| V/c^2 5.225463e+25
+CLEAN LZB cycle 29721 t2s 3 ledger -5.6035784518651570e+42
+CLEAN FCONE cycle 29722 t2s 2 faces 209228 momentum cut sum |dF| V/c^2 5.387303e+25
+CLEAN FCONE cycle 29722 t2s 3 faces 206819 momentum cut sum |dF| V/c^2 5.231586e+25
+CLEAN LZB cycle 29722 t2s 3 ledger -5.6027050365448381e+42
+CLEAN FCONE cycle 29723 t2s 2 faces 208808 momentum cut sum |dF| V/c^2 5.375969e+25
+CLEAN FCONE cycle 29723 t2s 3 faces 206155 momentum cut sum |dF| V/c^2 5.203632e+25
+CLEAN LZB cycle 29723 t2s 3 ledger -5.6018469456093565e+42
+CLEAN FCONE cycle 29724 t2s 2 faces 208062 momentum cut sum |dF| V/c^2 5.360360e+25
+CLEAN FCONE cycle 29724 t2s 3 faces 205821 momentum cut sum |dF| V/c^2 5.195179e+25
+CLEAN LZB cycle 29724 t2s 3 ledger -5.6010072857975644e+42
+CLEAN FCONE cycle 29725 t2s 2 faces 207728 momentum cut sum |dF| V/c^2 5.343092e+25
+CLEAN FCONE cycle 29725 t2s 3 faces 205174 momentum cut sum |dF| V/c^2 5.181083e+25
+CLEAN LZB cycle 29725 t2s 3 ledger -5.6001845866201170e+42
+CLEAN FCONE cycle 29726 t2s 2 faces 207059 momentum cut sum |dF| V/c^2 5.326326e+25
+CLEAN FCONE cycle 29726 t2s 3 faces 204354 momentum cut sum |dF| V/c^2 5.154513e+25
+CLEAN LZB cycle 29726 t2s 3 ledger -5.5993774077893164e+42
+CLEAN FCONE cycle 29727 t2s 2 faces 206513 momentum cut sum |dF| V/c^2 5.309140e+25
+CLEAN FCONE cycle 29727 t2s 3 faces 203994 momentum cut sum |dF| V/c^2 5.151417e+25
+CLEAN LZB cycle 29727 t2s 3 ledger -5.5985871771769916e+42
+CLEAN FCONE cycle 29728 t2s 2 faces 205463 momentum cut sum |dF| V/c^2 5.286548e+25
+CLEAN FCONE cycle 29728 t2s 3 faces 202899 momentum cut sum |dF| V/c^2 5.125227e+25
+CLEAN LZB cycle 29728 t2s 3 ledger -5.5978119199287117e+42
+CLEAN FCONE cycle 29729 t2s 2 faces 205262 momentum cut sum |dF| V/c^2 5.279235e+25
+CLEAN FCONE cycle 29729 t2s 3 faces 202789 momentum cut sum |dF| V/c^2 5.111616e+25
+CLEAN LZB cycle 29729 t2s 3 ledger -5.5970537850765129e+42
+CLEAN FCONE cycle 29730 t2s 2 faces 204925 momentum cut sum |dF| V/c^2 5.260831e+25
+CLEAN FCONE cycle 29730 t2s 3 faces 202970 momentum cut sum |dF| V/c^2 5.090894e+25
+CLEAN LZB cycle 29730 t2s 3 ledger -5.5963110623916752e+42
+CLEAN FCONE cycle 29731 t2s 2 faces 204685 momentum cut sum |dF| V/c^2 5.243171e+25
+CLEAN FCONE cycle 29731 t2s 3 faces 202212 momentum cut sum |dF| V/c^2 5.083118e+25
+CLEAN LZB cycle 29731 t2s 3 ledger -5.5955845679618353e+42
+CLEAN FCONE cycle 29732 t2s 2 faces 204302 momentum cut sum |dF| V/c^2 5.225477e+25
+CLEAN FCONE cycle 29732 t2s 3 faces 202710 momentum cut sum |dF| V/c^2 5.067372e+25
+CLEAN LZB cycle 29732 t2s 3 ledger -5.5948746441978595e+42
+CLEAN FCONE cycle 29733 t2s 2 faces 204581 momentum cut sum |dF| V/c^2 5.205272e+25
+CLEAN FCONE cycle 29733 t2s 3 faces 202608 momentum cut sum |dF| V/c^2 5.043479e+25
+CLEAN LZB cycle 29733 t2s 3 ledger -5.5941798077418602e+42
+CLEAN FCONE cycle 29734 t2s 2 faces 204676 momentum cut sum |dF| V/c^2 5.192528e+25
+CLEAN FCONE cycle 29734 t2s 3 faces 202304 momentum cut sum |dF| V/c^2 5.035728e+25
+CLEAN LZB cycle 29734 t2s 3 ledger -5.5935017067565011e+42
+CLEAN FCONE cycle 29735 t2s 2 faces 204072 momentum cut sum |dF| V/c^2 5.180534e+25
+CLEAN FCONE cycle 29735 t2s 3 faces 201761 momentum cut sum |dF| V/c^2 5.029094e+25
+CLEAN LZB cycle 29735 t2s 3 ledger -5.5928401419100204e+42
+CLEAN FCONE cycle 29736 t2s 2 faces 204008 momentum cut sum |dF| V/c^2 5.177894e+25
+CLEAN FCONE cycle 29736 t2s 3 faces 201282 momentum cut sum |dF| V/c^2 5.019912e+25
+CLEAN LZB cycle 29736 t2s 3 ledger -5.5921972442138017e+42
+CLEAN FCONE cycle 29737 t2s 2 faces 203469 momentum cut sum |dF| V/c^2 5.169454e+25
+CLEAN FCONE cycle 29737 t2s 3 faces 201032 momentum cut sum |dF| V/c^2 5.016993e+25
+CLEAN LZB cycle 29737 t2s 3 ledger -5.5915719012453691e+42
+CLEAN FCONE cycle 29738 t2s 2 faces 202808 momentum cut sum |dF| V/c^2 5.156640e+25
+CLEAN FCONE cycle 29738 t2s 3 faces 200039 momentum cut sum |dF| V/c^2 4.998408e+25
+CLEAN LZB cycle 29738 t2s 3 ledger -5.5909640984943803e+42
+CLEAN FCONE cycle 29739 t2s 2 faces 202109 momentum cut sum |dF| V/c^2 5.150429e+25
+CLEAN FCONE cycle 29739 t2s 3 faces 199467 momentum cut sum |dF| V/c^2 4.995983e+25
+CLEAN LZB cycle 29739 t2s 3 ledger -5.5903721688315525e+42
+CLEAN FCONE cycle 29740 t2s 2 faces 201650 momentum cut sum |dF| V/c^2 5.143459e+25
+CLEAN FCONE cycle 29740 t2s 3 faces 199445 momentum cut sum |dF| V/c^2 4.993077e+25
+CLEAN LZB cycle 29740 t2s 3 ledger -5.5897964708190851e+42
+CLEAN FCONE cycle 29741 t2s 2 faces 201635 momentum cut sum |dF| V/c^2 5.142053e+25
+CLEAN FCONE cycle 29741 t2s 3 faces 199179 momentum cut sum |dF| V/c^2 4.988129e+25
+CLEAN LZB cycle 29741 t2s 3 ledger -5.5892358986037358e+42
+CLEAN FCONE cycle 29742 t2s 2 faces 201353 momentum cut sum |dF| V/c^2 5.134439e+25
+CLEAN FCONE cycle 29742 t2s 3 faces 198255 momentum cut sum |dF| V/c^2 4.982475e+25
+CLEAN LZB cycle 29742 t2s 3 ledger -5.5886911937893333e+42
+CLEAN FCONE cycle 29743 t2s 2 faces 200581 momentum cut sum |dF| V/c^2 5.124954e+25
+CLEAN FCONE cycle 29743 t2s 3 faces 198141 momentum cut sum |dF| V/c^2 4.972826e+25
+CLEAN LZB cycle 29743 t2s 3 ledger -5.5881623935167701e+42
+CLEAN FCONE cycle 29744 t2s 2 faces 199814 momentum cut sum |dF| V/c^2 5.116427e+25
+CLEAN FCONE cycle 29744 t2s 3 faces 197587 momentum cut sum |dF| V/c^2 4.970963e+25
+CLEAN LZB cycle 29744 t2s 3 ledger -5.5876474804281275e+42
+CLEAN FCONE cycle 29745 t2s 2 faces 199128 momentum cut sum |dF| V/c^2 5.111963e+25
+CLEAN FCONE cycle 29745 t2s 3 faces 196449 momentum cut sum |dF| V/c^2 4.961404e+25
+CLEAN LZB cycle 29745 t2s 3 ledger -5.5871481896423334e+42
+CLEAN FCONE cycle 29746 t2s 2 faces 198448 momentum cut sum |dF| V/c^2 5.108764e+25
+CLEAN FCONE cycle 29746 t2s 3 faces 195750 momentum cut sum |dF| V/c^2 4.964590e+25
+CLEAN LZB cycle 29746 t2s 3 ledger -5.5866627624921974e+42
+CLEAN FCONE cycle 29747 t2s 2 faces 197576 momentum cut sum |dF| V/c^2 5.106793e+25
+CLEAN FCONE cycle 29747 t2s 3 faces 195323 momentum cut sum |dF| V/c^2 4.963829e+25
+CLEAN LZB cycle 29747 t2s 3 ledger -5.5861926238947044e+42
+CLEAN FCONE cycle 29748 t2s 2 faces 196834 momentum cut sum |dF| V/c^2 5.103991e+25
+CLEAN FCONE cycle 29748 t2s 3 faces 194700 momentum cut sum |dF| V/c^2 4.962334e+25
+CLEAN LZB cycle 29748 t2s 3 ledger -5.5857384558849740e+42
+CLEAN FCONE cycle 29749 t2s 2 faces 196305 momentum cut sum |dF| V/c^2 5.104028e+25
+CLEAN FCONE cycle 29749 t2s 3 faces 194249 momentum cut sum |dF| V/c^2 4.957934e+25
+CLEAN LZB cycle 29749 t2s 3 ledger -5.5852985775037222e+42
+CLEAN FCONE cycle 29750 t2s 2 faces 196203 momentum cut sum |dF| V/c^2 5.097738e+25
+CLEAN FCONE cycle 29750 t2s 3 faces 194528 momentum cut sum |dF| V/c^2 4.959886e+25
+CLEAN LZB cycle 29750 t2s 3 ledger -5.5848734838070886e+42
+CLEAN FCONE cycle 29751 t2s 2 faces 196349 momentum cut sum |dF| V/c^2 5.093842e+25
+CLEAN FCONE cycle 29751 t2s 3 faces 193914 momentum cut sum |dF| V/c^2 4.948675e+25
+CLEAN LZB cycle 29751 t2s 3 ledger -5.5844634679108479e+42
+CLEAN FCONE cycle 29752 t2s 2 faces 195743 momentum cut sum |dF| V/c^2 5.083541e+25
+CLEAN FCONE cycle 29752 t2s 3 faces 193952 momentum cut sum |dF| V/c^2 4.941566e+25
+CLEAN LZB cycle 29752 t2s 3 ledger -5.5840684206565545e+42
+CLEAN FCONE cycle 29753 t2s 2 faces 195588 momentum cut sum |dF| V/c^2 5.080922e+25
+CLEAN FCONE cycle 29753 t2s 3 faces 193713 momentum cut sum |dF| V/c^2 4.929338e+25
+CLEAN LZB cycle 29753 t2s 3 ledger -5.5836874319432197e+42
+CLEAN FCONE cycle 29754 t2s 2 faces 195588 momentum cut sum |dF| V/c^2 5.069290e+25
+CLEAN FCONE cycle 29754 t2s 3 faces 193728 momentum cut sum |dF| V/c^2 4.921570e+25
+CLEAN LZB cycle 29754 t2s 3 ledger -5.5833209383965489e+42
+CLEAN FCONE cycle 29755 t2s 2 faces 195681 momentum cut sum |dF| V/c^2 5.055575e+25
+CLEAN FCONE cycle 29755 t2s 3 faces 193547 momentum cut sum |dF| V/c^2 4.909374e+25
+CLEAN LZB cycle 29755 t2s 3 ledger -5.5829685652999247e+42
+CLEAN FCONE cycle 29756 t2s 2 faces 195895 momentum cut sum |dF| V/c^2 5.046585e+25
+CLEAN FCONE cycle 29756 t2s 3 faces 194031 momentum cut sum |dF| V/c^2 4.912574e+25
+CLEAN LZB cycle 29756 t2s 3 ledger -5.5826307992567381e+42

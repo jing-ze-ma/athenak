@@ -1,0 +1,279 @@
+### LZA-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 268 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6582
+- END-row residuals per cycle: Lz RMS 9.743e+29, sum -1.033e+32, max|.| 3.674e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.118e+31, sum -2.889e+30, max|.| 1.149e+32 | M RMS 6.982e+16, sum 6.368e+16, max|.| 1.937e+17
+- CLEAN LZB: 300 lines, ledger first 4.8032e+30 last -1.1818e+34 (growth -1.1823e+34); sum of Lz_hflx*dt over the arm 1.0216e+30
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### LZB-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 277 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6579
+- END-row residuals per cycle: Lz RMS 9.503e+29, sum -8.084e+31, max|.| 3.614e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.129e+31, sum -3.766e+31, max|.| 1.114e+32 | M RMS 7.073e+16, sum 4.629e+16, max|.| 1.892e+17
+- CLEAN LZB: 300 lines, ledger first 9.4083e+29 last -1.1823e+34 (growth -1.1824e+34); sum of Lz_hflx*dt over the arm -9.1382e+29
+- CLEAN FCONE_LZ: 34 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 0 t2s 1 momentum removed (signed, V/c^2) x1 7.426480e+30 x2 1.231453e+14 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 17 t2s 2 momentum removed (signed, V/c^2) x1 2.311362e+23 x2 -2.304503e+14 x3 0.000000e+00`
+- CLEAN LZSPIN: 3 lines, max |X| n/a; first `CLEAN LZSPIN cycle 1 t2s 3: L_z of the cut and capped momentum X 2.117066e+30, the gas's as dOmega 2.987269e-26 (I 7.086962e+55)`; last `CLEAN LZSPIN cycle 2 t2s 3: L_z of the cut and capped momentum X 1.424001e+30, the gas's as dOmega 2.009325e-26 (I 7.086962e+55)`
+### LZD-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 279 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6606
+- END-row residuals per cycle: Lz RMS 9.503e+29, sum -8.084e+31, max|.| 3.614e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.129e+31, sum -3.766e+31, max|.| 1.114e+32 | M RMS 7.073e+16, sum 4.629e+16, max|.| 1.892e+17
+- CLEAN LZB: 300 lines, ledger first 9.4083e+29 last -1.1823e+34 (growth -1.1824e+34); sum of Lz_hflx*dt over the arm -9.1382e+29
+- CLEAN FCONE_LZ: 34 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 0 t2s 1 momentum removed (signed, V/c^2) x1 7.426480e+30 x2 1.231453e+14 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 17 t2s 2 momentum removed (signed, V/c^2) x1 2.311362e+23 x2 -2.304503e+14 x3 0.000000e+00`
+- CLEAN LZSPIN: 3 lines, max |X| n/a; first `CLEAN LZSPIN cycle 1 t2s 3: L_z of the cut and capped momentum X 2.117066e+30, the gas's as dOmega 2.987269e-26 (I 7.086962e+55)`; last `CLEAN LZSPIN cycle 2 t2s 3: L_z of the cut and capped momentum X 1.424001e+30, the gas's as dOmega 2.009325e-26 (I 7.086962e+55)`
+### LZA-m35
+- Terminating on cycle limit; rows 300 (cycles), wall 257 s, dt first/median/last 12.01 / 12.01 / 12.01 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.5685
+- END-row residuals per cycle: Lz RMS 1.345e+24, sum -6.666e+24, max|.| 1.784e+25 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.448e+29, sum -1.893e+29, max|.| 2.199e+30 | M RMS 9.527e+14, sum -1.689e+15, max|.| 2.533e+15
+- CLEAN LZB: 300 lines, ledger first 6.9797e+32 last -2.6276e+34 (growth -2.6974e+34); sum of Lz_hflx*dt over the arm 1.7798e+24
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### LZB-m35
+- Terminating on cycle limit; rows 300 (cycles), wall 261 s, dt first/median/last 12.01 / 12.01 / 12.01 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.5701
+- END-row residuals per cycle: Lz RMS 1.345e+24, sum -6.666e+24, max|.| 1.784e+25 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.448e+29, sum -1.893e+29, max|.| 2.199e+30 | M RMS 9.527e+14, sum -1.689e+15, max|.| 2.533e+15
+- CLEAN LZB: 300 lines, ledger first 6.9797e+32 last -2.6276e+34 (growth -2.6974e+34); sum of Lz_hflx*dt over the arm 1.7798e+24
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### LZA-t9
+- Terminating on cycle limit; rows 300 (cycles), wall 821 s, dt first/median/last 96.85 / 96.85 / 96.85 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 1.9803
+- END-row residuals per cycle: Lz RMS 2.271e+27, sum -6.143e+28, max|.| 6.762e+27 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 3.914e+32, sum -7.275e+31, max|.| 1.103e+33 | M RMS 6.754e+17, sum -9.512e+18, max|.| 9.367e+18
+- CLEAN LZB: 300 lines, ledger first 8.4153e+35 last 1.5131e+38 (growth 1.5047e+38); sum of Lz_hflx*dt over the arm -2.5567e+24
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### LZB-t9
+- Terminating on cycle limit; rows 300 (cycles), wall 822 s, dt first/median/last 96.85 / 96.85 / 96.85 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 1.9801
+- END-row residuals per cycle: Lz RMS 2.291e+27, sum -8.899e+28, max|.| 9.690e+27 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.109e+32, sum 1.427e+32, max|.| 1.446e+33 | M RMS 6.866e+17, sum -8.971e+18, max|.| 9.367e+18
+- CLEAN LZB: 300 lines, ledger first 7.8108e+30 last 3.4956e+38 (growth 3.4956e+38); sum of Lz_hflx*dt over the arm -5.3434e+24
+- CLEAN FCONE_LZ: 602 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 0 t2s 0 momentum removed (signed, V/c^2) x1 4.332853e+31 x2 -1.447376e+18 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 299 t2s 3 momentum removed (signed, V/c^2) x1 1.904117e+29 x2 -3.954313e+21 x3 0.000000e+00`
+- CLEAN LZSPIN: 597 lines, max |X| n/a; first `CLEAN LZSPIN cycle 1 t2s 3: L_z of the cut and capped momentum X 1.782309e+30, the gas's as dOmega 2.610557e-27 (I 6.827314e+56)`; last `CLEAN LZSPIN cycle 299 t2s 3: L_z of the cut and capped momentum X -1.119682e+33, the gas's as dOmega -1.640095e-24 (I 6.826935e+56)`
+### LZRA-bsg
+- Terminating on cycle limit; rows 199 (cycles), wall 147 s, dt first/median/last 163.6 / 163.2 / 169 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 3 elapsed intervals 0.5830
+- END-row residuals per cycle: Lz RMS 2.198e+30, sum -3.375e+32, max|.| 4.647e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 3.774e+31, sum -3.545e+31, max|.| 1.075e+32 | M RMS 7.831e+16, sum 3.603e+16, max|.| 2.297e+17
+- CLEAN LZB: 200 lines, ledger first -5.6851e+42 last -5.5688e+42 (growth 1.1626e+41); sum of Lz_hflx*dt over the arm -5.6144e+37
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### LZRB-bsg
+- Terminating on cycle limit; rows 199 (cycles), wall 148 s, dt first/median/last 163.6 / 163.2 / 169 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 3 elapsed intervals 0.5806
+- END-row residuals per cycle: Lz RMS 2.213e+30, sum -3.343e+32, max|.| 4.632e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 3.875e+31, sum 4.720e+31, max|.| 9.708e+31 | M RMS 8.318e+16, sum 7.656e+16, max|.| 1.801e+17
+- CLEAN LZB: 200 lines, ledger first -5.6851e+42 last -5.5725e+42 (growth 1.1260e+41); sum of Lz_hflx*dt over the arm -5.6511e+37
+- CLEAN FCONE_LZ: 400 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 29657 t2s 2 momentum removed (signed, V/c^2) x1 4.610215e+25 x2 -1.065701e+23 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 29856 t2s 3 momentum removed (signed, V/c^2) x1 2.108813e+26 x2 -8.598559e+23 x3 0.000000e+00`
+- CLEAN LZSPIN: 400 lines, max |X| n/a; first `CLEAN LZSPIN cycle 29657 t2s 2: L_z of the cut and capped momentum X -2.037949e+32, the gas's as dOmega -2.876832e-24 (I 7.084004e+55)`; last `CLEAN LZSPIN cycle 29856 t2s 3: L_z of the cut and capped momentum X 9.410635e+36, the gas's as dOmega 1.328497e-19 (I 7.083673e+55)`
+### LZRA-m35
+- Terminating on cycle limit; rows 199 (cycles), wall 224 s, dt first/median/last 5.353 / 11.96 / 11.96 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 3 elapsed intervals 0.9627
+- END-row residuals per cycle: Lz RMS 1.999e+27, sum 6.330e+28, max|.| 7.213e+27 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.628e+29, sum -2.473e+29, max|.| 2.219e+30 | M RMS 9.781e+14, sum -3.518e+14, max|.| 2.955e+15
+- CLEAN LZB: 200 lines, ledger first -1.4022e+41 last -1.4256e+41 (growth -2.3382e+39); sum of Lz_hflx*dt over the arm -1.2518e+26
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### LZRB-m35
+- Terminating on cycle limit; rows 199 (cycles), wall 230 s, dt first/median/last 5.353 / 11.96 / 11.96 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 3 elapsed intervals 0.9703
+- END-row residuals per cycle: Lz RMS 2.253e+27, sum 3.012e+28, max|.| 6.146e+27 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.396e+29, sum 3.093e+29, max|.| 2.827e+30 | M RMS 9.613e+14, sum 2.815e+14, max|.| 2.955e+15
+- CLEAN LZB: 200 lines, ledger first -1.4022e+41 last -1.4180e+41 (growth -1.5774e+39); sum of Lz_hflx*dt over the arm -4.6341e+26
+- CLEAN FCONE_LZ: 400 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 73280 t2s 2 momentum removed (signed, V/c^2) x1 5.174089e+24 x2 7.849905e+22 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 73479 t2s 3 momentum removed (signed, V/c^2) x1 1.022280e+26 x2 2.394810e+23 x3 0.000000e+00`
+- CLEAN LZSPIN: 400 lines, max |X| n/a; first `CLEAN LZSPIN cycle 73280 t2s 2: L_z of the cut and capped momentum X -1.132778e+34, the gas's as dOmega -6.155111e-20 (I 1.840386e+53)`; last `CLEAN LZSPIN cycle 73479 t2s 3: L_z of the cut and capped momentum X -5.667343e+34, the gas's as dOmega -3.079420e-19 (I 1.840393e+53)`
+### DFL0
+- Terminating on cycle limit; rows 99 (cycles), wall 89 s, dt first/median/last 163.6 / 162.8 / 159.6 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 6.658633e+01 s / 99 cycles = 0.6726
+- END-row residuals per cycle: Lz RMS 7.603e+29, sum -4.767e+31, max|.| 2.087e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.124e+31, sum -5.309e+31, max|.| 1.075e+32 | M RMS 7.865e+16, sum 1.441e+17, max|.| 1.937e+17
+- CLEAN LZB: 100 lines, ledger first -5.6851e+42 last -5.5826e+42 (growth 1.0248e+41); sum of Lz_hflx*dt over the arm -2.8105e+37
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+- Lz_hflx / E_hflx / M_hflx means -1.7508e+33 / 7.4264e+27 / 1.1398e+07; last 10 rows:
+  - t 4.939577e+06: Lz_hflx -1.7512e+33 E_hflx 7.4058e+27 M_hflx 1.7597e+07
+  - t 4.939737e+06: Lz_hflx -1.7507e+33 E_hflx 7.4054e+27 M_hflx 1.7959e+07
+  - t 4.939896e+06: Lz_hflx -1.7500e+33 E_hflx 7.4050e+27 M_hflx 1.8321e+07
+  - t 4.940056e+06: Lz_hflx -1.7493e+33 E_hflx 7.4046e+27 M_hflx 1.8676e+07
+  - t 4.940216e+06: Lz_hflx -1.7489e+33 E_hflx 7.4042e+27 M_hflx 1.9040e+07
+  - t 4.940376e+06: Lz_hflx -1.7481e+33 E_hflx 7.4038e+27 M_hflx 1.9394e+07
+  - t 4.940536e+06: Lz_hflx -1.7474e+33 E_hflx 7.4034e+27 M_hflx 1.9740e+07
+  - t 4.940695e+06: Lz_hflx -1.7469e+33 E_hflx 7.4030e+27 M_hflx 2.0077e+07
+  - t 4.940855e+06: Lz_hflx -1.7463e+33 E_hflx 7.4026e+27 M_hflx 2.0425e+07
+  - t 4.941014e+06: Lz_hflx -1.7455e+33 E_hflx 7.4022e+27 M_hflx 2.0753e+07
+### DFL1
+- Terminating on cycle limit; rows 99 (cycles), wall 95 s, dt first/median/last 163.6 / 162.8 / 159.6 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 6.717507e+01 s / 99 cycles = 0.6785
+- END-row residuals per cycle: Lz RMS 8.487e+29, sum -5.009e+31, max|.| 2.309e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.189e+31, sum 2.662e+31, max|.| 1.225e+32 | M RMS 8.111e+16, sum 1.441e+17, max|.| 3.198e+17
+- CLEAN LZB: 100 lines, ledger first -5.6851e+42 last -5.5826e+42 (growth 1.0247e+41); sum of Lz_hflx*dt over the arm -5.3920e+36
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+- Lz_hflx / E_hflx / M_hflx means -3.3581e+32 / 1.8313e+27 / 1.1345e+07; last 10 rows:
+  - t 4.939577e+06: Lz_hflx -3.7290e+32 E_hflx 1.8383e+27 M_hflx 1.7456e+07
+  - t 4.939737e+06: Lz_hflx -3.6750e+32 E_hflx 1.8384e+27 M_hflx 1.7814e+07
+  - t 4.939896e+06: Lz_hflx -3.7226e+32 E_hflx 1.8374e+27 M_hflx 1.8169e+07
+  - t 4.940056e+06: Lz_hflx -3.6736e+32 E_hflx 1.8369e+27 M_hflx 1.8517e+07
+  - t 4.940216e+06: Lz_hflx -3.7183e+32 E_hflx 1.8372e+27 M_hflx 1.8863e+07
+  - t 4.940376e+06: Lz_hflx -3.7230e+32 E_hflx 1.8373e+27 M_hflx 1.9218e+07
+  - t 4.940536e+06: Lz_hflx -3.6980e+32 E_hflx 1.8369e+27 M_hflx 1.9569e+07
+  - t 4.940695e+06: Lz_hflx -3.6709e+32 E_hflx 1.8372e+27 M_hflx 1.9905e+07
+  - t 4.940855e+06: Lz_hflx -3.7069e+32 E_hflx 1.8368e+27 M_hflx 2.0243e+07
+  - t 4.941014e+06: Lz_hflx -3.5864e+32 E_hflx 1.8383e+27 M_hflx 2.0560e+07
+### PLED1
+- Terminating on cycle limit; rows 99 (cycles), wall 802 s, dt first/median/last 163.6 / 162.8 / 159.6 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 7.741968e+02 s / 99 cycles = 7.8202
+- END-row residuals per cycle: Lz RMS 7.603e+29, sum -4.767e+31, max|.| 2.087e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.124e+31, sum -5.309e+31, max|.| 1.075e+32 | M RMS 7.865e+16, sum 1.441e+17, max|.| 1.937e+17
+- CLEAN LZB: 100 lines, ledger first -5.6851e+42 last -5.5826e+42 (growth 1.0248e+41); sum of Lz_hflx*dt over the arm -2.8105e+37
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot -1.8727e+34, Pr_hflx -1.7923e+34, Pr_ntel -7.3969e+16, Pr_src -1.7966e+34, Pr_rad 4.2492e+31, Pr_flr 2.6992e+26, Pr_mrg 8.6423e+15, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 1.3607e+16, Pr_rad 4.2492e+31
+- CLEAN PLEDGER END lines: 100; last `CLEAN PLEDGER cycle 29756 dt 1.595807e+02 hflx -1.792319e+34 ntel -1.849521e+18 src -1.796656e+34 rad 4.269058e+31 flr 2.691733e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6891461970346939e+34 END -5.372614e+20 gross 1.098050e+36`
+### X-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 284 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6922
+- END-row residuals per cycle: Lz RMS 9.840e+29, sum -8.588e+31, max|.| 3.906e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.482e+31, sum 4.628e+31, max|.| 1.219e+32 | M RMS 7.124e+16, sum 8.679e+16, max|.| 1.892e+17
+- CLEAN LZB: 300 lines, ledger first 1.3667e+30 last -1.3887e+34 (growth -1.3889e+34); sum of Lz_hflx*dt over the arm 4.2268e+36
+- CLEAN FCONE_LZ: 20 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 0 t2s 1 momentum removed (signed, V/c^2) x1 5.129269e+30 x2 -2.396935e+14 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 10 t2s 2 momentum removed (signed, V/c^2) x1 6.703830e+22 x2 -1.545125e+14 x3 0.000000e+00`
+- CLEAN LZSPIN: 3 lines, max |X| n/a; first `CLEAN LZSPIN cycle 1 t2s 3: L_z of the cut and capped momentum X 2.107034e+30, the gas's as dOmega 2.973114e-26 (I 7.086962e+55)`; last `CLEAN LZSPIN cycle 2 t2s 3: L_z of the cut and capped momentum X 1.420739e+30, the gas's as dOmega 2.004722e-26 (I 7.086962e+55)`
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot 4.3149e+35, Pr_hflx -1.7854e+34, Pr_ntel 1.5725e+17, Pr_src -1.7908e+34, Pr_rad 6.1851e+31, Pr_flr 1.6125e+26, Pr_mrg 7.6240e+16, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 1.7630e+17, Pr_rad 6.2410e+31
+- CLEAN PLEDGER END lines: 300; last `CLEAN PLEDGER cycle 299 dt 1.688312e+02 hflx -1.789440e+34 ntel 1.748184e+18 src -1.796201e+34 rad 5.095578e+31 flr 2.604726e+26 mrg 0.000000e+00 gap 0.000000e+00 P 3.9640519344829167e+35 END -3.735466e+20 gross 1.726527e+36`
+### MIXNL-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 277 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6644
+- END-row residuals per cycle: Lz RMS 9.840e+29, sum -8.588e+31, max|.| 3.906e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.482e+31, sum 4.628e+31, max|.| 1.219e+32 | M RMS 7.124e+16, sum 8.679e+16, max|.| 1.892e+17
+- CLEAN LZB: 300 lines, ledger first 1.3667e+30 last -1.3887e+34 (growth -1.3889e+34); sum of Lz_hflx*dt over the arm 4.2268e+36
+- CLEAN FCONE_LZ: 20 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 0 t2s 1 momentum removed (signed, V/c^2) x1 5.129269e+30 x2 -2.396935e+14 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 10 t2s 2 momentum removed (signed, V/c^2) x1 6.703830e+22 x2 -1.545125e+14 x3 0.000000e+00`
+- CLEAN LZSPIN: 3 lines, max |X| n/a; first `CLEAN LZSPIN cycle 1 t2s 3: L_z of the cut and capped momentum X 2.107034e+30, the gas's as dOmega 2.973114e-26 (I 7.086962e+55)`; last `CLEAN LZSPIN cycle 2 t2s 3: L_z of the cut and capped momentum X 1.420739e+30, the gas's as dOmega 2.004722e-26 (I 7.086962e+55)`
+### X-m35
+- Terminating on cycle limit; rows 300 (cycles), wall 267 s, dt first/median/last 12.01 / 12.01 / 12.01 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.5992
+- END-row residuals per cycle: Lz RMS 9.832e+23, sum 9.195e+24, max|.| 9.572e+24 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.372e+29, sum 7.763e+29, max|.| 2.107e+30 | M RMS 1.047e+15, sum -2.744e+15, max|.| 3.448e+15
+- CLEAN LZB: 300 lines, ledger first 6.9817e+32 last -2.6308e+34 (growth -2.7006e+34); sum of Lz_hflx*dt over the arm 1.5465e+24
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot -4.0888e+31, Pr_hflx -2.1500e+33, Pr_ntel -1.2760e+15, Pr_src -2.1500e+33, Pr_rad -1.9035e+28, Pr_flr 4.3523e+20, Pr_mrg 0.0000e+00, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 0.0000e+00, Pr_rad 1.9393e+28
+- CLEAN PLEDGER END lines: 300; last `CLEAN PLEDGER cycle 299 dt 1.200762e+01 hflx -2.157169e+33 ntel 1.920317e+17 src -2.157157e+33 rad -1.277075e+28 flr 4.520572e+20 mrg 0.000000e+00 gap 0.000000e+00 P -6.1861181676119516e+31 END 1.661406e+17 gross 6.271005e+31`
+### X-t9
+- Terminating on cycle limit; rows 300 (cycles), wall 817 s, dt first/median/last 96.85 / 96.85 / 96.85 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 2.0291
+- END-row residuals per cycle: Lz RMS 3.128e+27, sum -5.922e+28, max|.| 3.604e+28 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 3.862e+32, sum 2.519e+32, max|.| 1.067e+33 | M RMS 6.813e+17, sum -8.287e+18, max|.| 9.367e+18
+- CLEAN LZB: 300 lines, ledger first 7.8092e+30 last 3.4998e+38 (growth 3.4998e+38); sum of Lz_hflx*dt over the arm 2.5599e+25
+- CLEAN FCONE_LZ: 602 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 0 t2s 0 momentum removed (signed, V/c^2) x1 3.631451e+29 x2 9.085045e+17 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 299 t2s 3 momentum removed (signed, V/c^2) x1 5.468444e+28 x2 4.905105e+22 x3 0.000000e+00`
+- CLEAN LZSPIN: 597 lines, max |X| n/a; first `CLEAN LZSPIN cycle 1 t2s 3: L_z of the cut and capped momentum X 1.782568e+30, the gas's as dOmega 2.610936e-27 (I 6.827314e+56)`; last `CLEAN LZSPIN cycle 299 t2s 3: L_z of the cut and capped momentum X -7.615526e+32, the gas's as dOmega -1.115512e-24 (I 6.826935e+56)`
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot -3.9180e+35, Pr_hflx -2.5201e+35, Pr_ntel -3.2398e+17, Pr_src -2.5128e+35, Pr_rad -7.3329e+32, Pr_flr 4.1175e+23, Pr_mrg 0.0000e+00, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 0.0000e+00, Pr_rad 7.3465e+32
+- CLEAN PLEDGER END lines: 300; last `CLEAN PLEDGER cycle 299 dt 9.684942e+01 hflx -2.528718e+35 ntel 0.000000e+00 src -2.521268e+35 rad -7.147626e+32 flr 4.395273e+23 mrg 0.000000e+00 gap 0.000000e+00 P -2.7407469332180895e+35 END 1.180592e+21 gross 2.897544e+35`
+### RR-bsg
+- Terminating on cycle limit; rows 99 (cycles), wall 89 s, dt first/median/last 163.6 / 162.8 / 159.6 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 6.580058e+01 s / 99 cycles = 0.6647
+- END-row residuals per cycle: Lz RMS 7.603e+29, sum -4.767e+31, max|.| 2.087e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.124e+31, sum -5.309e+31, max|.| 1.075e+32 | M RMS 7.865e+16, sum 1.441e+17, max|.| 1.937e+17
+- CLEAN LZB: 100 lines, ledger first -5.6851e+42 last -5.5826e+42 (growth 1.0248e+41); sum of Lz_hflx*dt over the arm -2.8105e+37
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### XR-bsg
+- Terminating on cycle limit; rows 99 (cycles), wall 95 s, dt first/median/last 163.6 / 162.8 / 159.6 s; CW 51 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 7.218900e+01 s / 99 cycles = 0.7292
+- END-row residuals per cycle: Lz RMS 8.415e+29, sum -4.505e+31, max|.| 2.501e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.288e+31, sum -4.914e+31, max|.| 1.031e+32 | M RMS 6.962e+16, sum 7.206e+16, max|.| 2.477e+17
+- CLEAN LZB: 100 lines, ledger first -5.6851e+42 last -5.5807e+42 (growth 1.0433e+41); sum of Lz_hflx*dt over the arm -5.4104e+36
+- CLEAN FCONE_LZ: 200 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 29657 t2s 2 momentum removed (signed, V/c^2) x1 3.650496e+22 x2 -8.221955e+20 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 29756 t2s 3 momentum removed (signed, V/c^2) x1 6.215786e+25 x2 -2.425332e+23 x3 0.000000e+00`
+- CLEAN LZSPIN: 200 lines, max |X| n/a; first `CLEAN LZSPIN cycle 29657 t2s 2: L_z of the cut and capped momentum X -1.625910e+32, the gas's as dOmega -2.295185e-24 (I 7.084004e+55)`; last `CLEAN LZSPIN cycle 29756 t2s 3: L_z of the cut and capped momentum X 1.343363e+36, the gas's as dOmega 1.896363e-20 (I 7.083890e+55)`
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot -1.8727e+34, Pr_hflx -1.7923e+34, Pr_ntel 1.2653e+17, Pr_src -1.7966e+34, Pr_rad 4.2492e+31, Pr_flr 2.6996e+26, Pr_mrg 8.5693e+15, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 1.4668e+16, Pr_rad 4.2492e+31
+- CLEAN PLEDGER END lines: 100; last `CLEAN PLEDGER cycle 29756 dt 1.595842e+02 hflx -1.792319e+34 ntel 0.000000e+00 src -1.796656e+34 rad 4.269058e+31 flr 2.692198e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6891584114901729e+34 END 3.804641e+19 gross 1.098050e+36`
+### RR-m35
+- Terminating on cycle limit; rows 99 (cycles), wall ? s, dt first/median/last 5.353 / 11.97 / 11.96 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 1.019723e+02 s / 99 cycles = 1.0300
+- END-row residuals per cycle: Lz RMS 1.905e+27, sum 1.918e+28, max|.| 6.442e+27 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 8.519e+29, sum -4.239e+28, max|.| 2.219e+30 | M RMS 8.877e+14, sum -9.148e+14, max|.| 2.393e+15
+- CLEAN LZB: 100 lines, ledger first -1.4022e+41 last -1.4129e+41 (growth -1.0670e+39); sum of Lz_hflx*dt over the arm -8.0680e+25
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### XR-m35
+- Terminating on cycle limit; rows 99 (cycles), wall 130 s, dt first/median/last 5.353 / 11.97 / 11.96 s; CW 50 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 1.034062e+02 s / 99 cycles = 1.0445
+- END-row residuals per cycle: Lz RMS 1.617e+27, sum -9.872e+27, max|.| 5.706e+27 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 6.343e+29, sum -1.938e+29, max|.| 1.890e+30 | M RMS 8.309e+14, sum -8.444e+14, max|.| 2.252e+15
+- CLEAN LZB: 100 lines, ledger first -1.4022e+41 last -1.4079e+41 (growth -5.7110e+38); sum of Lz_hflx*dt over the arm 1.1843e+25
+- CLEAN FCONE_LZ: 200 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 73280 t2s 2 momentum removed (signed, V/c^2) x1 8.503267e+22 x2 -4.532910e+20 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 73379 t2s 3 momentum removed (signed, V/c^2) x1 5.869126e+25 x2 8.750848e+22 x3 0.000000e+00`
+- CLEAN LZSPIN: 200 lines, max |X| n/a; first `CLEAN LZSPIN cycle 73280 t2s 2: L_z of the cut and capped momentum X -1.137424e+34, the gas's as dOmega -6.180356e-20 (I 1.840386e+53)`; last `CLEAN LZSPIN cycle 73379 t2s 3: L_z of the cut and capped momentum X -1.216570e+36, the gas's as dOmega -6.610403e-18 (I 1.840386e+53)`
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot -1.1861e+31, Pr_hflx -2.1578e+33, Pr_ntel -2.1535e+15, Pr_src -2.1571e+33, Pr_rad -3.2808e+29, Pr_flr 3.2218e+20, Pr_mrg 0.0000e+00, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 0.0000e+00, Pr_rad 3.2824e+29
+- CLEAN PLEDGER END lines: 100; last `CLEAN PLEDGER cycle 73379 dt 1.196494e+01 hflx -2.157805e+33 ntel 0.000000e+00 src -2.157134e+33 rad -3.468324e+29 flr 3.194264e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.9460222872429911e+32 END -3.473401e+17 gross 5.599111e+34`
+### RR-t9
+- Terminating on cycle limit; rows 99 (cycles), wall 327 s, dt first/median/last 95.27 / 95.32 / 95.39 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 2.711122e+02 s / 99 cycles = 2.7385
+- END-row residuals per cycle: Lz RMS 6.291e+32, sum 3.489e+34, max|.| 1.485e+33 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.252e+32, sum 4.385e+32, max|.| 9.263e+32 | M RMS 4.122e+17, sum -1.073e+17, max|.| 1.125e+18
+- CLEAN LZB: 100 lines, ledger first -1.5307e+45 last -1.5524e+45 (growth -2.1672e+43); sum of Lz_hflx*dt over the arm -2.9860e+45
+- CLEAN FCONE_LZ: none
+- CLEAN LZSPIN: none
+### XR-t9
+- Terminating on cycle limit; rows 99 (cycles), wall 342 s, dt first/median/last 95.27 / 95.32 / 95.39 s; CW 50 FATAL 0 DT_RETRY 0
+- s/cycle (no elapsed lines at this log cadence): cpu time used 2.755277e+02 s / 99 cycles = 2.7831
+- END-row residuals per cycle: Lz RMS 6.440e+32, sum 3.680e+34, max|.| 1.490e+33 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 3.975e+32, sum 7.759e+31, max|.| 9.688e+32 | M RMS 3.963e+17, sum -3.070e+17, max|.| 9.860e+17
+- CLEAN LZB: 100 lines, ledger first -1.5308e+45 last -1.5577e+45 (growth -2.6962e+43); sum of Lz_hflx*dt over the arm -2.9860e+45
+- CLEAN FCONE_LZ: 200 lines, max |X| n/a; first `CLEAN FCONE_LZ cycle 29228 t2s 2 momentum removed (signed, V/c^2) x1 9.603482e+26 x2 -4.166644e+26 x3 0.000000e+00`; last `CLEAN FCONE_LZ cycle 29327 t2s 3 momentum removed (signed, V/c^2) x1 1.070579e+28 x2 -3.635515e+26 x3 0.000000e+00`
+- CLEAN LZSPIN: 200 lines, max |X| n/a; first `CLEAN LZSPIN cycle 29228 t2s 2: L_z of the cut and capped momentum X 2.242720e+38, the gas's as dOmega 2.645629e-19 (I 8.477076e+56)`; last `CLEAN LZSPIN cycle 29327 t2s 3: L_z of the cut and capped momentum X 2.543025e+40, the gas's as dOmega 3.003972e-17 (I 8.465542e+56)`
+- p_ledger columns in user.hst: ['Pr_tot', 'Pr_hflx', 'Pr_ntel', 'Pr_src', 'Pr_rad', 'Pr_flr', 'Pr_mrg', 'Pr_gap'] (per cycle in the committed user.hst); means: Pr_tot 8.6014e+35, Pr_hflx -2.5309e+35, Pr_ntel -2.2281e+18, Pr_src -2.5244e+35, Pr_rad -6.3460e+32, Pr_flr 6.0138e+25, Pr_mrg 0.0000e+00, Pr_gap 0.0000e+00
+- RMS of Pr_mrg 0.0000e+00, Pr_rad 6.3461e+32
+- CLEAN PLEDGER END lines: 100; last `CLEAN PLEDGER cycle 29327 dt 9.538710e+01 hflx -2.530857e+35 ntel -2.475369e+19 src -2.524378e+35 rad -6.413587e+32 flr 4.904220e+25 mrg 0.000000e+00 gap 0.000000e+00 P 9.2602131610873333e+35 END 4.270421e+21 gross 6.003334e+37`
+
+## Physics difference at the last cycle (final hydro_w; relative |B - A|/|A|, |v| relative to max |A|)
+- LZB-bsg vs LZA-bsg (cycles (300, 300), dfloor 6.152e-14):
+  - rho: all cells max 1.128e-02 at (r 3.7992e+12, th 1.8878, ph 0.1779), mean 7.162e-06; rho>10 dfloor max 3.522e-03 at (r 3.7774e+12, th 1.9328, ph 0.1779), mean 4.068e-06
+  - T: all cells max 4.146e-05 at (r 3.7448e+12, th 1.9410, ph 0.5216), mean 3.724e-07; rho>10 dfloor max 4.146e-05 at (r 3.7448e+12, th 1.9410, ph 0.5216), mean 1.656e-07
+  - |v|: all cells max 4.563e-02 at (r 5.4243e+12, th 1.2333, ph 0.7629), mean 4.369e-03; rho>10 dfloor max 1.355e-03 at (r 3.7774e+12, th 1.8837, ph 0.4316), mean 1.740e-06
+- LZB-m35 vs LZA-m35 (cycles (300, 300), dfloor 1.000e-17):
+  - rho: all cells max 0.000e+00 at (r 6.7509e+11, th 1.3969, ph 0.0007), mean 0.000e+00; rho>10 dfloor max 0.000e+00 at (r 6.7509e+11, th 1.3969, ph 0.0007), mean 0.000e+00
+  - T: all cells max 0.000e+00 at (r 6.7509e+11, th 1.3969, ph 0.0007), mean 0.000e+00; rho>10 dfloor max 0.000e+00 at (r 6.7509e+11, th 1.3969, ph 0.0007), mean 0.000e+00
+  - |v|: all cells max 0.000e+00 at (r 6.7509e+11, th 1.3969, ph 0.0007), mean 0.000e+00; rho>10 dfloor max 0.000e+00 at (r 6.7509e+11, th 1.3969, ph 0.0007), mean 0.000e+00
+- LZB-t9 vs LZA-t9 (cycles (300, 300), dfloor 3.600e-19):
+  - rho: all cells max 1.147e-03 at (r 6.9870e+12, th 2.0954, ph 2.9729), mean 6.465e-08; rho>10 dfloor max 5.349e-05 at (r 6.8918e+12, th 1.9359, ph 0.0644), mean 3.950e-08
+  - T: all cells max 6.833e-05 at (r 2.1208e+13, th 0.7885, ph 2.7949), mean 5.893e-06; rho>10 dfloor max 2.267e-05 at (r 6.5690e+12, th 1.0830, ph 2.3102), mean 2.854e-07
+  - |v|: all cells max 6.816e-02 at (r 5.6130e+13, th 0.7885, ph 0.1687), mean 5.375e-04; rho>10 dfloor max 3.587e-05 at (r 6.8918e+12, th 2.2488, ph 0.2608), mean 2.502e-08
+- LZRB-bsg vs LZRA-bsg (cycles (29857, 29857), dfloor 6.152e-14):
+  - rho: all cells max 2.458e-01 at (r 3.6470e+12, th 2.0923, ph 0.6034), mean 2.948e-05; rho>10 dfloor max 2.458e-01 at (r 3.6470e+12, th 2.0923, ph 0.6034), mean 1.474e-05
+  - T: all cells max 4.573e-02 at (r 3.5926e+12, th 1.7324, ph 0.6525), mean 6.267e-05; rho>10 dfloor max 4.573e-02 at (r 3.5926e+12, th 1.7324, ph 0.6525), mean 7.706e-06
+  - |v|: all cells max 1.205e-01 at (r 3.6470e+12, th 1.7610, ph 0.5256), mean 8.612e-05; rho>10 dfloor max 5.600e-02 at (r 3.6470e+12, th 2.0923, ph 0.6034), mean 3.249e-06
+- LZRB-m35 vs LZRA-m35 (cycles (73480, 73480), dfloor 1.000e-17):
+  - rho: all cells max 1.614e+01 at (r 9.7895e+11, th 1.5551, ph 0.3143), mean 5.611e-03; rho>10 dfloor max 1.605e+01 at (r 9.7763e+11, th 1.5538, ph 0.3143), mean 4.735e-03
+  - T: all cells max 3.558e-01 at (r 9.5405e+11, th 1.3969, ph 0.3334), mean 1.137e-04; rho>10 dfloor max 3.558e-01 at (r 9.5405e+11, th 1.3969, ph 0.3334), mean 6.701e-05
+  - |v|: all cells max 5.198e-01 at (r 9.6970e+11, th 1.5101, ph 0.1507), mean 2.233e-03; rho>10 dfloor max 5.198e-01 at (r 9.6970e+11, th 1.5101, ph 0.1507), mean 6.872e-04
+- DFL1 vs DFL0 (cycles (29757, 29757), dfloor 6.152e-14):
+  - rho: all cells max 3.609e-02 at (r 3.7557e+12, th 1.8919, ph 0.6974), mean 1.420e-06; rho>10 dfloor max 2.134e-02 at (r 3.6361e+12, th 1.8019, ph 0.7343), mean 7.615e-07
+  - T: all cells max 1.576e-02 at (r 3.5926e+12, th 1.3438, ph 0.5911), mean 4.911e-06; rho>10 dfloor max 3.973e-03 at (r 3.6253e+12, th 1.8019, ph 0.7343), mean 5.149e-07
+  - |v|: all cells max 5.478e-02 at (r 3.7122e+12, th 1.1801, ph 0.7220), mean 8.789e-05; rho>10 dfloor max 4.208e-03 at (r 3.6035e+12, th 1.3519, ph 0.6156), mean 1.580e-07
+- X-bsg vs LZA-bsg (cycles (300, 300), dfloor 6.152e-14):
+  - rho: all cells max 1.287e-02 at (r 3.7883e+12, th 1.2783, ph 0.8693), mean 1.476e-05; rho>10 dfloor max 4.551e-03 at (r 3.7774e+12, th 1.2129, ph 0.8693), mean 1.117e-05
+  - T: all cells max 7.475e-05 at (r 3.7448e+12, th 1.2088, ph 0.8529), mean 1.482e-06; rho>10 dfloor max 7.475e-05 at (r 3.7448e+12, th 1.2088, ph 0.8529), mean 1.382e-06
+  - |v|: all cells max 4.812e-02 at (r 5.4026e+12, th 1.2415, ph 0.9715), mean 4.572e-03; rho>10 dfloor max 1.813e-03 at (r 3.7774e+12, th 1.2783, ph 0.8733), mean 6.165e-06
+- X-m35 vs LZA-m35 (cycles (300, 300), dfloor 1.000e-17):
+  - rho: all cells max 1.111e-02 at (r 9.7102e+11, th 1.4024, ph 0.0402), mean 1.709e-05; rho>10 dfloor max 1.292e-03 at (r 9.6839e+11, th 1.7392, ph 0.3088), mean 1.377e-05
+  - T: all cells max 2.456e-05 at (r 9.3230e+11, th 1.3969, ph 0.1548), mean 9.879e-07; rho>10 dfloor max 2.456e-05 at (r 9.3230e+11, th 1.3969, ph 0.1548), mean 8.220e-07
+  - |v|: all cells max 9.440e-02 at (r 9.7895e+11, th 1.7446, ph 0.1698), mean 1.890e-04; rho>10 dfloor max 7.236e-04 at (r 9.6839e+11, th 1.6792, ph 0.1739), mean 5.423e-06
+- X-t9 vs LZA-t9 (cycles (300, 300), dfloor 3.600e-19):
+  - rho: all cells max 4.602e-03 at (r 6.9870e+12, th 1.5739, ph 2.1875), mean 1.130e-06; rho>10 dfloor max 2.463e-04 at (r 6.8918e+12, th 1.3591, ph 0.6044), mean 1.440e-06
+  - T: all cells max 1.018e-04 at (r 3.3569e+13, th 2.3531, ph 1.5677), mean 8.808e-06; rho>10 dfloor max 3.727e-05 at (r 6.1760e+12, th 2.2181, ph 1.0462), mean 1.027e-06
+  - |v|: all cells max 8.365e-02 at (r 5.6130e+13, th 2.3531, ph 0.1687), mean 5.559e-04; rho>10 dfloor max 3.615e-04 at (r 6.8918e+12, th 1.3284, ph 0.5001), mean 2.369e-06
+- XR-bsg vs RR-bsg (cycles (29757, 29757), dfloor 6.152e-14):
+  - rho: all cells max 2.207e-01 at (r 3.6035e+12, th 1.2947, ph 0.6238), mean 8.788e-06; rho>10 dfloor max 7.803e-02 at (r 3.6361e+12, th 2.0923, ph 0.6197), mean 3.280e-06
+  - T: all cells max 6.507e-03 at (r 3.5926e+12, th 1.3438, ph 0.5911), mean 6.174e-06; rho>10 dfloor max 2.395e-03 at (r 3.6470e+12, th 1.5728, ph 0.4929), mean 1.330e-06
+  - |v|: all cells max 2.367e-01 at (r 3.6579e+12, th 1.5197, ph 0.5338), mean 1.392e-04; rho>10 dfloor max 5.551e-02 at (r 3.6361e+12, th 2.0923, ph 0.6156), mean 1.336e-06
+- XR-m35 vs RR-m35 (cycles (73380, 73380), dfloor 1.000e-17):
+  - rho: all cells max 5.442e+00 at (r 9.7763e+11, th 1.4692, ph 0.2379), mean 1.208e-03; rho>10 dfloor max 5.442e+00 at (r 9.7763e+11, th 1.4692, ph 0.2379), mean 1.125e-03
+  - T: all cells max 5.779e-01 at (r 9.5017e+11, th 1.6956, ph 0.3402), mean 9.455e-05; rho>10 dfloor max 5.779e-01 at (r 9.5017e+11, th 1.6956, ph 0.3402), mean 6.939e-05
+  - |v|: all cells max 3.681e-01 at (r 9.8829e+11, th 1.5701, ph 0.3361), mean 1.192e-03; rho>10 dfloor max 3.567e-01 at (r 9.8695e+11, th 1.5660, ph 0.3347), mean 2.944e-04
+- XR-t9 vs RR-t9 (cycles (29328, 29328), dfloor 3.600e-19):
+  - rho: all cells max 2.093e+00 at (r 4.5681e+12, th 2.1261, ph 0.1749), mean 7.142e-05; rho>10 dfloor max 2.093e+00 at (r 4.5681e+12, th 2.1261, ph 0.1749), mean 7.142e-05
+  - T: all cells max 1.738e-01 at (r 2.1501e+13, th 1.5309, ph 1.0278), mean 4.189e-05; rho>10 dfloor max 1.738e-01 at (r 2.1501e+13, th 1.5309, ph 1.0278), mean 4.189e-05
+  - |v|: all cells max 2.446e-01 at (r 4.5369e+12, th 1.8807, ph 1.1137), mean 2.943e-05; rho>10 dfloor max 2.446e-01 at (r 4.5369e+12, th 1.8807, ph 1.1137), mean 2.943e-05
+
+## Byte checks
+- LZD-bsg vs LZB-bsg: user.hst byte-identical yes; final hydro_w (bsg3d.hydro_w.00002.bin) whole file identical no (the header holds the command line, which differs by the 2 named keys), data after the parameter block identical yes
+- PLED1 vs DFL0 hydro.hst byte-identical: yes (md5 0f10b0ca / 0f10b0ca)
+- MIXNL-bsg vs X-bsg: hydro.hst byte-identical yes; final hydro_w (bsg3d.hydro_w.00002.bin) data after the parameter block identical yes
+
+## RST sanity: (a) 2 cycles straight vs (b) 1 cycle + rst + 1 cycle; final rst and the last hydro_w compared after the parameter block
+- RST-DFL-bsg: CW 0 FATAL 0; final rst bsg3d.00010.rst vs bsg3d.00011.rst identical: yes; hydro_w bsg3d.hydro_w.00117.bin vs bsg3d.hydro_w.00117.bin identical: yes
+- RST-DFL-m35mms: CW 0 FATAL 0; final rst m35mms.00012.rst vs m35mms.00013.rst identical: yes; hydro_w m35mms.hydro_w.00483.bin vs m35mms.hydro_w.00483.bin identical: yes
+- RST-DFL-m35zams: CW 0 FATAL 0; final rst m35zams.00012.rst vs m35zams.00013.rst identical: yes; hydro_w m35zams.hydro_w.00483.bin vs m35zams.hydro_w.00483.bin identical: yes
+- RST-DFL-t9l62: CW 0 FATAL 0; final rst t9l62.00013.rst vs t9l62.00014.rst identical: yes; hydro_w t9l62.hydro_w.00252.bin vs t9l62.hydro_w.00252.bin identical: yes
+- RST-LZD-bsg: CW 0 FATAL 0; final rst bsg3d.00010.rst vs bsg3d.00011.rst identical: yes; hydro_w bsg3d.hydro_w.00117.bin vs bsg3d.hydro_w.00117.bin identical: yes
+- RST-LZD-m35mms: CW 0 FATAL 0; final rst m35mms.00012.rst vs m35mms.00013.rst identical: yes; hydro_w m35mms.hydro_w.00483.bin vs m35mms.hydro_w.00483.bin identical: yes
+- RST-LZD-m35zams: CW 0 FATAL 0; final rst m35zams.00012.rst vs m35zams.00013.rst identical: yes; hydro_w m35zams.hydro_w.00483.bin vs m35zams.hydro_w.00483.bin identical: yes
+- RST-LZD-t9l62: CW 0 FATAL 0; final rst t9l62.00013.rst vs t9l62.00014.rst identical: yes; hydro_w t9l62.hydro_w.00252.bin vs t9l62.hydro_w.00252.bin identical: yes
+- RST-MIX-bsg: CW 0 FATAL 0; final rst bsg3d.00010.rst vs bsg3d.00011.rst identical: yes; hydro_w bsg3d.hydro_w.00117.bin vs bsg3d.hydro_w.00117.bin identical: yes
+- RST-MIX-m35mms: CW 0 FATAL 0; final rst m35mms.00012.rst vs m35mms.00013.rst identical: yes; hydro_w m35mms.hydro_w.00483.bin vs m35mms.hydro_w.00483.bin identical: yes
+- RST-PLED-bsg: CW 0 FATAL 0; final rst bsg3d.00010.rst vs bsg3d.00011.rst identical: yes; hydro_w bsg3d.hydro_w.00117.bin vs bsg3d.hydro_w.00117.bin identical: yes

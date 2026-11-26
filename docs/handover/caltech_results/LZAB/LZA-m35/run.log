@@ -1,0 +1,2 @@
+2026-11-25 22:54:43 start LZA-m35 hpc-sm-02-17 BIN athena_rel6_01deec542 md5=7b0900a6f6e354806e236826bac99eb5 ARGS: -i /resnick/groups/carnegie_poc/jingze/lzab_1127/deck_m35mms.athinput time/nlim=300 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 output2/dcycle=300 rad_vet/clean_stag_fcone_lz=false rad_vet/clean_lz_spin=false
+2026-11-25 22:59:00 rc=0 ended: Terminating on cycle limit wall=257 s CW 0 FATAL 0 DT_RETRY 0

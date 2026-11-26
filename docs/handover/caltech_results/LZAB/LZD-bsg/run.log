@@ -1,0 +1,2 @@
+2026-11-25 23:30:44 start LZD-bsg hpc-sm-02-17 BIN athena_lzd_ca9048dd4 md5=fe538ddba2e8753b458b328381766caa ARGS: -i /resnick/groups/carnegie_poc/jingze/lzab_1127/deck_bsg.athinput time/nlim=300 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 output2/dcycle=300
+2026-11-25 23:35:23 rc=0 ended: Terminating on cycle limit wall=279 s CW 0 FATAL 0 DT_RETRY 0

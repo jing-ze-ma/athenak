@@ -1,0 +1,2 @@
+2026-11-25 23:27:44 start RST-PLED-bsg-a hpc-sm-02-11 BIN athena_pled_174233149 md5=3ae1965592fedd42240a71d726680328 ARGS: -r /resnick/groups/carnegie_poc/jingze/lzab_1127/rst_in/bsg.rst output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 output2/dcycle=1 time/tlim=1e9 time/nlim=29659 hydro/p_ledger=true
+2026-11-25 23:28:39 rc=0 ended: Terminating on cycle limit wall=55 s CW 0 FATAL 0 DT_RETRY 0
