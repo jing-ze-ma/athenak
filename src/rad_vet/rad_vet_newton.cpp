@@ -498,42 +498,6 @@ void RadiationVet::CopyIterate() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn int RadiationVet::CountNegative
-//! \brief the number of cells with E < 0 beyond the solver tolerance (10 tol max|B|);
-//! WriteBack raises those within it to zero, counted
-
-int RadiationVet::CountNegative() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  int nmb = pmy_pack->nmb_thispack;
-  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  auto w = cln_w;
-
-  Real bmax = 0.0;
-  Kokkos::parallel_reduce("cln_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &b_max) {
-    int m = idx/nkji;
-    int k = (idx - m*nkji)/nji;
-    int j = (idx - m*nkji - k*nji)/nx1;
-    int i = idx - m*nkji - k*nji - j*nx1;
-    b_max = fmax(b_max, fabs(w(m,CLW_B,k+ks,j+js,i+is)));
-  }, Kokkos::Max<Real>(bmax));
-
-  const Real zero = 10.0*cln_tol*GlobalReduce(bmax, true);
-  Real nneg = 0.0;
-  Kokkos::parallel_reduce("cln_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &n) {
-    int m = idx/nkji;
-    int k = (idx - m*nkji)/nji;
-    int j = (idx - m*nkji - k*nji)/nx1;
-    int i = idx - m*nkji - k*nji - j*nx1;
-    if (!(w(m,CLW_X,k+ks,j+js,i+is) >= -zero)) n += 1.0;
-  }, Kokkos::Sum<Real>(nneg));
-  return static_cast<int>(GlobalReduce(nneg, false));
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::CountUnrealizable
 //! \brief staggered: realizability of the solution X beyond the solver tolerance (10
 //! solver_tol max|B|).  R1: cells with E < 0 (cln_nr1); R2: interior faces whose flux
@@ -947,8 +911,9 @@ void RadiationVet::SolveEnd(SolvePass &p) {
     p.nit = -std::abs(p.nit) - 1;
   }
 
-  // positivity of the solution
-  p.nneg = CountNegative();
+  // positivity of the solution: E < 0 beyond 10 tol max|B|, CountUnrealizable's R1
+  // (WriteBack raises those within it to zero, counted)
+  p.nneg = cln_nr1;
 }
 
 //----------------------------------------------------------------------------------------
