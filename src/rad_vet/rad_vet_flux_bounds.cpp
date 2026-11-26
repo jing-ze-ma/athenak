@@ -42,9 +42,11 @@ namespace radvet {
 //! u_f) within the realisable cone |F_i| <= c E_i (E of work vector e), by construction.
 //! Each face is scaled towards 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i^2 =
 //! sum_fg max(0, F_f u_f . F_g u_g), so |F_i| <= l_i S_i <= c E_i.  One value per face
-//! (cubed sphere: the lower gid's) keeps flux form.  The gas takes the absorption of the
-//! scaled F (CLF_N + 1), G + d is kept, the momentum cut is booked and printed (CLEAN
-//! FCONE).
+//! (cubed sphere: the lower gid's) keeps flux form.  flux_cone_gas: the gas takes the cut
+//! at each inner face, its absorption of the unscaled F, so gas + radiation momentum is
+//! exact; else the scaled F's (CLF_N + 1), the cut withheld (p_ledger cut).  A physical
+//! boundary face's cut is the radiation's boundary flux.  G + d is kept, the momentum cut
+//! is printed (CLEAN FCONE).
 
 void RadiationVet::FluxCone(const int e, const int kd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -56,7 +58,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E;
   // lz_spin: the others' cut withheld, its L_z X the gas's rigid rotation; the
   // cubed sphere's gas phi momentum is lz_tel's torque, which holds the cut already)
-  const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph;
+  const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph, fg = cln_fcgas;
   auto fa = KOKKOS_LAMBDA(const int q) {return !LzFamily(sph, cub, q);};
   auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
     return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
@@ -154,8 +156,8 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
       // (lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
-      if (spn && !bd && !fa(d) && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
-      const bool wh = !bd && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
+      if (spn && !bd && !fa(d) && !fg && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
+      const bool wh = !bd && !fg && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
       if (wh) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;

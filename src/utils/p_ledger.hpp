@@ -20,7 +20,7 @@
 //!         physical sources: gravity, the geometric terms, the sponge),
 //!   rad   the radiation update and write-back: the radiation's boundary stress and
 //!         geometric terms (physical),
-//!   cut   the face-flux cone cut the gas does not take (clean_stag_fcone_gas = false),
+//!   cut   the face-flux cone cut the gas does not take (flux_cone_gas = false),
 //!   fwb   the fwb residual's momentum where it is not projected out,
 //!   flr   floors: dfloor_flux_limit's momentum, ConToPrim, the floor-gas cap,
 //!   mrg   the hydro's merged lateral cells (merge_lat) average,
