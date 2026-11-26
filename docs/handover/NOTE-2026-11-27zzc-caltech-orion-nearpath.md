@@ -48,3 +48,50 @@
   - L_top/L_in over the last 50 cycles: equal to 1e-5 (bsg 1.06219 vs 1.06220; t9 1.00320 vs 1.00316).
 - E: not available. The template's vet output is off in these arms (outputs off as in the other short arms), so no E dump was written. Say if you want a 2-arm rerun with output3 at the last cycle.
 - Files: docs/handover/caltech_results/NEARPATH/<arm>/ (hst, logs). No dumps kept.
+
+## E rerun (your item 3, E): NBE-bsg / NNE-bsg
+- Setup: the same pair as NB/NN-bsg, plus the vet dump (vet_e = E) at the last cycle; 02-17 alone, 300 cycles fresh, 4 ranks.
+- Both rc 0, 0 CW / FATAL. Compared: the vet dump at cycle 300.
+### bsg: vet_e (E) NN vs NB at the last cycle; shell means and per-cell relative difference
+- all cells: max |rel| 1.358e-02, mean |rel| 1.032e-03
+| r [cm] | shell-mean E NB | NN/NB - 1 (shell mean) | max |rel| in shell |
+|---|---|---|---|
+| 3.0274e+12 | 2.8374e+06 | -2.481e-08 | 2.688e-08 |
+| 3.0817e+12 | 1.8926e+06 | -4.941e-08 | 5.302e-08 |
+| 3.1361e+12 | 1.2337e+06 | -1.031e-07 | 1.104e-07 |
+| 3.1904e+12 | 7.9229e+05 | -2.133e-07 | 2.288e-07 |
+| 3.2448e+12 | 4.9588e+05 | -3.965e-07 | 4.275e-07 |
+| 3.2991e+12 | 2.9563e+05 | -7.083e-07 | 7.710e-07 |
+| 3.3535e+12 | 1.6733e+05 | -1.250e-06 | 1.385e-06 |
+| 3.4078e+12 | 9.1062e+04 | -2.440e-06 | 2.765e-06 |
+| 3.4622e+12 | 5.5026e+04 | -5.022e-06 | 5.762e-06 |
+| 3.5166e+12 | 3.7053e+04 | -8.059e-06 | 9.312e-06 |
+| 3.5709e+12 | 2.3144e+04 | -1.204e-05 | 1.498e-05 |
+| 3.6253e+12 | 1.2165e+04 | -3.608e-05 | 4.386e-05 |
+| 3.6796e+12 | 4.6457e+03 | -1.078e-04 | 1.305e-04 |
+| 3.7340e+12 | 9.8456e+02 | -7.172e-04 | 8.878e-04 |
+| 3.7883e+12 | 1.8693e+02 | +7.615e-03 | 1.268e-02 |
+| 3.8590e+12 | 1.6751e+02 | +5.984e-03 | 1.157e-02 |
+| 3.9677e+12 | 1.4927e+02 | +4.552e-03 | 1.086e-02 |
+| 4.0764e+12 | 1.3574e+02 | +3.675e-03 | 6.403e-03 |
+| 4.1851e+12 | 1.2486e+02 | +3.100e-03 | 9.058e-03 |
+| 4.2938e+12 | 1.1570e+02 | +2.690e-03 | 8.128e-03 |
+| 4.4025e+12 | 1.0776e+02 | +2.371e-03 | 7.203e-03 |
+| 4.5112e+12 | 1.0077e+02 | +2.111e-03 | 7.542e-03 |
+| 4.6199e+12 | 9.4525e+01 | +1.897e-03 | 5.984e-03 |
+| 4.7286e+12 | 8.8907e+01 | +1.717e-03 | 7.679e-03 |
+| 4.8373e+12 | 8.3818e+01 | +1.569e-03 | 7.872e-03 |
+| 4.9460e+12 | 7.9183e+01 | +1.444e-03 | 8.013e-03 |
+| 5.0547e+12 | 7.4936e+01 | +1.335e-03 | 7.790e-03 |
+| 5.1634e+12 | 7.1023e+01 | +1.237e-03 | 7.966e-03 |
+| 5.2721e+12 | 6.7402e+01 | +1.153e-03 | 7.971e-03 |
+| 5.3808e+12 | 6.4035e+01 | +1.084e-03 | 9.198e-03 |
+| 5.4895e+12 | 6.0878e+01 | +1.026e-03 | 8.760e-03 |
+| 5.5547e+12 | 5.9046e+01 | +1.001e-03 | 7.824e-03 |
+- Reading:
+  - Inside, NN changes E by less than 1e-4 down to r 3.68e12 cm.
+  - Where E falls steeply (photosphere, about 3.73-3.79e12) NN/NB - 1 jumps from -7e-4 to **+7.6e-3** at 3.79e12, the first shell outside.
+  - It then decays outward: +6.0e-3, +4.6e-3, +3.7e-3, ... +1.0e-3 at the outer edge (5.55e12).
+  - So the fix raises E just outside the photosphere by about 0.6-0.8 % on bsg (per-cell max 1.3 %).
+  - That is the direction OPEN_BUGS #10 expects, though much smaller than the 10 % clump deficit, as the bsg photosphere is not a near-tangent emitter edge.
+- t9l62 (NBE-t9 / NNE-t9) is running on 01-17; its E profile follows.
