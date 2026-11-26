@@ -850,3 +850,5 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 23:07 02-11: lz_RST-LZD-m35mms-b2 -> lz_RST-DFL-t9l62-a
 - 11-25 23:09 02-09: lz_LZRA-bsg -> lz_LZRB-bsg
 - 11-25 23:10 02-11: lz_RST-DFL-t9l62-a -> lz_RST-DFL-t9l62-b1
+- 11-25 23:11 02-09: lz_LZRB-bsg -> lz_LZRA-m35
+- 11-25 23:13 02-11: lz_RST-DFL-t9l62-b1 -> lz_RST-DFL-t9l62-b2
