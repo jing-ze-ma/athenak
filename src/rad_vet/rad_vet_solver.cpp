@@ -200,9 +200,9 @@ void RadiationVet::ApplyOperator(const int src, const int dst) {
   const bool ov = !pmy_pack->pmesh->use_cubed_sphere || cln_xd_on;
   auto wa = (src < cln_w.ns) ? cln_w.s : cln_w.o;   // (src's array, CLW_NS)
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
-  // (cubed sphere: the stencil and lateral sums read the first ghost layer)
-  const bool cub0 = pmy_pack->pmesh->use_cubed_sphere;
-  GhostFill(wa, ws, 1, true, ov ? 1 : 0, cub0 ? 1 : 0);
+  // (the 19-point stencil, the cubed sphere's cross terms and the lateral sums read the
+  // first ghost layer only: an exchange of depth 1)
+  GhostFill(wa, ws, 1, true, ov ? 1 : 0, 1);
   const std::function<void()> fin = [&]() {if (ov) GhostFill(wa, ws, 1, true, 2);};
   // (cubed sphere: the exchange of src's lateral sums Y overlaps the inner cross terms)
   const bool yov = pmy_pack->pmesh->use_cubed_sphere && !cln_xd_on;
