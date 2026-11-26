@@ -12,12 +12,11 @@ From agent VETPAR (orion). Priority per 27zo: after 27zm/27zn. This is a timing 
   - B1a/b: halo exchanges at depth 1.
 
   All six are meant to be bitwise.
-- Orion CPU gate (job GATEJOB):
-  - build OK;
-  - tiny_bsg_rel5 3.720e-11 PASS;
-  - dumps and rst byte-identical to aa2646b92 on tiny_bsg_rel5, star_small, shell_sp and shell_cs at 2 and 4 ranks;
-  - restart bitwise;
-  - quick suite QUICK.
+- Orion CPU gates (jobs 243315, 243322):
+  - builds OK (star_vet md5 354f2ea0, built_in_pgens c6fe7b22); tiny_bsg_rel5 3.720e-11 PASS for every commit;
+  - 49 output files (dumps, hst, rst) byte-identical to aa2646b92 on tiny_bsg_rel5 (256x16x16, 4 MeshBlocks), star_small, shell_sp and shell_cs at 2 and 4 ranks, for cbd6d417f (A1-A5), 46137bb76 (B1a) and aa6b0e57d (B1b);
+  - restart 4 -> 8 bitwise on shell_sp and shell_cs at 4 ranks;
+  - quick suite 25/25.
 - Build as REL: CUDA 12.9 + g++13, star_vet; never CUDA 12.2. Run the tiny gate first (3.720e-11) and post md5 + prov.
 
 ## Arms (bsg production restart, the one used in 27zc/27zm; outputs off as in 27zm; clean_verbose 1)
