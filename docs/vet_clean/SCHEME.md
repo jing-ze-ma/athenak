@@ -9,11 +9,7 @@ exact criteria).
 
 One time step: the hydrodynamics is explicit, the radiation and its exchange with the gas are implicit in two
 stages. A step whose stage fails is done again with one implicit solve, and a step that still fails is taken
-again at a smaller size.
-
-![One time step](figures/flow/step.svg)
-
-The radiation solve, the closure and the files are drawn on [WORKFLOW.md](WORKFLOW.md) (code layout).
+again at a smaller size. The step is drawn under Code map (section 3).
 
 ### Features
 
@@ -536,6 +532,8 @@ following. The properties of this section are not verified there.
 | radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with `time2_tableau = hesdirk2` (default) or `trbdf2`, tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `sdirk2`, the tableau of the star decks, is FATAL with MHD and matter coupling; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
 
 ## 3. Code map
+
+![One time step](figures/flow/step.svg)
 
 [WORKFLOW.md](WORKFLOW.md): flow charts of a step, a stage, the closure and the linear solve, and the list of files.
 Start in `src/rad_vet/rad_vet_tasks.cpp`.  Outside `src/rad_vet`: `driver/driver.cpp` (the step), `driver/dt_retry.cpp`
