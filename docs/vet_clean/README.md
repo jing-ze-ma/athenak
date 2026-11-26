@@ -1,4 +1,4 @@
-# The clean VET radiation scheme in AthenaK
+# The VET radiation scheme in AthenaK
 
 The grey radiation-hydrodynamics scheme of `src/rad_vet/` (`<rad_vet>/scheme = clean`):
 two-moment radiation transport with the energy density on cells and the flux on cell faces,

@@ -1,6 +1,6 @@
-# Building AthenaK with the clean VET radiation scheme
+# Building AthenaK with the VET radiation scheme
 
-The clean VET scheme is part of the normal AthenaK build: there is no extra switch. This page
+The VET scheme is part of the normal AthenaK build: there is no extra switch. This page
 gives the configurations that have been used for production and for the test suite. All of
 them are plain CMake builds; out-of-source build directories are required. For the shortest
 path from download to a checked binary see [QUICKSTART.md](QUICKSTART.md).

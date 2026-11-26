@@ -1,6 +1,6 @@
-# Clean VET radiation test suite
+# VET radiation test suite
 
-A self-contained CPU test suite for the clean VET radiation scheme: one command, a PASS / FAIL
+A self-contained CPU test suite for the VET radiation scheme: one command, a PASS / FAIL
 line per test, about 1 min (`--quick`) or 5 min (full) on 48 cores (`--jobs 12`).
 
 ```bash
@@ -117,7 +117,7 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
 
 The classic grey radiation tests (group `radiation`; decks `decks/rad_*.athinput`, ported from
 the former `inputs/tests/rad_vet_*` decks, removed because they used the explicit transport, to
-the production clean scheme: `transport = implicit`, `closure = sc`, the key block of the
+the production scheme: `transport = implicit`, `closure = sc`, the key block of the
 other Cartesian decks, Marshak radiation faces).
 
 | test | deck | what | criterion |
@@ -163,7 +163,7 @@ interpolated, symmetrised walls (cubed sphere: 10 x 12). Not taken:
   star kind.
 
 Notes on the results of this release:
-- **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
+- **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the radiation
   solve). It is round-off (2e-16) by construction: the ledger books what the step does not
   conserve, so `dLz` checks the bookkeeping, not the conservation. The conservation error
   is the ledger's growth, `dLz_gr` (gas + radiation alone): 6e-7 on `shell_sp`, from the

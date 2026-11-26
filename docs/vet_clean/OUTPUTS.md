@@ -1,4 +1,4 @@
-# Outputs of a clean VET star run: history columns, energy check, warnings
+# Outputs of a VET star run: history columns, energy check, warnings
 
 This page describes what a production star run (problem generator `star_vet`, decks
 `inputs/stars/star_bsg`, `star_m35mms`, `star_t9l62`) writes as history data and as run-time messages,
@@ -66,10 +66,10 @@ Definitions used in the table:
   from the top of the mesh, reaches `<problem>/star_tau_int` (1.0 in the decks), i.e. the
   initial photosphere (`star_vet.cpp`). If it is never reached, `r_int = r_in`.
   "The L_int face" is the lower x1 face of the cell that contains `r_int`.
-- `F`: the radiation flux stored on the x1 face. In the staggered clean scheme this is the
+- `F`: the radiation flux stored on the x1 face. In the staggered scheme this is the
   face flux variable of the F equation (the radiation momentum times c^2, in flux units). In
   a steady state it equals the energy flux to O(v/c), but it is not the flux that moved E.
-- `Phi`: the radiation **energy** flux that the clean solve applied at a face in the step's
+- `Phi`: the radiation **energy** flux that the radiation solve applied at a face in the step's
   last solve (the stage-2 solve of an sdirk2 step, or the backward-Euler solve). This is the
   flux that changed E; it includes the advective part (4/3) v E.
 - `A`: the area of the x1 face. All L columns are sums over all (k, j) of the wedge.
@@ -81,7 +81,7 @@ Definitions used in the table:
 | 2 | L_bot | at the x1 face between the first and second active cells (`is+1`), one cell above the inner boundary: with `scheme = clean` the comoving flux sum (Phi - (4/3) v E) A (as L_midC; in earlier versions it was the face flux sum F A); with the old scheme sum F A | erg/s |
 | 3 | L_mid | sum F A at the lower face of cell `imid` | erg/s |
 | 4 | L_int | sum F A at the L_int face | erg/s |
-| 5 | L_top | energy that the step's radiation solves moved **out** through the outer x1 face, divided by dt (positive outward). This is the boundary record of the clean solve (`BoundaryEnergyAcc`, `src/rad_vet/rad_vet_imex.cpp`). If the record is missing for a step it falls back to sum F A at the top face. | erg/s |
+| 5 | L_top | energy that the step's radiation solves moved **out** through the outer x1 face, divided by dt (positive outward). This is the boundary record of the radiation solve (`BoundaryEnergyAcc`, `src/rad_vet/rad_vet_imex.cpp`). If the record is missing for a step it falls back to sum F A at the top face. | erg/s |
 | 6 | L_in | energy that the step's radiation solves moved **in** through the inner x1 face, divided by dt (positive inward). Fallback: `implicit_flux_x1min` x A(r_in) summed over the inner faces. | erg/s |
 | 7 | E_rad | sum E V | erg |
 | 8 | e_gas | sum e V, e = gas internal energy density | erg |
@@ -97,7 +97,7 @@ Definitions used in the table:
 | 18 | Etot | sum (U_E + E) V: gas total energy (internal + kinetic + rho Phi_grav) plus radiation energy. With closed walls its rate is L_in - L_top. | erg |
 | 19 | Min_top | inflow part at the outer face, sum min(f_rho, 0) A (<= 0): the mass flux that `StarWallFlux` removed at its call, before `dfloor_flux_limit`. 0 also where a face without mass flux passes L_z and E (see the note below) | g/s |
 | 20 | v1sq_wall | mean v_r^2 over the first active radial cells of the whole mesh | cm^2/s^2 |
-| 21 | Picard | **Always 0** under `scheme = clean`; the clean solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
+| 21 | Picard | **Always 0** under `scheme = clean`; the radiation solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
 | 22 | P_esrc | power that the explicit radiation source term puts into E, sum (chat/c) esrc V, at the state of this row. 0 in the decks (no frozen MLT deposit, no test source). | erg/s |
 | 23 | P_sponge | rate of kinetic energy loss of the top sponge at the state of this row. 0 in the decks (`star_sponge_rate` = 0). | erg/s |
 | 24 | M_hflx | hydro mass leaving through the physical x1 faces (inner + outer, outward positive) over the step, divided by dt. These are the RK-weighted fluxes the update used (`AmBndFlux`, `src/hydro/hydro_am.cpp:637`), so they close the mass budget exactly. Needs the angular-momentum module (`<hydro>/am_transport`, on in the decks); 0 without it. | g/s |
@@ -128,9 +128,9 @@ where the density floor acted), `eos_efloor`, `eos_tfloor`, `eos_vceil`, `eos_fa
 `vceil_de` (kinetic energy the velocity ceiling removed), `dfloor_ke` (kinetic energy change of
 `dfloor_keep_velocity`), then the radiation totals `vet_bcg_break vet_bcg_fall vet_bcg_keep
 vet_newt_fb vet_gn_switch vet_od_fall vet_vlat_fall vet_opn_skip vet_pos_flr vet_pos_un vet_pos_s2
-vet_acl_e vet_acl_f` (`src/outputs/eventlog.cpp`). For the clean scheme the radiation columns
+vet_acl_e vet_acl_f` (`src/outputs/eventlog.cpp`). For this scheme the radiation columns
 that matter are `vet_pos_flr` (E floor raises) and `vet_pos_un` (energy the E floor created,
-x volume); most of the others are not used by the clean scheme.
+x volume); most of the others are not used by this scheme.
 
 ## 3. Checking energy and mass conservation from `<basename>.user.hst`
 
@@ -235,7 +235,7 @@ handled but that the user should know about.
 | `CLEAN WARNING restart: first dt X != the file's dt Y` | `src/driver/driver.cpp:666` | The first cycle after a restart does not use the dt stored in the restart file, so the restart is not a bitwise continuation. | Check that the restart deck does not change keys that set dt (`cfl_number`, `dt_retry` state, `time2_cfl_post`, `rad_signal_speed`). |
 | `CLEAN WARNING restart dump <file>: no progress for N s after ...` | `src/outputs/restart.cpp:739` | Writing a restart file has made no progress for `<job>/restart_warn_s` seconds (default 600). | A file system problem: check the file system and the job; the run may hang. |
 
-### 4.2 Other per-cycle lines of the clean scheme
+### 4.2 Other per-cycle lines of the scheme
 
 With `<rad_vet>/clean_verbose = 0` (default) the code prints the `CLEAN cycle` lines, the
 `CLEAN WARNING` lines and the event lines (`CLEAN WORST`, `GNSW`, `KPOS`
@@ -267,24 +267,24 @@ round-off levels of that test (to see which passes a solve needs and why).
 ### 4.3 End-of-run summary lines
 
 At the end of the run (`RadiationVet` destructor and `Driver::Finalize`) rank 0 prints a
-block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for the clean scheme:
+block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for this scheme:
 
 | line | what it tells you |
 |---|---|
 | `<rad_vet> time_scheme=hesdirk2: stage steps=A backward-Euler steps=B stage fallbacks=C ...` | Steps taken with the two stages (A), with backward Euler (B; the first step, auto-BE steps), and the stage fallbacks (C; each one also printed a CLEAN WARNING). A large B or C means the run was often first order in time. The `face_fct` part gives the stage limiter's totals, including `left (Q<=0)` and `emptied` cells. |
-| `<rad_vet> vet-positivity: gas cell-solves=K energy moved rad->gas=X \| E floor raises cell-solves=K energy from gas=X energy created=Y ... taken from the column's radiation (implicit_pos_floor_cons)=Z \| hydro EOS floors energy created=W` | The positivity book-keeping of the clean write-back. **`energy created` (Y) should be 0**: a non-zero value is energy the E floor created (energy x volume). `energy from gas` and `taken from the column's radiation` are moves (conserved). The last field repeats the hydro floors' internal energy. |
+| `<rad_vet> vet-positivity: gas cell-solves=K energy moved rad->gas=X \| E floor raises cell-solves=K energy from gas=X energy created=Y ... taken from the column's radiation (implicit_pos_floor_cons)=Z \| hydro EOS floors energy created=W` | The positivity book-keeping of the write-back. **`energy created` (Y) should be 0**: a non-zero value is energy the E floor created (energy x volume). `energy from gas` and `taken from the column's radiation` are moves (conserved). The last field repeats the hydro floors' internal energy. |
 | `<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=M energy created x vol=E \| FOFC first-order cell-stages=K` | The run total of the mass and internal energy the hydro floors created (cgs, since the start or restart). M is the density-floor mass of section 3 (its potential energy is not in E). |
 | `<time> dt_retry: N checkpoints (...), R retries, cap X` and `<time> dt_retry: K cycles took the backward-Euler redo` | How many cycles were retried, and the dt cap at the end. |
-| `<rad_vet> implicit energy solve: cells=... FAILURES=...` | The explicit-transport energy solve; not used by the clean scheme. |
+| `<rad_vet> implicit energy solve: cells=... FAILURES=...` | The explicit-transport energy solve; not used by this scheme. |
 
 ### 4.4 Start-up messages and FATAL errors
 
 - `### WARNING (scheme = clean): <rad_vet/key> has no effect, the clean solve reads <rad_vet>/other`
-  and `### WARNING (scheme = clean): no effect: ...`: the input names a key that the clean
-  solve does not use; use the clean key named in the message. (`CheckKeys`,
+  and `### WARNING (scheme = clean): no effect: ...`: the input names a key that the
+  solve does not use; use the key named in the message. (`CheckKeys`,
   `src/rad_vet/rad_vet_tasks.cpp`.)
 - `### NOTE: <rad_vet>/implicit_maxit = A is not the clean solve's: clean_maxnl = B`: that
-  key is ignored; name the clean key to change the limit.
+  key is ignored; name `clean_maxnl` to change the limit.
 - `### WARNING: N input parameter(s) were never read by the code`: printed after the first
   cycle; check each listed key for a typo (keys that the templates name without effect, `KEYS.md` appendix, may be
   listed).

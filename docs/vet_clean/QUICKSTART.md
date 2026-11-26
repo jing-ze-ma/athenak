@@ -1,4 +1,4 @@
-# Quick start: the clean VET radiation scheme in AthenaK
+# Quick start: the VET radiation scheme in AthenaK
 
 From an empty directory to a checked binary, the test suite, plots and a 3-D star.
 Run the blocks in order. Each block has one sentence on what it does.

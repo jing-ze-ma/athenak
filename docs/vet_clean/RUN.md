@@ -1,4 +1,4 @@
-# Running the clean VET scheme
+# Running the VET scheme
 
 ## 1. A first run (CPU, one minute)
 
@@ -86,7 +86,7 @@ Restarts are bitwise: N cycles straight and N/2 + restart + N/2 give identical o
 carries from step to step (the stage slopes, the ray-closure history, the ledgers).
 
 A key the restart file does not hold takes the fresh default when it corrects the scheme
-(the clean-scheme keys, `time2_*`, `merge_lat_mom`, `fofc_flag_exchange`, `clean_cs_lat_wb`
+(the scheme's keys, `time2_*`, `merge_lat_mom`, `fofc_flag_exchange`, `clean_cs_lat_wb`
 ...), with a `### NOTE: ... the fix applies`; naming the old value keeps the old behaviour. A
 few keys (the angular set and its rotation and averaging, the closure history, the problem
 set-up) keep the restart default; the start-up log echoes it with the reason.

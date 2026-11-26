@@ -1,4 +1,4 @@
-# Notebooks: the clean VET tests with plots
+# Notebooks: the VET tests with plots
 
 One Jupyter notebook per test of `tests/vet_clean/run_tests.py`. Each notebook runs its test
 through the suite (or, if the run is already there, only loads it), plots the result against

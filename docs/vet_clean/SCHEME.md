@@ -1,4 +1,4 @@
-# The clean VET radiation scheme: method and properties
+# The VET radiation scheme: method and properties
 
 This page describes the grey radiation-hydrodynamics scheme selected by
 `<rad_vet>/transport = implicit` with `scheme = clean` (the default with implicit transport).
