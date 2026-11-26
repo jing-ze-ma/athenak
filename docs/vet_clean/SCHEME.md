@@ -469,19 +469,10 @@ following. The properties of this section are not verified there.
 
 ## 3. Code map
 
-Paths relative to `src/`.
-
-| part | files |
-|---|---|
-| key parsing, defaults, FATAL checks | `rad_vet/rad_vet.cpp`, `rad_vet/rad_vet_clean.cpp` (`CleanPreflight`, `CleanInit`) |
-| stage solve, face fluxes, write-back | `rad_vet/rad_vet_clean.cpp`, `rad_vet/rad_vet_clean.hpp` (`CleanSolve`, `CleanFaceFlux`, `CleanWriteBack`) |
-| linear solver and preconditioner | `rad_vet/rad_vet_clean_solver.cpp` (`CleanBiCGStab`, `CleanStagVCycle`) |
-| closure from the rays | `rad_vet/rad_vet_clean_closure.cpp` |
-| ray sweeps and direction sets | `rad_vet/rad_vet_vetgd.cpp` (spherical polar), `rad_vet/rad_vet_vetgd_cs.cpp` (cubed sphere), `rad_vet/rad_vet_vetray.cpp` (their set-up and source), `rad_vet/rad_vet_vet.cpp` (Cartesian) |
-| IMEX stages, restart state | `rad_vet/rad_vet_time2.cpp`, `utils/imex_sdirk2.hpp` |
-| task lists | `rad_vet/rad_vet_tasks.cpp`, `driver/driver.cpp` |
-| dt retry checkpoint | `driver/dt_retry.cpp` |
-| layout-invariant sums | `utils/repro_sum.hpp`, `rad_vet/rad_vet_clean_solver.cpp` |
+[WORKFLOW.md](WORKFLOW.md): flow charts of a step, a stage, the closure and the linear solve, and the list of files.
+Start in `src/rad_vet/rad_vet_tasks.cpp`.  Outside `src/rad_vet`: `driver/driver.cpp` (the step), `driver/dt_retry.cpp`
+(checkpoint), `utils/imex_sdirk2.hpp` (tableaux), `utils/repro_sum.hpp` (layout-invariant sums),
+`bvals/physics/rad_vet_bcs.cpp`.
 
 ## 4. How to cite
 

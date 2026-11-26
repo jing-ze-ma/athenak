@@ -30,7 +30,8 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 | document | for |
 |---|---|
 | [QUICKSTART.md](QUICKSTART.md) | start here: download, build (CPU, NVIDIA, AMD), check, tests, plots, 3-D stars |
-| [SCHEME.md](SCHEME.md) | the method and its properties, code map, how to cite |
+| [SCHEME.md](SCHEME.md) | the method and its properties, how to cite |
+| [WORKFLOW.md](WORKFLOW.md) | flow charts of a step, a stage, the closure and the solve; where to read the code |
 | [BUILD.md](BUILD.md) | building on CPU, NVIDIA (CUDA) and AMD (HIP); known-good toolchains |
 | [RUN.md](RUN.md) | a first run, the production star decks, restarts, dt retries |
 | [KEYS.md](KEYS.md) | the input keys a user sets; the restart rule |
