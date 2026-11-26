@@ -247,15 +247,15 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
   Kokkos::deep_copy(vet_cell, 0.0);
   Kokkos::realloc(vray_cnt, 1);   // intensities < 0 clipped (ClosureFromRays reports)
   Kokkos::deep_copy(vray_cnt, 0.0);
+  // device: one thread per (block, ray, cell), then per-cell sums; host: one thread per
+  // cell over the rays; same bits
+  vsc_rayk = !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
+  if (vsc_rayk) {Kokkos::realloc(vet_rayg, nmb, 5*vet_nray, ncells3, ncells2);}
   if (mbpath) {
     ScCartInitMB(pin);   // the banded plane buffers live in vet_mbs
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
-    // device: one thread per (block, ray, cell), then per-cell sums; host: one thread per
-    // cell over the rays; same bits
-    vsc_rayk = !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
-    if (vsc_rayk) {Kokkos::realloc(vet_rayg, nmb, 5*vet_nray, ncells3, ncells2);}
     if (vet_x1per && vet_x1ptol > 0.0) {
       Kokkos::realloc(vet_x1ent, nmb, vet_nray, ncells3, ncells2);
     }
