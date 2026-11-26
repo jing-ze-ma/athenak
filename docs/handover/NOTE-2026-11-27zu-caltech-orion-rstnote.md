@@ -225,3 +225,33 @@
     - ref : PASS warnings 0 fcone_lz 7 files 15 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
 ```
 ```
+
+## Restart-key arms on 3c681d9d1 (your 27zu item 2)
+- Run on 7333073 (02-11: bsg, t9l62; 02-17: m35mms, m35zams). 4 ranks, READ-ONLY hard links of the latest production rsts, production command-line keys named, time/tlim=1e9.
+- Outputs: user.hst and hydro_w every cycle, final rst. NO clean_retry_budget, except in the k arms (named =true).
+- Compared after the parameter block, because the header holds the command line.
+- This is a second pass: my result-copy script for 27zf/27zl deleted the first pass's dumps (02-09) before they were compared.
+- RST-N2b-bsg-a: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 9); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-bsg-b1: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 9); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-bsg-b2: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 2); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-bsg-k: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 0 (all NOTE lines 8); ``
+  - bsg (a) vs (b): final rst identical yes, last hydro_w (bsg3d.hydro_w.00117.bin) identical yes
+  - bsg (a) vs key named: final rst identical yes, last hydro_w (bsg3d.hydro_w.00117.bin) identical yes
+- RST-N2b-m35mms-a: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 8); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-m35mms-b1: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 8); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-m35mms-b2: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 3); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-m35mms-k: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 0 (all NOTE lines 7); ``
+  - m35mms (a) vs (b): final rst identical yes, last hydro_w (m35mms.hydro_w.00483.bin) identical yes
+  - m35mms (a) vs key named: final rst identical yes, last hydro_w (m35mms.hydro_w.00483.bin) identical yes
+- RST-N2b-t9l62-a: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 8); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-t9l62-b1: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 8); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-t9l62-b2: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 3); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-t9l62-k: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 0 (all NOTE lines 7); ``
+  - t9l62 (a) vs (b): final rst identical yes, last hydro_w (t9l62.hydro_w.00252.bin) identical yes
+  - t9l62 (a) vs key named: final rst identical yes, last hydro_w (t9l62.hydro_w.00252.bin) identical yes
+- RST-N2b-m35zams-a: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 8); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-m35zams-b1: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 8); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-m35zams-b2: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 1 (all NOTE lines 3); `### NOTE: <rad_vet/clean_retry_budget> = 0 is stored in the restart file (not named): the key was removed, the code runs true`
+- RST-N2b-m35zams-k: rc=0 ended: Terminating on cycle limit; FATAL 0, CLEAN WARNING 0, retry-budget NOTE lines 0 (all NOTE lines 7); ``
+  - m35zams (a) vs (b): final rst identical yes, last hydro_w (m35zams.hydro_w.00483.bin) identical yes
+  - m35zams (a) vs key named: final rst identical yes, last hydro_w (m35zams.hydro_w.00483.bin) identical yes
