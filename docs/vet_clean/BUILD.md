@@ -112,8 +112,22 @@ Tested on MI300A APUs with `module load gcc/16 rocm/7.2 openmpi_gpu/5.0 cmake/4.
 `Kokkos_ARCH_AMD_GFX942`, for MI250 / MI250X `Kokkos_ARCH_AMD_GFX90A` (not tested). On ROCm 7.2, more than 2 MPI ranks per GPU on a cubed-sphere mesh
 hang in the ray-sweep halo exchange unless `GPU_MAX_HW_QUEUES=2` is set; the code stops
 with a FATAL message that says so.
-The default UCX settings are bitwise and fastest on MI300A; no extra environment is
-needed.
+With one MPI rank per APU the default UCX settings are bitwise and fastest on MI300A; no
+extra environment is needed.
+
+**Known issue: two MPI ranks sharing one APU.** When two ranks run on the same MI300A and the
+APU is heavily oversubscribed (several jobs on it at once), a run can, rarely, give a wrong
+result without any warning: the dumps of a 2-rank run then differ from those of a 1-rank run
+from the first step on, in the last digits or by much more. Two kinds were seen in short 2-rank test runs (2 cycles,
+the closed MHD shell of the test suite on spherical-polar):
+- the UCX `rocm_ipc` transport between the two ranks: about 1 in 30 to 70 runs;
+- a rarer kind, about 0.3 % of runs, seen only with `vet_gd_band_ring = true` (the default
+  with more than one rank on a 3-D spherical-polar band); 0 in about 2400 runs with it off.
+
+Not seen with one rank per APU (0 of 388 short runs, 0 of 94 runs of 500 cycles), on NVIDIA
+H200 (0 of 3643) or on CPUs (0 of 2240). The previous release shows the first kind too. For runs
+that share an APU between ranks, `UCX_TLS=^ud,tcp,rocm_ipc` removes the main kind at about
+8.6 % more time per cycle. The cause of the rarer kind is not known yet.
 
 ## 6. Build time
 
