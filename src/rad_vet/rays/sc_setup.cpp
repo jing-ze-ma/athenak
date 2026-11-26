@@ -96,7 +96,8 @@ void RadiationVet::ScInit() {
     ScFatal("2-D axisymmetric: no implicit_flux_beam");
   }
   if (ibc_x1max != VET_IBC_MARSHAK &&
-      !(ibc_x1max == VET_IBC_REFLECT || ibc_x1max == VET_IBC_OUTFLOW)) {
+      !(ibc_x1max == VET_IBC_REFLECT || ibc_x1max == VET_IBC_OUTFLOW) &&
+      !(vgd_slab == 1 && vet_x1per)) {
     // the sweep has a vacuum top, or a mirror (ScTopMirror) for the clean scheme
     ScFatal("outer x1 needs implicit_bc_x1max = marshak or "
             "reflect with scheme = clean");
@@ -472,7 +473,9 @@ void RadiationVet::ScInit() {
         }
         continue;
       }
-      if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts too
+      // several MeshBlocks along x1, x1 periodic slab (the exit shells' bands are read
+      // by the next pass): every shell at the full band, the x1 ghosts too
+      if (vgd_nb1 > 1 || (slb && vet_x1per)) {
         vgd_wsh.assign(c1, vgd_w);
         vgd_wsi = vgd_wsh;
         vgd_wso = vgd_wsh;

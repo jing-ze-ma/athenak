@@ -643,6 +643,12 @@ class RadiationVet {
   // its sets by key: the turn beta of the vet_sc set about x1, in [0, 2 pi) (ScRotate)
   std::map<Real, std::vector<double>> vgd_slabset;
   Real ScSlabKey(const int64_t blk);
+  // x1 periodic: the passes of one build (ScSweepX1); vgd_x1p 0 off, 1 the first pass
+  // from the entry rule, 2 from the periodic image (exit shells, ScX1Exit)
+  int vgd_x1p = 0;
+  void ScSweepX1();
+  Real ScX1Exit(const bool cmp, Real &amax);
+  void ScX1Load();
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange
   void ScCartSweepMB();
   //! VET: free the multi-block state

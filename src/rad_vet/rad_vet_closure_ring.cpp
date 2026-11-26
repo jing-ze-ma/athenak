@@ -411,7 +411,7 @@ void RadiationVet::RingMoments() {
       cln_rqm = static_cast<int>(cln_fvblk[q] & 1);
       ScXfTables(cln_fvkey[q]);
       vgd_scut = vray_icut;
-      if (!fuse) ScSweep();
+      if (!fuse) ScSweepX1();
       if (cln_scmem) ScTopCopy();
       ClosureFromSc();
       if (cln_consist || cln_cssc) RayFaceSums();

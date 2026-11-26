@@ -119,9 +119,12 @@ void RadiationVet::ScSweep() {
   auto wsd_ = vgd_wsd;
   const int c2w_ = indcs.nx2 + 2*wb;
   const int xr_ = vgd_xr;   // reads beyond the 2x2 stencil (rad_vet.hpp)
-  // Cartesian slab (ScSlabSelect): x1 plays r, constant foot offsets per direction
+  // Cartesian slab (ScSlabSelect): x1 plays r, constant foot offsets per direction;
+  // x1 periodic: the pass's entry (ScSweepX1)
   const bool slb_ = (vgd_slab == 1);
   const int slbc_ = slb_ ? ((indcs.nx3 > 1) ? 2 : 1) : 0;   // (ScCand)
+  const int x1p_ = slb_ ? vgd_x1p : 0;
+  const bool x1si_ = vet_x1src;
   // the fused sweep counts as two sweeps, a list-only preparation as none
   if (!vgd_xff_prep) {vgd_hsweep += vgd_xff_now ? 2 : 1;}
   // vet_gd_shell_list: per pass the (m, k, j, d) whose n . r_hat (face midpoints) lies

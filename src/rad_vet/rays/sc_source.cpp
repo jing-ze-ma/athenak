@@ -50,7 +50,9 @@ void RadiationVet::VetRayInit() {
   auto &indcs = pm->mb_indcs;
   if (!trans_on) {VrayFatal("needs <rad_vet>/transport = implicit on a MULTI-D mesh");}
   if (pm->multilevel) {VrayFatal("SMR/AMR is not supported");}
-  if (ibc_x1min == VET_IBC_PERIODIC) {VrayFatal("a periodic x1 boundary has no top");}
+  if (ibc_x1min == VET_IBC_PERIODIC && !(vgd_slab == 1 && vet_x1per)) {
+    VrayFatal("a periodic x1 boundary has no top");
+  }
   // a stretched theta and the full sphere take the node table
   if (!pm->use_cubed_sphere) {
     vgd_pol = pm->use_polar_boundary;
