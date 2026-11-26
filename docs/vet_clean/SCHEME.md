@@ -238,9 +238,9 @@ Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
 ### Angular momentum $L_z$: exact on the cubed sphere; on spherical polar exact except where the cone cut acts
 
 On a spherical-polar mesh the azimuthal radiation stress is written in torque form, so it
-cancels between neighbouring cells; `clean_stag_fwb_ring = 1`
-removes the net torque of the
-well-balancing residual on each azimuthal ring. On the cubed sphere the panel faces are not
+cancels between neighbouring cells; the ring correction (on by rule on 3-D spherical polar
+with a periodic phi, with `closure_consistency`; KEYS.md, rule `clean_stag_fwb_ring`) removes the
+net torque of the well-balancing residual on each azimuthal ring. On the cubed sphere the panel faces are not
 azimuthal faces: each cell's gas takes its absorption torque, and the part that cannot cancel
 locally is collected each solve and given back to the gas as a uniform rigid spin. This
 conserves $L_z$ exactly but not locally.
@@ -321,7 +321,8 @@ tau_cell = 1e4 stays within [background, background + amplitude] to round-off) a
 A star in hydrostatic and radiative equilibrium is designed as a steady state of the discrete
 equations. The gas sees only the deviation of the radiative force from a reference force that
 balances gravity (`force_reference = wb_arad`, held by the well-balanced hydro), and the face
-flux rows are written about the rays' own steady state (`clean_stag_fwb`). The steady start
+flux rows are written about the rays' own steady state (with `closure_consistency`; rule
+`clean_stag_fwb`). The steady start
 (`steady_init = steady`) begins from the scheme's own discrete equilibrium. The remaining
 motion is at the solver-tolerance level, not round-off.
 
@@ -536,7 +537,7 @@ following. The properties of this section are not verified there.
 | spherical polar with the poles (full sphere, `<mesh>/use_polar_boundary`) under `vet_gd` | accepted, not tested | wedges clear of the poles; the full sphere on the cubed sphere (`*_cs`) |
 | stretched theta (`<mesh>/use_grid_stretch_theta`, `theta_plateau`) under `vet_gd` | accepted, not tested | uniform theta; radial stretching in the star decks |
 | several MeshBlocks along x1 under `vet_gd` | the sweep has the code, but the start-up check stops with a FATAL error on spherical polar and the cubed sphere (`meshblock/nx1` must equal `mesh/nx1`), so it cannot be reached | one MeshBlock along x1; several on a Cartesian mesh with `closure = vet_sc` (`idort_beams_mb`) |
-| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with `time2_tableau = hesdirk2` (default) or `trbdf2`, tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `sdirk2`, the tableau of the star decks, is FATAL with MHD and matter coupling; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
+| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with `time2_tableau = hesdirk2` (the default with `<mhd>`) or `trbdf2`, tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `sdirk2`, the tableau of the star decks, is FATAL with MHD and matter coupling; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
 
 ## 3. Code map
 

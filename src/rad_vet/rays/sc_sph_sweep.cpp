@@ -15,7 +15,8 @@
 //!     same shell (inward value), or the inner face (diffusion intensity).
 //! Upwind I, ln chi, ln S are bilinear in (theta, phi) index space; S is linear in tau.
 //! Periodic theta/phi walls: ghost intensities are re-indexed by the local-frame map
-//! n -> M n (nearest set direction). Block boundaries: lagged inflow (block-Jacobi).
+//! n -> M n (nearest set direction). Block boundaries: exact per shell (the inflow of
+//! this sweep); only a reflecting outer x1 face reads the previous build.
 //! Output: the intensities vgd_i (ClosureFromSc, RayFaceSums).
 //!
 //!  called from: rad_vet_closure_ring.cpp, rays/sc_build.cpp

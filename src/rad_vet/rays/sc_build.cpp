@@ -63,7 +63,8 @@ void RadiationVet::ScSource() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScBuild
 //! \brief the gd build: source and first shell (VetRaySource),
-//! sweep(s) with the lagged lateral inflow, moments; timed per part (fenced)
+//! sweep(s), exact per shell (a reflecting outer x1 face reads the previous build),
+//! moments; timed per part (fenced)
 
 void RadiationVet::ScBuild() {
   Kokkos::Timer tm;
@@ -72,7 +73,8 @@ void RadiationVet::ScBuild() {
   vgd_tsrc += tm.seconds();
   ScTabPoll();      // the prefetched tables, uploaded when ready
   // vet_gd_rotate_every: a new z-angle at the first build of a block of N cycles; the
-  // stored intensities belong to the old directions, so the lagged inflow re-converges
+  // stored intensities (read only by a reflecting outer x1 face) belong to the old
+  // directions and re-converge there
   const Real al = RotAngle(pmy_pack->pmesh->ncycle);
   // no vet_rotate_avg or cross-fade here: the clean scheme sweeps rotating sets on its
   // ring (RingMoments); without ring they are refused (InitArrays)

@@ -176,7 +176,7 @@ Notes on the results of this release:
   is its face momenta (`LzTotal`; ~0.6 % of the radiation's L_z apart).
 - **Layout.** Tile mode gives bit-identical results for every layout of whole-tile
   MeshBlocks with one MeshBlock along x1 and x2 (theta): 1 x 2 (along phi) is identical.
-  2 x 2 differs after 8 cycles by 8e-14 of the largest value (CPU): splitting theta puts ray walls (mirror or vacuum) inside the mesh,
+  2 x 2 differs after 8 cycles by a few 1e-11 relative (maxrel_2x2 3.9e-11 on CPU and H200, bound 1e-8): splitting theta puts ray walls (mirror or vacuum) inside the mesh,
   which is outside the tile guarantee, so the test bounds that difference instead of
   requiring 0.
   The `dfl` pair covers the stage-2 outflow limiter: under `time2_tableau = sdirk2` the u0
