@@ -25,11 +25,11 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanOldVector
+//! \fn void RadiationVet::OldVector
 //! \brief E and gas state the stage starts from (stage increments added), with the gas
 //! internal energy and temperature
 
-void RadiationVet::CleanOldVector() {
+void RadiationVet::OldVector() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -44,14 +44,14 @@ void RadiationVet::CleanOldVector() {
   auto u0_ = u0;
   auto inc = t2inc;
   auto w = cln_w;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
 
   // counted: gas eint < 0 at the stage start (taken as 0 by the exchange), E < 0, and a
   // non-finite start (a NaN max(e0, 0) would hide: the solve fails, the step is redone).
   // A flat range; the counts are integers, exact in any order.
   Real nn[3] = {0.0, 0.0, 0.0};
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-  Kokkos::parallel_reduce("cln_old", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  Kokkos::parallel_reduce("cln_old", SolveRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx, Real &ng, Real &ne, Real &nf) {
     const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
     const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
@@ -63,10 +63,10 @@ void RadiationVet::CleanOldVector() {
       }
       const Real d = uh(m,IDN,k,j,i);
       Real p[3];
-      CleanGasMomentum(x, uh, m, k, j, i, p);
+      GasMomentum(x, uh, m, k, j, i, p);
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
       // a deficit eint < 0 stays in the gas row, paid by its implicit exchange (e(T) > 0)
-      const Real eint = CleanGasEint(x, uh, ekin, m, k, j, i);
+      const Real eint = GasEint(x, uh, ekin, m, k, j, i);
       if (eint < 0.0) ng += 1.0;
       if (!(Kokkos::isfinite(eint) && Kokkos::isfinite(d))) nf += 1.0;
       t = eos.Temperature(d, fmax(eint, 0.0));
@@ -77,11 +77,11 @@ void RadiationVet::CleanOldVector() {
     if (w(m,CLW_EO,k,j,i) < 0.0) ne += 1.0;
     if (!Kokkos::isfinite(w(m,CLW_EO,k,j,i))) nf += 1.0;
   }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]), Kokkos::Sum<Real>(nn[2]));
-  nn[0] = CleanReduce(nn[0], false);
-  nn[1] = CleanReduce(nn[1], false);
-  nn[2] = CleanReduce(nn[2], false);
+  nn[0] = GlobalReduce(nn[0], false);
+  nn[1] = GlobalReduce(nn[1], false);
+  nn[2] = GlobalReduce(nn[2], false);
   // clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums (Time2FormStage)
-  if (cln_lzbook && fluid && feedback && stage) CleanLzBook(cln_lzc, true);
+  if (cln_lzbook && fluid && feedback && stage) LzBook(cln_lzc, true);
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {
     std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells "
                 "(gas or E; the solve fails and the step is redone)\n",
@@ -94,9 +94,9 @@ void RadiationVet::CleanOldVector() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagXDonor
+//! \fn void RadiationVet::FaceDonor
 //! \brief clean_stag_xdonor (staggered): the off-diagonal stress flux of each face,
-//! C = -(1-w) theta h c^2 d_t(D_nt E) (CleanFaceCross), of the iterate E_k enters the
+//! C = -(1-w) theta h c^2 d_t(D_nt E) (FaceCross), of the iterate E_k enters the
 //! pass as a donor-cell coefficient, C(E) -> q E_donor, q = C(E_k)/E_k,donor, |q| <= c.
 //! q adds to al (>= 0) or ar (<= 0) only, so the operator stays an M-matrix for any D, h:
 //! a non-negative right-hand side gives a non-negative solution, without a mask.  At the
@@ -106,25 +106,25 @@ void RadiationVet::CleanOldVector() {
 //! face whose change turns back, d = l x the last (l < 0), takes d/(1 - l), the fixed
 //! point of that mode.  first: a solve's first iterate, no history.
 
-void RadiationVet::CleanStagXDonor(const bool first, const bool lat, const bool hold) {
+void RadiationVet::FaceDonor(const bool first, const bool lat, const bool hold) {
   if (!pmy_pack->pmesh->multi_d) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   cln_xd_on = false;
-  CleanGhostDefer(cln_w, CLW_EK, 1);   // one exchange
-  CleanGhostFill(cln_w, CLW_EO, 1);   // donors' E_old of the lag split
-  if (lat) CleanStagCsLateral(CLW_EK);
+  GhostDefer(cln_w, CLW_EK, 1);   // one exchange
+  GhostFill(cln_w, CLW_EO, 1);   // donors' E_old of the lag split
+  if (lat) CsLateralStress(CLW_EK);
   // hold (clean_stag_xdonor_freeze): keep C, q and the explicit part of the last pass
   cln_xdh = hold;
   if (hold) {cln_xd_on = true; return;}
-  CleanArgs x = CleanMakeArgs();   // x.xq = -1: the central cross flux
+  SolveArgs x = MakeArgs();   // x.xq = -1: the central cross flux
   const int xq = cln_xqs;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    // zero every face (one flat range); the pass's split (CleanStagXSplit) sets the
+    // zero every face (one flat range); the pass's split (XSplit) sets the
     // active ones
     const int n4 = fc.extent_int(4), n34 = fc.extent_int(3)*n4;
     const int n234 = fc.extent_int(2)*n34;
@@ -135,7 +135,7 @@ void RadiationVet::CleanStagXDonor(const bool first, const bool lat, const bool 
       const int j = (idx - m*n234 - k*n34)/n4, i = idx%n4;
       for (int q = 0; q < 3; ++q) fc(m,xq+q,k,j,i) = 0.0;
       if (k < ks || k > ke+dk || j < js || j > je+dj || i < is || i > ie+di) return;
-      const Real cn = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
+      const Real cn = FaceCross(x, CLW_EK, dir, m, k, j, i);
       const Real cp = fc(m,CLF_XC,k,j,i), d = cn - cp, dp = fc(m,CLF_XC+1,k,j,i);
       // l < 0 where C turns back: step d/(1 - l), the fixed point of a mode C -> l C;
       // continuous in l

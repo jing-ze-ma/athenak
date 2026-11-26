@@ -47,11 +47,11 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsSweep
+//! \fn void RadiationVet::ScCsSweep
 //! \brief one sweep (inward then outward) of every direction on the cubed sphere:
-//! the VetGdSweep body with the cs upwind stencil
+//! the ScSweep body with the cs upwind stencil
 
-void RadiationVet::VetGdCsSweep() {
+void RadiationVet::ScCsSweep() {
   if (vgd_xff_prep) {return;}   // nothing to prepare (lists made below)
   // vet_gd_rotate_xfade_fuse: the next set (own intensities vgd_i_xb, tables, lists)
   // is swept in the same shell kernels
@@ -97,14 +97,14 @@ void RadiationVet::VetGdCsSweep() {
   const bool ccl = vgd_cscomp;
   int xcurb = -1;   // next set's compact-list entry
   if (ccl) {
-    VetGdCsCompact();
+    ScCsCompact();
     if (xffs) {
       // current set first, then the next (the order of two sweeps: same LRU entry)
       const int ca = vgd_cscur;
       std::swap(vgd_dir, vgd_tabd.dir);
       std::swap(vgd_mr, vgd_tabd.mr);
       std::swap(vgd_alpha, vgd_xf_alt);
-      VetGdCsCompact();
+      ScCsCompact();
       xcurb = vgd_cscur;
       std::swap(vgd_alpha, vgd_xf_alt);
       std::swap(vgd_mr, vgd_tabd.mr);
@@ -121,9 +121,9 @@ void RadiationVet::VetGdCsSweep() {
   // shell i are the receive list of its inward compact exchange (record vgd_hxe[i];
   // all addresses in the unused entry vgd_hxe[n1c]). Pure copies (bitwise).
   const bool rga = vgd_ring && ccl;
-  if (vgd_ring && !ccl) {VgdCsFatal("vet_gd_band_ring without the compact lists");}
+  if (vgd_ring && !ccl) {ScCsFatal("vet_gd_band_ring without the compact lists");}
   // next set's records in vgd_hxe_alt; the ring's second array is its intensities
-  auto ringrec = [&](std::vector<VgdHlEntry> &hxe, const VgdCsCl &E, const Real alr) {
+  auto ringrec = [&](std::vector<ScHlEntry> &hxe, const ScCsCl &E, const Real alr) {
     const int n1c = indcs.nx1 + 2*indcs.ng;
     if (static_cast<int>(hxe.size()) != 2*n1c) {hxe.resize(2*n1c);}
     const int np = static_cast<int>(vgd_csprk.size());
@@ -132,9 +132,9 @@ void RadiationVet::VetGdCsSweep() {
     const int64_t na = a1 - a0;
     if (static_cast<int64_t>(pmy_pack->nmb_thispack)*n*c3b*c2b >= INT32_MAX ||
         na >= INT32_MAX) {
-      VgdCsFatal("vet_gd_band_ring: band addresses >= 2^31 (32-bit records)");
+      ScCsFatal("vet_gd_band_ring: band addresses >= 2^31 (32-bit records)");
     }
-    VgdHlEntry &B = hxe[n1c];
+    ScHlEntry &B = hxe[n1c];
     B.gen = -1;
     B.exact = false;
     if (B.dl.extent_int(0) < na + 1) {
@@ -153,7 +153,7 @@ void RadiationVet::VetGdCsSweep() {
       });
     }
     for (int l = 0; l < n1; ++l) {
-      VgdHlEntry &X = hxe[is + l];
+      ScHlEntry &X = hxe[is + l];
       const int64_t r0 = E.ro[static_cast<size_t>(l)*(np + 1)];
       const int64_t r1 = E.ro[static_cast<size_t>(l)*(np + 1) + np];
       X.dl = DvceArray1D<int>(bd_.data() + (r0 - a0), r1 - r0);
@@ -261,9 +261,9 @@ void RadiationVet::VetGdCsSweep() {
     for (int q = 0; q < nn; ++q) {sh += (std::strncmp(bus, &all[32*q], 32) == 0);}
     MPI_Allreduce(MPI_IN_PLACE, &sh, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
     if (sh > 2) {
-      VgdCsFatal(std::to_string(sh) + " ranks share one GPU: the early send hangs "
-                 "there (HIP hardware queues); set GPU_MAX_HW_QUEUES=2 (same bits) or "
-                 "use at most 2 ranks per GPU");
+      ScCsFatal(std::to_string(sh) + " ranks share one GPU: the early send hangs "
+                "there (HIP hardware queues); set GPU_MAX_HW_QUEUES=2 (same bits) or "
+                "use at most 2 ranks per GPU");
     }
   }
 #endif
@@ -277,7 +277,7 @@ void RadiationVet::VetGdCsSweep() {
   }
   auto est_ = vgd_est[0];
   int esid = 0;   // 0: no early cells (never a stamp)
-  VgdCsEv eev, efork;
+  ScCsEv eev, efork;
   // shell kernel LaunchBounds<128, kLb> (register cap): HIP 2 (min waves per EU; more
   // spills), CUDA 8
 #if defined(KOKKOS_ENABLE_HIP)
@@ -285,7 +285,7 @@ void RadiationVet::VetGdCsSweep() {
 #else
   constexpr unsigned kLb = 8;
 #endif
-  VetGdRingSweepBegin(xffs);   // the other set's array second
+  ScRingSweepBegin(xffs);   // the other set's array second
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const int nsh = n1 - lcut;
@@ -295,16 +295,16 @@ void RadiationVet::VetGdCsSweep() {
       if (rga) {
         // this shell's wide slab: inward from scratch, outward with its interior and
         // its inward-exchange band values
-        VetGdRingFlush();
+        ScRingFlush();
         if (vgd_rg_state[i] < 0) {
-          VgdRingOp o;
+          ScRingOp o;
           o.kind = 3;
           o.i = i;
           o.copyin = !inw;
           o.restore = !inw;
           vgd_rg_pend.push_back(o);
         }
-        VetGdRingFlush();
+        ScRingFlush();
       }
       // flat (m, k, j, d) range, d fastest; with the fused twin one thread computes the
       // geometry once and the values of both fields
@@ -319,7 +319,7 @@ void RadiationVet::VetGdCsSweep() {
       // early send: compute and pack this shell's send values first, record an event;
       // the full shell kernel overlaps the host exchange (finished at the halo point)
       if (early) {
-        const VgdCsCl &E = vgd_cscl[vgd_cscur];
+        const ScCsCl &E = vgd_cscl[vgd_cscur];
         const int np = static_cast<int>(vgd_csprk.size());
         const size_t sl = static_cast<size_t>(pass)*n1 + l;
         const int64_t *so = &E.so[sl*(np + 1)];
@@ -332,8 +332,8 @@ void RadiationVet::VetGdCsSweep() {
           if (vgd_esid == 1) {Kokkos::deep_copy(est_, 0);}   // first use or wrapped
           esid = vgd_esid;
           const int sid_ = esid;
-          Kokkos::parallel_for("vet_vgdcs_estamp", VgdLight(DevExeSpace(), 0,
-                                                            static_cast<int>(ens)),
+          Kokkos::parallel_for("vet_vgdcs_estamp", ScLight(DevExeSpace(), 0,
+                                                           static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
@@ -341,11 +341,11 @@ void RadiationVet::VetGdCsSweep() {
           });
           // send cells + pack on the second stream, concurrent with the shell kernel;
           // the sweep stream waits for them after it (efork / eev)
-          VgdEs2Make();
+          ScEs2Make();
           efork.Record();
           efork.StreamWait(vgd_es2);
           Kokkos::parallel_for("vet_vgdcs_eshell",
-                               VgdLight(vgd_es2, 0, static_cast<int>(ens)),
+                               ScLight(vgd_es2, 0, static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
@@ -354,7 +354,7 @@ void RadiationVet::VetGdCsSweep() {
           auto a_ = vgd_i;
           Real *sbp = vgd_cssb.data();
           Kokkos::parallel_for("vet_vgdcs_cpack",
-                               VgdLight(vgd_es2, 0, static_cast<int>(ens)),
+                               ScLight(vgd_es2, 0, static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
@@ -422,7 +422,7 @@ void RadiationVet::VetGdCsSweep() {
         // to the compact slab; the next shell gets a slab after this exchange
         if (q > 0) {
           const int ip = inw ? (i + 1) : (i - 1);
-          VgdRingOp o;
+          ScRingOp o;
           if (inw) {
             o.kind = 1;
             o.i = ip;
@@ -433,7 +433,7 @@ void RadiationVet::VetGdCsSweep() {
           vgd_rg_pend.push_back(o);
         }
         if (q + 1 < nsh) {
-          VgdRingOp o;
+          ScRingOp o;
           o.kind = 3;
           o.i = inw ? (i - 1) : (i + 1);
           o.copyin = !inw;
@@ -444,9 +444,9 @@ void RadiationVet::VetGdCsSweep() {
       Kokkos::Timer th;
       if (early) {
 #if MPI_PARALLEL_ENABLED
-        // early send: pack done (event); messages of VetGdCsHaloC, then the unpack
+        // early send: pack done (event); messages of ScCsHaloC, then the unpack
         // (stream-ordered after the shell kernel)
-        const VgdCsCl &E = vgd_cscl[vgd_cscur];
+        const ScCsCl &E = vgd_cscl[vgd_cscur];
         const int np = static_cast<int>(vgd_csprk.size());
         const size_t sl = static_cast<size_t>(pass)*n1 + l;
         const int64_t *so = &E.so[sl*(np + 1)];
@@ -455,7 +455,7 @@ void RadiationVet::VetGdCsSweep() {
         const int64_t r0 = ro[0], nr = ro[np] - ro[0];
         if (static_cast<int64_t>(vgd_cssb.extent(0)) < ns ||
             static_cast<int64_t>(vgd_csrb.extent(0)) < nr) {
-          VgdCsFatal("cs early send: message buffer too small");
+          ScCsFatal("cs early send: message buffer too small");
         }
         eev.Wait();
         Kokkos::Timer tq;
@@ -486,7 +486,7 @@ void RadiationVet::VetGdCsSweep() {
           auto ri_ = E.ri;
           const Real *rbp = vgd_csrb.data();
           Kokkos::parallel_for("vet_vgdcs_cunpack",
-                               VgdLight(DevExeSpace(), 0, static_cast<int>(nr)),
+                               ScLight(DevExeSpace(), 0, static_cast<int>(nr)),
           KOKKOS_LAMBDA(const int o) {
             const int x = ri_(r0 + o);
             const int e = x/n, d = x - e*n;
@@ -495,36 +495,36 @@ void RadiationVet::VetGdCsSweep() {
         }
 #endif
       } else if (ccl) {
-        // fused sweep: both sets in one round (VetGdCsHaloCX), else two exchanges
-        if (!(xffs && VetGdCsHaloCX(pass, i, xcurb))) {
-          VetGdCsHaloC(pass, i);          // read values only
+        // fused sweep: both sets in one round (ScCsHaloCX), else two exchanges
+        if (!(xffs && ScCsHaloCX(pass, i, xcurb))) {
+          ScCsHaloC(pass, i);          // read values only
           if (xffs) {
             // next set's exchange (own compact lists and array)
             const int ca = vgd_cscur;
             vgd_cscur = xcurb;
             std::swap(vgd_i, vgd_i_xb);
-            VetGdCsHaloC(pass, i);
+            ScCsHaloC(pass, i);
             std::swap(vgd_i, vgd_i_xb);
             vgd_cscur = ca;
           }
         }
       } else {
-        VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
-        if (xffs) {VetGdCsHalo(vgd_i_xb, n, i, i, false);}
+        ScCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
+        if (xffs) {ScCsHalo(vgd_i_xb, n, i, i, false);}
       }
       if (rga && inw) {
         // values to save from this inward band: its compact receive list (vgd_hxe[i])
         vgd_rg_sk[i] = 1;
         vgd_rg_se[i] = i;
       }
-      if (rga) {VetGdRingFlush();}
+      if (rga) {ScRingFlush();}
       vgd_thalo += th.seconds();
     }
     if (rga) {
       // last shell of the pass: saved (inward), back to its compact slab
       const int il = is + (inw ? lcut : (n1 - 1));
       if (vgd_rg_state[il] >= 0) {
-        VgdRingOp o;
+        ScRingOp o;
         if (inw) {
           o.kind = 1;
           o.i = il;
@@ -534,17 +534,17 @@ void RadiationVet::VetGdCsSweep() {
         o.i = il;
         vgd_rg_pend.push_back(o);
       }
-      VetGdRingFlush();
+      ScRingFlush();
     }
   }
-  VetGdRingSweepEnd();
+  ScRingSweepEnd();
   Kokkos::fence();
   if (ccl) {
     auto mh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_csmiss);
     if (mh(0) != 0) {
-      VgdCsFatal("compact lists: " + std::to_string(mh(0)) + " remote band reads not "
-                 "in the read mask (rank " + std::to_string(global_variable::my_rank) +
-                 "); run with vet_gd_halo_compact = 0 (the dense band) and report");
+      ScCsFatal("compact lists: " + std::to_string(mh(0)) + " remote band reads not "
+                "in the read mask (rank " + std::to_string(global_variable::my_rank) +
+                "); run with vet_gd_halo_compact = 0 (the dense band) and report");
     }
   }
 }

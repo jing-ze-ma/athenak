@@ -735,7 +735,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // the face momenta's, the radiation momentum)
     auto *pr = pm->pmb_pack->pradvet;
     if (variable.compare("vet") == 0 && pr != nullptr) {
-      if (pr->cln_phic.extent_int(0) == 0) {   // (CleanInit keeps it: the same shape)
+      if (pr->cln_phic.extent_int(0) == 0) {   // (InitArrays keeps it: the same shape)
         Kokkos::realloc(pr->cln_phic, pr->u0.extent_int(0), 3, pr->u0.extent_int(2),
                         pr->u0.extent_int(3), pr->u0.extent_int(4));
       }

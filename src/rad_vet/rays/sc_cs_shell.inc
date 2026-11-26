@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file sc_cs_shell.inc
-//! \brief cs shell kernel body of RadiationVet::VetGdCsSweep, included as shell_
+//! \brief cs shell kernel body of RadiationVet::ScCsSweep, included as shell_
 //! (current set) and shellx_ (next set of a fused cross-fade); needs
 //! VET_VGDCS_SHELL_NAME.
       auto VET_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
@@ -22,21 +22,21 @@
         int typ = 1;
         int iu = i + 1;
         Real ds = 0.0, dso = 0.0;
-        VgdCsSt st;
+        ScCsSt st;
         if (br == 0) {
           const Real rtop = cx1f(m,ie+1);
           ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
         } else if (br == 2) {
           // upwind shell, chord and own-cell part
-          VgdRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
+          ScRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
           // upwind point (Cartesian), its direction and the cs stencil
           Real xu[3] = {r*rx - ds*nx, r*ry - ds*ny, r*rz - ds*nz};
           const Real ru = sqrt(xu[0]*xu[0] + xu[1]*xu[1] + xu[2]*xu[2]);
           xu[0] /= ru;
           xu[1] /= ru;
           xu[2] /= ru;
-          const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
-                                        nc, h, cm_, nb_, st);
+          const bool sok = ScCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
+                                       nc, h, cm_, nb_, st);
           if (!sok && cnt) {Kokkos::atomic_add(&cnt_(0), 1.0);}
           if (st.n == 0) {   // nothing in the band (counted): own column
             st.n = 1;
@@ -56,23 +56,23 @@
           }
         }
         const DvceArray5D<Real> &cv = cs_;   // ln chi, ln S
-        const VgdIView &va = vi_;            // the intensities
+        const ScIView &va = vi_;            // the intensities
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
         // stencil and field reads of the shared upwind core
-        const VgdCsA acc{st};
+        const ScCsA acc{st};
         auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
           return cv(m,c,kk,jj,ii);
         };
         if (br == 0) {
-          iv = VgdTopInflow(ch0, ds, s0, exp(cv(m,1,k,j,i-1)), tbh, itop);
+          iv = ScTopInflow(ch0, ds, s0, exp(cv(m,1,k,j,i-1)), tbh, itop);
         } else if (br == 1) {
           iv = s0;
         } else {
           if (typ == 2) {
-            iv = VgdInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
-                              cx1v(m,i+1), p2, ch0, ds, s0);
+            iv = ScInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
+                             cx1v(m,i+1), p2, ch0, ds, s0);
           } else {
             // stencil-cell intensity: owner's interior if on this rank (shell iu done;
             // the other branch of shell i is masked), else the band copy
@@ -88,7 +88,7 @@
               }
               return va(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
-            const Real ivu = VgdUpwindI(acc, rdi, ok, all);
+            const Real ivu = ScUpwindI(acc, rdi, ok, all);
             auto lin = [&](const int c, const int ii) {
               Real s = 0.0;
               for (int e = 0; e < st.n; ++e) {s += st.w[e]*cv(m,c,st.k[e],st.j[e],ii);}
@@ -114,9 +114,9 @@
             const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
             const int id2 = 2*i - iu;
             const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
-            iv = VgdSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
-                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim, iuu,
-                              idd);
+            iv = ScSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
+                             ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim, iuu,
+                             idd);
           }
         }
         va(m,d,k,j,i) = iv;

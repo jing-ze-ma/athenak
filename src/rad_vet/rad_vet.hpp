@@ -103,7 +103,7 @@ class RadiationVet {
   int fcap_report = 0;
   bool fcap_lz = false;     // floorcap_lz: the velocity cap keeps the L_z momentum
   bool fcap_spin = false;   // floorcap_lz_spin: its L_z X the dense gas's dOmega = X/I
-  bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CleanVol and CleanLzArm
+  bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CellVolume and LzArm
   DualArray1D<Real> fcap_cnt;   // removed: 0 n_v, 1 n_t, 2 dKE, 3 dEint, 4 |dp|V, 5 dL_zV
   void FloorGasCap();
 
@@ -163,14 +163,14 @@ class RadiationVet {
   int vet_ring_n = 0, vet_ring_g = 1;   // vet_ring, vet_ring_groups (0: double-Gauss)
   bool vsc_rot = false;                 // vet_sc rotates (physical clock)
   Real vsc_beta = 0.0;                  // current rotation of the vet_sc set
-  void VetBuildAngles(const Real beta);
-  void VgdBuildSet(std::vector<double> &d) const;
+  void ScCartAngles(const Real beta);
+  void ScBuildSet(std::vector<double> &d) const;
   void VetRotInit(ParameterInput *pin);   // (rays/sc_directions.cpp)
   void VetRotUpdate();
   Real VetRotBeta(const int64_t blk) const;   // rotation of block blk
   void VetRotSet(const Real beta);
   void VetScRotAvgSetup();     // vet_sc's averaged fields (vet_cell)
-  void VetShortCharSweep();    // build with the current set
+  void ScCartSweep();    // build with the current set
   bool vet_axis_flux = false;  // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full = false;     // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   static constexpr Real vet_eig_min = 0.0;   // full: eigenvalue floor of D
@@ -183,7 +183,7 @@ class RadiationVet {
   DvceArray5D<Real> vet_ipl;   // (nmb, 2, nray, k, j): intensity of the last two layers
   // multi-block sweep state (plane buffers, neighbour tables, exchange); null on one
   // MeshBlock
-  VetMBState *vet_mbs;
+  ScCartMBState *vet_mbs;
 
   // fold dtnew into Mesh::NewTimeStep (no sub-cycling, or no other module sets dt)
   bool sets_mesh_dt{};
@@ -474,7 +474,7 @@ class RadiationVet {
                                                          // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
   int t2_rcl = -1;              // closure channels of the file read (clean_closure =
-                                // iterate, CleanRstNcl; -1: this run's own layout)
+                                // iterate, RstNcl; -1: this run's own layout)
   int t2_rskip = 0;             // a file's clean_rot_ring channels read with the ring off
   bool t2_rstd3 = false;        // version-1 file: the fkin block is d only (no K1_d)
   int t2_rstv = 5;              // clean file version: <= 3 zero predictor / extrap2
@@ -516,14 +516,14 @@ class RadiationVet {
   // limited, R halo-exchanged; the rest (Q <= 0, gas eint) goes to posfix.
   DvceArray5D<Real> t2pf1, t2pf2;   // (m,3,k,j,i) (chat/c) F_applied of K1 / K2's solve
   bool t2pf1_ok = false, t2pf2_ok = false;
-  // t2pf is stored with the limiter or with clean staggered (CleanBndAcc): cln_lacc
+  // t2pf is stored with the limiter or with clean staggered (BoundaryEnergyAcc): cln_lacc
   // (m,4,k,j) = energy through the physical x1 faces so far, inner (0, + inward), outer
   // (1, + outward), and the old vector's face part (2, 3); cln_ldt = the step's dt
   // (0: none yet, the history reads the faces' F)
   bool t2_pfst = false;
   DvceArray4D<Real> cln_lacc;
   Real cln_ldt = 0.0;
-  void CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt);
+  void BoundaryEnergyAcc(int stage, Real c1, Real c2, Real w, Real dt);
   Real t2_ffct_calls = 0.0, t2_ffct_cells = 0.0, t2_ffct_left = 0.0;
   Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0, t2_ffct_fill = 0.0;
   // t2_ffct_emin = th: the limiter keeps th V E^n in a limited cell; counted: cells
@@ -590,13 +590,13 @@ class RadiationVet {
   DvceArray4D<Real> icr_dm;
   Real icr_dm_dt = 0.0;
   //! spherical-polar wedge: fatal on an unsupported configuration (after ImplicitInit)
-  void SphericalS1Check(ParameterInput *pin);
+  void SphericalCheck(ParameterInput *pin);
   // spherical-polar or cubed-sphere mesh: the implicit kernels take the Coordinates face
   // areas, volumes and centre distances
   bool sph_geom = false;
   // cubed sphere (sets sph_geom too)
   bool cs_geom = false;
-  // cubed-sphere transverse operator (CubedS1Init):
+  // cubed-sphere transverse operator (CubedInit):
   //   vetbcs     mb_bcs with BoundaryFlag::panel read as block (a seam is an open face)
   //   cs_seam   per MeshBlock: its inner_x2, outer_x2, inner_x3, outer_x3 face is a seam
   //   csg2/3    seam geometry (VetCsSeamGeom) of the x2 / x3 seam faces,
@@ -614,108 +614,108 @@ class RadiationVet {
   // the same normals at cell centres (m, j or k incl. ghosts, c): lateral axes of the cs
   // half-range ratios
   DvceArray3D<Real> cs_cn2, cs_cn3;
-  void CubedS1Init();
+  void CubedInit();
   //! print the timers and positivity totals of the implicit transport
   void ImplicitReport();
   // dbg_energy_audit (output only): per solve, the change of gas energy + (c/chat) E
   // between the marks of EAuditMark, by cell class (rest, floor gas, reset), with the
   // boundary fluxes; rank 0 prints EAUDIT at mark 5 (mark 6: a discarded attempt)
-  // acl_cnt_d: ApplyClosureLimits clips over active cells (0 E raised, 1 |F| scaled)
+  // acl_cnt_d: StageTimers clips over active cells (0 E raised, 1 |F| scaled)
   DvceArray1D<Real> acl_cnt_d;
   void EventTotals(Real *v);
   //! VET: read <rad_vet>/vet_*, check the mesh, allocate
-  void VetInit(ParameterInput *pin);
+  void ScCartInit(ParameterInput *pin);
   //! VET: short-characteristics formal solution and the uniaxial tensor (chi, n)
-  void VetShortChar();
+  void ScCartBuild();
   //! VET, vet_tensor = full: guarded D = K/J (and its ghosts) for the solve
-  void VetFullTensor();
+  void ScCartTensor();
   //! VET: cost line at the end of the run
-  void VetReport();
+  void ScCartReport();
   //! VET, several MeshBlocks: allocate the banded buffers and neighbour tables
-  void VetMBInit(ParameterInput *pin);
+  void ScCartInitMB(ParameterInput *pin);
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange
-  void VetSweepMB();
+  void ScCartSweepMB();
   //! VET: free the multi-block state
-  void VetFree();
+  void ScCartFree();
   // ---- scheme = clean: the implicit stage solve (rad_vet_tasks.cpp)
-  TaskStatus CleanSolve(Driver *d, int stage);
+  TaskStatus StageSolve(Driver *d, int stage);
   // the step's radiation (rad_vet_imex.cpp), called by Driver::Execute
   void RunStage(Driver *pdrive, const int stage);
   bool Time2Stage(Driver *pdrive, const int stage);
   void Time2Accept(Driver *pdrive);
   void BackwardEuler(Driver *pdrive);
-  // the steps of CleanSolve, in order (rad_vet_tasks.cpp)
-  void CleanSolveBegin();
-  void CleanStageClosure();
-  SolvePass CleanPassSetup();
-  void CleanFirstPass();
-  void CleanPassClosure(SolvePass &p);
-  void CleanPassRows(const SolvePass &p);
-  bool CleanPassSolve(SolvePass &p);
-  void CleanPassUpdate(SolvePass &p);
-  bool CleanPassSettled(SolvePass &p);
-  void CleanSolveEnd(SolvePass &p);
-  void CleanVerdictSolve(const SolvePass &p);
-  void CleanUpdateState(const SolvePass &p);
-  void CleanVerdictState(const SolvePass &p);
-  void CleanInit();
-  void CleanPreflight(ParameterInput *pin);
-  void CleanCsGeometry();
-  void CleanSteadyStart(Driver *pdrive);
-  void CleanInitFaceFluxes();
-  void CleanRstFaces();
-  void CleanOldVector();
-  void CleanClosure();
-  void CleanPredictState(const bool use_k1);
-  void CleanRayMoments(DvceArray5D<Real> dst, const bool solve = true);
-  void CleanClosureExtrap();
-  bool CleanExtrapSx() const {return cln_extrap == 3 && t2_tab != 0;}
-  void CleanClosureAfterSolve();
-  void CleanClosureIterate();
-  void CleanStageOpacity();
-  void CleanRays();
-  void CleanClosureFromRays();
-  void CleanClosureFromGd();
-  void CleanRayCut();
-  void CleanGdFaceSums();
-  const CleanArgs *cln_gdx = nullptr;   // CleanArgs in device memory (slot 3)
-  void CleanFvSets(const Real tc, const int cyc);
-  void CleanRingMoments();
-  void CleanRingShift(const int64_t b);
-  int64_t CleanRingBlk(const Real dt) const;
-  bool CleanRingTwo() const;
-  bool CleanFhBuilt() const;
-  void CleanRingPreShift();   // dt_retry: shift before the checkpoint
-  void CleanRingJump();
-  void CleanRingSolveSet();
-  void CleanClosureFill();
-  void CleanClosureEddington();
-  void CleanFaceCoefficients();
-  void CleanAdvectiveCoefficients();
-  void CleanFirstIterate();
+  // the steps of StageSolve, in order (rad_vet_tasks.cpp)
+  void SolveBegin();
+  void StageClosure();
+  SolvePass PassSetup();
+  void FirstPass();
+  void PassClosure(SolvePass &p);
+  void PassRows(const SolvePass &p);
+  bool PassSolve(SolvePass &p);
+  void PassUpdate(SolvePass &p);
+  bool PassSettled(SolvePass &p);
+  void SolveEnd(SolvePass &p);
+  void VerdictSolve(const SolvePass &p);
+  void UpdateState(const SolvePass &p);
+  void VerdictState(const SolvePass &p);
+  void InitArrays();
+  void CheckKeys(ParameterInput *pin);
+  void CsGeometry();
+  void SteadyStart(Driver *pdrive);
+  void InitFaceFluxes();
+  void RestartFaces();
+  void OldVector();
+  void BuildClosure();
+  void PredictState(const bool use_k1);
+  void RayMoments(DvceArray5D<Real> dst, const bool solve = true);
+  void ClosureExtrap();
+  bool ExtrapSx() const {return cln_extrap == 3 && t2_tab != 0;}
+  void ClosureAfterSolve();
+  void ClosureIterate();
+  void StageOpacity();
+  void TraceRays();
+  void ClosureFromRays();
+  void ClosureFromSc();
+  void RayCut();
+  void RayFaceSums();
+  const SolveArgs *cln_gdx = nullptr;   // SolveArgs in device memory (slot 3)
+  void RingSets(const Real tc, const int cyc);
+  void RingMoments();
+  void RingShift(const int64_t b);
+  int64_t RingBlk(const Real dt) const;
+  bool RingTwo() const;
+  bool FhBuilt() const;
+  void RingPreShift();   // dt_retry: shift before the checkpoint
+  void RingJump();
+  void RingSolveSet();
+  void ClosureFill();
+  void ClosureEddington();
+  void FaceCoefficients();
+  void AdvectiveCoefficients();
+  void FirstIterate();
   // (beta: CLW_BT, CLW_RE only; lat false: CLW_L holds E_k's lateral sums)
-  void CleanRightHandSide(const bool beta = false, const bool lat = true);
-  void CleanPreconditionerSetup();
-  void CleanPrecondition(const int src, const int dst);
-  CleanLevel CleanStagLevel(const int l);
-  void CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
-                          const int col, const int lim = -1);
-  void CleanStagCoarseSetup();
-  void CleanRingMatesInit(const int d, CleanRingMates &rm);
-  void CleanStagVCycle(const int l, const int src, const int dst);
-  void CleanApply(const int src, const int dst);
-  int CleanBiCGStab();
-  Real CleanNewtonUpdate();
-  Real CleanVelocityUpdate();
-  void CleanCopyIterate();
-  int CleanCountNegative();
-  int CleanStagRealizable();
-  void CleanStagBracket();
-  void CleanStagFSolve(const int e, const bool tie = true, const bool lat = true);
-  void CleanDMem(const bool save);
+  void RightHandSide(const bool beta = false, const bool lat = true);
+  void PreconditionerSetup();
+  void Precondition(const int src, const int dst);
+  MgLevel GetMgLevel(const int l);
+  void LineSolve(const MgLevel &lv, const int src, const int dst,
+                 const int col, const int lim = -1);
+  void CoarseSetup();
+  void RingMatesInit(const int d, RingMates &rm);
+  void VCycle(const int l, const int src, const int dst);
+  void ApplyOperator(const int src, const int dst);
+  int SolveBiCGStab();
+  Real NewtonUpdate();
+  Real VelocityUpdate();
+  void CopyIterate();
+  int CountNegative();
+  int CountUnrealizable();
+  void FaceBracket();
+  void FluxSolve(const int e, const bool tie = true, const bool lat = true);
+  void FluxMemoryKeep(const bool save);
   // ray history a failed stage's builds change: kept at the stage-loop start, put back
   // with U^n (Time2Stash, Time2Restore) for the backward-Euler redo
-  struct CleanRayKeep {
+  struct RayKeep {
     DvceArray5D<Real> v[6];
     DvceArray2D<Real> fvd;
     std::vector<DvceArray2D<Real>> fvdm;
@@ -727,94 +727,94 @@ class RadiationVet {
     bool rok = false, rfix = false, rlast = false, rjump = false, rfdone = false,
          rhist = false;
   } cln_rk;
-  void CleanRayHistory(const bool save);
-  void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
-                 const Real w0);
-  void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
-  int CleanRingFields(int *fm, const bool file = false) const;   // clean_rot_ring
+  void RayHistory(const bool save);
+  void FluxMemoryInc(const bool two, const Real c1, const Real c2, const Real w1,
+                     const Real w0);
+  void FluxMemoryRetry(const bool save);   // dt_retry: d to / from cln_rstd
+  int RingFields(int *fm, const bool file = false) const;   // clean_rot_ring
   // time2_face_fct's two scratch slots of iw (clean: the line-solve slots)
   int Time2FctSlot(const int q) const;
   void Time2FctHalo(const int c);
-  int CleanRingRstN() const;            // ring channels in the restart (version 4)
+  int RingRstN() const;            // ring channels in the restart (version 4)
   // vet_rotate_avg_ema: a fill takes 2 sets; cln_rr = EMA offsets e, aux J and D11 and
-  // the set count n; cln_rpd = Delta, a_ch and the next set's J and D11 (CleanRingEma)
-  int CleanRingK() const {return vra_ema ? 2 : vra_k;}
-  int CleanRingNr(const int nf) const {return vra_ema ? nf + 3 : (vra_k - 1)*nf;}
-  int CleanRingNd(const int nf) const {return vra_ema ? nf + 3 : nf;}
-  void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
-                        const bool pk, const bool have);
-  // closure components in the restart (extrap history, clean_rot_ring), CleanRstSlot
+  // the set count n; cln_rpd = Delta, a_ch and the next set's J and D11 (RingEma)
+  int RingK() const {return vra_ema ? 2 : vra_k;}
+  int RingNr(const int nf) const {return vra_ema ? nf + 3 : (vra_k - 1)*nf;}
+  int RingNd(const int nf) const {return vra_ema ? nf + 3 : nf;}
+  void RingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
+                   const bool pk, const bool have);
+  // closure components in the restart (extrap history, clean_rot_ring), RstSlot
   // order; the cell layout keeps the first CLN_N - 1, CLN_JR is staggered only
-  int CleanRstNq() const;
+  int RstNq() const;
   // ray intensity channels of the restart: the cs sc rays' (cln_fvi), and their last
   // build when a reflecting top mirrors it (cln_scmem: its top shell)
-  int CleanRstNfv() const;
-  int CleanRstNcl() const;   // clean_closure = iterate: the closure in place (cln_s)
-  void CleanScUnion2();
-  void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
-                     const int fo);
-  DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
-  void CleanStagDrag(const bool first, const bool vel = false, const bool lat = true);
-  void CleanStagFCsShared();
-  void CleanStagFCone(const int e, const int kd);
-  void CleanStagFwbProject(const int d, const int slot, const DvceArray4D<Real> &rs,
-                           const DvceArray4D<Real> &rw, const bool cnt);
-  void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
-  void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
-  Real CleanStagFSweepChange();
-  void CleanStagFSchur();
-  void CleanStagFSchurTile(const int gr[3], const int gs[3], const bool per[3],
-                           const int ngd);
-  void CleanStagCsLateral(const int e, const bool st = false, const int part = 0);
-  void CleanWriteBack();
-  void CleanWbFct(const CleanArgs &x, const CleanArgs *px, const DvceArray5D<Real> &fp,
-                  const bool pfo, const DvceArray5D<Real> &pf);
-  CleanArgs CleanMakeArgs();
+  int RstNfv() const;
+  int RstNcl() const;   // clean_closure = iterate: the closure in place (cln_s)
+  void RingUnion();
+  void FaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
+                const int fo);
+  DvceArray5D<Real> &RstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
+  void FaceDrag(const bool first, const bool vel = false, const bool lat = true);
+  void FluxCsShared();
+  void FluxCone(const int e, const int kd);
+  void FluxBalanceProject(const int d, const int slot, const DvceArray4D<Real> &rs,
+                          const DvceArray4D<Real> &rw, const bool cnt);
+  void FluxTie(const int e, const int kd, const bool pt = false);
+  void CsFaceTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
+  Real FluxSweepChange();
+  void FluxSchur();
+  void FluxSchurTile(const int gr[3], const int gs[3], const bool per[3],
+                     const int ngd);
+  void CsLateralStress(const int e, const bool st = false, const int part = 0);
+  void WriteBack();
+  void WbFct(const SolveArgs &x, const SolveArgs *px, const DvceArray5D<Real> &fp,
+             const bool pfo, const DvceArray5D<Real> &pf);
+  SolveArgs MakeArgs();
   Real MeshBlock0Dx(const int d) const;
-  const void *CleanDevCopy(const void *p, const size_t n, const int s);
-  template <class T> const T *CleanDev(const T &x, const int s) {
-    return static_cast<const T *>(CleanDevCopy(&x, sizeof(T), s));
+  const void *DevCopy(const void *p, const size_t n, const int s);
+  template <class T> const T *SolveDev(const T &x, const int s) {
+    return static_cast<const T *>(DevCopy(&x, sizeof(T), s));
   }
-  const CleanArgs *CleanDevArgs(const CleanArgs &x, const int s);
+  const SolveArgs *DevArgs(const SolveArgs &x, const int s);
   template <typename T>
-  void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
-                       const int part, const int dep = 0,
-                       const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
-  void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                      const bool phys = true, const int part = 0, const int dep = 0,
-                      const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
+  void GhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
+                  const int part, const int dep = 0,
+                  const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
+  void GhostFill(DvceArray5D<Real> a, const int c0, const int nc,
+                 const bool phys = true, const int part = 0, const int dep = 0,
+                 const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
   // dep: ghost layers its readers need (0 = all ng); fm[f]: components (bit n for c0 + n)
-  // the ghosts of face family f take (3 at edges and corners, CleanHaloInit)
-  template <typename T> struct CleanGSeg {
+  // the ghosts of face family f take (3 at edges and corners, HaloInit)
+  template <typename T> struct GSeg {
     DvceArray5D<T> a; int c0, nc; bool phys; int dep = 0;
     std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u};
   };
   template <typename T>
-  void CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg, const int part);
+  void GhostExchange(const std::vector<GSeg<T>> &sg, const int part);
   template <typename T>
-  void CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc);
-  void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc,
-                       const int dep = 0);
-  void CleanGhostFill(const CleanW &a, const int c0, const int nc,   // (in one array)
-                      const int part = 0, const int dep = 0,
-                      const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
-  void CleanGhostDefer(const CleanW &a, const int c0, const int nc, const int dep = 0);
-  void CleanGhostFlush();
-  std::array<Real, 2> CleanDots(CleanW w, const int nc, const int n,
-                                const std::array<int, 4> ab);
-  Real CleanReduce(Real v, const bool max);
-  Real CleanSumCells(const DvceArray4D<Real> &a);
-  void CleanClosureSphere();
+  void GhostPhys(DvceArray5D<T> a, const int c0, const int nc);
+  void GhostDefer(DvceArray5D<Real> a, const int c0, const int nc,
+                  const int dep = 0);
+  void GhostFill(const WorkVec &a, const int c0, const int nc,   // (in one array)
+                 const int part = 0, const int dep = 0,
+                 const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
+  void GhostDefer(const WorkVec &a, const int c0, const int nc, const int dep = 0);
+  void GhostFlush();
+  std::array<Real, 2> GlobalDots(WorkVec w, const int nc, const int n,
+                                 const std::array<int, 4> ab);
+  Real GlobalReduce(Real v, const bool max);
+  Real SumCells(const DvceArray4D<Real> &a);
+  void ClosureSphere();
 
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
   Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
   // clean_init_cnorm: the steady start's per-cell test (0 off)
-  bool cln_insteady = false;    // in CleanSteadyStart's passes
+  bool cln_insteady = false;    // in SteadyStart's passes
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   std::map<std::array<int, 7>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
-  // the operator's rows (CLN_ST per active cell, CleanPreconditionerSetup)
+  // the operator's rows (CLN_ST per active cell, PreconditionerSetup)
   DvceArray5D<Real> cln_st;
   //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
   DvceArray5D<Real> cln_csy;
@@ -834,7 +834,7 @@ class RadiationVet {
   int cln_wbfdg = 0;            // clean_wb_floor_diag (diagnostic)
   int cln_dbginf = -1;          // clean_dbg_inf (test): the cycle of the injected inf
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
-  // clean_ray_cut (CleanRayCut): no rays below the shell where every deeper cell is
+  // clean_ray_cut (RayCut): no rays below the shell where every deeper cell is
   // diffusive (|grad S|/(chi S) < clean_ray_cut_r, none thinner than
   // vet_col_lat_cut_thin), less clean_ray_cut_margin optical depths, at
   // tau_top >= clean_ray_cut_taumin; rises only after clean_ray_cut_wait builds
@@ -847,8 +847,8 @@ class RadiationVet {
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
   bool cln_rfdone = false;      // its fill taken
   bool cln_rmdone = false;      // its start taken
-  void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
-  void CleanWorstCell(const Real dnl, const Real dnl0);
+  void FaceDonor(const bool first, const bool lat = true, const bool hold = false);
+  void WorstCell(const Real dnl, const Real dnl0);
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   // clean_stag_xdonor: cross flux of the iterate as a donor-cell coefficient of its face
   bool cln_xd_on = false;
@@ -861,8 +861,8 @@ class RadiationVet {
   bool cln_thinf = false;   // clean_stag_thinf
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
-  DvceArray3D<Real> cln_fsjt[3];   // (layout tile: the F join per tile, CleanFsjt)
-  std::array<CleanRingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
+  DvceArray3D<Real> cln_fsjt[3];   // (layout tile: the F join per tile, FluxTileArray)
+  std::array<RingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fclz = false;    // clean_stag_fcone_lz
@@ -880,8 +880,8 @@ class RadiationVet {
   // 3-D spherical polar: the L_z that crossed the radial boundaries.
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
   ParameterInput *cln_lzpin = nullptr;
-  void CleanLzBook(const Real s, const bool start);
-  Real CleanLzTotal();   // gas + radiation + ledger L_z
+  void LzBook(const Real s, const bool start);
+  Real LzTotal();   // gas + radiation + ledger L_z
   bool cln_gpic = false;   // a stalled solve's passes without the gas Newton slope
   Real cln_ngnsw = 0.0;   // solves switched so far
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
@@ -894,9 +894,9 @@ class RadiationVet {
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
   Real cln_sph_r = 0.0;         // clean_sphere_radius
   static constexpr Real cln_trtol = 1.0e-13;   // residual stop of the exchange root
-  int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
+  int cln_wo_nc = 0;            // the slots of cln_w.o (BindWorkVecs)
   static constexpr int cln_hmax = 16;   // most variables of one ghost exchange
-  bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
+  bool cln_budget = false;      // clean_conv = budget (staggered default): StageSolve
   bool cln_bon = false;         // this solve takes it (Newton passes with a valid K1)
   Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)
   Real cln_bkap = 1.0;          // clean_conv_kappa
@@ -937,11 +937,11 @@ class RadiationVet {
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
   bool cln_rfh = false;         // cs cell half ranges in the ring (CLN_HO)
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
-  DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
+  DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; RingSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
   // clean_rot_ring: the rotating union swept as the current and the next set only, the
-  // K - 1 older sets carried as offsets of their ray moments (CleanRingMoments)
+  // K - 1 older sets carried as offsets of their ray moments (RingMoments)
   int cln_ring = 0;             // clean_rot_ring = live (1: + the next set) | jump (2)
   bool cln_rfuse = false;       // clean_rot_fuse: live ring's two sets in one sweep
   bool cln_rfuse_said = false;
@@ -949,7 +949,7 @@ class RadiationVet {
   bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
   bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments
   DvceArray5D<Real> cln_rnew;   // jump: moments of block b+1's window at the boundary
-  bool cln_rfix = false;        // no build of this cycle shifts (CleanRingPreShift)
+  bool cln_rfix = false;        // no build of this cycle shifts (RingPreShift)
   bool cln_rok = false;         // the ring holds the offsets of the sets before cln_rb
   bool cln_rhist = false;       // the restart file's EMA history is converged
   int64_t cln_rb = 0;           // the current set of the ring (rotation block)
@@ -960,13 +960,13 @@ class RadiationVet {
   int64_t cln_rbld = 0;         // the block of the build
   std::vector<int64_t> cln_fvblk;   // the set in each slot
   std::vector<DvceArray2D<Real>> cln_fvdm;   // the directions with only slot q weighted
-  DvceArray5D<Real> cln_fh;     // the sc rays' face half-range sums (CleanFaceHalf)
-  DvceArray5D<Real> cln_gdgl;   // their ghost layers (CleanGdFaceSums, scratch)
+  DvceArray5D<Real> cln_fh;     // the sc rays' face half-range sums (FaceHalf)
+  DvceArray5D<Real> cln_gdgl;   // their ghost layers (RayFaceSums, scratch)
   // the slots' moments g = M/J (CLN_J: J); a build's scratch
   DvceArray5D<Real> cln_rl;
   DvceArray5D<Real> cln_rr;     // offsets g_{b-j} - g_b, J_{b-j}/J_b (< 0: none), K-1
   DvceArray5D<Real> cln_rpd;    // the pending Delta g_{b+1} - g_b, J_{b+1}/J_b
-  bool cln_rpfree = false;      // its memory is scratch of the build (CleanGdFaceSums)
+  bool cln_rpfree = false;      // its memory is scratch of the build (RayFaceSums)
   Real cln_rguard_sum = 0.0, cln_roff_sum = 0.0;   // guard falls, off-boundary shifts
   DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
   DvceArray5D<Real> cln_vf;     // cubed sphere: the F solve's cells, faces (m,18,k,j,i)
@@ -981,8 +981,8 @@ class RadiationVet {
   int cln_neint = 0;            // cells of the write-back left with gas eint < 0
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
-  CleanW cln_w;                 // work vectors (CLW_*)
-  CleanF cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
+  WorkVec cln_w;                 // work vectors (CLW_*)
+  FaceVars cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   // staggered: cell flux of the faces' energy flux Phi (m,3,k,j,i; output vet_phi); u0 F
   // holds the face momenta's
@@ -993,28 +993,28 @@ class RadiationVet {
   bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids
   DvceArray4D<Real> cln_ga[3], cln_gd[3];
-  CleanGeo cln_gn;
-  DvceArray3D<Real> cln_tg;   // spherical polar: CleanArgs::tg
-  // vet_gd_theta_seam_sym: CleanArgs' geometry with the theta-periodic seam's ghost rows
-  // their periodic images' (CleanSeamImage): vol, area x1f / x2f, dxface x2f / x3f,
+  CsGeoArrays cln_gn;
+  DvceArray3D<Real> cln_tg;   // spherical polar: SolveArgs::tg
+  // vet_gd_theta_seam_sym: SolveArgs' geometry with the theta-periodic seam's ghost rows
+  // their periodic images' (SeamImage): vol, area x1f / x2f, dxface x2f / x3f,
   // x2v, tg
   DvceArray4D<Real> cln_sgv, cln_sga0, cln_sga1, cln_sgd1, cln_sgd2;
   DvceArray2D<Real> cln_sgx;
   DvceArray3D<Real> cln_sgtg;
-  void CleanSeamImage();
-  struct CleanHalo {            // ghost exchange of nc components: scratch array and
+  void SeamImage();
+  struct SolveHalo {            // ghost exchange of nc components: scratch array and
     DvceArray5D<Real> a, ca;    // its coarse dummy
   };
-  std::map<int, CleanHalo> cln_halo;   // by nc
-  DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (CleanDevCopy)
+  std::map<int, SolveHalo> cln_halo;   // by nc
+  DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (DevCopy)
   // exchange object of every clean ghost fill (a fill sends only its own variables);
-  // fills deferred to the next exchange (CleanGhostDefer)
+  // fills deferred to the next exchange (GhostDefer)
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
-  std::vector<CleanGSeg<Real>> cln_hpend;
+  std::vector<GSeg<Real>> cln_hpend;
   DvceArray5D<Real> cln_hbuf;   // storage of every scratch array (<= 32)
-  // clean_halo_direct: cell lists read once off cln_hpb's exchange (CleanHaloInit);
+  // clean_halo_direct: cell lists read once off cln_hpb's exchange (HaloInit);
   // on-rank ghosts by one copy, one message per neighbour rank, receives posted first
-  struct CleanHaloList {
+  struct SolveHaloList {
     int state = 0;              // 0 lists to make at first use, 1 on, -1 while made
     int n1 = 0, n2 = 0, n3 = 0, nl = 0, ns = 0, nr = 0, par = 0;
     DvceArray1D<int> ld, ls, sc, rc;   // on-rank ghost <- its source; sent; received
@@ -1041,13 +1041,13 @@ class RadiationVet {
     std::vector<MPI_Request> rq, sq;
 #endif
   };
-  CleanHaloList cln_hdl;
-  void CleanHaloInit(const int n3, const int n2, const int n1);
-  template <typename T> void CleanHaloPost(const std::vector<CleanGSeg<T>> &sg);
-  template <typename T> void CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg);
+  SolveHaloList cln_hdl;
+  void HaloInit(const int n3, const int n2, const int n1);
+  template <typename T> void HaloPost(const std::vector<GSeg<T>> &sg);
+  template <typename T> void HaloFinish(const std::vector<GSeg<T>> &sg);
   template <typename T>
-  std::array<uint32_t, 5> CleanHaloKey(const std::vector<CleanGSeg<T>> &sg);
-  CleanHaloList::Mask &CleanHaloMask(const std::array<uint32_t, 5> &key);
+  std::array<uint32_t, 5> HaloKey(const std::vector<GSeg<T>> &sg);
+  SolveHaloList::Mask &HaloMask(const std::array<uint32_t, 5> &key);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
 
   bool vray_ready{};            // VetRayInit has run
@@ -1061,7 +1061,7 @@ class RadiationVet {
   // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetRayInit
   // refuses them
   std::string vray_rat_keys;
-  int vray_icut = 0;           // first shell of the sweep (CleanRayCut)
+  int vray_icut = 0;           // first shell of the sweep (RayCut)
   Real vray_ncall = 0.0, vray_nclamp = 0.0;
   DvceArray5D<Real> vray_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vray_cs_c;
@@ -1078,14 +1078,14 @@ class RadiationVet {
   static constexpr int vgd_nside = 3;
   int vgd_n = 0;
   int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
-  double vgd_zper = 0.5*M_PI;  // z-rotation period of the set (VetGdInit)
+  double vgd_zper = 0.5*M_PI;  // z-rotation period of the set (ScInit)
   int vgd_gl_nmu = 0;          // vet_gd_gl_nmu > 0: product set GL(nmu in n_z) x nphi
   int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
   int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
   // vet_gd_rotate_dt > 0: rotate in physical time, block
   // b = floor((t + dt/2)/dt_rot); steps
-  // land on block boundaries (VetGdAlignDt)
+  // land on block boundaries (RotAlignDt)
   Real vgd_rot_dt = 0.0;
   // vet_gd_rotate_dt = auto: vgd_rot_auto_fac x the first dt, recorded in pin_rot_
   bool vgd_rot_auto = false;
@@ -1093,9 +1093,9 @@ class RadiationVet {
   bool vgd_rot_unc = false;
   Real vgd_rot_auto_fac = 20.0;
   ParameterInput *pin_rot_ = nullptr;
-  double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
+  double vgd_rot_nalign = 0.0;   // steps shortened by RotAlignDt (diagnostic)
   int64_t vgd_rot_lastblk = INT64_MIN;
-  void VetGdRotStep();
+  void RotNewBlock();
   // a Cartesian rotating set without the ring, the first step of a new rotation block: a
   // correction solve (Time2RotCorrect) of size dt_c = kT2G dt from U^n with the new set
   // turns K1 into K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n)
@@ -1104,11 +1104,11 @@ class RadiationVet {
   bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // current z-angle (-1: tables not built)
   // vet_gd_rotate_axis = z | 3d (default z on sp, 3d on the cubed sphere). 3d: the set of
-  // block b is R_b n, R_b a 3-D rotation about a quasi-random axis (VgdRot3); vgd_alpha
+  // block b is R_b n, R_b a 3-D rotation about a quasi-random axis (ScRot3); vgd_alpha
   // is then the block key, not an angle
   bool vgd_rot3 = false;
-  void VgdRot3(const Real key, double r[9]) const;
-  std::vector<double> VgdRotate(const Real alpha) const;
+  void ScRot3(const Real key, double r[9]) const;
+  std::vector<double> ScRotate(const Real alpha) const;
   // vet_rotate_avg = K >= 2 (rays/sc_cart_rotavg.cpp): the closure is the mean over the
   // last K
   // rotated direction sets. A closure registers its normalised fields (ratios to J); the
@@ -1139,15 +1139,15 @@ class RadiationVet {
   bool vra_ema_wb = false;
   void RotAvgEmaApply(const int ilo);
   // vet_gd_rotate_xfade (needs vet_gd_rotate_dt > 0): clean ring live, the closure
-  // cross-faded from the current to the next set over each block (CleanFvSets); both
-  // sets' tables on the device (VgdXfTables)
+  // cross-faded from the current to the next set over each block (RingSets); both
+  // sets' tables on the device (ScXfTables)
   bool vgd_xf = false;
   // vgd_xff: both sets of a cross-fade build in one sweep (one launch per shell, one
   // message per partner), bitwise the two sweeps. The second set keeps its own
-  // intensities (vgd_i_xb), shell and halo lists. Falls back where VetGdXffOk fails.
+  // intensities (vgd_i_xb), shell and halo lists. Falls back where ScXffOk fails.
   bool vgd_xff = false;
-  bool vgd_xff_now = false;      // this sweep carries the next set too (VetGdSweep)
-  bool vgd_xff_prep = false;     // VetGdSweep: the set's lists only, no passes
+  bool vgd_xff_now = false;      // this sweep carries the next set too (ScSweep)
+  bool vgd_xff_prep = false;     // ScSweep: the set's lists only, no passes
   DvceArray1D<int> vgd_shl_xb[2];
   int vgd_shn_xb[2] = {0, 0};
   Real vgd_shl_alpha_xb = -3.0;
@@ -1157,24 +1157,24 @@ class RadiationVet {
   double vgd_xff_n = 0.0;          // fused builds (diagnostic)
   double vgd_xff_nmsg = 0.0;       // merged exchanges (diagnostic)
   double vgd_xff_nfb = 0.0;        // builds that fell back to two sweeps (diagnostic)
-  bool VetGdXffOk();
-  void VgdXffSwap();
-  void VgdEs2Make();   // second stream of the cubed sphere's early send
-  void VgdGbSwap() {   // the compact global band's kept lists go with their set
+  bool ScXffOk();
+  void ScXffSwap();
+  void ScEs2Make();   // second stream of the cubed sphere's early send
+  void ScGbSwap() {   // the compact global band's kept lists go with their set
     std::swap(vgd_gbcf, vgd_gbcf_xb);
     std::swap(vgd_gbcb, vgd_gbcb_xb);
     std::swap(vgd_gbrec, vgd_gbrec_xb);
   }
-  bool VetGdHlXff(const int i, const int ws);
-  bool VetGdGbHaloX(const int i, const int ws);   // vgd_raw: both sets, one message
-  // early send (VetGdCsSweep): the shell's send cells first on a second high-priority
+  bool ScHlXff(const int i, const int ws);
+  bool ScGbHaloX(const int i, const int ws);   // vgd_raw: both sets, one message
+  // early send (ScCsSweep): the shell's send cells first on a second high-priority
   // stream; the host exchanges while the shell kernel (skipping them) runs
   DevExeSpace vgd_es2;
   bool vgd_es2_made = false;
   DvceArray4D<int> vgd_est[2];     // per set (m, kb, jb, d): stamp of the early cells
   int vgd_esid = 0;                // stamp of the current early shell
   Real vgd_xf_alt = -9.0;        // angle of the tables in the second device set
-  void VgdXfTables(const Real alpha);
+  void ScXfTables(const Real alpha);
   bool vra_on = false;
   RotAvgTab vra_tab;
   DvceArray5D<Real> vra_a0, vra_a1;   // closure's field arrays (set per call)
@@ -1208,7 +1208,7 @@ class RadiationVet {
   bool vra_last = false;       // this build is on the last step of its block
   DvceArray5D<Real> vra_bk_vc;              // vet_sc: vet_cell kept over the next-set
                                             // sweep of a last build
-  void VetGdSweepPost();       // sweep, moments, VetGdPost
+  void ScSweepPost();       // sweep, moments, ScPost
   bool vgd_tbath = false;   // the top (x1max Marshak) bath enters the sweep
   std::vector<double> vgd_base;   // unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
@@ -1216,8 +1216,8 @@ class RadiationVet {
   // only the lateral band it needs (depth wi(i) <= vgd_w) and only on sides whose
   // neighbour is off-rank. Index space (m, d, k, j, i) with k, j in the band space of
   // depth vgd_w; one slab per (m, i), d fastest, then k, then j. An access outside the
-  // slab goes to a dummy element and is counted (VgdRag::oos, must stay 0).
-  struct VgdRag {
+  // slab goes to a dummy element and is counted (ScRag::oos, must stay 0).
+  struct ScRag {
     DvceArray1D<Real> d;
     Kokkos::View<int64_t**, DevMemSpace> off;  // (m, i): first element of slab (m, i)
     DvceArray1D<int> wi;                       // (i): band depth of shell i
@@ -1226,7 +1226,7 @@ class RadiationVet {
     int nmb = 0, n = 0, nx2 = 0, nx3 = 0, w = 0, c1 = 0;
     int64_t dummy = 0;
     Kokkos::View<int64_t**, DevMemSpace> offc;   // (m, i): compact slabs (vet_gd_band_ring)
-    int64_t nth = 0;                             // thick shells' values (VgdRagThick)
+    int64_t nth = 0;                             // thick shells' values (ScRagThick)
     // is (k, j) of shell i of block m stored?  (band index space of depth w)
     KOKKOS_INLINE_FUNCTION
     bool Has(const int m, const int k, const int j, const int i) const {
@@ -1254,31 +1254,31 @@ class RadiationVet {
     }
     size_t extent(const int r) const {return static_cast<size_t>(extent_int(r));}
   };
-  using VgdIView = VgdRag;
-  VgdIView vgd_i;
-  VgdIView vgd_i_xb;   // the other cross-fade set's intensities
-  void VgdRagAlloc(VgdRag &a);
-  int vgd_rag_cut = 0;   // shells below: one slab for both fused sets (VgdRagThick)
+  using ScIView = ScRag;
+  ScIView vgd_i;
+  ScIView vgd_i_xb;   // the other cross-fade set's intensities
+  void ScRagAlloc(ScRag &a);
+  int vgd_rag_cut = 0;   // shells below: one slab for both fused sets (ScRagThick)
   bool vgd_rag_said = false;
-  void VgdRagThick();
+  void ScRagThick();
   // memory arena (with vet_gd): the intensity arrays and the solve scratch dead across a
-  // VetGdBuild in one allocation
+  // ScBuild in one allocation
   bool marena_on = false, marena_sealed = false;
   DvceArray1D<Real> marena;   // intensities, then (first checkpoint) solve scratch
   int64_t marena_sw = 0;      // Reals of the intensity arrays bound so far
   bool marena_bound = false;  // MemArenaBind done
   int64_t marena_hyd = 0;     // Reals of the hydro's fluxes at its start
   void MemArenaHydro();       // zeroes those (Hydro::Fluxes)
-  bool marena_k2 = false;     // t2k2, t2pf2 in it (zeroed in stage 1's CleanWriteBack)
+  bool marena_k2 = false;     // t2k2, t2pf2 in it (zeroed in stage 1's WriteBack)
   void MemArenaBind();        // the solver's and the hydro's scratch arrays over it
   bool MemArenaIn(const Real *p) const {
     return p >= marena.data() && p < marena.data() + marena.extent(0);
   }
   void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
-  bool MemArenaVgd(VgdRag &a, int64_t n);
+  bool MemArenaRays(ScRag &a, int64_t n);
   void MemArenaGrow(int64_t need, bool keep = true);
   void MemArenaSeal();
-  void CleanWoBind();   // cln_w.o, .s at the first solve (mem_arena)
+  void BindWorkVecs();   // cln_w.o, .s at the first solve (mem_arena)
   // vet_gd_band_ring (MPI band with exact halo lists, or cs compact lists): the ragged
   // array keeps each shell's interior only and lends a shell one of VGD_RING_K slabs of
   // its full band depth while the sweep needs its band (outward pass: interior copied in,
@@ -1286,7 +1286,7 @@ class RadiationVet {
   // value read is the dense band's (bitwise).
   static constexpr int VGD_RING_K = 3;
   int vgd_rg_k = VGD_RING_K;          // slots of this allocation
-  struct VgdRingOp {
+  struct ScRingOp {
     int kind = 0;      // 1 save (inward band -> store), 2 release, 3 acquire
     int i = -1, slot = -1;
     bool copyin = false, restore = false;
@@ -1307,19 +1307,19 @@ class RadiationVet {
   std::vector<int> vgd_rg_sk;         // (i): save kind: 1 exact list, 2 dense band, 3 raw
   std::vector<int> vgd_rg_se;         // (i): exact list record (3: the raw key)
   // vgd_raw: band positions (as exact lists) each raw exchange writes, keyed as vgd_gbcf
-  // (VetGdRawRec)
+  // (ScRawRec)
   std::map<int, DvceArray1D<int>> vgd_gbrec, vgd_gbrec_xb;
-  int VetGdRawKey(const int i, const bool inw, const int ws) const;
-  DvceArray1D<int> VetGdRawRec(const int key);
+  int ScRawKey(const int i, const bool inw, const int ws) const;
+  DvceArray1D<int> ScRawRec(const int key);
   int64_t vgd_rg_stop = 0;            // store fill this sweep
   DvceArray1D<Real> vgd_rg_store;     // saved inward band values (main, then twin)
   Kokkos::View<int64_t**, DevMemSpace> vgd_rg_dsoff;   // (s, m)
-  std::vector<VgdRingOp> vgd_rg_pend;
+  std::vector<ScRingOp> vgd_rg_pend;
   Real vgd_rg_nk = 0.0, vgd_rg_ndense = 0.0;
-  void VetGdRingFlush();
-  void VetGdRingSweepBegin(const bool two);
-  void VetGdRingSweepEnd();
-  int VetGdRingFreeSlot(const int avoid) const;
+  void ScRingFlush();
+  void ScRingSweepBegin(const bool two);
+  void ScRingSweepEnd();
+  int ScRingFreeSlot(const int avoid) const;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
   DvceArray4D<Real> vgd_mr;    // (m, k, j, d): n . r_hat of the value stored there
@@ -1327,7 +1327,7 @@ class RadiationVet {
   // (m, k, j, d, 3)
   bool vgd_wint = false;
   // vet_gd_wall_sym (needs _wall_interp): the set turned so a mirror plane is the wedge
-  // mid-plane, phi-wall ghosts linear in azimuth on their ring (VgdMirPick)
+  // mid-plane, phi-wall ghosts linear in azimuth on their ring (ScMirPick)
   bool vgd_wsym = false;
   bool vgd_wsx = false;       // and its phi wall map inexact: both-frame seam faces
   Real vgd_wsw = 0.0;         // phi period W
@@ -1335,33 +1335,33 @@ class RadiationVet {
   // vet_gd_theta_seam_sym (needs _wall_interp): clean theta seam faces in both frames
   bool vgd_wst = false;
   DvceArray1D<int> vgd_mirz;  // (n): the equatorial mirror image of each direction
-  VgdLG vgd_lg;   // the vet_gd sweep geometry from the global index
+  ScLG vgd_lg;   // the vet_gd sweep geometry from the global index
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
   // vet_gd_theta_wall = periodic | mirror: mirror makes the theta walls specular; a theta
   // ghost at depth g reads the interior row at depth g across the wall, direction
   // (n.r, n.theta, n.phi) -> (n.r, -n.theta, n.phi), from up to 3 same-branch directions
   // (vgd_wall = 2, vgd_map / vgd_m3 / vgd_w3); ln chi, ln S from the mirror rows
-  // (VetGdThMirCs)
+  // (ScThMirCs)
   bool vgd_thmir = false;
   bool cln_scmem = false;      // clean sc rays, reflecting top: its mirror reads cln_top
   DvceArray5D<Real> cln_top;   // its last top shell: slot s, direction d at (s*nt + d/n1,
-                               // i = d%n1), nt = ceil(n/n1) (VetGdTopCopy)
-  void VetGdTopCopy();
-  int cln_rq = 0;               // clean_rot_ring, sc rays: slot swept (CleanFvSets)
+                               // i = d%n1), nt = ceil(n/n1) (ScTopCopy)
+  void ScTopCopy();
+  int cln_rq = 0;               // clean_rot_ring, sc rays: slot swept (RingSets)
   int cln_rqm = 0;              // its sp top-mirror slot (blk mod 2)
-  void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
+  void ScThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
   // vet_gd_theta_wall = vacuum (1) | extrap (2) at a physical theta wall (flag 3 / 4):
   // vacuum: I = 0 entering at the wall (ghost reads 0); extrap: ghosts read the edge
-  // row's intensity (zero gradient); ln chi, ln S from the edge row (VetGdThVacCs)
+  // row's intensity (zero gradient); ln chi, ln S from the edge row (ScThVacCs)
   int vgd_thvac = 0;
-  void VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1);
+  void ScThVacCs(DvceArray5D<Real> &a, const int i0, const int i1);
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   // exact per-shell lateral halo: vgd_i and vgd_cs carry a ghost band of vgd_w cells,
   // filled shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
   int vgd_w = 0;
   // clean closure on a wedge: band of any depth keyed on the global cell
-  // (VetGdGlobalBandInit); the sweep reads an on-rank owner (vgd_own) directly, a remote
+  // (ScGlobalBandInit); the sweep reads an on-rank owner (vgd_own) directly, a remote
   // one from the band, and applies the wall map at the read
   bool vgd_raw = false;
   DvceArray4D<int> vgd_own;   // (m, band k, band j, 3): owner's local index (-1 remote),
@@ -1383,7 +1383,7 @@ class RadiationVet {
   Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   MeshBoundaryValuesCC *pbval_hr = nullptr;
-  void VetGdHaloInit();
+  void ScHaloInit();
   // vet_gd on the cubed sphere (rays/sc_cs_sweep.cpp): a block's band is its own panel's
   // index space with the four neighbour panels' strips unfolded at the edges; each band
   // position holds one global cell, filled per shell by exact keyed copies. The upwind
@@ -1405,19 +1405,19 @@ class RadiationVet {
   // sees a GPU pointer here
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_cssb, vgd_csrb;
   int vgd_csnloc = 0, vgd_csnsnd = 0, vgd_csnrcv = 0;
-  void VetGdCsInit();
-  void VetGdCsSource();
-  void VetGdCsSweep();
-  void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
+  void ScCsInit();
+  void ScCsSource();
+  void ScCsSweep();
+  void ScCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
   template <class V>
-  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc,
-                   const int ws = -1);
+  void ScCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc,
+                const int ws = -1);
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
   // vet_gd_halo_compact > 0 on cs: chart-aware exact lists, per shell and pass only the
-  // (remote band cell, direction) values the sweep reads (VetGdCsCompact: a read-mask
+  // (remote band cell, direction) values the sweep reads (ScCsCompact: a read-mask
   // kernel replays the upwind stencils; masks sent to the owners once per set). Every
   // remote read is checked against the mask: fatal on a miss.
-  struct VgdCsCl {
+  struct ScCsCl {
     Real alpha = -9.0;
     int64_t use = 0;
     std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
@@ -1438,7 +1438,7 @@ class RadiationVet {
   std::vector<uint32_t> vgd_csmw_h, vgd_csmw_r;
   // the cache holds max(2, vet_rotate_avg) sets (vgd_csncl): each set's lists made once
   static constexpr int VET_VGD_CSCL_MAX = 16;
-  VgdCsCl vgd_cscl[VET_VGD_CSCL_MAX];
+  ScCsCl vgd_cscl[VET_VGD_CSCL_MAX];
   // read masks of two entries (the set in use and the next); the others keep lists only
   Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> vgd_csmb[2];
   int vgd_csncl = 2;
@@ -1447,9 +1447,9 @@ class RadiationVet {
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_csrix;   // (m, k, j): e_rcv / -1
   Kokkos::View<int *, LayoutWrapper, DevMemSpace> vgd_csmiss;   // reads not in the mask
   double vgd_csnbuild = 0.0, vgd_cstbuild = 0.0, vgd_csvsent = 0.0, vgd_csvdense = 0.0;
-  void VetGdCsCompact();
-  void VetGdCsHaloC(const int pass, const int i);
-  bool VetGdCsHaloCX(const int pass, const int i, const int eb);
+  void ScCsCompact();
+  void ScCsHaloC(const int pass, const int i);
+  bool ScCsHaloCX(const int pass, const int i, const int eb);
   DvceArray1D<int> vgd_cslst;               // per-pass branch lists
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
@@ -1465,12 +1465,12 @@ class RadiationVet {
   DvceArray1D<int> vgd_x1mo;  // blocks by level (the shell list order)
   std::vector<int> vgd_shlv[2];   // (level): first code of the level in vgd_shl[pass]
   DvceArray2D<Real> vgd_x1b, vgd_x1r;    // (m, v): one shell to / from the x1 neighbour
-  void VetGdX1Hand(const bool up);
-  void VetGdX1Pass(const bool up);
+  void ScX1Hand(const bool up);
+  void ScX1Pass(const bool up);
   DvceArray4D<int> vgd_rmap;   // (m, k, j, d): mirror direction at a reflecting top
-  void VetGdTopMirror();
+  void ScTopMirror();
   DvceArray3D<Real> vgd_isc;   // (m, k, j): flux ratio of a reflecting inner x1
-  void VetGdInnerMirror();
+  void ScInnerMirror();
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
   DvceArray1D<Real> vgd_csb, vgd_crb;
   // the next shell's compact mask is built while this shell's messages travel; 2 slots
@@ -1481,15 +1481,15 @@ class RadiationVet {
   int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1} };
   int vgd_hlast = 1, vgd_hsweep = 0;
   int vgd_hnext[3] = {-1, 0, 0};
-  void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);
+  void ScHcPrep(const int slot, const int i0, const bool inw0, const int ws);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
   template <class V>
-  bool VetGdHaloCompact(V &a, const int nv, const int i0, const int ws);
+  bool ScHaloCompact(V &a, const int nv, const int i0, const int ws);
   // compact-halo lists per (pass, shell), built from the masks at the first exchange of a
   // mask set (direction set, cut, depth) and reused: gather pack, MPI, scatter (+ zeros
   // on the other pass's entries) instead of flag / scan / pack / expand / dense unpack
-  struct VgdHlEntry {
+  struct ScHlEntry {
     DvceArray1D<int> sl;          // (ns): packed band address of each sent value
     DvceArray1D<int> dl, sr;      // (nr): packed band address, compact source position
     DvceArray1D<int> dw, sw;      // (nw), (3 nw): wall_interp ghosts: address, sources
@@ -1506,11 +1506,11 @@ class RadiationVet {
     bool exact = false;
   };
   static constexpr int vgd_hl_mb = 4096;   // MB per rank: budget of the halo lists
-  // the shell kernel runs over the (m, k, j, d) of the pass's branch only (VetGdSweep)
+  // the shell kernel runs over the (m, k, j, d) of the pass's branch only (ScSweep)
   DvceArray1D<int> vgd_shl[2];
   int vgd_shn[2] = {0, 0};
   Real vgd_shl_alpha = -3.0;
-  std::vector<VgdHlEntry> vgd_hle;
+  std::vector<ScHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;
   Real vgd_hl_nmade = 0.0, vgd_hl_nuse = 0.0, vgd_hl_ndense = 0.0;
@@ -1518,9 +1518,9 @@ class RadiationVet {
   // per band array and pass: build id of the entry whose exchange last wrote each shell's
   // band (0: never written, all zero; -1: unknown)
   std::map<const void *, std::array<std::vector<int64_t>, 2>> vgd_hl_gw;
-  bool VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
-                    const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
-                    const std::vector<int> &pbh);
+  bool ScHlBuild(const int e, const int i, const bool inw, const int ws,
+                 const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
+                 const std::vector<int> &pbh);
   DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
   // vet_gd on a stretched theta and/or the full sphere (rays/sc_sph_globalband.cpp).
   // vgd_sth: band-row theta from the node table vgd_thn (extended chart: beyond a pole
@@ -1535,7 +1535,7 @@ class RadiationVet {
   DvceArray2D<int> vgd_wsd;               // (2, c1) per-shell halo depth: inward, outward
   // vet_gd_band_global (full sphere): a decomposition-independent band. Every band
   // position is an exact copy of its owner's value keyed on the global cell (the cs lists
-  // vgd_cs*, VetGdCsHalo; any depth), per shell only within its halo depth; the upwind
+  // vgd_cs*, ScCsHalo; any depth), per shell only within its halo depth; the upwind
   // stencil is clamped to the cell's own window (k +- wu, j +- wu), not the block's band
   bool vgd_gband = false;
   DvceArray2D<Real> vgd_phc;              // (m, band k): band-column phi, global index
@@ -1543,9 +1543,9 @@ class RadiationVet {
   DvceArray1D<int> vgd_gdps, vgd_gdpr;    // depth of every send / receive entry
   std::vector<int> vgd_gdnl;              // (ws): on-rank entries with depth <= ws
   std::vector<std::vector<int>> vgd_gdsn, vgd_gdrn;   // (ws)(partner): send / recv counts
-  void VetGdGlobalBandInit();
+  void ScGlobalBandInit();
   // vet_gd_halo_compact > 0 with vet_gd_band_global: per shell and pass only the values
-  // VgdHaloKeep passes at the source cell's global (J, K); rows in the polar zone
+  // ScHaloKeep passes at the source cell's global (J, K); rows in the polar zone
   // (colatitude < vet_gd_band_colat) + the band depth keep their whole branch
   bool vgd_gbc = false;
   DvceArray2D<int> vgd_gbjs, vgd_gbjr;    // (entry, 2): source cell global J, K
@@ -1553,17 +1553,17 @@ class RadiationVet {
   DvceArray1D<int> vgd_gbcap;             // (J): 1 = polar zone (branch only)
   DvceArray1D<int> vgd_gbfs, vgd_gbfr;    // flags -> positions (entry*n + v; +1)
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_gbpb;   // segment bounds
-  // vgd_raw: scanned flags and bounds per (shell, pass, depth) (VetGdGbHaloC); _xb: the
+  // vgd_raw: scanned flags and bounds per (shell, pass, depth) (ScGbHaloC); _xb: the
   // other cross-fade set's
   std::map<int, std::array<DvceArray1D<int>, 2>> vgd_gbcf, vgd_gbcf_xb;
   std::map<int, std::vector<int>> vgd_gbcb, vgd_gbcb_xb;
   Real vgd_gbdmin = 0.0;
   template <class V>
-  bool VetGdGbHaloC(V &a, const int i, const int ws);
-  void VetGdThetaInit();                  // node table and checks
-  double VetGdThetaDmin() const;          // narrowest lateral spacing for the band
-  int VgdPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south
-  Kokkos::View<int64_t*, DevMemSpace> vgd_scan_sums;   // VgdScan2 chunk sums
+  bool ScGbHaloC(V &a, const int i, const int ws);
+  void ScThetaInit();                  // node table and checks
+  double ScThetaDmin() const;          // narrowest lateral spacing for the band
+  int ScPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south
+  Kokkos::View<int64_t*, DevMemSpace> vgd_scan_sums;   // ScScan2 chunk sums
   // vet_gd_halo_exact: the compact-halo lists cut to the band values the sweep reads
   // (marked from its ray geometry), senders told by one request per list build
   bool vgd_hx_on = false;
@@ -1576,12 +1576,12 @@ class RadiationVet {
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_hb;   // bounds, counts
   Real vgd_hx_nmade = 0.0, vgd_hx_nout = 0.0, vgd_hx_nfall = 0.0, vgd_hx_nun = 0.0;
   Real vgd_hx_vmask = 0.0, vgd_hx_vexact = 0.0;   // received values: mask lists, exact
-  std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): exact lists per (pass, shell)
-  std::vector<VgdHlEntry> vgd_hxe_alt;     // the other xfade set's lists
-  bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
-  bool VetGdHxCut(const int e, const VgdHlEntry &X) const;   // ray-cut move test
-  void VetGdHxBuild2(const int e, const int i, const int ws);
-  // exact lists of many shells in a few collectives (VetGdHxBatch): scratch pools,
+  std::vector<ScHlEntry> vgd_hxe;         // (2 n1): exact lists per (pass, shell)
+  std::vector<ScHlEntry> vgd_hxe_alt;     // the other xfade set's lists
+  bool ScHxKey(const int e, const int ws) const;   // record e matches the masks' key
+  bool ScHxCut(const int e, const ScHlEntry &X) const;   // ray-cut move test
+  void ScHxBuild2(const int e, const int i, const int ws);
+  // exact lists of many shells in a few collectives (ScHxBatch): scratch pools,
   // per-depth partner / piece tables, pinned bounds
   DvceArray1D<char> vgd_hxb_tmp;
   int vgd_hxb_g = 0, vgd_hxb_npc = 0;
@@ -1591,7 +1591,7 @@ class RadiationVet {
                                                   vgd_hxb_pds;
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hxb_hb, vgd_hxb_sp;
   Real vgd_hxb_t = 0.0, vgd_hxb_ngroup = 0.0, vgd_hxb_nrealloc = 0.0;
-  void VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs);
+  void ScHxBatch(const std::vector<std::array<int, 4>> &jobs);
   // vet_gd_halo_ipc: per-shell exchange of the batch-made exact lists over node-local
   // CUDA IPC, driven by the GPU (the host never waits in the sweep)
   bool vgd_ipc_on = false;
@@ -1606,10 +1606,10 @@ class RadiationVet {
   DualArray1D<long long> vgd_ipc_phalf, vgd_ipc_pcs;
   DualArray1D<int> vgd_ipc_pslot;
   std::vector<void *> vgd_ipc_open;
-  void VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t half);
-  void VetGdIpcCheck();
-  // pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
-  struct VgdHlPend {
+  void ScIpcInit(const std::vector<int> &prk, size_t cs, size_t half);
+  void ScIpcCheck();
+  // pending list-path exchange of the overlap (ScHlBegin / ScHlEnd)
+  struct ScHlPend {
     bool on = false, xe = false;                // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // the IPC path
     // IPC: begin + end as one kernel (pack, flags, wait, scatter). now: the end follows
@@ -1619,35 +1619,35 @@ class RadiationVet {
     long long seq = 0;
     int ex = -1, px = 0, i = -1;
     std::array<std::vector<int64_t>, 2> *gwa = nullptr;
-    VgdRag a;
+    ScRag a;
 #if MPI_PARALLEL_ENABLED
     std::vector<MPI_Request> req;
 #endif
     Kokkos::Timer tq;
   };
-  VgdHlPend vgd_hlp;
+  ScHlPend vgd_hlp;
   template <class V>
-  bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws);
-  void VetGdHlEnd();
+  bool ScHlBegin(V &a, const int nv, const int i0, const int ws);
+  void ScHlEnd();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): same per pass (inward, outward)
   template <class V>
-  void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
-                 const bool mapd);
+  void ScHalo(V &a, const int nv, const int i0, const int i1, const int ws,
+              const bool mapd);
   // multi-shell (ln chi, ln S) halo in chunks of shells that fit the per-shell buffers
-  void VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1);
+  void ScHaloCs(DvceArray5D<Real> &a, const int i0, const int i1);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0;
-  void VetGdInit();
-  Real VetGdAngle(const int cyc) const;
-  bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
-  int64_t VetGdBlock(const int cyc) const;       // rotation block
-  Real VetGdAngleBlk(const int64_t b) const;
+  void ScInit();
+  Real RotAngle(const int cyc) const;
+  bool ScRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
+  int64_t RotBlock(const int cyc) const;       // rotation block
+  Real RotAngleBlk(const int64_t b) const;
   double RotPhase(const int64_t b) const;   // block -> fraction of period
-  Real VetGdAlignDt(const Real time, const Real dt);
-  void VetGdTables(const Real alpha);
+  Real RotAlignDt(const Real time, const Real dt);
+  void ScTables(const Real alpha);
   // host part of the tables in persistent pinned buffers; the next rotation's tables
   // prefetched (host thread + upload into a second device set on vgd_tex)
-  struct VgdTabHost {
+  struct ScTabHost {
     Kokkos::View<Real **, LayoutWrapper, Kokkos::SharedHostPinnedSpace> dir;
     Kokkos::View<int ***, LayoutWrapper, Kokkos::SharedHostPinnedSpace> w;
     Kokkos::View<int ****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> mp;
@@ -1659,7 +1659,7 @@ class RadiationVet {
     int nwall = 0, nexact = 0, nmap = 0, nphx = 0;   // nphx: inexact phi-only wall maps
     int nthx = 0;                                     // nthx: theta-only wall maps
   };
-  struct VgdTabDev {
+  struct ScTabDev {
     DvceArray2D<Real> dir;
     Kokkos::View<int ***, LayoutWrapper, DevMemSpace> wall;
     Kokkos::View<int ****, LayoutWrapper, DevMemSpace> map;
@@ -1667,19 +1667,19 @@ class RadiationVet {
     Kokkos::View<int *****, LayoutWrapper, DevMemSpace> m3;
     DvceArray5D<Real> w3;
   };
-  VgdTabHost vgd_tabh;
-  VgdTabDev vgd_tabd;
+  ScTabHost vgd_tabh;
+  ScTabDev vgd_tabd;
   std::future<void> vgd_tabf;
   int vgd_tab_state = 0;       // 0 idle, 1 host thread running, 3 uploaded (vgd_tabd)
   Real vgd_tab_nswap = 0.0;
   DevExeSpace vgd_tex;
-  void VgdTabCompute(const Real alpha, const int nthr);
-  void VgdTabAlloc(const bool dev);
-  void VetGdTabPrefetch(const int cyc);
-  void VetGdTabPoll();
-  void VetGdBuild();
-  void VetGdSweep();
-  // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
+  void ScTabCompute(const Real alpha, const int nthr);
+  void ScTabAlloc(const bool dev);
+  void ScTabPrefetch(const int cyc);
+  void ScTabPoll();
+  void ScBuild();
+  void ScSweep();
+  // shell body closure in device memory, called through a pointer (ScClosureToDevice)
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // CUDA gx-false closures
@@ -1689,20 +1689,20 @@ class RadiationVet {
 #if MPI_PARALLEL_ENABLED
   MPI_Comm vgd_comm = MPI_COMM_WORLD;
 #endif
-  void VetGdSource();
-  void VetGdPost();
+  void ScSource();
+  void ScPost();
   void VetRaySourceEnd();
 
   // ...in "vet_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);
   // ...in "vet_stagen"
   TaskStatus CopyCons(Driver *d, int stage);
-  TaskStatus ApplyClosureLimits(Driver *d, int stage);
+  TaskStatus StageTimers(Driver *d, int stage);
   TaskStatus Opacity(Driver *d, int stage);
   TaskStatus CalculateFluxes(Driver *d, int stage);
   TaskStatus SendFlux(Driver *d, int stage);
   TaskStatus RecvFlux(Driver *d, int stage);
-  TaskStatus HydroConToPrim(Driver *d, int stage);
+  TaskStatus GasUpdate(Driver *d, int stage);
   TaskStatus RestrictU(Driver *d, int stage);
   TaskStatus SendU(Driver *d, int stage);
   TaskStatus RecvU(Driver *d, int stage);

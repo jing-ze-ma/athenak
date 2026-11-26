@@ -22,10 +22,10 @@ namespace radvet {
 
 // stream event on the sweep's stream: record after a kernel, query from the host
 // without a full fence (no device backend: fence)
-struct VgdCsEv {
-  VgdCsEv() = default;
-  VgdCsEv(const VgdCsEv &) = delete;
-  VgdCsEv &operator=(const VgdCsEv &) = delete;
+struct ScCsEv {
+  ScCsEv() = default;
+  ScCsEv(const ScCsEv &) = delete;
+  ScCsEv &operator=(const ScCsEv &) = delete;
 #if defined(KOKKOS_ENABLE_CUDA)
   cudaEvent_t e = nullptr;
   void Record(const DevExeSpace &ex = DevExeSpace()) {
@@ -39,7 +39,7 @@ struct VgdCsEv {
   void Wait() const {
     if (e != nullptr) {cudaEventSynchronize(e);}
   }
-  ~VgdCsEv() {
+  ~ScCsEv() {
     if (e != nullptr) {cudaEventDestroy(e);}
   }
 #elif defined(KOKKOS_ENABLE_HIP)
@@ -55,7 +55,7 @@ struct VgdCsEv {
   void Wait() const {
     if (e != nullptr) {(void) hipEventSynchronize(e);}
   }
-  ~VgdCsEv() {
+  ~ScCsEv() {
     if (e != nullptr) {(void) hipEventDestroy(e);}
   }
 #else
@@ -66,26 +66,26 @@ struct VgdCsEv {
 #endif
 };
 
-static inline void VgdCsFatal(const std::string &msg) {
-  VgdFatalAt(__FILE__, "<rad_vet>/vet_gd (cubed sphere): ", msg);
+static inline void ScCsFatal(const std::string &msg) {
+  ScFatalAt(__FILE__, "<rad_vet>/vet_gd (cubed sphere): ", msg);
 }
 
 KOKKOS_INLINE_FUNCTION
-static Real VgdCsDet3(const Real *a, const Real *b, const Real *c) {
+static Real ScCsDet3(const Real *a, const Real *b, const Real *c) {
   return a[0]*(b[1]*c[2] - b[2]*c[1]) - a[1]*(b[0]*c[2] - b[2]*c[0])
          + a[2]*(b[0]*c[1] - b[1]*c[0]);
 }
 
 // upwind stencil: up to 4 band positions (k, j) and their weights
-struct VgdCsSt {
+struct ScCsSt {
   int n;
   int k[4], j[4];
   Real w[4];
 };
 
 // stencil accessor of the shared upwind core (rays/sc_ray.hpp): weighted sum
-struct VgdCsA {
-  const VgdCsSt &st;
+struct ScCsA {
+  const ScCsSt &st;
   KOKKOS_INLINE_FUNCTION int N() const {return st.n;}
   KOKKOS_INLINE_FUNCTION int K(const int e) const {return st.k[e];}
   KOKKOS_INLINE_FUNCTION int J(const int e) const {return st.j[e];}
@@ -103,9 +103,9 @@ struct VgdCsA {
 // in the band (dropped, rest renormalised; the caller counts a clamped read).
 template <class CM, class NB>
 static KOKKOS_INLINE_FUNCTION
-bool VgdCsStencil(const Real x[3], const int p, const int j0, const int k0, const int wb,
-                  const int c2, const int c3, const int nc, const Real h, const CM &cm,
-                  const NB &nb, VgdCsSt &st) {
+bool ScCsStencil(const Real x[3], const int p, const int j0, const int k0, const int wb,
+                 const int c2, const int c3, const int nc, const Real h, const CM &cm,
+                 const NB &nb, ScCsSt &st) {
   int qc[4] = {0, 0, 0, 0}, qa[4] = {0, 0, 0, 0}, qt[4] = {0, 0, 0, 0};
   Real qw[4] = {0.0, 0.0, 0.0, 0.0};
   int nq = 0;
@@ -189,10 +189,10 @@ bool VgdCsStencil(const Real x[3], const int p, const int j0, const int k0, cons
     cubed_sphere::PanelToCart(c, -q4 + (ae + 0.5)*h, -q4 + (te + 0.5)*h, c1);
     cubed_sphere::PanelToCart(ca, -q4 + (aa + 0.5)*h, -q4 + (ta + 0.5)*h, c2c);
     cubed_sphere::PanelToCart(ct, -q4 + (ab + 0.5)*h, -q4 + (tb + 0.5)*h, c3c);
-    const Real dd = VgdCsDet3(c1, c2c, c3c);
-    Real l1 = VgdCsDet3(x, c2c, c3c)/dd;
-    Real l2 = VgdCsDet3(c1, x, c3c)/dd;
-    Real l3 = VgdCsDet3(c1, c2c, x)/dd;
+    const Real dd = ScCsDet3(c1, c2c, c3c);
+    Real l1 = ScCsDet3(x, c2c, c3c)/dd;
+    Real l2 = ScCsDet3(c1, x, c3c)/dd;
+    Real l3 = ScCsDet3(c1, c2c, x)/dd;
     l1 = fmax(l1, 0.0);
     l2 = fmax(l2, 0.0);
     l3 = fmax(l3, 0.0);

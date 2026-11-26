@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file rad_vet_init.cpp
 //! \brief arrays of the solve, the device memory arena shared with the rays, and
-//! CleanArgs, what the kernels read.
+//! SolveArgs, what the kernels read.
 //!
 //!  called from: rad_vet_closure.cpp, rad_vet_closure_faces.cpp,
 //!    rad_vet_closure_rays.cpp, rad_vet_closure_ring.cpp, rad_vet_fct.cpp,
@@ -44,10 +44,10 @@ namespace radvet {
 extern bool g_vra_adv;   // vet_rotate_advance (rays/sc_directions.cpp)
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanInit
+//! \fn void RadiationVet::InitArrays
 //! \brief allocates the arrays of the clean solve and checks that the setup is supported
 
-void RadiationVet::CleanInit() {
+void RadiationVet::InitArrays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int n1 = indcs.nx1 + 2*indcs.ng;
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
@@ -55,22 +55,23 @@ void RadiationVet::CleanInit() {
   int nmb = pmy_pack->nmb_thispack;
   // clean_closure = iterate: not the closure a restart file holds (Time2RstSet)
   if (!cln_cip) {
-    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh),
+    Kokkos::realloc(cln_s, nmb, NumClosureSlots(pmy_pack->pmesh->use_cubed_sphere,
+                                                cln_rfh),
                     n3, n2, n1);
   }
   if (cln_phic.extent_int(0) != nmb) {
     Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);
   }
   Kokkos::realloc(cln_v, nmb, 3, n3, n2, n1);
-  // staggered on the cubed sphere: cell terms and faces of CleanStagFSolve
+  // staggered on the cubed sphere: cell terms and faces of FluxSolve
   if (pmy_pack->pmesh->use_cubed_sphere) Kokkos::realloc(cln_vf, nmb, 18, n3, n2, n1);
-  // mem_arena: the shared slots follow cln_w.o (CleanWoBind), unless the closure is built
-  // inside the solve (clean_closure = iterate | extrap*)
+  // mem_arena: the shared slots follow cln_w.o (BindWorkVecs), unless the closure is
+  // built inside the solve (clean_closure = iterate | extrap*)
   cln_w.s = DvceArray5D<Real>();
   if (!marena_on || cln_closit || cln_extrap > 0) {
     Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
   }
-  // mem_arena: cln_w.o is made at the first solve, over the intensities (CleanWoBind)
+  // mem_arena: cln_w.o is made at the first solve, over the intensities (BindWorkVecs)
   cln_wo_nc = CLW_NX - CLW_NS;
   cln_w.o = DvceArray5D<Real>();
   if (!marena_on) Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
@@ -78,13 +79,13 @@ void RadiationVet::CleanInit() {
   // opacities at the iterate's T where they depend on it (tables, powerlaw T exponent)
   cln_opt = !opac_zero && (opacity_type == VET_OPAC_TABLE ||
             (opacity_type != VET_OPAC_CONST && opac_b != 0.0));
-  // staggered bracket's lagged flux DG: one more slot (CleanStagBracket)
+  // staggered bracket's lagged flux DG: one more slot (FaceBracket)
   cln_fdg = cln_consist ? CLF_NF : -1;
   cln_xqs = CLF_NF + (cln_fdg >= 0);   // clean_stag_xdonor's q
   const int nfx = CLF_NF + (cln_fdg >= 0) + 3;
   Kokkos::deep_copy(cln_w.s, 0.0);
   Kokkos::deep_copy(cln_w.o, 0.0);
-  for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) {
+  for (FaceVars *f : {&cln_fc1, &cln_fc2, &cln_fc3}) {
     Kokkos::realloc(f->s, nmb, CLF_NS, n3, n2, n1);
     Kokkos::realloc(f->o, nmb, nfx - CLF_NS, n3, n2, n1);
     Kokkos::deep_copy(f->s, 0.0);
@@ -132,80 +133,81 @@ void RadiationVet::CleanInit() {
     const int ns = cln_s.extent_int(1), c3 = indcs.nx3, c2 = indcs.nx2, c1 = indcs.nx1;
     if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, ns, c3, c2, c1);
     if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, ns, c3, c2, c1);
-    if (!CleanExtrapSx()) Kokkos::realloc(cln_mp, nmb, ns, c3, c2, c1);
+    if (!ExtrapSx()) Kokkos::realloc(cln_mp, nmb, ns, c3, c2, c1);
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, ns, c3, c2, c1);
   }
   Mesh *pm = pmy_pack->pmesh;
   if (pm->multilevel || chat != c_light) {
-    CleanFatal("<rad_vet>/scheme = clean currently needs a uniform mesh and chat = c");
+    RadVetFatal("<rad_vet>/scheme = clean currently needs a uniform mesh and chat = c");
   }
   // boundaries: open (bath, beam; outflow without a bath), reflect, periodic and an
   // imposed x1 flux.  The imposed flux is the face's whole energy flux, taken with no E
-  // weights (CleanFaceWeights, CleanFaceSource), kept as the face F by the F solve; the
-  // inner half cell absorbs its momentum (CleanMomentumChange), as at open faces.
+  // weights (FaceWeights, FaceSource), kept as the face F by the F solve; the
+  // inner half cell absorbs its momentum (FaceMomentumChange), as at open faces.
   const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   for (int s = 0; s < 6; ++s) {
     const bool flux = bc[s] == VET_IBC_FLUX || (bc[s] == VET_IBC_X2FLUX && ifx2_on);
     if (!(bc[s] == VET_IBC_MARSHAK || bc[s] == VET_IBC_OUTFLOW || bc[s] == VET_IBC_REFLECT
           ||
           bc[s] == VET_IBC_PERIODIC || (flux && s < 2))) {
-      CleanFatal("<rad_vet>/implicit_bc_* with scheme = clean: auto | marshak | outflow "
-                 "| "
-                 "reflect | periodic, flux (x1); not efix");
+      RadVetFatal("<rad_vet>/implicit_bc_* with scheme = clean: auto | marshak | outflow "
+                  "| "
+                  "reflect | periodic, flux (x1); not efix");
     }
   }
   if (iebath_hi_col_on) {
-    CleanFatal("scheme = clean has no per-column outer bath");
+    RadVetFatal("scheme = clean has no per-column outer bath");
   }
   if ((force_ref == VET_FREF_WB_ARAD || force_ref == VET_FREF_WB_MD) && !fref_wsplit) {
-    CleanFatal("<rad_vet>/force_reference = wb_arad(_md) with scheme = clean needs the "
-               "reference work given by the problem generator (force_reference_work = "
-               "split)");
+    RadVetFatal("<rad_vet>/force_reference = wb_arad(_md) with scheme = clean needs the "
+                "reference work given by the problem generator (force_reference_work = "
+                "split)");
   }
   if (force_ref == VET_FREF_WB_MD && !cln_steady && !cln_fref_set) {
-    CleanFatal("<rad_vet>/force_reference = wb_arad_md needs clean_init = steady (its "
-               "reference is the steady start's force)");
+    RadVetFatal("<rad_vet>/force_reference = wb_arad_md needs clean_init = steady (its "
+                "reference is the steady start's force)");
   }
-  if ((vgd_on || (vsc_rot && cln_ring)) && VgdRotOn()) {
-    // rotating rays (CleanFvSets): the closure is the J-weighted mean of the sets, made
+  if ((vgd_on || (vsc_rot && cln_ring)) && ScRotOn()) {
+    // rotating rays (RingSets): the closure is the J-weighted mean of the sets, made
     // continuous across blocks by the cross-fade, no slope correction.
-    // vet_rotate_avg_ema: only with clean_rot_ring = live (CleanRingEma)
+    // vet_rotate_avg_ema: only with clean_rot_ring = live (RingEma)
     if ((vra_ema && cln_ring != 1) ||
         (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
         (vgd_rot3 && !pm->three_d)) {
-      CleanFatal("<rad_vet>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = "
-                 "K "
-                 "(J-weighted; _ema only with clean_rot_ring = live), vet_gd_rotate_xfade with vet_gd_rotate_dt, and on a "
-                 "2-D axisymmetric mesh the z axis");
+      RadVetFatal("<rad_vet>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = "
+                  "K "
+                  "(J-weighted; _ema only with clean_rot_ring = live), "
+                  "vet_gd_rotate_xfade with vet_gd_rotate_dt, and on a "
+                  "2-D axisymmetric mesh the z axis");
     }
   }
   const bool ring_ok = (vgd_on || vsc_rot) && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
                        vra_k <= VET_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
-    CleanFatal("<rad_vet>/clean_rot_ring needs vet_gd or vet_sc rays rotating in time: "
-               "vet_rotate_avg = K and vet_gd_rotate_dt");
+    RadVetFatal("<rad_vet>/clean_rot_ring needs vet_gd or vet_sc rays rotating in time: "
+                "vet_rotate_avg = K and vet_gd_rotate_dt");
   }
   // sc rays sweep one set at a time: a mean or cross-fade of sets needs the ring
-  if (vgd_on && VgdRotOn() && (vra_on || vgd_xf) && !cln_ring) {
-    CleanFatal("<rad_vet>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
-               "needs clean_rot_ring");
+  if (vgd_on && ScRotOn() && (vra_on || vgd_xf) && !cln_ring) {
+    RadVetFatal("<rad_vet>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
+                "needs clean_rot_ring");
   }
   if (pm->use_cubed_sphere) {
-    // rays: vet_gd's (clean_rays = sc: its band, VetGdCsSweep) or the analytic sphere
+    // rays: vet_gd's (clean_rays = sc: its band, ScCsSweep) or the analytic sphere
     // (eddington: infinite radius); an even panel resolution keeps cell centres off the z
-    // axis (CleanCsFrame)
+    // axis (CsFrame)
     if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
         pm->mesh_indcs.nx2 % 2 != 0) {
-      CleanFatal("<rad_vet>/scheme = clean on the cubed sphere needs "
-                 "clean_closure = sphere | eddington (no clean_consistency) or the "
-                 "rays (closure = sc) and an even <mesh>/nx2");
+      RadVetFatal("<rad_vet>/scheme = clean on the cubed sphere needs "
+                  "clean_closure = sphere | eddington (no clean_consistency) or the "
+                  "rays (closure = sc) and an even <mesh>/nx2");
     }
     if (!vgd_on) {
       if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
       cln_sphere = true;
     }
-    CleanCsGeometry();
+    CsGeometry();
     cln_init = true;
     return;
   }
@@ -214,9 +216,9 @@ void RadiationVet::CleanInit() {
     // sphere (clean_closure = sphere | eddington)
     if (!(cln_sphere || vgd_on || cln_edd) ||
         (cln_consist && !vgd_on)) {
-      CleanFatal("<rad_vet>/scheme = clean on spherical polar needs clean_closure = "
-                 "sphere | eddington (no clean_consistency) or the "
-                 "rays (closure = sc)");
+      RadVetFatal("<rad_vet>/scheme = clean on spherical polar needs clean_closure = "
+                  "sphere | eddington (no clean_consistency) or the "
+                  "rays (closure = sc)");
     }
     // theta walls: vet_gd_theta_wall or the mesh's (rad_vet.cpp); the sweep starts at the
     // first shell or the ray cut (vray_icut).  No clean solve reads the half-range ratios
@@ -226,8 +228,8 @@ void RadiationVet::CleanInit() {
     return;
   }
   if (cln_sphere || !vet_sc || !vet_full) {
-    CleanFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs "
-               "vet_tensor = full (clean_closure = sphere is for spherical polar)");
+    RadVetFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs "
+                "vet_tensor = full (clean_closure = sphere is for spherical polar)");
   }
   // the formal solution provides the half-range sums and C1
   impl_beam_hr = true;
@@ -236,12 +238,12 @@ void RadiationVet::CleanInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn CleanArgs RadiationVet::CleanMakeArgs
+//! \fn SolveArgs RadiationVet::MakeArgs
 //! \brief collects the arrays and constants the device functions need
 
-CleanArgs RadiationVet::CleanMakeArgs() {
+SolveArgs RadiationVet::MakeArgs() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  CleanArgs x;
+  SolveArgs x;
   x.cs = cln_s;
   x.w = cln_w;
   x.fc[0] = cln_fc1;
@@ -331,7 +333,7 @@ CleanArgs RadiationVet::CleanMakeArgs() {
     }
     x.tg = cln_tg;
     if (vgd_wst) {
-      if (cln_sgv.extent_int(0) != nmb) {CleanSeamImage();}
+      if (cln_sgv.extent_int(0) != nmb) {SeamImage();}
       x.vol = cln_sgv;
       x.area[0] = cln_sga0;
       x.area[1] = cln_sga1;
@@ -379,16 +381,16 @@ CleanArgs RadiationVet::CleanMakeArgs() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn const void *RadiationVet::CleanDevCopy
+//! \fn const void *RadiationVet::DevCopy
 //! \brief device copy (slot s < 8, n <= 8 KB) of an argument struct for non-inlined
 //! device calls: read in place, not copied to every thread's stack as a capture is
 
-const void *RadiationVet::CleanDevCopy(const void *p, const size_t n, const int s) {
+const void *RadiationVet::DevCopy(const void *p, const size_t n, const int s) {
   // (host builds too: the copy outlives the struct)
   constexpr size_t slot = 8192;
   if (n > slot || s < 0 || s >= 8) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "CleanDevCopy: " << n << " bytes in slot " << s
+              << std::endl << "DevCopy: " << n << " bytes in slot " << s
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -405,8 +407,8 @@ const void *RadiationVet::CleanDevCopy(const void *p, const size_t n, const int 
   return cln_xdev.data() + s*slot;
 }
 
-const CleanArgs *RadiationVet::CleanDevArgs(const CleanArgs &x, const int s) {
-  return CleanDev(x, s);
+const SolveArgs *RadiationVet::DevArgs(const SolveArgs &x, const int s) {
+  return SolveDev(x, s);
 }
 
 //========================================================================================
@@ -415,7 +417,7 @@ const CleanArgs *RadiationVet::CleanDevArgs(const CleanArgs &x, const int s) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::MemArenaInit
 //! \brief enables the arena with vet_gd; allocates iw (not in the arena: some of its
-//! channels live across a VetGdBuild)
+//! channels live across a ScBuild)
 
 void RadiationVet::MemArenaInit(ParameterInput *pin, const int nmb, const int niw,
                                 const int n3, const int n2, const int n1) {
@@ -424,11 +426,11 @@ void RadiationVet::MemArenaInit(ParameterInput *pin, const int nmb, const int ni
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::MemArenaVgd
+//! \fn bool RadiationVet::MemArenaRays
 //! \brief binds a.d (n Reals) into the arena after the previous intensity array;
 //! false: not bound, the caller allocates a.d
 
-bool RadiationVet::MemArenaVgd(VgdRag &a, const int64_t n) {
+bool RadiationVet::MemArenaRays(ScRag &a, const int64_t n) {
   if (!marena_on || marena_sealed) return false;
   const int64_t off = marena_sw;
   const int64_t need = off + n;
@@ -453,13 +455,13 @@ void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
   if (have > 0 && keep) {
     Kokkos::deep_copy(Kokkos::subview(nb, std::make_pair(int64_t(0), have)), marena);
   }
-  VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
-  for (VgdRag *b : bound) {
+  ScRag *bound[2] = {&vgd_i, &vgd_i_xb};
+  for (ScRag *b : bound) {
     if (have > 0 && b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
       b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
     }
   }
-  for (DvceArray5D<Real> *w : {&cln_w.o, &cln_w.s}) {   // bound by CleanWoBind
+  for (DvceArray5D<Real> *w : {&cln_w.o, &cln_w.s}) {   // bound by BindWorkVecs
     if (have > 0 && w->data() != nullptr && w->data() >= o0 && w->data() < o1) {
       *w = DvceArray5D<Real>(nb.data() + (w->data() - o0), w->extent(0), w->extent(1),
                              w->extent(2), w->extent(3), w->extent(4));
@@ -493,7 +495,7 @@ void RadiationVet::MemArenaSeal() {
     // only cln_w.o (q = 0) moves
     if (q > 0 || a.data() == nullptr || n == 0 ||
         !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
-      // already in the arena (CleanWoBind)
+      // already in the arena (BindWorkVecs)
       if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);
       continue;
     }
@@ -548,15 +550,15 @@ void RadiationVet::MemArenaBind() {
     moved += n;
   };
   // (cubed sphere without the live ring: cln_st holds the build's face-layer chunks,
-  // CleanGdFaceSums)
+  // RayFaceSums)
   if (!pmy_pack->pmesh->use_cubed_sphere || cln_ring == 1) bind(cln_st);
   bind(cln_yl);
   bind(cln_vf);
-  if (CleanExtrapSx()) bind(cln_csy);   // (else CleanRingMoments' scratch)
+  if (ExtrapSx()) bind(cln_csy);   // (else RingMoments' scratch)
   for (auto &a : cln_mg) bind(a);
   // (the closure built once per stage: no pass keeps the faces' coefficients over one)
   if (!cln_closit) {
-    for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) bind(f->o);
+    for (FaceVars *f : {&cln_fc1, &cln_fc2, &cln_fc3}) bind(f->o);
   }
   // (the write-back's: their first use makes them, here already over the arena)
   auto &id = pmy_pack->pmesh->mb_indcs;
@@ -632,12 +634,12 @@ void RadiationVet::MemArenaHydro() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanWoBind
+//! \fn void RadiationVet::BindWorkVecs
 //! \brief allocates cln_w.o at the first solve: over the intensities in the arena when
-//! it exists (dead outside a build), else its own allocation.  cln_w.s, if CleanInit
+//! it exists (dead outside a build), else its own allocation.  cln_w.s, if InitArrays
 //! left it unmade, follows cln_w.o (after it in the arena, or its own allocation)
 
-void RadiationVet::CleanWoBind() {
+void RadiationVet::BindWorkVecs() {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int n1 = id.nx1 + 2*id.ng, n2 = (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1;
   const int n3 = (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1, nmb = pmy_pack->nmb_thispack;
@@ -665,20 +667,20 @@ void RadiationVet::CleanWoBind() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanSolveBegin
+//! \fn void RadiationVet::SolveBegin
 //! \brief once per solve, before the closure: arrays, the direction sets and half ranges
 //! a restart needs, the first cycle's face fluxes
 
-void RadiationVet::CleanSolveBegin() {
-  if (!cln_init) CleanInit();
+void RadiationVet::SolveBegin() {
+  if (!cln_init) InitArrays();
   // the vet_gd direction set first (a restart's first solve reads it before any build)
   if (vgd_on && !vray_ready) VetRayInit();
   // sc rays' ring on the cubed sphere: the union's directions and weights too
   if (vgd_on && cln_cssc && cln_ring && cln_fvn == 0) {
-    CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
+    RingSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
     // sc ring: its two sets' intensities from the restart file (zero from a file of
     // another ray method, until the first build)
-    if (cln_cssc) CleanScUnion2();
+    if (cln_cssc) RingUnion();
   }
   if (cln_cssc && !cln_ring) {   // clean_rays = sc: the sweep's set, its cln_fvi
     cln_fvd = vgd_dir;
@@ -688,7 +690,7 @@ void RadiationVet::CleanSolveBegin() {
   // set
   if (cln_cssc && cln_fh.extent_int(0) == 0 && cln_fvi.extent_int(0) > 0) {
     for (int q = 0; q < cln_fvi.extent_int(1)/vgd_n; ++q) {
-      CleanFaceHalf(cln_fvd, q*vgd_n, q == 0, q*vgd_n);
+      FaceHalf(cln_fvd, q*vgd_n, q == 0, q*vgd_n);
     }
     cln_fvi = DvceArray5D<Real>();
   }
@@ -698,7 +700,7 @@ void RadiationVet::CleanSolveBegin() {
   // 1. starting face fluxes on the first cycle (restarts carry them)
   if (!cln_faces_set) {
     cln_faces_set = true;
-    if (pmy_pack->pmesh->ncycle == 0) CleanInitFaceFluxes();
+    if (pmy_pack->pmesh->ncycle == 0) InitFaceFluxes();
   }
 }
 

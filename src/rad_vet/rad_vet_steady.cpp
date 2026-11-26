@@ -34,7 +34,7 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanSteadyStart
+//! \fn void RadiationVet::SteadyStart
 //! \brief <rad_vet>/clean_init = steady (fresh start, at the first dt): relaxes the
 //! initial radiation to the initial matter and sources.
 //! The gas is frozen (no hydro, no feedback) and backward-Euler radiation steps of
@@ -45,7 +45,7 @@ namespace radvet {
 //! less than 1/2 per pass.  Only E and F change, except the gas internal energy with
 //! force_reference = clean or icr_fmeas; the closure history is dropped afterwards.
 
-void RadiationVet::CleanSteadyStart(Driver *pdrive) {
+void RadiationVet::SteadyStart(Driver *pdrive) {
   if (!cln_steady) return;
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -58,7 +58,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
   // gas frozen, backward-Euler steps without substeps; big: the large step.  With
   // force_reference = clean or icr_fmeas the gas internal energy relaxes with E (rho,
   // momentum frozen) to radiative equilibrium; icr_fmeas also keeps each pass's x1 force
-  // less the reference, dm - h rho a_ref, in icr_dm (icr_dm_dt = h, CleanWriteBack)
+  // less the reference, dm - h rho a_ref, in icr_dm (icr_dm_dt = h, WriteBack)
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool relax = (force_ref == VET_FREF_CLEAN || icr_fmeas) && sfb && fl.on;
   if (relax && icr_fmeas) {
@@ -98,7 +98,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
         const int j = js + (q/ni)%nj, i = is + q%ni;
         sl += (sph ? vol(m,k,j,i) : dv)*u0_(m,VET_E+c,k,j,i);
       }, Kokkos::Sum<Real>(a));
-      t[c] = CleanReduce(a, false);
+      t[c] = GlobalReduce(a, false);
     }
   };
   // u0 <-> uo with ghosts, plus face F and the write-back captures (cln_fref, icr_dm)
@@ -148,7 +148,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
     for (int stage = 1; stage <= nstage; ++stage) {
       RunStage(pdrive, stage);
     }
-    (void) ApplyClosureLimits(pdrive, 1);
+    (void) StageTimers(pdrive, 1);
     if (cln_nfail + cln_nneg > nf) {
       copy(false);
       dtr_fail = false;
@@ -175,8 +175,8 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
       dl = fmax(dl, x);
       el = fmax(el, fmax(u0_(m,VET_E,k,j,i), uo(m,0,k,j,i)));
     }, Kokkos::Max<Real>(dm), Kokkos::Max<Real>(em));
-    emax = fmax(emax, CleanReduce(em, true));
-    d = CleanReduce(dm, true)/fmax(emax, 1.0e-300);
+    emax = fmax(emax, GlobalReduce(em, true));
+    d = GlobalReduce(dm, true)/fmax(emax, 1.0e-300);
     if (global_variable::my_rank == 0) {
       std::printf("<rad_vet> clean_init steady pass %d: max(|dE|, |dF|/c)/max E = %.3e\n",
                   n, d);
@@ -191,7 +191,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
   // restore the run's setup; the first step starts from this state without history
   sums(t1);
   if (cln_mdcap) {   // wb_arad_md: the reference in the ghosts, read by the hydro walks
-    CleanGhostFill(cln_fref, 0, 9, true, 0);
+    GhostFill(cln_fref, 0, 9, true, 0);
     if (pm->use_spherical_polar && pm->multi_d) {   // across a pole: no theta halves
       auto fr = cln_fref;
       auto bc = pmy_pack->pmb->mb_bcs.d_view;
@@ -254,16 +254,16 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
   }
   // a last change that is not small is a diverged start, not an unconverged one
   if (!(d < 1.0e-2)) {
-    CleanFatal("clean_init steady: the last pass changed E or F/c by " +
-               std::to_string(d) + " of max E (diverged: clean_init_dtfac, _n)");
+    RadVetFatal("clean_init steady: the last pass changed E or F/c by " +
+                std::to_string(d) + " of max E (diverged: clean_init_dtfac, _n)");
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanInitFaceFluxes
+//! \fn void RadiationVet::InitFaceFluxes
 //! \brief face fluxes as the mean of the two adjacent cell fluxes
 
-void RadiationVet::CleanInitFaceFluxes() {
+void RadiationVet::InitFaceFluxes() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -275,7 +275,7 @@ void RadiationVet::CleanInitFaceFluxes() {
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     auto f0 = (dir == 0) ? f0x1 : ((dir == 1) ? f0x2 : f0x3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    CleanFor("cln_f0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor("cln_f0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       f0(m,k,j,i) = 0.5*(u0_(m,VET_F1+dir,k,j,i) + u0_(m,VET_F1+dir,k-dk,j-dj,i-di));
     });
@@ -283,7 +283,7 @@ void RadiationVet::CleanInitFaceFluxes() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRstFaces
+//! \fn void RadiationVet::RestartFaces
 //! \brief staggered restart from a file without the clean state (the old scheme): its
 //! faces hold the comoving normal flux F0 and its cells F = mean(F0) + a E, a = v + v.D,
 //! while the staggered faces hold the lab-frame flux.  Each interior face adds the old
@@ -291,14 +291,14 @@ void RadiationVet::CleanInitFaceFluxes() {
 //! a = (F - mean F0)/E per cell (Cartesian on the cubed sphere, exchanged across seams);
 //! physical-boundary faces keep theirs.
 
-void RadiationVet::CleanRstFaces() {
+void RadiationVet::RestartFaces() {
   if (!cln_rstold) return;
-  if (!cln_init) CleanInit();
-  CleanWoBind();
+  if (!cln_init) InitArrays();
+  BindWorkVecs();
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   auto u0_ = u0;
   auto w = cln_w;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
@@ -326,21 +326,21 @@ void RadiationVet::CleanRstFaces() {
                              a3*x.g.At<CLG_E>(m,3+b,k,j,i))/e;
     }
   });
-  CleanGhostFill(cln_w, CLW_DM, 4);
+  GhostFill(cln_w, CLW_DM, 4);
   for (int dir = 0; dir < x.nf; ++dir) {
     auto f0 = (dir == 0) ? f0x1 : ((dir == 1) ? f0x2 : f0x3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     par_for("cln_rstf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      if (IsBoundaryFace(x, dir, m, k, j, i)) return;
       // cell o = -2, -1 | 0, 1 of the face: its a along the face normal, and E
       auto a = [&](const int o) {
-        return CleanStagN(x, CLW_DM, dir, m, k, j, i, k+o*dk, j+o*dj, i+o*di);
+        return FaceNormalPart(x, CLW_DM, dir, m, k, j, i, k+o*dk, j+o*dj, i+o*di);
       };
       auto e = [&](const int o) {return w(m,CLW_B,k+o*dk,j+o*dj,i+o*di);};
       Real af = 0.5*(a(-1) + a(0)), ef = 0.5*(e(-1) + e(0)), dum;
-      if (!CleanBoundaryFace(x, dir, m, k-dk, j-dj, i-di) &&
-          !CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
+      if (!IsBoundaryFace(x, dir, m, k-dk, j-dj, i-di) &&
+          !IsBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
         Real afl, afr;
         PLM(a(-2), a(-1), a(0), afl, dum);
         PLM(a(-1), a(0), a(1), dum, afr);
@@ -354,7 +354,7 @@ void RadiationVet::CleanRstFaces() {
       // so the excess is dropped: counted and its momentum sum |dF| V/c^2 reported
       const Real fc = fmin(fmax(f0(m,k,j,i), -x.c*e(0)), x.c*e(-1));
       if (fre && fc != f0(m,k,j,i)) {
-        const Real v = CleanVol(x, m, k, j, i);
+        const Real v = CellVolume(x, m, k, j, i);
         Kokkos::atomic_add(&rc(0), 1.0);
         Kokkos::atomic_add(&rc(1), fabs(f0(m,k,j,i) - fc)*v/(x.c*x.c));
         f0(m,k,j,i) = fc;
@@ -363,7 +363,7 @@ void RadiationVet::CleanRstFaces() {
   }
   if (fre) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rc);
-    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
+    const Real n = GlobalReduce(h(0), false), p = GlobalReduce(h(1), false);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> clean_stag_freal RESTART CONVERSION (one time, not a "
                 << "deposit): faces of the old scheme's file above c E_donor taken at it="
@@ -372,7 +372,7 @@ void RadiationVet::CleanRstFaces() {
                 << "; E unchanged)" << std::endl;
     }
   }
-  // the cell flux of these faces, as CleanWriteBack stores it (cubed sphere: the frame of
+  // the cell flux of these faces, as WriteBack stores it (cubed sphere: the frame of
   // y, not the old covariant panel components)
   par_for("cln_rstc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -380,8 +380,8 @@ void RadiationVet::CleanRstFaces() {
                        (x.nf > 1) ? f2(m,k,j+1,i) : 0.0, (x.nf > 2) ? f3(m,k,j,i) : 0.0,
                        (x.nf > 2) ? f3(m,k+1,j,i) : 0.0};
     Real fv[3];
-    CleanStagCellVector(x, m, k, j, i, c, fv);
-    CleanStagHydro(x, m, k, j, i, fv);
+    CellVector(x, m, k, j, i, c, fv);
+    ToHydroFrame(x, m, k, j, i, fv);
     for (int d = 0; d < 3; ++d) u0_(m,VET_F1+d,k,j,i) = fv[d];
   });
   Kokkos::deep_copy(cln_w.s, 0.0);

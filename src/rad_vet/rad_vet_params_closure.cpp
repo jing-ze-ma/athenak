@@ -135,7 +135,7 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
     vra_on = (vra_k >= 2) && (vgd_on || vet_sc);
-    const bool rot = vgd_on ? VgdRotOn() : vsc_rot;
+    const bool rot = vgd_on ? ScRotOn() : vsc_rot;
     if (vra_on && !rot && global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_rotate_avg = " << vra_k << ": the direction set does "
                 << "not rotate (vet_gd_rotate_dt / _every 0, or pinned): inert"
@@ -150,7 +150,7 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
   // vet_rotate_avg_ema = N (default 128 for a fresh run whose set rotates; 0 off): the
   // exponential moving average over the rotated sets
   const bool nw = !global_variable::restart_run;
-  const bool erot = nw && (vgd_on || vet_sc) && (vgd_on ? VgdRotOn() : vsc_rot);
+  const bool erot = nw && (vgd_on || vet_sc) && (vgd_on ? ScRotOn() : vsc_rot);
   recipe::Old(pin, "rad_vet", "vet_rotate_avg_ema", "0");
   if (erot || pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema")) {
     vra_ema_n = pin->GetOrAddReal("rad_vet","vet_rotate_avg_ema",128.0);
@@ -252,8 +252,8 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
     // clean_rot_ring = live: the rotating set's cross-fade on the clean ring
-    vgd_xf = vsc_rot && cln_ring == 1 && VgdRotOn();
-    if (VgdRotOn()) {
+    vgd_xf = vsc_rot && cln_ring == 1 && ScRotOn();
+    if (ScRotOn()) {
       recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
     }
     // vet_source_noesrc (rays/sc_cart_sweep.cpp)
@@ -386,14 +386,14 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     // _slope.
     VetRotInit(pin);   // shared with vet_sc (rays/sc_directions.cpp)
     // clean sp / cs, fresh, rotating on the time clock: vet_rotate_avg = 4 (recorded)
-    const bool clk = vgd_on && VgdRotOn() && (vgd_rot_dt > 0.0 || vgd_rot_auto);
+    const bool clk = vgd_on && ScRotOn() && (vgd_rot_dt > 0.0 || vgd_rot_auto);
     if (clk && nw) pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);
     RotAvgParse(pin);   // also after vet_sc's VetRotInit
     // the mean of sets rotating in time is cross-faded from the current to the next ray
-    // set over each block (two sweeps per build, fused where VetGdXffOk allows), except
+    // set over each block (two sweeps per build, fused where ScXffOk allows), except
     // under clean_rot_ring = jump
     vgd_xf = vgd_xff = clk && vra_on && !(cln_ring_named && cln_ring != 1);
-    if (VgdRotOn()) {
+    if (ScRotOn()) {
       recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
@@ -429,19 +429,19 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
         recipe::Rule(pin, "rad_vet", "vet_gd_band_global", vgd_gband ? "true" : "false");
       }
     }
-    // vet_gd_band_ring (read only when named, VetGdInit): band intensities lent per shell
+    // vet_gd_band_ring (read only when named, ScInit): band intensities lent per shell
     // from a few slabs; unnamed: on where it applies
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_band_ring")) {
       vgd_ring_par = pin->GetBoolean("rad_vet","vet_gd_band_ring");
     }
-    vgd_hcomp = vgd_on ? 2 : 0;   // (VetGdInit switches it off where it does not apply)
+    vgd_hcomp = vgd_on ? 2 : 0;   // (ScInit switches it off where it does not apply)
     // defaults of a fresh 3-D spherical-polar run: wall_interp; with a fixed product set
     // wall_sym, and theta_seam_sym on a theta-periodic wedge centred on the equator with
     // a set that is its equatorial mirror (odd nmu, or no stagger)
     const auto &msz = ppack->pmesh->mesh_size;
     const bool w3 = nw && vgd_on && ppack->pmesh->use_spherical_polar &&
                     ppack->pmesh->three_d && !ppack->pmesh->use_polar_boundary;
-    const bool wgl = w3 && vgd_gl_nmu > 0 && !VgdRotOn();
+    const bool wgl = w3 && vgd_gl_nmu > 0 && !ScRotOn();
     if (vgd_on) vgd_wint = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_interp",w3);
     if (vgd_on) vgd_wsym = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_sym",
         wgl && vgd_wint);
@@ -471,9 +471,9 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
       vgd_thmir = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] ==
                    BoundaryFlag::reflect);
     }
-    // exact halo lists where they apply (VetGdInit switches them off elsewhere)
+    // exact halo lists where they apply (ScInit switches them off elsewhere)
     vgd_hx_on = true;
-    // vet_gd_halo_ipc: default on CUDA, HIP without a theta wall (VetGdSetup keeps it on
+    // vet_gd_halo_ipc: default on CUDA, HIP without a theta wall (ScSetup keeps it on
     // the raw 3-D sweep only; off-node partners take MPI)
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
     vgd_ipc_on = vgd_on && !vgd_thmir && vgd_thvac == 0;
@@ -481,7 +481,7 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_vet","vet_gd_halo_ipc");
     }
-    // vet_col_lat_cut_thin (CleanRayCut)
+    // vet_col_lat_cut_thin (RayCut)
   }
   }
 }

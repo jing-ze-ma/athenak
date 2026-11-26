@@ -40,16 +40,16 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn static void VgdMirPick
+//! \fn static void ScMirPick
 //! \brief vet_gd_theta_wall = mirror: set directions standing in for direction m at a
 //! cell with radial unit vector (rx, ry, rz): an exact match, else the nearest of m's
 //! branch (sign of m . r_hat); with wint the 3 nearest, barycentric weights when all
 //! >= 0, else inverse-angle (vet_gd_wall_interp's rule)
 
-static void VgdMirPick(const std::vector<double> &d, const int n, const double mx,
-                       const double my, const double mz, const double rx,
-                       const double ry, const double rz, const bool wint, int r3[3],
-                       double w3[3], const bool ronly = false) {
+static void ScMirPick(const std::vector<double> &d, const int n, const double mx,
+                      const double my, const double mz, const double rx,
+                      const double ry, const double rz, const bool wint, int r3[3],
+                      double w3[3], const bool ronly = false) {
   const bool up = (mx*rx + my*ry + mz*rz) >= 0.0;
   double b3[3] = {-2.0, -2.0, -2.0};
   int best = 0;
@@ -135,26 +135,26 @@ static void VgdMirPick(const std::vector<double> &d, const int n, const double m
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdTabCompute
-//! \brief host part of VetGdTables for angle alpha (rotated set, wall maps, branch
+//! \fn void RadiationVet::ScTabCompute
+//! \brief host part of ScTables for angle alpha (rotated set, wall maps, branch
 //! tables) into the pinned host buffers vgd_tabh; touches nothing else (safe on the
 //! prefetch thread). nthr: host threads over (m, k) columns (result independent).
 
-void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
+void RadiationVet::ScTabCompute(const Real alpha, const int nthr) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c2 = indcs.nx2 + 2*vgd_w;
   const int c3 = indcs.nx3 + 2*vgd_w;
   const int n = vgd_n;
-  VgdTabHost &H = vgd_tabh;
-  std::vector<double> d = VgdRotate(alpha);
+  ScTabHost &H = vgd_tabh;
+  std::vector<double> d = ScRotate(alpha);
   auto &d_h = H.dir;
   for (int q = 0; q < n; ++q) {
     for (int c = 0; c < 4; ++c) {d_h(q,c) = d[4*q+c];}
   }
   if (vgd_csg) {   // no walls; the branch of every band cell
-    VetGdCsTab(d);
+    ScCsTab(d);
     H.alpha = alpha;
     return;
   }
@@ -243,9 +243,9 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
             int r3[3] = {best, best, best};
             double w3[3] = {1.0, 0.0, 0.0};
             if (vgd_wsym && thw == th) {
-              // vet_gd_wall_sym, phi wall: VgdMirPick, linear in azimuth on n_q's ring
+              // vet_gd_wall_sym, phi wall: ScMirPick, linear in azimuth on n_q's ring
               // (positive, mirror-paired)
-              VgdMirPick(d, n, mx, my, mz, sw*cpw, sw*spw, cw, true, r3, w3, true);
+              ScMirPick(d, n, mx, my, mz, sw*cpw, sw*spw, cw, true, r3, w3, true);
             } else if (bd <= 1.0 - 1.0e-12) {
               double b3[3] = {-2.0, -2.0, -2.0};
               for (int r = 0; r < n; ++r) {
@@ -358,7 +358,7 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
         for (int sd = 0; sd < 2; ++sd) {
           for (int g = 0; g < wb; ++g) {
             const int j = (sd == 1) ? (wb + nx2 + g) : (wb - 1 - g);
-            const int jm = VgdMirRow(g, sd == 1, wb, nx2);
+            const int jm = ScMirRow(g, sd == 1, wb, nx2);
             const double sb = ((g/nx2) % 2 == 0) ? -1.0 : 1.0;   // even: no flip
             const double th = x2_h(m,j), thm = x2_h(m,jm);
             const double st = std::sin(th), ct = std::cos(th);
@@ -376,7 +376,7 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
               const double mz = a*cw - sb*b*sw;
               int r3[3];
               double w3[3];
-              VgdMirPick(d, n, mx, my, mz, rx, ry, rz, wint, r3, w3);
+              ScMirPick(d, n, mx, my, mz, rx, ry, rz, wint, r3, w3);
               // the theta ghost's own wall tables (flag 2 = mirror): one direction, or 3
               // with weights (wint)
               mp_h(m,k,j,q) = r3[0];
@@ -422,12 +422,12 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdTabAlloc
+//! \fn void RadiationVet::ScTabAlloc
 //! \brief pinned host buffers of the tables (once, zero-filled) and, with dev, the
 //! second set of device tables the prefetch uploads into
 
-void RadiationVet::VgdTabAlloc(const bool dev) {
-  VgdTabHost &H = vgd_tabh;
+void RadiationVet::ScTabAlloc(const bool dev) {
+  ScTabHost &H = vgd_tabh;
   if (H.dir.extent(0) != vgd_dir.extent(0)) {
     using PS = Kokkos::SharedHostPinnedSpace;
     H.dir = Kokkos::View<Real **, LayoutWrapper, PS>("vet_vgd_tab_dir", vgd_dir.extent(0),
@@ -468,27 +468,27 @@ void RadiationVet::VgdTabAlloc(const bool dev) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdTabPrefetch
-//! \brief compute the next rotation block's tables on a host thread (VgdTabCompute,
-//! same numbers); VetGdTabPoll uploads them into the second device set, VetGdTables
+//! \fn void RadiationVet::ScTabPrefetch
+//! \brief compute the next rotation block's tables on a host thread (ScTabCompute,
+//! same numbers); ScTabPoll uploads them into the second device set, ScTables
 //! swaps them in at the next rotation
 
-void RadiationVet::VetGdTabPrefetch(const int cyc) {
-  if (!VgdRotOn() || vgd_tab_state != 0 || vgd_xf) {return;}
-  const Real an = VetGdAngleBlk(VetGdBlock(cyc) + 1);
+void RadiationVet::ScTabPrefetch(const int cyc) {
+  if (!ScRotOn() || vgd_tab_state != 0 || vgd_xf) {return;}
+  const Real an = RotAngleBlk(RotBlock(cyc) + 1);
   if (an == vgd_alpha) {return;}
-  VgdTabAlloc(true);
+  ScTabAlloc(true);
   vgd_tab_state = 1;
-  vgd_tabf = std::async(std::launch::async, [this, an]() {VgdTabCompute(an, 8);});
+  vgd_tabf = std::async(std::launch::async, [this, an]() {ScTabCompute(an, 8);});
 }
 
-void RadiationVet::VetGdTabPoll() {
+void RadiationVet::ScTabPoll() {
   if (vgd_tab_state != 1) {return;}
   if (vgd_tabf.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {return;}
   vgd_tabf.get();
   // the second device set is not read by anything in flight (swapped out at the last
   // rotation, fenced since): upload on the table instance
-  VgdTabHost &H = vgd_tabh;
+  ScTabHost &H = vgd_tabh;
   Kokkos::deep_copy(vgd_tex, vgd_tabd.dir, H.dir);
   Kokkos::deep_copy(vgd_tex, vgd_tabd.wall, H.w);
   Kokkos::deep_copy(vgd_tex, vgd_tabd.map, H.mp);
@@ -505,13 +505,13 @@ void RadiationVet::VetGdTabPoll() {
 Real g_vgd_tab_alpha = -9.0;
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdTables
+//! \fn void RadiationVet::ScTables
 //! \brief the set rotated by alpha -> vgd_dir, wall maps and branch tables (from the
 //! prefetched device set when it holds alpha, else computed now and copied)
 
-void RadiationVet::VetGdTables(const Real alpha) {
-  VetGdTabPoll();
-  VgdTabHost &H = vgd_tabh;
+void RadiationVet::ScTables(const Real alpha) {
+  ScTabPoll();
+  ScTabHost &H = vgd_tabh;
   if (vgd_tab_state == 3 && H.alpha == alpha) {
     vgd_tex.fence();
     std::swap(vgd_dir, vgd_tabd.dir);
@@ -526,8 +526,8 @@ void RadiationVet::VetGdTables(const Real alpha) {
   } else {
     if (vgd_tab_state == 1) {vgd_tabf.get();}     // another angle: not used
     if (vgd_tab_state == 3) {vgd_tex.fence();}    // the host buffers are being read
-    VgdTabAlloc(false);
-    if (H.alpha != alpha) {VgdTabCompute(alpha, 16);}
+    ScTabAlloc(false);
+    if (H.alpha != alpha) {ScTabCompute(alpha, 16);}
     Kokkos::deep_copy(vgd_dir, H.dir);
     Kokkos::deep_copy(vgd_mr, H.mr);
     if (vgd_wint) {
@@ -541,26 +541,26 @@ void RadiationVet::VetGdTables(const Real alpha) {
   const int n = vgd_n;
   const int nwall = H.nwall, nexact = H.nexact, nmap = H.nmap;
   if (vgd_gband && nexact != nmap) {
-    VgdFatal("vet_gd_band_global: a wall direction map is not the identity (the global "
-             "band copies do not re-index directions)");
+    ScFatal("vet_gd_band_global: a wall direction map is not the identity (the global "
+            "band copies do not re-index directions)");
   }
   if (H.nphx > 0 && !vgd_wsym) {
     // any set: an interpolated / nearest phi-wall map breaks the set's phi mirror
     // symmetry (a net F_phi), unless vet_gd_wall_sym pairs the maps
-    VgdFatal("phi-periodic wedge width W must be a multiple of the ray set's azimuthal "
-             "period for exact wall maps (" + std::to_string(H.nphx) + " of " +
-             std::to_string(nmap) + " phi-wall direction maps inexact), or name "
-             "rad_vet/vet_gd_wall_sym = true (with vet_gd_wall_interp = true) for "
-             "mirror-paired phi walls");
+    ScFatal("phi-periodic wedge width W must be a multiple of the ray set's azimuthal "
+            "period for exact wall maps (" + std::to_string(H.nphx) + " of " +
+            std::to_string(nmap) + " phi-wall direction maps inexact), or name "
+            "rad_vet/vet_gd_wall_sym = true (with vet_gd_wall_interp = true) for "
+            "mirror-paired phi walls");
   }
   if (H.nthx > 0 && !vgd_wst &&
       pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic) {
     // a theta-periodic mesh: its clean theta seam face is one-frame (a net F_theta); a
     // reflecting theta wall has no seam face
-    VgdFatal("theta-periodic wedge: the theta wall maps are inexact (" +
-             std::to_string(H.nthx) + " of " + std::to_string(nmap) + " direction maps); "
-             "name rad_vet/vet_gd_theta_seam_sym = true (with vet_gd_wall_interp = true) "
-             "for mirror-paired theta seams");
+    ScFatal("theta-periodic wedge: the theta wall maps are inexact (" +
+            std::to_string(H.nthx) + " of " + std::to_string(nmap) + " direction maps); "
+            "name rad_vet/vet_gd_theta_seam_sym = true (with vet_gd_wall_interp = true) "
+            "for mirror-paired theta seams");
   }
   const bool first = (vgd_alpha < 0.0);
   // the compact global band's kept lists belong to a set: a new set remakes them
@@ -593,12 +593,12 @@ void RadiationVet::VetGdTables(const Real alpha) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdXfTables
+//! \fn void RadiationVet::ScXfTables
 //! \brief vet_gd_rotate_xfade: the tables of alpha into vgd_dir/...; both cross-fade
 //! sets stay on the device (current and vgd_tabd) and are swapped; another angle swaps
-//! the current set out and builds the new one (VetGdTables)
+//! the current set out and builds the new one (ScTables)
 
-void RadiationVet::VgdXfTables(const Real alpha) {
+void RadiationVet::ScXfTables(const Real alpha) {
   if (alpha == vgd_alpha && g_vgd_tab_alpha == alpha) {return;}
   auto swp = [this]() {
     std::swap(vgd_dir, vgd_tabd.dir);
@@ -613,7 +613,7 @@ void RadiationVet::VgdXfTables(const Real alpha) {
     // the two sets do not rebuild each other's lists (bitwise). Not on the cubed sphere
     // (own per-set slots)
     if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
-    VgdGbSwap();
+    ScGbSwap();
     // the set's intensities and shell lists go with it (keyed caches)
     if (vgd_xff) {
       std::swap(vgd_i, vgd_i_xb);
@@ -632,19 +632,19 @@ void RadiationVet::VgdXfTables(const Real alpha) {
     g_vgd_tab_alpha = alpha;
     return;
   }
-  VgdTabAlloc(true);
+  ScTabAlloc(true);
   swp();
   vgd_xf_alt = g_vgd_tab_alpha;
-  VetGdTables(alpha);
+  ScTables(alpha);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdXffSwap
+//! \fn void RadiationVet::ScXffSwap
 //! \brief swap the cross-fade's whole set context (tables, angles, exact lists,
 //! intensities, shell lists) without a fence (handles only); between the two halo
 //! exchanges of a fused shell when the merged message does not apply
 
-void RadiationVet::VgdXffSwap() {
+void RadiationVet::ScXffSwap() {
   std::swap(vgd_dir, vgd_tabd.dir);
   std::swap(vgd_wall, vgd_tabd.wall);
   std::swap(vgd_map, vgd_tabd.map);
@@ -654,7 +654,7 @@ void RadiationVet::VgdXffSwap() {
     std::swap(vgd_w3, vgd_tabd.w3);
   }
   if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
-  VgdGbSwap();
+  ScGbSwap();
   std::swap(vgd_i, vgd_i_xb);
   for (int p = 0; p < 2; ++p) {
     std::swap(vgd_shl[p], vgd_shl_xb[p]);

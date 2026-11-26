@@ -79,15 +79,15 @@ Real RadiationVet::VetBathLo() const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetInit
+//! \fn void RadiationVet::ScCartInit
 //! \brief read the vet_sc keys, build the angle set and the sweep buffers
 
-void RadiationVet::VetInit(ParameterInput *pin) {
+void RadiationVet::ScCartInit(ParameterInput *pin) {
   Mesh *pm = pmy_pack->pmesh;
   if (!trans_on) {
     VetFatal("<rad_vet>/closure = sc needs transport = implicit on a MULTI-D mesh");
   }
-  // several MeshBlocks or ranks: the banded sweep VetSweepMB
+  // several MeshBlocks or ranks: the banded sweep ScCartSweepMB
   const bool mbpath = (pm->nmb_total != 1 || global_variable::nranks != 1);
   // a non-periodic x2 (x3) boundary is a vacuum face of the formal solution (I = 0
   // entering); single MeshBlock only
@@ -214,7 +214,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
 
   vet_ring_n = vring;
   vet_ring_g = vrgrp;
-  VetBuildAngles(0.0);
+  ScCartAngles(0.0);
   auto &indcs = pm->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pm->nmb_maxperrank));
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
@@ -224,7 +224,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
                   (cln_consist ? VETRAY_NFS : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
-    VetMBInit(pin);   // the banded plane buffers live in vet_mbs
+    ScCartInitMB(pin);   // the banded plane buffers live in vet_mbs
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
@@ -248,11 +248,11 @@ void RadiationVet::VetInit(ParameterInput *pin) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetBuildAngles
+//! \fn void RadiationVet::ScCartAngles
 //! \brief the vet_sc angle set (mu1, mu2, mu3, weight), up hemisphere first, turned by
 //! beta about x1 (beta = 0: the fixed set)
 
-void RadiationVet::VetBuildAngles(const Real beta) {
+void RadiationVet::ScCartAngles(const Real beta) {
   const int vring = vet_ring_n, vrgrp = vet_ring_g;
   // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
   std::vector<double> xg, wg;
@@ -309,13 +309,13 @@ void RadiationVet::VetBuildAngles(const Real beta) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRotUpdate
-//! \brief vet_sc set of the current rotation block (VetGdBlock, the step's midpoint);
+//! \brief vet_sc set of the current rotation block (RotBlock, the step's midpoint);
 //! double-Gauss: azimuth q 2 pi/nphi; ring: 0.8 (q - 1/2) 2 pi/N (rays >= 0.1 ring step
 //! from +-x2).  Rebuilt only when the angle changes.
 
 void RadiationVet::VetRotUpdate() {
   if (!vsc_rot) {return;}
-  const Real beta = VetRotBeta(VetGdBlock(pmy_pack->pmesh->ncycle));
+  const Real beta = VetRotBeta(RotBlock(pmy_pack->pmesh->ncycle));
   if (beta == vsc_beta) {return;}
   VetRotSet(beta);
 }
@@ -332,7 +332,7 @@ Real RadiationVet::VetRotBeta(const int64_t blk) const {
   }
   // stratified phase with vet_rotate_avg (RotPhase)
   const Real q = vra_on ? static_cast<Real>(RotPhase(blk))
-                        : VetGdAngleBlk(blk)/(0.5*M_PI);
+                        : RotAngleBlk(blk)/(0.5*M_PI);
   return (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n : q*2.0*M_PI/vet_nphi;
 }
 
@@ -342,7 +342,7 @@ Real RadiationVet::VetRotBeta(const int64_t blk) const {
 
 void RadiationVet::VetRotSet(const Real beta) {
   vsc_beta = beta;
-  VetBuildAngles(beta);
+  ScCartAngles(beta);
 }
 
 //----------------------------------------------------------------------------------------
@@ -376,16 +376,16 @@ void RadiationVet::VetScRotAvgSetup() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetMBInit
+//! \fn void RadiationVet::ScCartInitMB
 //! \brief several MeshBlocks / ranks: band widths, neighbour tables, buffers (uniform
 //! mesh, periodic x2 (x3), every block at least 2 cells in x1)
 
-void RadiationVet::VetMBInit(ParameterInput *pin) {
+void RadiationVet::ScCartInitMB(ParameterInput *pin) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   auto &mindcs = pm->mesh_indcs;
-  vet_mbs = new VetMBState;
-  VetMBState &st = *vet_mbs;
+  vet_mbs = new ScCartMBState;
+  ScCartMBState &st = *vet_mbs;
   const int nmb = pmy_pack->nmb_thispack;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const bool thrd = trans_x3;
@@ -501,7 +501,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
         const Real q = static_cast<Real>(qs)/nsam;
         const Real beta = (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n
                                            : q*2.0*M_PI/vet_nphi;
-        VetBuildAngles(beta);
+        ScCartAngles(beta);
         auto bh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
         for (int rl = 0; rl < st.nrl; ++rl) {
           const int r = rl;
@@ -626,7 +626,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   // message plans: a piece is one (sweep block, slot) pair with a remote neighbour,
   // ordered by the receiver's (block, slot) = (hlid, nof-1-o) on the sender, (m, o) on
   // the receiver
-  auto plan = [&](VetMBState::Agg &A, const std::vector<int> &csz,
+  auto plan = [&](ScCartMBState::Agg &A, const std::vector<int> &csz,
                   const std::vector<int> &crz) {
     std::vector<std::array<int, 4>> ps, pr;   // (rank, key1, key2, index 8m+o)
     for (int m = 0; m < nsb; ++m) {
@@ -742,9 +742,9 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetFree
+//! \fn void RadiationVet::ScCartFree
 
-void RadiationVet::VetFree() {
+void RadiationVet::ScCartFree() {
   if (vet_mbs == nullptr) return;
   if (vet_mbs->pbd != nullptr) {
     delete vet_mbs->pbd;

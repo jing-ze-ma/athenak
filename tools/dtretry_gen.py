@@ -17,7 +17,7 @@ import json, re, subprocess, sys, os
 
 CLANG, FLAGS, SRC = sys.argv[1], sys.argv[2], sys.argv[3]
 SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace', r'TaskIDs$',
-           r'^VgdHlPend$', r'^VgdRag', r'^std::vector<MPI_Request>', r'^FofcReport$']
+           r'^ScHlPend$', r'^ScRag', r'^std::vector<MPI_Request>', r'^FofcReport$']
 # members that count the exchanges of a peer-to-peer protocol (CUDA IPC halos): the peers'
 # flags in device memory have moved on with the failed attempt, so these stay monotonic
 # (rolled back, the next exchange would wait for -- or accept -- a stale flag)
@@ -36,7 +36,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # cln_dbginf: clean_dbg_inf's cycle, cleared once injected (rolled back, a dt_retry redo
 # would inject again, without end)
 # cln_sgv / cln_sga0 / cln_sga1 / cln_sgd1 / cln_sgd2 / cln_sgx / cln_sgtg: the theta-seam image geometry
-# (CleanSeamImage; built once from pcoord when the extent changes, read only)
+# (SeamImage; built once from pcoord when the extent changes, read only)
 # cln_wci: clean_retry_budget's CLEAN WORST scratch (E before the last pass, refilled by every solve)
 # cln_pdh: clean_pass_damp's last pass change of E (scratch: a solve's first pass writes it before it reads it)
 # cln_fpv: clean_conv_est_f's last pass F (scratch: a stage's first F solve writes it before it reads it)
@@ -46,7 +46,7 @@ SKIP_NAMES = {'hi_seq', 'cln_pcrl', 'cln_fwr', 'cln_sgv', 'cln_sga0', 'cln_sga1'
               'cln_sgtg', 'cln_wci', 'cln_pdh', 'cln_fpv', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb',
               'vgd_csmw_h', 'vgd_csmw_r', 'cln_dbginf'}
-NESTED = ['VgdTabHost', 'VgdTabDev', 'VetOpacTab', 'CleanW', 'CleanF', 'CleanGeo']   # structs holding Views
+NESTED = ['ScTabHost', 'ScTabDev', 'VetOpacTab', 'WorkVec', 'FaceVars', 'CsGeoArrays']   # structs holding Views
 
 def ast(header, name):
     tu = '#include "athena.hpp"\n#include "mesh/mesh.hpp"\n#include "%s"\n' % header

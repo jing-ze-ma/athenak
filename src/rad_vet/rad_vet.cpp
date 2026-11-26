@@ -129,7 +129,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   ImplicitInit(pin);
   // clean sc rays with a reflecting top: the mirror reads the last build
   cln_scmem = vgd_on && sph_geom && ibc_x1max == VET_IBC_REFLECT;
-  // the ray cut (CleanRayCut): sc rays on 3-D sp, one MeshBlock along x1, no reflecting
+  // the ray cut (RayCut): sc rays on 3-D sp, one MeshBlock along x1, no reflecting
   // top
   const Mesh *pm = ppack->pmesh;
   const bool ok = vgd_on && sph_geom &&
@@ -143,14 +143,14 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   if (cln_rcut_on) {
     cln_rcut_wait = pin->GetOrAddInteger("rad_vet","clean_ray_cut_wait",10);
-    // the cut and its count in a restart file (CleanRayCut)
+    // the cut and its count in a restart file (RayCut)
     cln_rcut = pin->GetOrAddInteger("rad_vet","clean_ray_cut_now",-1);
     cln_rcut_n = pin->GetOrAddInteger("rad_vet","clean_ray_cut_count",0);
     pin_rcut_ = pin;
   }
-  if (sph_geom) {SphericalS1Check(pin);}
+  if (sph_geom) {SphericalCheck(pin);}
   if (cs_geom) {
-    CubedS1Init();
+    CubedInit();
   }
 
   // (5) boundary buffers
@@ -311,8 +311,8 @@ RadiationVet::~RadiationVet() {
   ReportCounters();
   ImplicitReport();
   Time2Report();      // time_scheme = hesdirk2
-  if (vet_sc) {VetReport();}
-  VetFree();
+  if (vet_sc) {ScCartReport();}
+  ScCartFree();
   delete pbval_u;
   if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_sg != nullptr) {delete pbval_sg;}

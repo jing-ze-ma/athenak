@@ -36,13 +36,13 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanDMem
+//! \fn void RadiationVet::FluxMemoryKeep
 //! \brief clean_stag_fkin: the energy flux memory d (CLF_N + 3) at the stage-loop start
 //! into CLF_DS (save) or back (a rejected stage's write-backs are discarded)
 
-void RadiationVet::CleanDMem(const bool save) {
+void RadiationVet::FluxMemoryKeep(const bool save) {
   if (!cln_fsolve || !cln_fkin) return;
-  if (!cln_init) CleanInit();
+  if (!cln_init) InitArrays();
   auto AL = Kokkos::ALL;
   for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
     auto d = Kokkos::subview(fc.s, AL, CLF_N + 3, AL, AL, AL);
@@ -52,13 +52,13 @@ void RadiationVet::CleanDMem(const bool save) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanDInc
+//! \fn void RadiationVet::FluxMemoryInc
 //! \brief clean_stag_fkin: d of a hesdirk2 stage's old vector: the stage start state
 //! (stage 2: w1 d^n + w0 Y1) plus the increment c1 K1 + c2 K2 of d's own slopes (CLF_KD,
 //! CLF_KD + 1), as every other component of the integrated state
 
-void RadiationVet::CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
-                             const Real w0) {
+void RadiationVet::FluxMemoryInc(const bool two, const Real c1, const Real c2,
+                                 const Real w1, const Real w0) {
   if (!cln_fsolve || !cln_fkin) return;
   for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
     par_for("cln_dinc", DevExeSpace(), 0, fc.extent_int(0) - 1, 0, fc.extent_int(2) - 1,
@@ -73,11 +73,11 @@ void RadiationVet::CleanDInc(const bool two, const Real c1, const Real c2, const
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanDtrD
+//! \fn void RadiationVet::FluxMemoryRetry
 //! \brief dt_retry: the memory d and its slope K1 (CLF_N + 3, CLF_KD), the only face
 //! values a cycle takes from the last one, to / from cln_rstd (the restart's layout)
 
-void RadiationVet::CleanDtrD(const bool save) {
+void RadiationVet::FluxMemoryRetry(const bool save) {
   const int nmb = cln_fc1.extent_int(0);
   if (!cln_fsolve || !cln_fkin || nmb == 0) return;
   auto AL = Kokkos::ALL;
@@ -94,7 +94,7 @@ void RadiationVet::CleanDtrD(const bool save) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanWbFct
+//! \fn void RadiationVet::WbFct
 //! \brief clean_wb_fct: Zalesak limit of the written faces' energy flux Phi (cln_wbdiv's,
 //! fp 0..2) so that E > e_floor after the write-back by construction.  A cell's E is
 //! Q - P: Q its E without face transport (cln_wbcell probe, fp 3, less e_floor and
@@ -104,14 +104,14 @@ void RadiationVet::CleanDtrD(const bool save) {
 //! evaluates only its neighbours).  The limited faces' (1 - s) Phi leave qf (CLW_Q), pf
 //! and the x1 boundary ledger.  Face F is not touched: momentum and L_z exact.
 
-void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
-                              const DvceArray5D<Real> &fp, const bool pfo,
-                              const DvceArray5D<Real> &pf) {
+void RadiationVet::WbFct(const SolveArgs &x, const SolveArgs *px,
+                         const DvceArray5D<Real> &fp, const bool pfo,
+                         const DvceArray5D<Real> &pf) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1, nf = x.nf;
   if (iw.extent_int(1) <= Time2FctSlot(1)) {
-    CleanFatal("<rad_vet>/clean_wb_fct needs time2_face_fct's iw slots");
+    RadVetFatal("<rad_vet>/clean_wb_fct needs time2_face_fct's iw slots");
   }
   auto iw_ = iw;
   const int ca = Time2FctSlot(0), cb = Time2FctSlot(1);
@@ -122,13 +122,13 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   // a cell's Q and P at the donors' R in slot c; a face's scale, its donor's R in ca
   auto qp = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int c,
                           Real &q, Real &po) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     q = fp(m,3,k,j,i);
     po = 0.0;
     for (int n = 0; n < nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      const Real gl = x.h*CleanDivW(x, n, m, k, j, i, 0)*fp(m,n,k,j,i);   // + = in
-      const Real gh = x.h*CleanDivW(x, n, m, k, j, i, 1)*fp(m,n,k+dk,j+dj,i+di);
+      const Real gl = x.h*DivW(x, n, m, k, j, i, 0)*fp(m,n,k,j,i);   // + = in
+      const Real gh = x.h*DivW(x, n, m, k, j, i, 1)*fp(m,n,k+dk,j+dj,i+di);
       if (gl > 0.0) {q += fabs(iw_(m,c,k-dk,j-dj,i-di))*gl;} else {po -= gl;}
       if (gh > 0.0) {po += gh;} else {q -= fabs(iw_(m,c,k+dk,j+dj,i+di))*gh;}
     }
@@ -144,7 +144,7 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   for (; nr < 4096; ++nr) {   // R only falls: until none newly limited
     Real nv = 0.0;
     const bool all = (nr == 0);
-    Kokkos::parallel_reduce("cln_wbfr", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    Kokkos::parallel_reduce("cln_wbfr", SolveRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
     KOKKOS_LAMBDA(const int idx, Real &a) {
       const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
       const int i = is + idx%n1;
@@ -169,7 +169,7 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     }, Kokkos::Sum<Real>(nv));
     Time2FctHalo(sb);
     std::swap(sa, sb);
-    if (!(CleanReduce(nv, false) > 0.0)) break;
+    if (!(GlobalReduce(nv, false) > 0.0)) break;
   }
   if (nr == 4096) {
     ZalesakCapWarn("clean_wb_fct", pmy_pack->pmesh->ncycle, t2_solve);
@@ -181,33 +181,33 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   }
   if (nr == 0) return;   // nothing limited: bitwise
   Real lv[2] = {0.0, 0.0};   // 'left': not > 0 at R; the outflow the limit kept
-  Kokkos::parallel_reduce("cln_wbfl", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  Kokkos::parallel_reduce("cln_wbfl", SolveRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
     const int i = is + idx%n1;
     Real q, po;
     qp(m, k, j, i, ca, q, po);
     const Real rc = iw_(m,ca,k,j,i);
     if (!(q - rc*po > 0.0)) a += 1.0;
-    b += (1.0 - rc)*po*CleanVol(x, m, k, j, i);
+    b += (1.0 - rc)*po*CellVolume(x, m, k, j, i);
     Real dq = 0.0;   // qf less the limited faces' share
     for (int n = 0; n < nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      dq += CleanDivF(x, n, m, k, j, i, (1.0 - sf(n, m, k, j, i))*fp(m,n,k,j,i),
-                      (1.0 - sf(n, m, k+dk, j+dj, i+di))*fp(m,n,k+dk,j+dj,i+di));
+      dq += DivF(x, n, m, k, j, i, (1.0 - sf(n, m, k, j, i))*fp(m,n,k,j,i),
+                 (1.0 - sf(n, m, k+dk, j+dj, i+di))*fp(m,n,k+dk,j+dj,i+di));
     }
     x.w(m,CLW_Q,k,j,i) -= x.h*dq;
   }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
-  lv[0] = CleanReduce(lv[0], false);
-  lv[1] = CleanReduce(lv[1], false);
+  lv[0] = GlobalReduce(lv[0], false);
+  lv[1] = GlobalReduce(lv[1], false);
   if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(lv[1]))) {
     std::printf("CLEAN %sWBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e\n",
                 std::isfinite(lv[1]) ? "" : "WARNING ", pmy_pack->pmesh->ncycle,
                 t2_solve, nr, lv[0], lv[1]);
   }
   for (int n = 0; n < nf && pfo; ++n) {   // the stored Phi: what moved E
-    CleanFor("cln_wbfs", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
+    SolveFor("cln_wbfs", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       pf(m,n,k,j,i) -= (1.0 - sf(n, m, k, j, i))*fp(m,n,k,j,i);
     });
@@ -219,7 +219,7 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     par_for("cln_wbfb", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
       const int i = s ? ie + 1 : is;
-      if (CleanBoundaryFace(*px, 0, m, k, j, i)) {
+      if (IsBoundaryFace(*px, 0, m, k, j, i)) {
         la(m,s,k,j) -= h*ar(m,k,j,i)*(1.0 - sf(0, m, k, j, i))*fp(m,0,k,j,i);
       }
     });
@@ -232,9 +232,9 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
 //! lists, without the deferred clean exchanges
 
 void RadiationVet::Time2FctHalo(const int c) {
-  std::vector<CleanGSeg<Real>> hp;
+  std::vector<GSeg<Real>> hp;
   hp.swap(cln_hpend);
-  CleanGhostFill(iw, c, 1, false, 0, 1);
+  GhostFill(iw, c, 1, false, 0, 1);
   cln_hpend.swap(hp);
 }
 

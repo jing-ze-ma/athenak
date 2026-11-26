@@ -31,12 +31,12 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdSource
+//! \fn void RadiationVet::ScSource
 //! \brief source of a gd build: ln chi, ln S of every cell (VetRaySource) into the band
 //! index space of vgd_cs with its lateral band filled exactly (one multi-shell
 //! exchange); with several MeshBlocks along x1 also the x1 ghost shells
 
-void RadiationVet::VetGdSource() {
+void RadiationVet::ScSource() {
   VetRaySource();
   // from the first shell up (gd sweep), or every shell for the clean scheme, whose rays
   // and closure read the whole column
@@ -54,61 +54,61 @@ void RadiationVet::VetGdSource() {
   });
   vgd_cur = DevExeSpace();
   if (vgd_csg) {   // the cs band copies
-    VetGdCsSource();
+    ScCsSource();
     return;
   }
-  VetGdHaloCs(vgd_cs, ilo, ie);
+  ScHaloCs(vgd_cs, ilo, ie);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdBuild
+//! \fn void RadiationVet::ScBuild
 //! \brief the gd build: source and first shell (VetRaySource),
 //! sweep(s) with the lagged lateral inflow, moments; timed per part (fenced)
 
-void RadiationVet::VetGdBuild() {
+void RadiationVet::ScBuild() {
   Kokkos::Timer tm;
-  VetGdSource();
+  ScSource();
   Kokkos::fence();
   vgd_tsrc += tm.seconds();
-  VetGdTabPoll();      // the prefetched tables, uploaded when ready
+  ScTabPoll();      // the prefetched tables, uploaded when ready
   // vet_gd_rotate_every: a new z-angle at the first build of a block of N cycles; the
   // stored intensities belong to the old directions, so the lagged inflow re-converges
-  const Real al = VetGdAngle(pmy_pack->pmesh->ncycle);
+  const Real al = RotAngle(pmy_pack->pmesh->ncycle);
   // no vet_rotate_avg or cross-fade here: the clean scheme sweeps rotating sets on its
-  // ring (CleanRingMoments); without clean_rot_ring they are refused (CleanInit)
+  // ring (RingMoments); without clean_rot_ring they are refused (InitArrays)
   if (al != vgd_alpha) {
     Kokkos::Timer tt;
-    VetGdTables(al);
+    ScTables(al);
     vgd_ttab += tt.seconds();
   }
-  VetGdTabPrefetch(pmy_pack->pmesh->ncycle);
-  VetGdSweepPost();
+  ScTabPrefetch(pmy_pack->pmesh->ncycle);
+  ScSweepPost();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdSweepPost
-//! \brief sweep part of a gd build with the current tables, and VetGdPost
+//! \fn void RadiationVet::ScSweepPost
+//! \brief sweep part of a gd build with the current tables, and ScPost
 
-void RadiationVet::VetGdSweepPost() {
+void RadiationVet::ScSweepPost() {
   Kokkos::Timer tm;
   // the per-shell halo makes one sweep exact
   vgd_cur = DevExeSpace();
   vgd_scut = vray_icut;
   tm.reset();
-  VetGdSweep();
+  ScSweep();
   Kokkos::fence();
   vgd_tswp += tm.seconds();
-  VetGdPost();
+  ScPost();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdPost
+//! \fn void RadiationVet::ScPost
 //! \brief after the sweep(s) of a build (also clean_rot_ring's): the GPU halo's error
 //! flag, the clamp check over all ranks
 
-void RadiationVet::VetGdPost() {
+void RadiationVet::ScPost() {
   Kokkos::fence();
-  VetGdIpcCheck();
+  ScIpcCheck();
   vray_ncall += 1.0;
   // persistent pinned buffer
   if (vgd_pin_cnt.extent(0) != vray_cnt.extent(0)) {
@@ -134,8 +134,8 @@ void RadiationVet::VetGdPost() {
                 << "near-tangent reach, the sweep is not exact" << std::endl;
     }
     if (!vgd_allow_clamp) {
-      VgdFatal("clamped lateral reads (MeshBlocks too small for the reach); use larger "
-               "MeshBlocks or <rad_vet>/vet_gd_allow_clamp = true");
+      ScFatal("clamped lateral reads (MeshBlocks too small for the reach); use larger "
+              "MeshBlocks or <rad_vet>/vet_gd_allow_clamp = true");
     }
     vgd_nclamp_seen = vgd_nclamp_all;
   }

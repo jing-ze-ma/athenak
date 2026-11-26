@@ -40,11 +40,11 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdThVacCs
+//! \fn void RadiationVet::ScThVacCs
 //! \brief vet_gd_theta_wall = vacuum / extrap: ln chi, ln S of the theta ghost rows
 //! beyond a physical wall (flags 3, 4) = the edge row's (zero gradient)
 
-void RadiationVet::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1) {
+void RadiationVet::ScThVacCs(DvceArray5D<Real> &a, const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int wb = vgd_w, nx2 = indcs.nx2;
@@ -53,7 +53,7 @@ void RadiationVet::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1
   const Real t0 = pmy_pack->pmesh->mesh_size.x2min;
   const Real t1 = pmy_pack->pmesh->mesh_size.x2max;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  const VgdLG lg_ = vgd_lg;
+  const ScLG lg_ = vgd_lg;
   auto a_ = a;
   auto wl_ = vgd_wall;
   par_for("vet_vgd_thvac_cs", vgd_cur, 0, nmb1, 0, 1, 0, c3 - 1, 0, 2*wb - 1, i0, i1,
@@ -70,11 +70,11 @@ void RadiationVet::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdThMirCs
+//! \fn void RadiationVet::ScThMirCs
 //! \brief vet_gd_theta_wall = mirror: ln chi, ln S of the theta ghost rows = their
 //! mirror rows (after the exchange filled the phi band)
 
-void RadiationVet::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1) {
+void RadiationVet::ScThMirCs(DvceArray5D<Real> &a, const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int wb = vgd_w, nx2 = indcs.nx2;
@@ -84,19 +84,19 @@ void RadiationVet::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1
   KOKKOS_LAMBDA(const int m, const int c, const int k, const int s, const int i) {
     const int g = (s < wb) ? s : (s - wb);
     const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
-    const int jm = VgdMirRow(g, s >= wb, wb, nx2);
+    const int jm = ScMirRow(g, s >= wb, wb, nx2);
     a_(m,c,k,j,i) = a_(m,c,k,jm,i);
   });
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdX1Hand
+//! \fn void RadiationVet::ScX1Hand
 //! \brief several MeshBlocks along x1: the boundary shell of every level to the x1
 //! ghost shell of the level above (up) or below, its band exchanged as a sweep shell
 
-void RadiationVet::VetGdX1Hand(const bool up) {
-  if (vgd_scut != 0) {VgdFatal("several MeshBlocks along x1 need vray_icut = 0 (the "
-                               "sweep from the inner face)");}
+void RadiationVet::ScX1Hand(const bool up) {
+  if (vgd_scut != 0) {ScFatal("several MeshBlocks along x1 need vray_icut = 0 (the "
+                              "sweep from the inner face)");}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w;
   const int nx2 = indcs.nx2, nk = indcs.nx3*nx2;
@@ -108,22 +108,22 @@ void RadiationVet::VetGdX1Hand(const bool up) {
   KOKKOS_LAMBDA(const int m, const int d, const int t) {
     b_(m,d*nk + t) = vi_(m,d,w + t/nx2,w + t % nx2,isrc);
   });
-  VetGdX1Pass(up);
+  ScX1Pass(up);
   par_for("vet_vgd_x1unpack", vgd_cur, 0, nmb1, 0, n - 1, 0, nk - 1,
   KOKKOS_LAMBDA(const int m, const int d, const int t) {
     vi_(m,d,w + t/nx2,w + t % nx2,idst) = r_(m,d*nk + t);
   });
-  VetGdHalo(vgd_i, n, idst, idst, w, true);
+  ScHalo(vgd_i, n, idst, idst, w, true);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdTopMirror
+//! \fn void RadiationVet::ScTopMirror
 //! \brief reflecting outer x1 (clean scheme): the inflow of every inward direction at
 //! the top face = the top cell's last-sweep intensity in the specular image
 //! n - 2 (n . r) r (nearest set direction), scaled so the inflow returns the outflow's
 //! radial flux; the top cell's isotropic E when there is no outflow yet
 
-void RadiationVet::VetGdTopMirror() {
+void RadiationVet::ScTopMirror() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w, ie = indcs.ie;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, ks = indcs.ks, js = indcs.js;
@@ -186,11 +186,11 @@ void RadiationVet::VetGdTopMirror() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdTopCopy
+//! \fn void RadiationVet::ScTopCopy
 //! \brief cln_scmem: the top shell of this build's sweep into its slot of cln_top
-//! (blk mod 2 on clean_rot_ring), for the next build's VetGdTopMirror
+//! (blk mod 2 on clean_rot_ring), for the next build's ScTopMirror
 
-void RadiationVet::VetGdTopCopy() {
+void RadiationVet::ScTopCopy() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w, ie = indcs.ie;
   const int ks = indcs.ks, js = indcs.js, n1 = cln_s.extent_int(4), nt = (n + n1 - 1)/n1;
@@ -208,13 +208,13 @@ void RadiationVet::VetGdTopCopy() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdInnerMirror
+//! \fn void RadiationVet::ScInnerMirror
 //! \brief reflecting inner x1 (clean scheme), after the inward pass: per column of the
 //! first shell, inward radial flux / outward flux of its specular images (nearest set
 //! directions, robust to round-off): the scale of the mirrored inner-face inflow
 //! (1 where either vanishes)
 
-void RadiationVet::VetGdInnerMirror() {
+void RadiationVet::ScInnerMirror() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w, is = indcs.is;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -253,11 +253,11 @@ void RadiationVet::VetGdInnerMirror() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdX1Pass
+//! \fn void RadiationVet::ScX1Pass
 //! \brief vgd_x1b(m, :) of every MeshBlock to vgd_x1r of its x1 neighbour above (up)
 //! or below (on-rank copy or one message per block)
 
-void RadiationVet::VetGdX1Pass(const bool up) {
+void RadiationVet::ScX1Pass(const bool up) {
   Mesh *pm = pmy_pack->pmesh;
   const int nmb = pmy_pack->nmb_thispack, g0 = pmy_pack->gids;
   const int cnt = vgd_x1b.extent_int(1);
@@ -292,10 +292,10 @@ void RadiationVet::VetGdX1Pass(const bool up) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn int RadiationVet::VgdPoleSlot
+//! \fn int RadiationVet::ScPoleSlot
 //! \brief pole slot of halo neighbour o of a block in theta row lx2: 1 N, 2 S, else 0
 
-int RadiationVet::VgdPoleSlot(const int o, const int lx2) const {
+int RadiationVet::ScPoleSlot(const int o, const int lx2) const {
   if (!vgd_pol) {return 0;}
   const int oo = (o < 4) ? o : (o + 1);
   const int dj = oo%3 - 1;
@@ -305,16 +305,16 @@ int RadiationVet::VgdPoleSlot(const int o, const int lx2) const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn double RadiationVet::VetGdThetaDmin
+//! \fn double RadiationVet::ScThetaDmin
 //! \brief narrowest lateral spacing (arc on the unit sphere) for the band depth:
 //! min of dtheta and sin(theta_lim) dphi, theta_lim = wedge limit or vet_gd_band_colat
 
-double RadiationVet::VetGdThetaDmin() const {
+double RadiationVet::ScThetaDmin() const {
   Mesh *pm = pmy_pack->pmesh;
   const int nx = pm->mesh_indcs.nx2;
   double dth = 1.0e300;
   for (int n = 0; n < nx; ++n) {
-    dth = std::min(dth, VgdThetaFace(pm, n + 1) - VgdThetaFace(pm, n));
+    dth = std::min(dth, ScThetaFace(pm, n + 1) - ScThetaFace(pm, n));
   }
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   const double smin = vgd_pol ? std::sin(vgd_bcolat*M_PI/180.0)
@@ -324,10 +324,10 @@ double RadiationVet::VetGdThetaDmin() const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdThetaInit
+//! \fn void RadiationVet::ScThetaInit
 //! \brief node table vgd_thn(m, band row), after vgd_w is known
 
-void RadiationVet::VetGdThetaInit() {
+void RadiationVet::ScThetaInit() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -336,7 +336,7 @@ void RadiationVet::VetGdThetaInit() {
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   std::vector<double> node(nx);
   for (int n = 0; n < nx; ++n) {
-    node[n] = 0.5*(VgdThetaFace(pm, n) + VgdThetaFace(pm, n + 1));
+    node[n] = 0.5*(ScThetaFace(pm, n) + ScThetaFace(pm, n + 1));
   }
   // global row J (within one period / mirror of the mesh) -> theta
   auto nodeg = [&](const int J) -> double {
@@ -363,14 +363,14 @@ void RadiationVet::VetGdThetaInit() {
     }
     for (int jb = 1; jb < c2w; ++jb) {
       if (!(tn_h(m,jb) > tn_h(m,jb-1))) {
-        VgdFatal("the theta node table is not increasing (block " +
-                 std::to_string(m) + ", band row " + std::to_string(jb) +
-                 "): the band is deeper than one period/mirror of the mesh");
+        ScFatal("the theta node table is not increasing (block " +
+                std::to_string(m) + ", band row " + std::to_string(jb) +
+                "): the band is deeper than one period/mirror of the mesh");
       }
     }
   }
   Kokkos::deep_copy(vgd_thn, tn_h);
-  // the pole slot table vgd_hpol is made by VetGdHaloInit (knows nb2)
+  // the pole slot table vgd_hpol is made by ScHaloInit (knows nb2)
   {
     const int c1 = indcs.nx1 + 2*indcs.ng;
     Kokkos::realloc(vgd_wsd, 2, c1);
@@ -384,7 +384,7 @@ void RadiationVet::VetGdThetaInit() {
   if (global_variable::my_rank == 0) {
     double dmin = 1.0e300, dmax = 0.0;
     for (int n = 0; n < nx; ++n) {
-      const double d = VgdThetaFace(pm, n + 1) - VgdThetaFace(pm, n);
+      const double d = ScThetaFace(pm, n + 1) - ScThetaFace(pm, n);
       dmin = std::min(dmin, d);
       dmax = std::max(dmax, d);
     }

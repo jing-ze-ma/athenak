@@ -32,21 +32,21 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdXffOk
+//! \fn bool RadiationVet::ScXffOk
 //! \brief does the fused two-set sweep cover this configuration (same answer on every
 //! rank)? Otherwise the two sweeps run
 
-bool RadiationVet::VetGdXffOk() {
+bool RadiationVet::ScXffOk() {
   if (!vgd_xff || !vgd_xf) {return false;}
   if (vray_icut < vgd_rag_cut) {return false;}   // (a cut below the shared slabs)
   if (vgd_csg) {
-    // the cubed-sphere sweep (VetGdCsSweep): pass lists, no early send
+    // the cubed-sphere sweep (ScCsSweep): pass lists, no early send
     return !vgd_gband && (vgd_i_xb.dummy == vgd_i.dummy);
   }
   if (vgd_gband && !vgd_raw) {
     return false;
   }
-  // IPC halo: one set per exchange (raw band: VetGdGbHaloX; CUDA lean: VetGdHlXff's
+  // IPC halo: one set per exchange (raw band: ScGbHaloX; CUDA lean: ScHlXff's
   // IPC form, no early send)
 #if !defined(KOKKOS_ENABLE_CUDA)
   if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
@@ -56,12 +56,12 @@ bool RadiationVet::VetGdXffOk() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdHlXff
+//! \fn bool RadiationVet::ScHlXff
 //! \brief exchange of shell i (pass vgd_hinw, depth ws) for both fused sets in one
 //! message per partner (piece p = [A_p, B_p]); bitwise the two exact-list exchanges.
 //! false (nothing done) unless both sets hold exact records of this exchange.
 
-bool RadiationVet::VetGdHlXff(const int i, const int ws) {
+bool RadiationVet::ScHlXff(const int i, const int ws) {
 #if MPI_PARALLEL_ENABLED
   if (!vgd_hmpi || vgd_hlp.on) {return false;}
   Mesh *pm = pmy_pack->pmesh;
@@ -81,10 +81,10 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       ex >= static_cast<int>(vgd_hxe_alt.size())) {
     return false;
   }
-  const VgdHlEntry &XA = vgd_hxe[ex];
-  const VgdHlEntry &XB = vgd_hxe_alt[ex];
-  auto okx = [&](const VgdHlEntry &X, const Real al) {
-    return X.gen != -1 && X.alpha == al && VetGdHxCut(ex, X) && X.ws == ws && X.exact;
+  const ScHlEntry &XA = vgd_hxe[ex];
+  const ScHlEntry &XB = vgd_hxe_alt[ex];
+  auto okx = [&](const ScHlEntry &X, const Real al) {
+    return X.gen != -1 && X.alpha == al && ScHxCut(ex, X) && X.ws == ws && X.exact;
   };
   if (!okx(XA, vgd_alpha) || !okx(XB, vgd_xf_alt)) {return false;}
   const int np = static_cast<int>(vgd_prk.size());
@@ -96,7 +96,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
   }
   // merged layouts: piece p at so[p] (send) / ro[p] (receive), A first
   std::vector<int> so(np + 1), ro(np + 1);
-  VgdIpcIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
+  ScIpcIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
   for (int p = 0; p <= np; ++p) {
     so[p] = XA.sp[p] + XB.sp[p];
     ro[p] = XA.rp[p] + XB.rp[p];
@@ -140,7 +140,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
     auto pcs = vgd_ipc_pcs.d_view;
     const Real *rb_ = vgd_ipc_rbuf + par*vgd_ipc_half;
     const size_t cs_ = vgd_ipc_cs;
-    VgdIpcIdx da{}, db{};
+    ScIpcIdx da{}, db{};
     for (int p = 0; p < np; ++p) {da.v[p] = XA.dsto[p]; db.v[p] = XB.dsto[p];}
     auto aA_ = vgd_i;
     auto aB_ = vgd_i_xb;
@@ -169,7 +169,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       for (int c = e0; c < nsA + nsB; c += de) {
         const bool b = (c >= nsA);
         const int cc = b ? (c - nsA) : c;
-        const VgdIpcIdx &sx = b ? sb : sa;
+        const ScIpcIdx &sx = b ? sb : sa;
         int p = 0;
         while (p + 1 < npk && sx.v[p+1] <= cc) {++p;}
         int ad = b ? slB_(cc) : slA_(cc);
@@ -190,9 +190,9 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       if (tm.team_rank() == 0) {
         if (Kokkos::atomic_fetch_add(&cnt_(), 1) == tm.league_size() - 1) {
           cnt_() = 0;
-          VgdIpcSetN(psig.data(), pslot.data(), npk, seq);
+          ScIpcSetN(psig.data(), pslot.data(), npk, seq);
         }
-        VgdIpcWaitN(sig, npk, seq, err);
+        ScIpcWaitN(sig, npk, seq, err);
       }
       tm.team_barrier();
       for (int c0 = e0; c0 < nA + nB; c0 += de) {
@@ -238,11 +238,11 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
   if (nsA + nsB > 0) {
     auto slA_ = XA.sl;
     auto slB_ = XB.sl;
-    Kokkos::parallel_for("vet_vgd_xff_pack", VgdLight(vgd_cur, 0, nsA + nsB),
+    Kokkos::parallel_for("vet_vgd_xff_pack", ScLight(vgd_cur, 0, nsA + nsB),
     KOKKOS_LAMBDA(const int c) {
       const bool b = (c >= nsA);
       const int cc = b ? (c - nsA) : c;
-      const VgdIpcIdx &sx = b ? sb : sa;
+      const ScIpcIdx &sx = b ? sb : sa;
       int p = 0;
       while (p + 1 < npk && sx.v[p+1] <= cc) {++p;}
       int ad = b ? slB_(cc) : slA_(cc);
@@ -256,10 +256,10 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       sbuf_(pos) = b ? aB_(m,v,kb,jb,i) : aA_(m,v,kb,jb,i);
     });
   }
-  // band-ring copies of other shells go between pack and scatter (as VetGdHlBegin)
-  VgdPackEvtRecord(vgd_cur);
-  VetGdRingFlush();
-  VgdPackEvtWait(vgd_cur);
+  // band-ring copies of other shells go between pack and scatter (as ScHlBegin)
+  ScPackEvtRecord(vgd_cur);
+  ScRingFlush();
+  ScPackEvtWait(vgd_cur);
   Kokkos::Timer tq;
   std::vector<MPI_Request> req;
   for (int p = 0; p < np; ++p) {
@@ -280,11 +280,11 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
     int got = 0;
     MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
     if (got != ro[p+1] - ro[p]) {
-      VgdFatal("vet_gd_rotate_xfade_fuse: sender and receiver lists disagree");
+      ScFatal("vet_gd_rotate_xfade_fuse: sender and receiver lists disagree");
     }
     vgd_nbyte += static_cast<Real>(so[p+1] - so[p])*sizeof(Real);
   }
-  // scatter both sets (A, then B), as VetGdHlEnd per set
+  // scatter both sets (A, then B), as ScHlEnd per set
   const int nrA = XA.nr, nwA = XA.nw, nrB = XB.nr, nwB = XB.nw;
   const int nA = nrA + nwA, nB = nrB + nwB;
   if (nA + nB > 0) {
@@ -298,12 +298,12 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
     auto swB_ = XB.sw;
     auto w3A_ = vgd_w3;
     auto w3B_ = vgd_tabd.w3;
-    Kokkos::parallel_for("vet_vgd_xff_scatter", VgdLight(vgd_cur, 0, nA + nB),
+    Kokkos::parallel_for("vet_vgd_xff_scatter", ScLight(vgd_cur, 0, nA + nB),
     KOKKOS_LAMBDA(const int c0) {
       const bool b = (c0 >= nA);
       const int c = b ? (c0 - nA) : c0;
       const int nr = b ? nrB : nrA;
-      const VgdIpcIdx &rx = b ? rb : ra;
+      const ScIpcIdx &rx = b ? rb : ra;
       // merged receive position of compact source s of this set
       auto at = [&](const int s) -> int {
         int p = 0;

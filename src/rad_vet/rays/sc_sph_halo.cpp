@@ -38,24 +38,24 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHalo
+//! \fn void RadiationVet::ScHalo
 //! \brief fill the lateral band (vgd_w cells) of a(m, v, k, j, i), v in [0, nv), i in
 //! [i0, i1], from the 8 lateral neighbours' interiors: local ones copied directly (read
 //! interiors, write bands: no race), remote ones by one message per (block, slot).
 //! vgd_raw: global-cell lists, unmapped; intensities (mapd) only from remote owners
 
 template <class V>
-void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
-                             const bool mapd) {
+void RadiationVet::ScHalo(V &a, const int nv, const int i0, const int i1, const int ws,
+                          const bool mapd) {
   // vet_gd_band_global: every band position within depth ws from its owner's interior
   // (global-cell lists, sph2.inc); no direction re-indexing at the full sphere's walls
   if (vgd_gband || vgd_raw) {
     // compact per-shell exchange of the global band
     if (mapd && vgd_gbc && i1 == i0 && nv == vgd_n) {
-      VetGdGbHaloC(a, i0, ws);
+      ScGbHaloC(a, i0, ws);
       return;
     }
-    VetGdCsHalo(a, nv, i0, i1, !(vgd_raw && mapd), ws);
+    ScCsHalo(a, nv, i0, i1, !(vgd_raw && mapd), ws);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -83,7 +83,7 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
   const bool hcomp = mapd && (vgd_hcomp > 0) && (ni == 1);
   // true when the compact halo's list path wrote the band itself
   bool done = false;
-  if (hcomp) {done = VetGdHaloCompact(a, nv, i0, ws);}
+  if (hcomp) {done = ScHaloCompact(a, nv, i0, ws);}
   if (!hcomp) {
   par_for("vet_vgd_halo", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -110,7 +110,7 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
       // nx3 = 1: every phi band column is a copy of the one column
       const int ks_ = (nx3 == 1) ? w : (((dk < 0) ? (w + nx3 - ws) : w) + kk);
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
-      const int jsrc = (pl != 0) ? VgdPoleRow(jd + jj, w, nx2) : (js_ + jj);
+      const int jsrc = (pl != 0) ? ScPoleRow(jd + jj, w, nx2) : (js_ + jj);
       a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_,jsrc,i);
     } else if (mpi) {
       // my interior that the remote neighbour needs in its opposite slot (across a
@@ -187,42 +187,42 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHaloCs
-//! \brief VetGdHalo of ln chi, ln S over shells [i0, i1] at full band depth, in chunks
+//! \fn void RadiationVet::ScHaloCs
+//! \brief ScHalo of ln chi, ln S over shells [i0, i1] at full band depth, in chunks
 //! that fit vgd_maxcnt per slot (bitwise the one-call exchange)
 
-void RadiationVet::VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1) {
+void RadiationVet::ScHaloCs(DvceArray5D<Real> &a, const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int per = std::max(indcs.nx2, indcs.nx3)*vgd_w*2;   // one shell, one slot
   const int nch = std::max(1, (per > 0) ? vgd_maxcnt/per : 1);
   for (int c0 = i0; c0 <= i1; c0 += nch) {
-    VetGdHalo(a, 2, c0, std::min(c0 + nch - 1, i1), vgd_w, false);
+    ScHalo(a, 2, c0, std::min(c0 + nch - 1, i1), vgd_w, false);
   }
-  if (vgd_thmir) {VetGdThMirCs(a, i0, i1);}
-  if (vgd_thvac > 0) {VetGdThVacCs(a, i0, i1);}
+  if (vgd_thmir) {ScThMirCs(a, i0, i1);}
+  if (vgd_thvac > 0) {ScThVacCs(a, i0, i1);}
 }
 
 namespace {
 
 KOKKOS_INLINE_FUNCTION
-bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const int gk,
-                 const Real t0, const Real dth, const Real p0, const Real dph,
-                 const bool inw, const int mode, const bool wall, const int dep,
-                 const Real rs, const Real rm, const Real rp, const bool hasm,
-                 const bool hasp, const Real gam, const Real dmin) {
+bool ScHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const int gk,
+                const Real t0, const Real dth, const Real p0, const Real dph,
+                const bool inw, const int mode, const bool wall, const int dep,
+                const Real rs, const Real rm, const Real rp, const bool hasm,
+                const bool hasp, const Real gam, const Real dmin) {
   const Real th = t0 + (gj + 0.5)*dth, ph = p0 + (gk + 0.5)*dph;
-  return VgdHaloKeepTP(nx, ny, nz, th, ph, inw, mode, wall, dep, rs, rm, rp, hasm, hasp,
-                       gam, dmin);
+  return ScHaloKeepTP(nx, ny, nz, th, ph, inw, mode, wall, dep, rs, rm, rp, hasm, hasp,
+                      gam, dmin);
 }
 
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHcPrep
+//! \fn void RadiationVet::ScHcPrep
 //! \brief vet_gd_halo_compact = 1, 2: the keep masks of (shell, pass, depth) on the
-//! dense layouts of both sides (VgdHaloKeep), their scans and partner bounds
-void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
-                               const int ws) {
+//! dense layouts of both sides (ScHaloKeep), their scans and partner bounds
+void RadiationVet::ScHcPrep(const int slot, const int i0, const bool inw0,
+                            const int ws) {
 #if MPI_PARALLEL_ENABLED
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -290,8 +290,8 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       const bool wall = (lr2 + rdj < 0) || (lr2 + rdj >= nb2) || (lr3 + rdk < 0)
                         || (lr3 + rdk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fs_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) =
-        VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
-                    (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+        ScHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
+                   (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
     }
     {
       // receive (my slot o): the source cell in the neighbour, global indices
@@ -304,14 +304,14 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       const bool wall = (lx2 + dj < 0) || (lx2 + dj >= nb2) || (lx3 + dk < 0)
                         || (lx3 + dk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fr_(static_cast<size_t>(ro_(ws,8*m + o))*nvi + t) =
-        VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
-                    (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+        ScHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
+                   (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
     }
   });
   // (2) exclusive scans in place (flag -> position, total at n); flag = pos(q+1) -
   // pos(q); both in one launch (two 32-bit counts in one 64-bit sum)
-  VgdScan2(vgd_cur, vgd_hfs[slot], stot, vgd_hfr[slot], rtot, "vet_vgd_hc_scan2",
-           vgd_scan_sums);
+  ScScan2(vgd_cur, vgd_hfs[slot], stot, vgd_hfr[slot], rtot, "vet_vgd_hc_scan2",
+          vgd_scan_sums);
   // (3) scan values at the partner boundaries, straight into pinned host memory (read
   // after the exchange's fence)
   const int np = static_cast<int>(vgd_prk.size());
@@ -334,7 +334,7 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdHlBuild
+//! \fn bool RadiationVet::ScHlBuild
 //! \brief vet_gd_halo_list_mb: entry e (pass inw, shell i, depth ws) from the compact
 //! masks fs / fr and partner bounds pbh:
 //!   sl     band address (m, v, k, j) of the c-th sent value,
@@ -342,9 +342,9 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
 //!   dw, sw the same for vet_gd_wall_interp wall ghosts (3 sources, -1 = unsent).
 //! Address = ((m nv + v) c3 + k) c2 + j at depth vgd_w. False when over the budget.
 
-bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
-                                const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
-                                const std::vector<int> &pbh) {
+bool RadiationVet::ScHlBuild(const int e, const int i, const bool inw, const int ws,
+                             const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
+                             const std::vector<int> &pbh) {
 #if MPI_PARALLEL_ENABLED
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -354,7 +354,7 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
   const int mx = std::max(nx2, nx3)*ws*nv;
   const int c2 = nx2 + 2*w, c3 = nx3 + 2*w;
   const int np = static_cast<int>(vgd_prk.size());
-  VgdHlEntry &E = vgd_hle[e];
+  ScHlEntry &E = vgd_hle[e];
   E.gen = -1;
   const size_t rtot = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
                       (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()))*nv;
@@ -404,7 +404,7 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
     fw_(q) = fw;
   });
   const DevExeSpace ex_ = vgd_cur;
-  VgdScan2(ex_, vgd_hl_fn, rtot, vgd_hl_fw, rtot, "vet_vgd_hl_scan2", vgd_scan_sums);
+  ScScan2(ex_, vgd_hl_fn, rtot, vgd_hl_fw, rtot, "vet_vgd_hl_scan2", vgd_scan_sums);
   int nrw[2] = {0, 0};
   {
     Kokkos::View<int*, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h(nrw, 1);
@@ -535,40 +535,40 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
 
 //----------------------------------------------------------------------------------------
 // an event behind the per-shell halo pack on the sweep stream, so the host
-// waits for the pack alone while the ring copies queued after it run (VetGdHlBegin)
+// waits for the pack alone while the ring copies queued after it run (ScHlBegin)
 #if defined(KOKKOS_ENABLE_HIP)
 hipEvent_t g_vgd_pkev = nullptr;
-void VgdPackEvtRecord(const DevExeSpace &ex) {
+void ScPackEvtRecord(const DevExeSpace &ex) {
   if (g_vgd_pkev == nullptr) {
     (void)hipEventCreateWithFlags(&g_vgd_pkev, hipEventDisableTiming);
   }
   (void)hipEventRecord(g_vgd_pkev, ex.hip_stream());
 }
-void VgdPackEvtWait(const DevExeSpace &) {(void)hipEventSynchronize(g_vgd_pkev);}
+void ScPackEvtWait(const DevExeSpace &) {(void)hipEventSynchronize(g_vgd_pkev);}
 #elif defined(KOKKOS_ENABLE_CUDA)
 cudaEvent_t g_vgd_pkev = nullptr;
-void VgdPackEvtRecord(const DevExeSpace &ex) {
+void ScPackEvtRecord(const DevExeSpace &ex) {
   if (g_vgd_pkev == nullptr) {
     (void)cudaEventCreateWithFlags(&g_vgd_pkev, cudaEventDisableTiming);
   }
   (void)cudaEventRecord(g_vgd_pkev, ex.cuda_stream());
 }
-void VgdPackEvtWait(const DevExeSpace &) {(void)cudaEventSynchronize(g_vgd_pkev);}
+void ScPackEvtWait(const DevExeSpace &) {(void)cudaEventSynchronize(g_vgd_pkev);}
 #else
-void VgdPackEvtRecord(const DevExeSpace &) {}
-void VgdPackEvtWait(const DevExeSpace &ex) {ex.fence();}
+void ScPackEvtRecord(const DevExeSpace &) {}
+void ScPackEvtWait(const DevExeSpace &ex) {ex.fence();}
 #endif
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdHlBegin
-//! \brief first half of the list path of VetGdHaloCompact (gather pack, fence, posted
+//! \fn bool RadiationVet::ScHlBegin
+//! \brief first half of the list path of ScHaloCompact (gather pack, fence, posted
 //! messages, zeros on Y's entries); false when the list path does not apply.
-//! VetGdHlEnd completes it; the sweep overlap runs local items in between.
+//! ScHlEnd completes it; the sweep overlap runs local items in between.
 
 template <class V>
-bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) {
+bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
 #if MPI_PARALLEL_ENABLED
-  if (vgd_hlp.on) {VgdFatal("VetGdHlBegin: an exchange is still pending");}
+  if (vgd_hlp.on) {ScFatal("ScHlBegin: an exchange is still pending");}
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -599,14 +599,14 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
       }
       return &g;
     };
-    if constexpr (std::is_same<V, VgdIView>::value) {
+    if constexpr (std::is_same<V, ScIView>::value) {
       gwa = gwget(static_cast<const void *>(a.d.data()));
     } else {
       lst = false;
     }
   }
   auto xvalid = [&]() {
-    const VgdHlEntry &X = vgd_hle[ex];
+    const ScHlEntry &X = vgd_hle[ex];
     return X.gen > 0 && X.alpha == vgd_alpha && X.scut == vgd_scut && X.ws == ws;
   };
   auto gwok = [&](std::array<std::vector<int64_t>, 2> *g) {
@@ -618,12 +618,12 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
   // zeros: every ghost the sweep reads is on the list)
   const bool xe = vgd_hx_on;
   if (xe) {
-    if (!(lst && VetGdHxKey(ex, ws) && vgd_hxe[ex].exact)) {return false;}
+    if (!(lst && ScHxKey(ex, ws) && vgd_hxe[ex].exact)) {return false;}
   } else if (!(lst && xvalid() && gwok(gwa))) {
     return false;
   }
-  if constexpr (std::is_same<V, VgdIView>::value) {
-    const VgdHlEntry &X = xe ? vgd_hxe[ex] : vgd_hle[ex];
+  if constexpr (std::is_same<V, ScIView>::value) {
+    const ScHlEntry &X = xe ? vgd_hxe[ex] : vgd_hle[ex];
     auto sl_ = X.sl;
     const int c2_ = c2, c3_ = c3, nv_ = nv;
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
@@ -643,7 +643,7 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
       // lean protocol, no ack kernel: partner p sets my arrival flag of exchange s in
       // its k2(s), after its scatter of s-1; so once my k2(s) has seen it, p has read
       // its parity (s-1)&1 buffer and my pack of s+1 may write there
-      VgdIpcIdx spi, doi;
+      ScIpcIdx spi, doi;
       for (int p = 0; p <= np; ++p) {spi.v[p] = X.sp[p];}
       for (int p = 0; p < np; ++p) {doi.v[p] = X.dsto[p];}
       // fused exchange (CUDA lean, no band-ring copy in between): teams pack as
@@ -695,9 +695,9 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
           if (tm.team_rank() == 0) {
             if (Kokkos::atomic_fetch_add(&cnt_(), 1) == tm.league_size() - 1) {
               cnt_() = 0;
-              VgdIpcSetN(psig.data(), pslot.data(), np_, seq);
+              ScIpcSetN(psig.data(), pslot.data(), np_, seq);
             }
-            VgdIpcWaitN(sig, np_, seq, err);
+            ScIpcWaitN(sig, np_, seq, err);
           }
           tm.team_barrier();
           for (int c = c0; c < nr + nw; c += dc) {
@@ -726,7 +726,7 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
       } else
 #endif
       if (X.ns > 0) {
-        Kokkos::parallel_for("vet_vgd_ipc_pack", VgdLight(vgd_cur, 0, X.ns),
+        Kokkos::parallel_for("vet_vgd_ipc_pack", ScLight(vgd_cur, 0, X.ns),
         KOKKOS_LAMBDA(const int c) {
           int p = 0;
           while (p + 1 < np_ && spi.v[p+1] <= c) {++p;}
@@ -744,12 +744,12 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
       }
       // band-ring copies for this hook: after the pack that reads the slabs, before
       // the scatter that writes the lent slab
-      VetGdRingFlush();
+      ScRingFlush();
       if (!vgd_hlp.done) {
       Kokkos::parallel_for("vet_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
       KOKKOS_LAMBDA(const int) {
-        VgdIpcSetN(psig.data(), pslot.data(), np_, seq);
-        VgdIpcWaitN(sig, np_, seq, err);
+        ScIpcSetN(psig.data(), pslot.data(), np_, seq);
+        ScIpcWaitN(sig, np_, seq, err);
       });
       }
       vgd_hlp.on = true;
@@ -766,7 +766,7 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
     }
 #endif
     if (X.ns > 0) {
-      Kokkos::parallel_for("vet_vgd_hl_pack", VgdLight(vgd_cur, 0, X.ns),
+      Kokkos::parallel_for("vet_vgd_hl_pack", ScLight(vgd_cur, 0, X.ns),
       KOKKOS_LAMBDA(const int c) {
         int ad = sl_(c);
         const int jb = ad % c2_;
@@ -782,9 +782,9 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
     // ring copies (other shells' slabs; stream order pack, ring, zero, scatter) are
     // queued on an event behind the pack, so they run while the host posts the
     // messages (the send buffer is complete at the event: bitwise)
-    VgdPackEvtRecord(vgd_cur);
-    VetGdRingFlush();
-    VgdPackEvtWait(vgd_cur);
+    ScPackEvtRecord(vgd_cur);
+    ScRingFlush();
+    ScPackEvtWait(vgd_cur);
     vgd_hlp.tq.reset();
     auto &tq = vgd_hlp.tq;
     auto &req = vgd_hlp.req;
@@ -801,15 +801,15 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
     vgd_tpost += tq.seconds();
     // vet_gd_band_ring: the sweep's slab copies (other shells only) while the messages
     // travel
-    VetGdRingFlush();
+    ScRingFlush();
     // zeros on Y's receive entries inside X's region (the dense unpack writes 0 there)
-    const VgdHlEntry &Y = vgd_hle[ey];
+    const ScHlEntry &Y = vgd_hle[ey];
     const bool zy = !xe && ((*gwa)[1 - px][i] != 0);
     if (zy && (Y.nr > 0 || Y.nw > 0)) {
       const int ny = Y.nr, nyw = Y.nw;
       auto ydl_ = Y.dl;
       auto ydw_ = Y.dw;
-      Kokkos::parallel_for("vet_vgd_hl_zero", VgdLight(vgd_cur, 0, ny + nyw),
+      Kokkos::parallel_for("vet_vgd_hl_zero", ScLight(vgd_cur, 0, ny + nyw),
       KOKKOS_LAMBDA(const int c) {
         int ad = (c < ny) ? ydl_(c) : ydw_(c - ny);
         const int jb = ad % c2_;
@@ -840,11 +840,11 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHlEnd
-//! \brief second half of a list-path exchange started by VetGdHlBegin: MPI wait, size
+//! \fn void RadiationVet::ScHlEnd
+//! \brief second half of a list-path exchange started by ScHlBegin: MPI wait, size
 //! check, scatter, last-writer ids
 
-void RadiationVet::VetGdHlEnd() {
+void RadiationVet::ScHlEnd() {
 #if MPI_PARALLEL_ENABLED
   if (!vgd_hlp.on) {return;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -857,7 +857,7 @@ void RadiationVet::VetGdHlEnd() {
   auto &tq = vgd_hlp.tq;
   auto *gwa = vgd_hlp.gwa;
   const int np = static_cast<int>(vgd_prk.size());
-  const VgdHlEntry &X = vgd_hlp.xe ? vgd_hxe[vgd_hlp.ex] : vgd_hle[vgd_hlp.ex];
+  const ScHlEntry &X = vgd_hlp.xe ? vgd_hxe[vgd_hlp.ex] : vgd_hle[vgd_hlp.ex];
   const std::vector<int> &sp = X.sp, &rp_ = X.rp;
   if (vgd_hlp.ipc) {
     // vet_gd_halo_ipc: the values are in my IPC buffer of this parity (k2 waited for
@@ -877,7 +877,7 @@ void RadiationVet::VetGdHlEnd() {
     int got = 0;
     MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
     if (got != rp_[p+1] - rp_[p]) {
-      VgdFatal("vet_gd_halo_list: sender and receiver lists disagree");
+      ScFatal("vet_gd_halo_list: sender and receiver lists disagree");
     }
     vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
   }
@@ -891,7 +891,7 @@ void RadiationVet::VetGdHlEnd() {
   auto w3_ = vgd_w3;
   if (nr + nw > 0 && !vgd_hlp.done) {
     Kokkos::parallel_for("vet_vgd_hl_scatter",
-                         VgdLight(vgd_cur, 0, nr + nw),
+                         ScLight(vgd_cur, 0, nr + nw),
     KOKKOS_LAMBDA(const int c) {
       int ad = (c < nr) ? dl_(c) : dw_(c - nr);
       const int jb = ad % c2_;
@@ -925,20 +925,20 @@ void RadiationVet::VetGdHlEnd() {
   vgd_hlp.on = false;
   vgd_hlp.ipc = false;
   vgd_hlp.done = false;
-  vgd_hlp.a = VgdRag();
+  vgd_hlp.a = ScRag();
 #endif
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdHaloCompact
-//! \brief exchange of one shell: mask from VetGdHcPrep (prepared during the previous
+//! \fn bool RadiationVet::ScHaloCompact
+//! \brief exchange of one shell: mask from ScHcPrep (prepared during the previous
 //! shell's wait), compact pack, MPI, expansion; queue the next mask. false: the caller
 //! unpacks the dense buffer. With a valid list entry X (vet_gd_halo_list_mb): gather
 //! pack of X, MPI, zeros on the other pass's list Y in X's region, scatter of X (same
-//! band values as the dense path; true). Defined below VetGdHlBegin / VetGdHlEnd.
+//! band values as the dense path; true). Defined below ScHlBegin / ScHlEnd.
 
 template <class V>
-bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int ws) {
+bool RadiationVet::ScHaloCompact(V &a, const int nv, const int i0, const int ws) {
 #if MPI_PARALLEL_ENABLED
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -977,22 +977,22 @@ bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int 
       }
       return &g;
     };
-    if constexpr (std::is_same<V, VgdIView>::value) {
+    if constexpr (std::is_same<V, ScIView>::value) {
       gwa = gwget(static_cast<const void *>(a.d.data()));
     } else {
       lst = false;
     }
   }
   auto xvalid = [&]() {
-    const VgdHlEntry &X = vgd_hle[ex];
+    const ScHlEntry &X = vgd_hle[ex];
     return X.gen > 0 && X.alpha == vgd_alpha && X.scut == vgd_scut && X.ws == ws;
   };
   // ---- list path (begin + end; Begin decides: the mask lists X, or with
   // vet_gd_halo_exact X's exact record) ----
   vgd_hlp.now = true;
-  if (lst && VetGdHlBegin(a, nv, i0, ws)) {
+  if (lst && ScHlBegin(a, nv, i0, ws)) {
     vgd_hlp.now = false;
-    VetGdHlEnd();
+    ScHlEnd();
     return true;
   }
   vgd_hlp.now = false;
@@ -1008,7 +1008,7 @@ bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int 
   if (tagged(1)) {slot = 1;}
   if (slot < 0) {
     slot = 1 - vgd_hlast;
-    VetGdHcPrep(slot, i, inw, ws);
+    ScHcPrep(slot, i, inw, ws);
   }
   vgd_hlast = slot;
   auto fs_ = vgd_hfs[slot];
@@ -1050,13 +1050,13 @@ bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int 
     vgd_hl_ndense += 1.0;
   }
   if (lst && !vgd_hx_on) {
-    const VgdHlEntry &X0 = vgd_hle[ex];
+    const ScHlEntry &X0 = vgd_hle[ex];
     const bool nofit = X0.nofit && X0.alpha == vgd_alpha && X0.scut == vgd_scut &&
                        X0.ws == ws;
     if (!xvalid() && !nofit) {
       std::vector<int> pbv(sp);
       pbv.insert(pbv.end(), rp_.begin(), rp_.end());
-      VetGdHlBuild(ex, i, inw, ws, fs_, fr_, pbv);
+      ScHlBuild(ex, i, inw, ws, fs_, fr_, pbv);
     }
     // the dense unpack writes X's whole region: the band follows X's lists when X is
     // valid, else it is unknown to the list path
@@ -1078,7 +1078,7 @@ bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int 
   vgd_tpost += tq.seconds();
   // the next shell's mask on the device while the messages travel
   if (vgd_hnext[0] >= 0) {
-    VetGdHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
+    ScHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
   }
   std::vector<MPI_Status> stat(req.size());
   MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
@@ -1088,7 +1088,7 @@ bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int 
     int got = 0;
     MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
     if (got != rp_[p+1] - rp_[p]) {
-      VgdFatal("vet_gd_halo_compact: sender and receiver masks disagree");
+      ScFatal("vet_gd_halo_compact: sender and receiver masks disagree");
     }
     vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
   }
@@ -1103,11 +1103,11 @@ bool RadiationVet::VetGdHaloCompact(V &a, const int nv, const int i0, const int 
 #endif
 }
 
-// band exchanges called by VetGdSweep (its own TU)
-template void RadiationVet::VetGdHalo<RadiationVet::VgdRag>(VgdRag &a, const int nv,
+// band exchanges called by ScSweep (its own TU)
+template void RadiationVet::ScHalo<RadiationVet::ScRag>(ScRag &a, const int nv,
     const int i0, const int i1, const int ws, const bool mapd);
 
-template bool RadiationVet::VetGdHlBegin<RadiationVet::VgdRag>(VgdRag &a, const int nv,
+template bool RadiationVet::ScHlBegin<RadiationVet::ScRag>(ScRag &a, const int nv,
     const int i0, const int ws);
 
 }  // namespace radvet

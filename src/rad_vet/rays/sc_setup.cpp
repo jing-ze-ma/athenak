@@ -48,7 +48,7 @@ namespace {
 
 // moment errors of a direction set (rows x y z w): max |sum w - 1|, |sum w n|,
 // |sum w n_i n_j - delta_ij/3|, |sum w n_i n_j n_k n_l - (dd + dd + dd)/15|
-void VgdMomentCheck(const std::vector<double> &d, double e[4]) {
+void ScMomentCheck(const std::vector<double> &d, double e[4]) {
   const int n = static_cast<int>(d.size()/4);
   double m0 = 0.0, m1[3] = {0, 0, 0}, m2[3][3] = {{0}}, m4[3][3][3][3] = {{{{0}}}};
   for (int q = 0; q < n; ++q) {
@@ -84,33 +84,33 @@ void VgdMomentCheck(const std::vector<double> &d, double e[4]) {
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdInit
+//! \fn void RadiationVet::ScInit
 //! \brief direction table, intensity array, exchange object, wall maps (from VetRayInit)
 
-void RadiationVet::VetGdInit() {
+void RadiationVet::ScInit() {
   Mesh *pm = pmy_pack->pmesh;
   // nx3 = 1: axisymmetric; the phi band columns are the cell's own column with the
   // directions rotated by their phi offset (must map the set onto itself)
-  if (!pm->multi_d) {VgdFatal("needs a 3-D wedge or a 2-D axisymmetric mesh");}
+  if (!pm->multi_d) {ScFatal("needs a 3-D wedge or a 2-D axisymmetric mesh");}
   if (!pm->three_d && (impl_beam_hr || impl_beam_fs)) {
-    VgdFatal("2-D axisymmetric: no implicit_flux_beam");
+    ScFatal("2-D axisymmetric: no implicit_flux_beam");
   }
   if (ibc_x1max != VET_IBC_MARSHAK &&
       !(ibc_x1max == VET_IBC_REFLECT || ibc_x1max == VET_IBC_OUTFLOW)) {
-    // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
-    VgdFatal("outer x1 needs implicit_bc_x1max = marshak or "
-             "reflect with scheme = clean");
+    // the sweep has a vacuum top, or a mirror (ScTopMirror) for the clean scheme
+    ScFatal("outer x1 needs implicit_bc_x1max = marshak or "
+            "reflect with scheme = clean");
   }
   if (ibc_x2min == VET_IBC_MARSHAK || ibc_x2max == VET_IBC_MARSHAK ||
       ibc_x3min == VET_IBC_MARSHAK || ibc_x3max == VET_IBC_MARSHAK) {
     // the gd sweep has no vacuum transverse face (vet_sc has)
-    VgdFatal("implicit_bc_x2*/x3* = marshak is not wired into the vet_gd sweep");
+    ScFatal("implicit_bc_x2*/x3* = marshak is not wired into the vet_gd sweep");
   }
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
   // cubed sphere (rays/sc_cs_sweep.cpp): wedge-only options are refused; the cs band
-  // is filled by its own exact copies (compact lists, see VetGdCsSweep); no walls
+  // is filled by its own exact copies (compact lists, see ScCsSweep); no walls
   vgd_csg = pm->use_cubed_sphere;
   // <mesh>/layout_invariant: the sweep's (theta, phi) from the global index
   // (rays/sc_band.hpp); a uniform single-level sp mesh
@@ -126,8 +126,8 @@ void RadiationVet::VetGdInit() {
     for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
       const auto &ll = pm->lloc_eachmb[pmy_pack->gids + m];
       if (ll.level != pm->root_level) {
-        VgdFatal("layout_invariant: the global vet_gd geometry needs a single-level "
-                 "mesh");
+        ScFatal("layout_invariant: the global vet_gd geometry needs a single-level "
+                "mesh");
       }
       vgd_lg.oh(m,0) = static_cast<int>(ll.lx2)*pm->mb_indcs.nx2;
       vgd_lg.oh(m,1) = static_cast<int>(ll.lx3)*pm->mb_indcs.nx3;
@@ -136,7 +136,7 @@ void RadiationVet::VetGdInit() {
   }
   if (vgd_csg) {
     std::string bad;
-    if (!bad.empty()) {VgdFatal("not available on the cubed sphere:" + bad);}
+    if (!bad.empty()) {ScFatal("not available on the cubed sphere:" + bad);}
     vgd_wint = false;
     vgd_ipc_on = false;
     vgd_hx_on = false;
@@ -156,11 +156,11 @@ void RadiationVet::VetGdInit() {
     std::string bad;
     if (vgd_thmir || vgd_thvac > 0) {bad += " vet_gd_theta_wall = mirror|vacuum|extrap;";}
     if (!bad.empty()) {
-      VgdFatal("not available on a stretched theta / the full sphere:" +
-               bad);
+      ScFatal("not available on a stretched theta / the full sphere:" +
+              bad);
     }
     // with vet_gd_band_global the compact halo is the keep-tested global-band exchange
-    // (VetGdGbHaloC); otherwise the dense halo (the slot keep test assumes uniform theta)
+    // (ScGbHaloC); otherwise the dense halo (the slot keep test assumes uniform theta)
     if (vgd_hcomp > 0 && !vgd_gband) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> vet_gd: vet_gd_halo_compact = " << vgd_hcomp
@@ -176,7 +176,7 @@ void RadiationVet::VetGdInit() {
     vgd_ipc_on = false;
   }
   // several MeshBlocks along x1: levels swept in turn, the boundary shell handed to the
-  // next (VetGdX1Hand); flags 1 innermost, 2 outermost
+  // next (ScX1Hand); flags 1 innermost, 2 outermost
   vgd_nb1 = 1;
   for (int g = 0; g < pm->nmb_total; ++g) {
     vgd_nb1 = std::max(vgd_nb1, pm->lloc_eachmb[g].lx1 + 1);
@@ -208,8 +208,8 @@ void RadiationVet::VetGdInit() {
   Kokkos::deep_copy(vgd_x1mo, mo_h);
   if (vgd_nb1 > 1) {
     if (vgd_csg || vgd_pol || indcs.nx1 < 2) {
-      VgdFatal("several MeshBlocks along x1 need a wedge (no full sphere) and "
-               "MeshBlock nx1 >= 2");
+      ScFatal("several MeshBlocks along x1 need a wedge (no full sphere) and "
+              "MeshBlock nx1 >= 2");
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
@@ -220,9 +220,9 @@ void RadiationVet::VetGdInit() {
   // nx3 = 1: the dense halo (the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
   auto raw_halo = [&]() {
-    if (vgd_raw || !pm->three_d) {   // the compact halo: VetGdGbHaloC
+    if (vgd_raw || !pm->three_d) {   // the compact halo: ScGbHaloC
       vgd_hx_on = false;
-      vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // VetGdGbHaloC's own IPC
+      vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // ScGbHaloC's own IPC
     }
   };
   raw_halo();
@@ -242,11 +242,11 @@ void RadiationVet::VetGdInit() {
     const double m = per*vgd_gl_nphi/(2.0*M_PI);
     if (vgd_gl_nphi < 4 ||
         (!vgd_csg && !vgd_wsym && std::fabs(m - std::round(m)) > 1.0e-9)) {
-      VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
-               "the wedge (exact wall maps), or vet_gd_wall_sym = true");
+      ScFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
+              "the wedge (exact wall maps), or vet_gd_wall_sym = true");
     }
   }
-  VgdBuildSet(vgd_base);
+  ScBuildSet(vgd_base);
   // the set's image under (x, y, z) -> (c x - t s y, s x + t c y, tz z): a turn about z
   // (t = 1), a meridian mirror (t = -1) or the equatorial mirror (tz = -1); -1 where
   // the image is not in the set
@@ -266,8 +266,8 @@ void RadiationVet::VetGdInit() {
   };
   auto dev = [&](const std::vector<int> &p, const char *nm) {
     if (*std::min_element(p.begin(), p.end()) < 0) {
-      VgdFatal(std::string(nm) + ": the set is not mirror-symmetric about the wedge "
-               "mid-plane");
+      ScFatal(std::string(nm) + ": the set is not mirror-symmetric about the wedge "
+              "mid-plane");
     }
     DvceArray1D<int> v(std::string(nm), nb);
     auto h = Kokkos::create_mirror_view(v);
@@ -275,15 +275,15 @@ void RadiationVet::VetGdInit() {
     Kokkos::deep_copy(v, h);
     return v;
   };
-  if (vgd_wsym && VgdRotOn()) {
+  if (vgd_wsym && ScRotOn()) {
     // a set turning about z on a wedge of whole azimuthal periods: the turn by the period
     // W maps every turned set onto itself (the two turns commute), so its phi wall maps
     // are exact and there is nothing to symmetrise (the key does nothing)
     const double w = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const std::vector<int> pw = img(std::cos(w), std::sin(w), 1.0, 1.0);
     if (!vgd_wint || vgd_rot3 || *std::min_element(pw.begin(), pw.end()) < 0) {
-      VgdFatal("vet_gd_wall_sym with a rotating set needs vet_gd_wall_interp = true, a "
-               "turn about z and a wedge of whole azimuthal periods of the set");
+      ScFatal("vet_gd_wall_sym with a rotating set needs vet_gd_wall_interp = true, a "
+              "turn about z and a wedge of whole azimuthal periods of the set");
     }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd_wall_sym: the turning set's phi wall maps are exact "
@@ -295,7 +295,7 @@ void RadiationVet::VetGdInit() {
     // vet_gd_wall_sym: turn the set about z by the least angle that puts one of its
     // mirror planes (GL k pi/nphi, the octahedral sets k pi/4) on the wedge mid-plane
     if (!vgd_wint) {
-      VgdFatal("vet_gd_wall_sym needs vet_gd_wall_interp = true");
+      ScFatal("vet_gd_wall_sym needs vet_gd_wall_interp = true");
     }
     const double pc = 0.5*(pm->mesh_size.x3min + pm->mesh_size.x3max);
     const double pp = (vgd_gl_nmu > 0) ? M_PI/vgd_gl_nphi : 0.25*M_PI;
@@ -310,7 +310,7 @@ void RadiationVet::VetGdInit() {
     }
     vgd_mir = dev(img(std::cos(2.0*pc), std::sin(2.0*pc), -1.0, 1.0), "vet_gd_wall_sym");
     // inexact phi wall map (the turn by the period is not a set map): the clean
-    // scheme's seam faces in both frames (CleanGdFaceSums)
+    // scheme's seam faces in both frames (RayFaceSums)
     vgd_wsw = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const std::vector<int> pw = img(std::cos(vgd_wsw), std::sin(vgd_wsw), 1.0, 1.0);
     vgd_wsx = *std::min_element(pw.begin(), pw.end()) < 0;
@@ -319,17 +319,17 @@ void RadiationVet::VetGdInit() {
     // vet_gd_theta_seam_sym: the clean scheme's theta seam faces in both frames, with the
     // equatorial mirror (a theta wedge centred on the equator).  A turn about z keeps the
     // set's equatorial mirror (the permutation of every turned set); a 3-D one does not
-    if (!vgd_wint || (VgdRotOn() && vgd_rot3) ||
+    if (!vgd_wint || (ScRotOn() && vgd_rot3) ||
         std::fabs(pm->mesh_size.x2min + pm->mesh_size.x2max - M_PI) > 1.0e-12) {
-      VgdFatal("vet_gd_theta_seam_sym needs a theta wedge centred on the equator, "
-               "vet_gd_wall_interp = true and no 3-D set rotation");
+      ScFatal("vet_gd_theta_seam_sym needs a theta wedge centred on the equator, "
+              "vet_gd_wall_interp = true and no 3-D set rotation");
     }
     vgd_mirz = dev(img(1.0, 0.0, 1.0, -1.0), "vet_gd_theta_seam_sym");
   }
   // the moments of the set, as built and after a fixed random 3-D rotation
   if (global_variable::my_rank == 0) {
     double e[4], er[4];
-    VgdMomentCheck(vgd_base, e);
+    ScMomentCheck(vgd_base, e);
     const double ax[3] = {0.3713906763541037, -0.5570860145311556, 0.7427813527082074};
     const double an = 0.987654321, ca = std::cos(an), sa = std::sin(an);
     std::vector<double> rb(vgd_base);
@@ -342,7 +342,7 @@ void RadiationVet::VetGdInit() {
       rb[4*q+1] = x[1]*ca + ky*sa + ax[1]*kd*(1.0 - ca);
       rb[4*q+2] = x[2]*ca + kz*sa + ax[2]*kd*(1.0 - ca);
     }
-    VgdMomentCheck(rb, er);
+    ScMomentCheck(rb, er);
     std::cout << "<rad_vet> vet_gd direction set: " << vgd_base.size()/4
               << " directions; moment errors |sum w - 1| " << e[0] << ", |sum w n| "
               << e[1]
@@ -364,20 +364,20 @@ void RadiationVet::VetGdInit() {
         bd = std::max(bd, (c*u[0] - s*u[1])*v[0] + (s*u[0] + c*u[1])*v[1] + u[2]*v[2]);
       }
       if (bd < 1.0 - 1.0e-12) {
-        VgdFatal("2-D axisymmetric: the phi extent of the mesh must rotate the direction "
-                 "set onto itself (e.g. 2 pi/vet_gd_gl_nphi, pi/2 for HEALPix)");
+        ScFatal("2-D axisymmetric: the phi extent of the mesh must rotate the direction "
+                "set onto itself (e.g. 2 pi/vet_gd_gl_nphi, pi/2 for HEALPix)");
       }
     }
   }
-  if (vgd_n > VET_VGD_NMAX) {VgdFatal("too many directions");}
+  if (vgd_n > VET_VGD_NMAX) {ScFatal("too many directions");}
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
   Kokkos::realloc(vgd_x1b, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
   Kokkos::realloc(vgd_x1r, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
   // lateral band: the deepest reach of an upwind point in cells over every shell (cell
-  // sizes r dtheta, r sin(theta) dphi); on the cubed sphere VetGdCsInit
+  // sizes r dtheta, r sin(theta) dphi); on the cubed sphere ScCsInit
   if (vgd_csg) {
-    VetGdCsInit();
+    ScCsInit();
   } else {
     auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->x1v);
@@ -385,10 +385,10 @@ void RadiationVet::VetGdInit() {
     const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
     const double smin = std::min(std::sin(t0), std::sin(t1));
     // stretched theta / full sphere: the narrowest row and the band latitude limit
-    // (VetGdThetaDmin)
-    const double dmin = vgd_sth ? VetGdThetaDmin()
-                                : std::min(vgd_lg.Dx2H(mbs, 0),
-                                           smin*vgd_lg.Dx3H(mbs, 0));
+    // (ScThetaDmin)
+    const double dmin = vgd_sth ? ScThetaDmin()
+                             : std::min(vgd_lg.Dx2H(mbs, 0),
+                                        smin*vgd_lg.Dx3H(mbs, 0));
     // shell s is read (a) by s-1 inward, chord <= sqrt(r_s^2 - r_{s-1}^2), (b) by s+1
     // outward, chord <= sqrt(r_{s+1}^2 - r_s^2), (c) by s itself (turn / inner face),
     // chord <= 2 sqrt(r_s^2 - r_lo^2); angular offset <= chord / r_lo; + 2 cells
@@ -402,7 +402,7 @@ void RadiationVet::VetGdInit() {
       // by the sphere (half a ring in phi, pole-to-pole in theta): layout independent
       if (vgd_gband) {
         if (!vgd_pol) {
-          VgdFatal("vet_gd_band_global needs the full sphere (mesh/use_polar_boundary)");
+          ScFatal("vet_gd_band_global needs the full sphere (mesh/use_polar_boundary)");
         }
         nmax = std::min(pm->mesh_indcs.nx3/2, pm->mesh_indcs.nx2);
       }
@@ -465,7 +465,7 @@ void RadiationVet::VetGdInit() {
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
-  if (vgd_sth) {VetGdThetaInit();}   // rays/sc_sph_globalband.cpp
+  if (vgd_sth) {ScThetaInit();}   // rays/sc_sph_globalband.cpp
   Kokkos::realloc(vgd_cs, nmb, 2, c3w, c2w, c1);
   Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
@@ -474,28 +474,28 @@ void RadiationVet::VetGdInit() {
     Kokkos::realloc(vgd_m3, nmb, c3w, c2w, n, 3);
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
-  if (!vgd_csg) {VetGdHaloInit();}   // cs lists made by VetGdCsInit
-  if (vgd_gband || vgd_raw) {VetGdGlobalBandInit();}   // sph2.inc: after the slots
+  if (!vgd_csg) {ScHaloInit();}   // cs lists made by ScCsInit
+  if (vgd_gband || vgd_raw) {ScGlobalBandInit();}   // sph2.inc: after the slots
   if (vgd_thmir) {
     // vet_gd_theta_wall = mirror: the theta neighbour across a wall is the block itself
     // (one MeshBlock in theta): corner slots are phi-edge slots
     if (vgd_csg) {
-      VgdFatal("vet_gd_theta_wall = mirror: no theta walls on the cubed sphere");
+      ScFatal("vet_gd_theta_wall = mirror: no theta walls on the cubed sphere");
     }
     if (vgd_nb2 != 1) {
-      VgdFatal("vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)");
+      ScFatal("vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)");
     }
-    if (vgd_ipc_on) {VgdFatal("vet_gd_theta_wall = mirror: vet_gd_halo_ipc not ported");}
+    if (vgd_ipc_on) {ScFatal("vet_gd_theta_wall = mirror: vet_gd_halo_ipc not ported");}
   }
   if (vgd_thvac > 0) {
     // vet_gd_theta_wall = vacuum / extrap: only the theta ghosts beyond a physical wall
-    // change (VgdTabCompute flags 3 / 4); vacuum allows any MeshBlock count in theta
-    if (vgd_csg) {VgdFatal("vet_gd_theta_wall = vacuum/extrap: not on the cubed sphere");}
+    // change (ScTabCompute flags 3 / 4); vacuum allows any MeshBlock count in theta
+    if (vgd_csg) {ScFatal("vet_gd_theta_wall = vacuum/extrap: not on the cubed sphere");}
     if (vgd_ipc_on) {
-      VgdFatal("vet_gd_theta_wall = vacuum/extrap: vet_gd_halo_ipc not ported");
+      ScFatal("vet_gd_theta_wall = vacuum/extrap: vet_gd_halo_ipc not ported");
     }
     if (vgd_thvac == 2 && vgd_nb2 != 1) {
-      VgdFatal("vet_gd_theta_wall = extrap needs ONE MeshBlock along x2 (theta)");
+      ScFatal("vet_gd_theta_wall = extrap needs ONE MeshBlock along x2 (theta)");
     }
   }
   {
@@ -503,9 +503,9 @@ void RadiationVet::VetGdInit() {
     // sweep's exact-list (cs: compact; vgd_raw: own) exchange and some block has a
     // remote side; without the cs compact lists the clean sc rays keep the ragged band
     if (vgd_csg && vgd_hcomp == 0) {
-      VgdFatal("vet_gd_halo_compact = 0 on the cubed sphere with the clean sc rays (no "
-               "compact lists, no band ring: the full band); name vet_gd_halo_compact "
-               "= 2");
+      ScFatal("vet_gd_halo_compact = 0 on the cubed sphere with the clean sc rays (no "
+              "compact lists, no band ring: the full band); name vet_gd_halo_compact "
+              "= 2");
     }
     const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1)
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
@@ -515,10 +515,10 @@ void RadiationVet::VetGdInit() {
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
     vgd_ring = vgd_ring_par && hxok && anyside;
     // the fused two-set sweep keeps the ragged band on sp; on the cubed sphere the ring
-    // records both sets' compact lists (VetGdCsSweep's ringrec)
+    // records both sets' compact lists (ScCsSweep's ringrec)
   }
-  // combinations the fused sweep never covers (VetGdXffOk) keep two sweeps and no
-  // second array (the clean ring, CleanRingMoments, sweeps one set at a time)
+  // combinations the fused sweep never covers (ScXffOk) keep two sweeps and no
+  // second array (the clean ring, RingMoments, sweeps one set at a time)
   if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != VET_IBC_REFLECT)) ||
                   (vgd_gband && !vgd_raw) || vgd_nb1 > 1)) {
@@ -529,38 +529,38 @@ void RadiationVet::VetGdInit() {
     }
   }
   // the shells below the ray cut are filled just before a set's closure reads them
-  // (CleanClosureFromGd): the fused sweep's two sets share their slabs.  From the cut of
-  // the restart file, with a margin; a lower cut takes two sweeps (VetGdXffOk)
+  // (ClosureFromSc): the fused sweep's two sets share their slabs.  From the cut of
+  // the restart file, with a margin; a lower cut takes two sweeps (ScXffOk)
   vgd_rag_cut = (vgd_xff && vgd_nb1 == 1 && marena_on && !marena_sealed) ?
                 std::max(cln_rcut - indcs.nx1/32, 0) : 0;
-  VgdRagAlloc(vgd_i);   // after the halo init: band sides follow vgd_hloc
+  ScRagAlloc(vgd_i);   // after the halo init: band sides follow vgd_hloc
   if (vgd_xff) {
     // the other set's intensities, same layout and band sides
-    VgdRagAlloc(vgd_i_xb);
+    ScRagAlloc(vgd_i_xb);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse: second-set intensities "
                 << static_cast<double>(vgd_i_xb.d.extent(0))*sizeof(Real)/1.0e9
                 << " GB on rank 0" << std::endl;
     }
   }
-  VgdRagThick();
+  ScRagThick();
   // vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_hmpi || vgd_hcomp <= 0)) {
     vgd_hx_on = false;         // does not apply (or nothing to exchange)
   }
   vgd_alpha = -1.0;
   // table prefetch (own device instance for the upload)
-  if (VgdRotOn()) {
+  if (ScRotOn()) {
     vgd_tex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
   }
-  VetGdTables(VetGdAngle(pm->ncycle));
+  ScTables(RotAngle(pm->ncycle));
 }
 
 namespace {
 
-// second, high-priority stream of the cubed sphere's early send (VgdEs2Make)
+// second, high-priority stream of the cubed sphere's early send (ScEs2Make)
 #if defined(KOKKOS_ENABLE_HIP)
-DevExeSpace VgdPrioSpace() {
+DevExeSpace ScPrioSpace() {
   int lo = 0, hi = 0;
   (void)hipDeviceGetStreamPriorityRange(&lo, &hi);
   hipStream_t s;
@@ -568,7 +568,7 @@ DevExeSpace VgdPrioSpace() {
   return DevExeSpace(s, Kokkos::Impl::ManageStream::yes);
 }
 #elif defined(KOKKOS_ENABLE_CUDA)
-DevExeSpace VgdPrioSpace() {
+DevExeSpace ScPrioSpace() {
   int lo = 0, hi = 0;
   (void)cudaDeviceGetStreamPriorityRange(&lo, &hi);
   cudaStream_t s;
@@ -576,28 +576,28 @@ DevExeSpace VgdPrioSpace() {
   return DevExeSpace(s, Kokkos::Impl::ManageStream::yes);
 }
 #else
-DevExeSpace VgdPrioSpace() {return DevExeSpace();}
+DevExeSpace ScPrioSpace() {return DevExeSpace();}
 #endif
 
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdEs2Make
+//! \fn void RadiationVet::ScEs2Make
 //! \brief the early send's second, high-priority stream vgd_es2 (made once)
 
-void RadiationVet::VgdEs2Make() {
+void RadiationVet::ScEs2Make() {
   if (!vgd_es2_made) {
-    vgd_es2 = VgdPrioSpace();
+    vgd_es2 = ScPrioSpace();
     vgd_es2_made = true;
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHaloInit
+//! \fn void RadiationVet::ScHaloInit
 //! \brief the 8 lateral neighbour slots of every local MeshBlock (same x1 level; theta
 //! and phi periodic by wrapping the logical location) and the message buffers
 
-void RadiationVet::VetGdHaloInit() {
+void RadiationVet::ScHaloInit() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -614,7 +614,7 @@ void RadiationVet::VetGdHaloInit() {
     gof[(l.lx1*nb3 + l.lx3)*nb2 + l.lx2] = g;
   }
   for (int t = 0; t < vgd_nb1*nb2*nb3; ++t) {
-    if (gof[t] < 0) {VgdFatal("incomplete MeshBlock grid (SMR/AMR not supported)");}
+    if (gof[t] < 0) {ScFatal("incomplete MeshBlock grid (SMR/AMR not supported)");}
   }
   Kokkos::realloc(vgd_hloc, 8*nmb);
   auto hl_h = Kokkos::create_mirror_view(vgd_hloc);
@@ -635,7 +635,7 @@ void RadiationVet::VetGdHaloInit() {
   // full sphere: a slot beyond a pole takes the pole partner (lx2, lx3 + dk + nb3/2),
   // rows reversed (vgd_hpol 1 north, 2 south, else 0)
   if (vgd_pol && (nb3 % 2 != 0)) {
-    VgdFatal("the full sphere needs an EVEN number of MeshBlocks in phi (pole partners)");
+    ScFatal("the full sphere needs an EVEN number of MeshBlocks in phi (pole partners)");
   }
   Kokkos::realloc(vgd_hpol, 8*nmb);
   auto hp_h = Kokkos::create_mirror_view(vgd_hpol);
@@ -644,7 +644,7 @@ void RadiationVet::VetGdHaloInit() {
     for (int o = 0; o < 8; ++o) {
       const int oo = (o < 4) ? o : (o + 1);       // skip the centre of the 3x3
       const int dk = oo/3 - 1, dj = oo%3 - 1;
-      const int pol = VgdPoleSlot(o, l.lx2);
+      const int pol = ScPoleSlot(o, l.lx2);
       hp_h(8*m + o) = pol;
       const int l2 = (pol != 0) ? l.lx2 : (l.lx2 + dj + nb2) % nb2;
       const int l3 = (pol != 0) ? (l.lx3 + dk + nb3/2 + nb3) % nb3
@@ -667,7 +667,7 @@ void RadiationVet::VetGdHaloInit() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int nreg = std::max(indcs.nx2, indcs.nx3)*vgd_w;
   // one shell of all directions (the multi-shell ln chi, ln S exchange is chunked to
-  // fit, VetGdHaloCs)
+  // fit, ScHaloCs)
   (void) c1;
   vgd_maxcnt = nreg*std::max(vgd_n, 2);
   if (vgd_hmpi) {
@@ -775,12 +775,12 @@ void RadiationVet::VetGdHaloInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdIpcInit
+//! \fn void RadiationVet::ScIpcInit
 //! \brief vet_gd_halo_ipc: node-local CUDA IPC halo of the exact lists: raw receive
 //! buffer (2 parities x half, cs the partner stride) and flags, handles swapped with
 //! every partner and opened. Off unless every partner is on this node. Collective.
 
-void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t half) {
+void RadiationVet::ScIpcInit(const std::vector<int> &prk, size_t cs, size_t half) {
   vgd_ipc_state = -1;
 #if MPI_PARALLEL_ENABLED && (defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP))
   const int me = global_variable::my_rank;
@@ -886,10 +886,10 @@ void RadiationVet::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t h
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdIpcCheck
+//! \fn void RadiationVet::ScIpcCheck
 //! \brief vet_gd_halo_ipc: after a (fenced) sweep, fatal if a spin timed out
 
-void RadiationVet::VetGdIpcCheck() {
+void RadiationVet::ScIpcCheck() {
 #if MPI_PARALLEL_ENABLED && (defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP))
   if (vgd_ipc_state != 1) {return;}
   int h = 0;
@@ -905,11 +905,11 @@ void RadiationVet::VetGdIpcCheck() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdRagAlloc
-//! \brief the ragged intensity array (VgdRag, rad_vet.hpp): shell i gets band depth
+//! \fn void RadiationVet::ScRagAlloc
+//! \brief the ragged intensity array (ScRag, rad_vet.hpp): shell i gets band depth
 //! vgd_wsh[i] (its data's deepest read), ghost shells none; zero-filled
 
-void RadiationVet::VgdRagAlloc(VgdRag &a) {
+void RadiationVet::ScRagAlloc(ScRag &a) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int c1 = indcs.nx1 + 2*indcs.ng;
   a.nmb = pmy_pack->nmb_thispack;
@@ -978,7 +978,7 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
     const int64_t cap = static_cast<int64_t>(a.nx3)*a.nx2*a.n;
     for (int m = 0; m < a.nmb; ++m) {
       for (int i = 0; i < c1; ++i) {
-        off_h(m,i) = (i < cg) ? -1 - tth : tot;   // (below cg: VgdRagThick)
+        off_h(m,i) = (i < cg) ? -1 - tth : tot;   // (below cg: ScRagThick)
         ((i < cg) ? tth : tot) += cap;
       }
     }
@@ -1038,7 +1038,7 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
   Kokkos::deep_copy(a.wi, wi_h);
   Kokkos::deep_copy(a.sb, sb_h);
   const int64_t nd = tot + 1;
-  if (!MemArenaVgd(a, nd)) {Kokkos::realloc(a.d, nd);}
+  if (!MemArenaRays(a, nd)) {Kokkos::realloc(a.d, nd);}
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);
   if (global_variable::my_rank == 0) {
@@ -1051,16 +1051,16 @@ void RadiationVet::VgdRagAlloc(VgdRag &a) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdRagThick
+//! \fn void RadiationVet::ScRagThick
 //! \brief the slabs of the shells below vgd_rag_cut, one set of them for both fused
 //! arrays, behind both in the arena: the arrays' offsets there (their own bases)
 
-void RadiationVet::VgdRagThick() {
+void RadiationVet::ScRagThick() {
   if (vgd_i.nth == 0) return;
   MemArenaGrow(marena_sw + vgd_i.nth, false);   // (both arrays hold zeros)
   Real *t = marena.data() + marena_sw;
   marena_sw += vgd_i.nth + ((64 - (vgd_i.nth % 64)) % 64);
-  for (VgdRag *a : {&vgd_i, &vgd_i_xb}) {
+  for (ScRag *a : {&vgd_i, &vgd_i_xb}) {
     const int64_t b = t - a->d.data();
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), a->off);
     for (size_t m = 0; m < h.extent(0); ++m) {

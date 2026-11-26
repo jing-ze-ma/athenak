@@ -244,7 +244,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
   }
-  if (vet_sc) {VetInit(pin);}
+  if (vet_sc) {ScCartInit(pin);}
   ImplBeamInit(pin);
   Time2Init(pin);
   if (time_scheme == VET_TIME_BE) {
@@ -391,7 +391,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
 
   // the stage increment's Zalesak limiter (Time2FaceFct): the clean solve stores the
-  // energy flux Phi that moved E (CleanWriteBack)
+  // energy flux Phi that moved E (WriteBack)
   t2_pfst = true;
   t2_ffct_emin = 0.1;   // (rad_vet.hpp)
   t2_abe = pin->GetOrAddInteger("rad_vet", "time2_auto_be", t2_abe);

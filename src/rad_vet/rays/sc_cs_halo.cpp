@@ -37,14 +37,14 @@ extern int64_t g_vgd_csgen[16];       // rays/sc_cs_setup.cpp; VET_VGD_CSCL_MAX
 extern int64_t g_vgd_csgen_save[16];
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsCompact
+//! \fn void RadiationVet::ScCsCompact
 //! \brief compact lists of the current direction set, LRU cache of
 //! max(2, vet_rotate_avg) entries. (1) read mask: replay the sweep's upwind geometry and
 //! mark every remote band value read (1 inward, 2 outward; both cut variants, so the
 //! lists depend on the set alone); (2) receivers send marks to owners; (3) both sides
 //! build lists in the same (pass, shell, partner, entry, direction) order.
 
-void RadiationVet::VetGdCsCompact() {
+void RadiationVet::ScCsCompact() {
   int c = -1;
   for (int q = 0; q < vgd_csncl; ++q) {
     if (vgd_cscl[q].alpha == vgd_alpha) {c = q;}
@@ -63,7 +63,7 @@ void RadiationVet::VetGdCsCompact() {
       if (vgd_cscl[q].use < vgd_cscl[c].use) {c = q;}
     }
   }
-  VgdCsCl &E = vgd_cscl[c];
+  ScCsCl &E = vgd_cscl[c];
   // two read masks only (vgd_csmb); the mask of the entry in use is kept
   if (E.msk.data() == nullptr) {
     const auto *k = vgd_cscl[vgd_cscur].msk.data();
@@ -103,7 +103,7 @@ void RadiationVet::VetGdCsCompact() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const int64_t per_ = vgd_csper;   // n*n1 padded to 16
   Kokkos::Timer tsub;
-  // (1) read mask (VetGdCsSweep's geometry; values never matter)
+  // (1) read mask (ScCsSweep's geometry; values never matter)
   par_for("vet_vgdcs_rmask", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
     const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -117,8 +117,8 @@ void RadiationVet::VetGdCsCompact() {
       xu[0] /= ru;
       xu[1] /= ru;
       xu[2] /= ru;
-      VgdCsSt st;
-      VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b, nc, h, cm_, nb_, st);
+      ScCsSt st;
+      ScCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b, nc, h, cm_, nb_, st);
       if (st.n == 0) {return;}   // the own column (interior)
       bool ok[4];
       bool all = true;
@@ -176,7 +176,7 @@ void RadiationVet::VetGdCsCompact() {
   const size_t nsl = static_cast<size_t>(2)*n1;
   std::vector<int> sl_h, rl_h;
   int64_t ts = 0, tr = 0;
-  if (per % 16 != 0) {VgdCsFatal("compact lists: n*n1 not padded to 16");}
+  if (per % 16 != 0) {ScCsFatal("compact lists: n*n1 not padded to 16");}
   // lists from packed 2-bit words (partner blocks word aligned)
   const size_t wpe = per/16;   // words per entry
   // only the nonzero (word index, word) pairs, in increasing word order, are downloaded,
@@ -210,7 +210,7 @@ void RadiationVet::VetGdCsCompact() {
     const uint32_t x = hzv[q];
     if ((x & (x >> 1) & 0x55555555u) != 0u) {both = true;}
   }
-  if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
+  if (both) {ScCsFatal("read mask: a value marked both inward and outward");}
   // own pairs per partner, into the persistent buffer
   std::vector<size_t> ho(np + 1, 0), hn(np, 0);
   std::vector<int64_t> hlo(np, 0);
@@ -218,7 +218,7 @@ void RadiationVet::VetGdCsCompact() {
     const int64_t w0 = static_cast<int64_t>(vgd_cspr[p])*wpe;
     const int64_t w1 = w0 + static_cast<int64_t>(vgd_cspm[p])*wpe;
     if (w1 - w0 > static_cast<int64_t>(UINT32_MAX)) {
-      VgdCsFatal("compact lists: a partner block of more than 2^32 mask words");
+      ScCsFatal("compact lists: a partner block of more than 2^32 mask words");
     }
     hlo[p] = std::lower_bound(hzi.begin(), hzi.begin() + nz, w0) - hzi.begin();
     hn[p] = (vgd_cspm[p] > 0)
@@ -289,12 +289,12 @@ void RadiationVet::VetGdCsCompact() {
     for (int p = 0; p < np; ++p) {
       if (vgd_cspn[p] <= 0) {continue;}
       if (hsum(vgd_csmw_r.data() + ro[p], 2*rn[p]) != hr[p]) {
-        VgdCsFatal("compact lists: the read marks from rank " +
-                   std::to_string(vgd_csprk[p]) + " arrived corrupted (rank " +
-                   std::to_string(global_variable::my_rank) + ", checksum mismatch): "
-                   "the MPI transport delivered other bytes than were sent (seen with "
-                   "UCX's registration cache under an LD_PRELOAD profiler such as nsys "
-                   "-t osrt / -s cpu: export UCX_RCACHE_ENABLE=n for such runs)");
+        ScCsFatal("compact lists: the read marks from rank " +
+                  std::to_string(vgd_csprk[p]) + " arrived corrupted (rank " +
+                  std::to_string(global_variable::my_rank) + ", checksum mismatch): "
+                  "the MPI transport delivered other bytes than were sent (seen with "
+                  "UCX's registration cache under an LD_PRELOAD profiler such as nsys "
+                  "-t osrt / -s cpu: export UCX_RCACHE_ENABLE=n for such runs)");
       }
     }
   }
@@ -396,13 +396,13 @@ void RadiationVet::VetGdCsCompact() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsHaloC
+//! \fn void RadiationVet::ScCsHaloC
 //! \brief compact exchange of shell i after pass `pass`: the listed (entry, direction)
-//! values of every partner (VetGdCsCompact)
+//! values of every partner (ScCsCompact)
 
-void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
+void RadiationVet::ScCsHaloC(const int pass, const int i) {
 #if MPI_PARALLEL_ENABLED
-  const VgdCsCl &E = vgd_cscl[vgd_cscur];
+  const ScCsCl &E = vgd_cscl[vgd_cscur];
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int n1 = indcs.nx1;
   const int n = vgd_n;
@@ -421,13 +421,13 @@ void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
   auto ri_ = E.ri;
   if (static_cast<int64_t>(sb_.extent(0)) < ns ||
       static_cast<int64_t>(rb_.extent(0)) < nr) {
-    VgdCsFatal("VetGdCsHaloC: message buffer too small");
+    ScCsFatal("ScCsHaloC: message buffer too small");
   }
   Real *sbp = sb_.data();
   Real *rbp = rb_.data();
   if (ns > 0) {
     Kokkos::parallel_for("vet_vgdcs_cpack",
-                         VgdLight(DevExeSpace(), 0, static_cast<int>(ns)),
+                         ScLight(DevExeSpace(), 0, static_cast<int>(ns)),
     KOKKOS_LAMBDA(const int o) {
       const int x = si_(s0 + o);
       const int e = x/n, d = x - e*n;
@@ -459,7 +459,7 @@ void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n;
   if (nr > 0) {
     Kokkos::parallel_for("vet_vgdcs_cunpack",
-                         VgdLight(DevExeSpace(), 0, static_cast<int>(nr)),
+                         ScLight(DevExeSpace(), 0, static_cast<int>(nr)),
     KOKKOS_LAMBDA(const int o) {
       const int x = ri_(r0 + o);
       const int e = x/n, d = x - e*n;
@@ -474,24 +474,24 @@ void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
 
 namespace {
 
-// per-partner offsets of the merged two-set exchange (VetGdCsHaloCX)
+// per-partner offsets of the merged two-set exchange (ScCsHaloCX)
 constexpr int VGD_CSX_NS = 32;
 
-struct VgdCsXIdx {int v[VGD_CSX_NS + 1];};
+struct ScCsXIdx {int v[VGD_CSX_NS + 1];};
 
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdCsHaloCX
+//! \fn bool RadiationVet::ScCsHaloCX
 //! \brief both compact exchanges of shell i of a fused two-set sweep in one round (one
 //! message per partner: current set's piece, then the next set's; tag 7107); bitwise two
-//! VetGdCsHaloC calls. false (nothing done): the caller runs the two exchanges.
+//! ScCsHaloC calls. false (nothing done): the caller runs the two exchanges.
 
-bool RadiationVet::VetGdCsHaloCX(const int pass, const int i, const int eb) {
+bool RadiationVet::ScCsHaloCX(const int pass, const int i, const int eb) {
 #if MPI_PARALLEL_ENABLED
   if (eb < 0) {return false;}
-  const VgdCsCl &EA = vgd_cscl[vgd_cscur];
-  const VgdCsCl &EB = vgd_cscl[eb];
+  const ScCsCl &EA = vgd_cscl[vgd_cscur];
+  const ScCsCl &EB = vgd_cscl[eb];
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int n1 = indcs.nx1;
   const int n = vgd_n;
@@ -518,7 +518,7 @@ bool RadiationVet::VetGdCsHaloCX(const int pass, const int i, const int eb) {
     Kokkos::realloc(vgd_csrb, static_cast<size_t>(nrA + nrB));
   }
   // per-set list offsets relative to the shell's first value, and the merged offsets
-  VgdCsXIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
+  ScCsXIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
   for (int p = 0; p <= np; ++p) {
     sa.v[p] = static_cast<int>(soA[p] - s0A);
     sb.v[p] = static_cast<int>(soB[p] - s0B);
@@ -541,11 +541,11 @@ bool RadiationVet::VetGdCsHaloCX(const int pass, const int i, const int eb) {
   const int nra = static_cast<int>(nrA), nrb = static_cast<int>(nrB);
   const int npk = np;
   if (nsa + nsb > 0) {
-    Kokkos::parallel_for("vet_vgdcs_cpackx", VgdLight(DevExeSpace(), 0, nsa + nsb),
+    Kokkos::parallel_for("vet_vgdcs_cpackx", ScLight(DevExeSpace(), 0, nsa + nsb),
     KOKKOS_LAMBDA(const int c) {
       const bool b = (c >= nsa);
       const int o = b ? (c - nsa) : c;
-      const VgdCsXIdx &sx = b ? sb : sa;
+      const ScCsXIdx &sx = b ? sb : sa;
       int p = 0;
       while (p + 1 < npk && sx.v[p+1] <= o) {++p;}
       const int x = b ? siB_(s0B + o) : siA_(s0A + o);
@@ -579,11 +579,11 @@ bool RadiationVet::VetGdCsHaloCX(const int pass, const int i, const int eb) {
   vgd_csvsent += static_cast<double>(nsA + nsB);
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*2;
   if (nra + nrb > 0) {
-    Kokkos::parallel_for("vet_vgdcs_cunpackx", VgdLight(DevExeSpace(), 0, nra + nrb),
+    Kokkos::parallel_for("vet_vgdcs_cunpackx", ScLight(DevExeSpace(), 0, nra + nrb),
     KOKKOS_LAMBDA(const int c) {
       const bool b = (c >= nra);
       const int o = b ? (c - nra) : c;
-      const VgdCsXIdx &rx = b ? rb : ra;
+      const ScCsXIdx &rx = b ? rb : ra;
       int p = 0;
       while (p + 1 < npk && rx.v[p+1] <= o) {++p;}
       const int x = b ? riB_(r0B + o) : riA_(r0A + o);
@@ -606,14 +606,14 @@ bool RadiationVet::VetGdCsHaloCX(const int pass, const int i, const int eb) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsHalo
+//! \fn void RadiationVet::ScCsHalo
 //! \brief fill every band position of a(m, v, k, j, i), v < nv, shells [i0, i1] with its
 //! owner's interior value (exact copies, chunked). ws >= 0 (vet_gd_band_global,
 //! depth-sorted lists): only positions within depth ws; ws < 0 (cubed sphere): all
 
 template <class V>
-void RadiationVet::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
-                               const bool loc, const int ws) {
+void RadiationVet::ScCsHalo(V &a, const int nv, const int i0, const int i1,
+                            const bool loc, const int ws) {
   auto a_ = a;
   const bool dp = (ws >= 0) && (vgd_gband || vgd_raw) && !vgd_gdnl.empty();
   const int wq = dp ? std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1) : 0;
@@ -710,15 +710,15 @@ void RadiationVet::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
 #endif
 }
 
-template void RadiationVet::VetGdCsHalo<DvceArray5D<Real>>(DvceArray5D<Real> &a,
+template void RadiationVet::ScCsHalo<DvceArray5D<Real>>(DvceArray5D<Real> &a,
                                                          const int nv, const int i0,
                                                          const int i1, const bool loc,
                                                          const int ws);
 
-template void RadiationVet::VetGdCsHalo<RadiationVet::VgdRag>(RadiationVet::VgdRag &a,
-                                                              const int nv, const int i0,
-                                                              const int i1,
-                                                              const bool loc,
-                                                              const int ws);
+template void RadiationVet::ScCsHalo<RadiationVet::ScRag>(RadiationVet::ScRag &a,
+                                                          const int nv, const int i0,
+                                                          const int i1,
+                                                          const bool loc,
+                                                          const int ws);
 
 }  // namespace radvet

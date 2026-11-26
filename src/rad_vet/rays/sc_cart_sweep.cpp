@@ -24,8 +24,9 @@
 //! x1 ends: diffusion intensity E + 3 F.Omega/c (vet_bc_diff), Marshak bath / black
 //! sphere (vet_bc_inner, vet_bc_bath), mirror at a reflecting end (vet_bc_reflect), or
 //! the periodic sweep (vet_x1_periodic).  x2/x3: periodic, or vacuum on one MeshBlock.
-//! Several MeshBlocks / ranks (VetSweepMB): the same sweep over the global layers, exact,
-//! with banded planes exchanged after every launch; uniform mesh, periodic x2 (x3).
+//! Several MeshBlocks / ranks (ScCartSweepMB): the same sweep over the global layers,
+//! exact, with banded planes exchanged after every launch; uniform mesh, periodic x2
+//! (x3).
 //!
 //!  called from: rad_vet_closure.cpp, rad_vet_closure_ring.cpp
 //!  calls into: rad_vet_imex.cpp, rays/sc_cart_rotavg.cpp, rays/sc_cart_setup.cpp,
@@ -230,16 +231,16 @@ void VetEigSym(Real a[3][3], Real lam[3], Real v[3][3]) {
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetShortChar
-//! \brief vet_sc build, with the vet_rotate_avg bookkeeping around VetShortCharSweep
+//! \fn void RadiationVet::ScCartBuild
+//! \brief vet_sc build, with the vet_rotate_avg bookkeeping around ScCartSweep
 
-void RadiationVet::VetShortChar() {
+void RadiationVet::ScCartBuild() {
   // vet_rotate_avg: the first build of a new block shifts the ring by the old block's
   // Delta (else re-init: sweep the K-1 previous sets); the last build of a block also
   // sweeps the next set at the same state (Delta) and restores vet_cell
   const bool ra = vra_on && vsc_rot;
   const int ilo = pmy_pack->pmesh->mb_indcs.is;
-  const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+  const int64_t b = RotBlock(pmy_pack->pmesh->ncycle);
   if (ra && vra_state == 1 && b != vra_blk) {
     if (vra_pend == 3) {
       VetScRotAvgSetup();
@@ -256,7 +257,7 @@ void RadiationVet::VetShortChar() {
     for (int jb = 1; jb < vra_k; ++jb) {
       VetRotSet(VetRotBeta(b - jb));
       vra_raw = true;
-      VetShortCharSweep();
+      ScCartSweep();
       vra_raw = false;
       VetScRotAvgSetup();
       RotAvgSnap(jb - 1, ilo);
@@ -269,7 +270,7 @@ void RadiationVet::VetShortChar() {
   }
   VetRotUpdate();   // set of this step's rotation block
   vra_last = ra && vra_state == 1 && RotLastStep();
-  VetShortCharSweep();
+  ScCartSweep();
   if (vra_last) {
     Kokkos::Timer tr;
     if (vra_bk_vc.extent(0) != vet_cell.extent(0) ||
@@ -280,7 +281,7 @@ void RadiationVet::VetShortChar() {
     Kokkos::deep_copy(vra_bk_vc, vet_cell);
     VetRotSet(VetRotBeta(b + 1));
     vra_raw = true;
-    VetShortCharSweep();
+    ScCartSweep();
     vra_raw = false;
     VetScRotAvgSetup();
     RotAvgDelta(vra_k - 1, ilo);
@@ -294,10 +295,10 @@ void RadiationVet::VetShortChar() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetShortCharSweep
+//! \fn void RadiationVet::ScCartSweep
 //! \brief the vet_sc build with the current set
 
-void RadiationVet::VetShortCharSweep() {
+void RadiationVet::ScCartSweep() {
   // vet_source_noesrc: source and boundary intensity read the physical E^n = u0, not
   // the solve's old vector (VET_IW_EN)
   const bool noes_ = VsrcNoes();
@@ -396,9 +397,9 @@ void RadiationVet::VetShortCharSweep() {
   });
 
   // (2) the sweep: launch l does layer is+l for the up rays and ie-l for the down rays,
-  // reading launch l-1's plane; several MeshBlocks: VetSweepMB instead
+  // reading launch l-1's plane; several MeshBlocks: ScCartSweepMB instead
   if (vet_mbs != nullptr) {
-    VetSweepMB();
+    ScCartSweepMB();
   }
   const int nlaunch = (vet_mbs != nullptr) ? 0 : nx1;   // banded sweep ran instead
   // vet_bc_reflect = mirror: at a reflecting x1 end the entering rays carry the leaving
@@ -802,14 +803,14 @@ void RadiationVet::VetShortCharSweep() {
   });
 
   // (4) vet_tensor = full: the guarded D = K/J the solve reads instead of (chi, n)
-  if (vet_full) {VetFullTensor();}
+  if (vet_full) {ScCartTensor();}
   Kokkos::fence();
   vet_time += timer.seconds();
   vet_ncall += 1.0;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetFullTensor
+//! \fn void RadiationVet::ScCartTensor
 //! \brief vet_tensor = full: D_ab = K_ab/J of the last formal solution, realizability
 //! guarded, into vet_cell(VETRAY_D11 .. +5), active cells and ghosts.
 //! With w_r > 0 and I_r >= 0 the raw D is symmetric, trace 1 to round-off, eigenvalues
@@ -821,7 +822,7 @@ void RadiationVet::VetShortCharSweep() {
 //! So D_dd >= emin >= 0: the line rows stay M-matrices.  |D_guarded - D_raw| goes to
 //! VETRAY_GD for the run statistics.
 
-void RadiationVet::VetFullTensor() {
+void RadiationVet::ScCartTensor() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -900,7 +901,7 @@ void RadiationVet::VetFullTensor() {
   // ghosts: periodic in x2 (x3), edge copy in x1; several MeshBlocks: the ordinary
   // cell-centred exchange, edge copy only at a physical x1 face
   if (vet_mbs != nullptr) {
-    VetMBState &st = *vet_mbs;
+    ScCartMBState &st = *vet_mbs;
     auto ds_ = st.dsc;
     auto lx_ = st.lx1;
     const int nbx1 = st.nbx1;

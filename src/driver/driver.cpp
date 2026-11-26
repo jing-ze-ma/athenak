@@ -483,7 +483,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
 
   // a restart of the staggered clean scheme from the old scheme's file: its face fluxes
   if (res_flag && pmesh->pmb_pack->pradvet != nullptr) {
-    pmesh->pmb_pack->pradvet->CleanRstFaces();
+    pmesh->pmb_pack->pradvet->RestartFaces();
   }
   //---- Step 2b. <rad_vet>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
   // restart): the steady radiation of
@@ -491,14 +491,14 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
       pmesh->pmb_pack->pradvet != nullptr && pmesh->pmb_pack->pradvet->cln_steady) {
-    pmesh->pmb_pack->pradvet->CleanSteadyStart(this);
+    pmesh->pmb_pack->pradvet->SteadyStart(this);
     // the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
       (pmesh->pgen->user_icpost_func)(pmesh);
       // a pgen that iterates its IC with the radiation (star_vet
       // star_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
-        pmesh->pmb_pack->pradvet->CleanSteadyStart(this);
+        pmesh->pmb_pack->pradvet->SteadyStart(this);
         (pmesh->pgen->user_icpost_func)(pmesh);
       }
     }
@@ -773,7 +773,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       radvet::RadiationVet *pvet = pmesh->pmb_pack->pradvet;
       // the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
-      if (pvet != nullptr) {pvet->VetGdRotStep();}
+      if (pvet != nullptr) {pvet->RotNewBlock();}
       // <rad_vet>/time2_auto_be (off unless named): a step of a skip run takes
       // the backward-Euler redo path at once (t2_ok = false: no stages)
       if (pvet != nullptr) {(void) pvet->Time2AutoBeBegin();}

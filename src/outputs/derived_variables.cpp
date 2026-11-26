@@ -1295,14 +1295,14 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
   // vet_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
   // (clean_closure = predict, the staggered default; rad_vet_closure.cpp
-  // CleanClosure: the formal solution of the predicted state at
-  // t^{n+1}, the clean_rot_ring average over the window's sets, CleanClosureFromGd, then
-  // CleanClosureFill; built once per step and rebuilt for a new dt (dt_retry), read by
+  // BuildClosure: the formal solution of the predicted state at
+  // t^{n+1}, the clean_rot_ring average over the window's sets, ClosureFromSc, then
+  // ClosureFill; built once per step and rebuilt for a new dt (dt_retry), read by
   // every solve of the step, not rebuilt after it; a restart restores the ring, so the
   // next step builds the same D), so the D of the step that produced the dumped E and
   // F; a dump before the first build (cycle 0; cln_s is not in the restart file) writes
   // D = I/3.  Components 11 22 33 12 13 23 in the frame of vet_f1..3, radial first: the
-  // cubed sphere's Cartesian D turned into CleanCsFrame's (r_hat, ., .), D' = q D q^T
+  // cubed sphere's Cartesian D turned into CsFrame's (r_hat, ., .), D' = q D q^T
   // (the old scheme's vet_vet wrote the Cartesian D there).  P_ab = vet_e D_ab.
   if (name.compare("vet_vet") == 0) {
     if (derived_var.extent(4) <= 1)
@@ -1328,7 +1328,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         }
       }
       Real q[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
-      if (rot) {   // (CleanCsFrame's rows)
+      if (rot) {   // (CsFrame's rows)
         for (int c = 0; c < 3; ++c) q[0][c] = gn_.At<radvet::CLG_R>(m,c,k,j,i);
         const Real rho = sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
         q[2][0] = -q[0][1]/rho;

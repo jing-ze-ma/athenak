@@ -103,7 +103,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   // hydro signal speed.  Off: no change (the gas fast speed, bitwise).
   const bool rss_ = rad_signal_speed;
   DvceArray5D<Real> erad_, kopc_, vcel_;
-  radvet::CleanGeo gn_;
+  radvet::CsGeoArrays gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 4 vet_sc, 5 clean
   if (rss_) {
     auto *prm = pmy_pack->pradvet;
@@ -261,8 +261,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
             if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
               for (int a = 0; a < 3; ++a) {
                 dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
-                        radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
-                                         radvet::CLG_E + 3*(a - 1), m, k, j, i) :
+                        radvet::DirDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
+                                       radvet::CLG_E + 3*(a - 1), m, k, j, i) :
                         vcel_(m,d0+a,k,j,i);
               }
             }

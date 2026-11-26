@@ -14,7 +14,7 @@
 
 namespace radvet {
 
-struct VgdLG {
+struct ScLG {
   bool on = false;
   Real x2a = 0.0, dx2 = 1.0, x3a = 0.0, dx3 = 1.0;
   Kokkos::View<int**, DevMemSpace> o;            // (m, 0|1): global j|k of the first cell
@@ -23,12 +23,12 @@ struct VgdLG {
   template <class TB> KOKKOS_INLINE_FUNCTION
   Real Th(const TB &mb, const int m, const int j, const int js) const {
     return on ? x2a + (static_cast<Real>(o(m,0) + j - js) + 0.5)*dx2
-              : mb.d_view(m).x2min + (j - js + 0.5)*mb.d_view(m).dx2;
+             : mb.d_view(m).x2min + (j - js + 0.5)*mb.d_view(m).dx2;
   }
   template <class TB> KOKKOS_INLINE_FUNCTION
   Real Ph(const TB &mb, const int m, const int k, const int ks) const {
     return on ? x3a + (static_cast<Real>(o(m,1) + k - ks) + 0.5)*dx3
-              : mb.d_view(m).x3min + (k - ks + 0.5)*mb.d_view(m).dx3;
+             : mb.d_view(m).x3min + (k - ks + 0.5)*mb.d_view(m).dx3;
   }
   template <class TB> KOKKOS_INLINE_FUNCTION
   Real Dx2(const TB &mb, const int m) const {return on ? dx2 : mb.d_view(m).dx2;}
@@ -38,7 +38,7 @@ struct VgdLG {
   template <class TB> KOKKOS_INLINE_FUNCTION
   Real Jw(const TB &mb, const int m, const int js, const Real t) const {
     return on ? (js - o(m,0)) + floor((t - x2a)/dx2 + 0.5)
-              : js + floor((t - mb.d_view(m).x2min)/mb.d_view(m).dx2 + 0.5);
+             : js + floor((t - mb.d_view(m).x2min)/mb.d_view(m).dx2 + 0.5);
   }
   // the band-row / column offset to the global index (0 when off)
   KOKKOS_INLINE_FUNCTION int Sj(const int m, const int js) const {
@@ -56,12 +56,12 @@ struct VgdLG {
   template <class TB>
   Real ThH(const TB &mb, const int m, const int j, const int js) const {
     return on ? x2a + (static_cast<Real>(oh(m,0) + j - js) + 0.5)*dx2
-              : mb.h_view(m).x2min + (j - js + 0.5)*mb.h_view(m).dx2;
+             : mb.h_view(m).x2min + (j - js + 0.5)*mb.h_view(m).dx2;
   }
   template <class TB>
   Real PhH(const TB &mb, const int m, const int k, const int ks) const {
     return on ? x3a + (static_cast<Real>(oh(m,1) + k - ks) + 0.5)*dx3
-              : mb.h_view(m).x3min + (k - ks + 0.5)*mb.h_view(m).dx3;
+             : mb.h_view(m).x3min + (k - ks + 0.5)*mb.h_view(m).dx3;
   }
   template <class TB>
   Real Dx2H(const TB &mb, const int m) const {return on ? dx2 : mb.h_view(m).dx2;}

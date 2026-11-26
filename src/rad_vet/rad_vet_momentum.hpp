@@ -15,27 +15,27 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanCsArm
+//! \fn Real CsArm
 //! \brief cubed sphere: L_z arm lambda = (M x n)_z/A of lateral face (kf,jf,iff), M =
 //! int x dA (CLG_M): momentum p n carries L_z lambda p
 
 KOKKOS_INLINE_FUNCTION
-Real CleanCsArm(const CleanArgs &x, const int q, const int m, const int kf, const int jf,
-                const int iff) {
+Real CsArm(const SolveArgs &x, const int q, const int m, const int kf, const int jf,
+           const int iff) {
   return (x.g.At<CLG_M>(m,3*(q-1),kf,jf,iff)*x.g.At<CLG_N>(m,3*q+1,kf,jf,iff) -
           x.g.At<CLG_M>(m,3*(q-1)+1,kf,jf,iff)*x.g.At<CLG_N>(m,3*q,kf,jf,iff))/
          x.area[q](m,kf,jf,iff);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStagCsVector
+//! \fn void CsVector
 //! \brief cubed sphere: the cell vector u from its six face projections p (c = w p,
 //! face 2 q + s) by weighted least squares, (sum w n n^T) u = sum c n; exact for uniform
 //! u.  clean_stag_csvec_radial: lateral normals less their r_hat part (radial u exact)
 
 KOKKOS_INLINE_FUNCTION
-void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j,
-                       const int i, const Real c[6], const Real w[6], Real u[3]) {
+void CsVector(const SolveArgs &x, const int m, const int k, const int j,
+              const int i, const Real c[6], const Real w[6], Real u[3]) {
   Real a[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
   Real b[3] = {0.0, 0.0, 0.0};
   for (int q = 0; q < 3; ++q) {
@@ -70,14 +70,14 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
 }
 
 //! \brief cell vector u from its six face values c: the mean of each family's two
-//! faces; on the cubed sphere CleanStagCsVector with unit weights
+//! faces; on the cubed sphere CsVector with unit weights
 
 KOKKOS_INLINE_FUNCTION
-void CleanStagCellVector(const CleanArgs &x, const int m, const int k, const int j,
-                         const int i, const Real c[6], Real u[3]) {
+void CellVector(const SolveArgs &x, const int m, const int k, const int j,
+                const int i, const Real c[6], Real u[3]) {
   if (x.cub) {
     const Real w[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
-    CleanStagCsVector(x, m, k, j, i, c, w, u);
+    CsVector(x, m, k, j, i, c, w, u);
     return;
   }
   for (int q = 0; q < 3; ++q) u[q] = 0.5*(c[2*q] + c[2*q+1]);
@@ -88,32 +88,32 @@ void CleanStagCellVector(const CleanArgs &x, const int m, const int k, const int
 //! cubed sphere x2, x3 (lateral), Cartesian x1, x2 (L_z about z); the others, without
 //! one, are those a cap or cut may take momentum from (clean_stag_fcone_lz)
 KOKKOS_INLINE_FUNCTION
-bool CleanLzFamily(const bool sph, const bool cub, const int d) {
+bool LzFamily(const bool sph, const bool cub, const int d) {
   return sph ? (d == 2) : (cub ? (d > 0) : (d < 2));
 }
 
 //! \brief the arm (z x r).e_dir of momentum along e_dir in cell (k,j,i), or at its face
 //! normal to dir: spherical polar R along x3, Cartesian -y along x1 and x along x2 (the
-//! cell centres of clean_lz_spin), else 0 (the cubed sphere's faces: CleanCsArm)
+//! cell centres of clean_lz_spin), else 0 (the cubed sphere's faces: CsArm)
 KOKKOS_INLINE_FUNCTION
-Real CleanDirLzArm(const CleanArgs &x, const int dir, const int m, const int k,
-                   const int j, const int i) {
+Real DirLzArm(const SolveArgs &x, const int dir, const int m, const int k,
+              const int j, const int i) {
   if (x.sph) return (dir == 2) ? x.x1v(m,i)*x.tg(m,2,j) : 0.0;
   if (x.cub || x.x2v.extent_int(0) == 0) return 0.0;
   return (dir == 0) ? -x.x2v(m,j) : ((dir == 1) ? x.x1v(m,i) : 0.0);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanMomentumChange
+//! \fn Real FaceMomentumChange
 //! \brief momentum the radiation gives cell (k,j,i) along dir over the stage, in
 //! conservative form: per face -[(F - G)/c^2 + h div(D E)], shared half and half
 //! (clean_stag_split: by chi).  cf, wf: each face's term and weight; tq: its whole term
 
 template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
-Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
-                         const int k, const int j, const int i, Real *mag = nullptr,
-                         Real *cf = nullptr, Real *wf = nullptr, Real *tq = nullptr) {
+Real FaceMomentumChange(const SolveArgs &x, const int e, const int dir, const int m,
+                        const int k, const int j, const int i, Real *mag = nullptr,
+                        Real *cf = nullptr, Real *wf = nullptr, Real *tq = nullptr) {
   // (kFs: x.fs and x.fa known set: stored face fluxes and terms read)
   const bool fs = kFs || x.fs, fa = kFs || x.fa;
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
@@ -121,7 +121,7 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
   for (int side = 0; side < 2; ++side) {
     const int kf = k + side*dk, jf = j + side*dj, iff = i + side*di;
     const Real f = fs ? x.fc[dir](m,CLF_N,kf,jf,iff) :
-                   CleanFaceFluxCall(x, e, dir, m, kf, jf, iff, true);
+                   FaceFluxCall(x, e, dir, m, kf, jf, iff, true);
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
     // (clean_stag_split: share chi_c/(chi_L + chi_R))
     const int o = 2*side - 1;
@@ -135,11 +135,11 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       const Real xv = xc*vc + x.op(m,VET_OP_T,k+o*dk,j+o*dj,i+o*di)*vo;
       wt = (xv > 0.0) ? 0.5*xc*(vc + vo)/xv : 0.5;
     }
-    if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
+    if (x.hi && IsBoundaryFace(x, dir, m, kf, jf, iff)) {
       // (boundary flux: the inner half cell's absorption of it, chi dx/2; gflux on an
       // open face: 1 - exp(-chi dx/2))
-      const Real dc = 1.0/CleanDivW(x, dir, m, k, j, i, side), q = 0.5*xc*dc;
-      const bool gq = x.gf && CleanOpen(x, m, 2*dir + side);
+      const Real dc = 1.0/DivW(x, dir, m, k, j, i, side), q = 0.5*xc*dc;
+      const bool gq = x.gf && IsOpenFace(x, m, 2*dir + side);
       const Real db = gq ? -expm1(-q)*x.h*f/(x.c*dc) : 0.5*x.h*xc*f/x.c;
       dm += db;
       if (cf) {
@@ -150,7 +150,7 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       continue;
     }
     const Real tu = fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
-                    x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
+                    x.h*FaceStressCall(x, e, dir, m, kf, jf, iff, true) -
                     (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
     if (tq) tq[side] = tu;
     Real t = wt*tu;
@@ -166,7 +166,7 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       if (tc != t) {   // (counted; a write-back's also the gas momentum withheld)
         Kokkos::atomic_add(&x.mclc(0), 1.0);
         if (x.mclc.extent_int(0) > 1) {
-          Kokkos::atomic_add(&x.mclc(1+dir), (tc - t)*CleanVol(x, m, k, j, i));
+          Kokkos::atomic_add(&x.mclc(1+dir), (tc - t)*CellVolume(x, m, k, j, i));
         }
       }
       t = tc;
@@ -195,14 +195,14 @@ constexpr int CLA_ONE = 3;          // 1
 constexpr int CLA_ZERO = 4;         // 0
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanDissipationWeight
+//! \fn Real DissipationWeight
 //! \brief face dissipation weight al from tau = chi_f dx_d, sensor psi and the rays'
 //! streaming weight sray; rc = (1 - al)/tau (analytic to tau = 0 for clean_alpha = tau).
 //! A^2 makes the dissipation O(1/tau^2) against the O(1/tau) diffusion flux
 
 KOKKOS_INLINE_FUNCTION
-Real CleanDissipationWeight(const int mode, const Real tau, const Real psi,
-                            const Real sray, Real &rc, const int p = 2) {
+Real DissipationWeight(const int mode, const Real tau, const Real psi,
+                       const Real sray, Real &rc, const int p = 2) {
   // A = 1 - b tau
   const Real b = (tau > 1.0e-4) ? (1.0 + expm1(-tau)/tau)/tau
                                 : 0.5 - tau*(1.0 - 0.25*tau)/6.0;
@@ -223,34 +223,34 @@ Real CleanDissipationWeight(const int mode, const Real tau, const Real psi,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanDiag
+//! \fn Real DiagD
 //! \brief component D_ab of the Eddington tensor of cell (k,j,i)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const int k,
-               const int j, const int i) {
+Real DiagD(const SolveArgs &x, const int a, const int b, const int m, const int k,
+           const int j, const int i) {
   return x.cs(m,CLN_D11+((a == b) ? a : 2 + a + b),k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanNf
+//! \fn Real NumFaceDirs
 //! \brief component b of the unit normal of face (kf,jf,iff) (e_dir off the cubed sphere)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanNf(const CleanArgs &x, const int b, const int dir, const int m, const int kf,
-             const int jf, const int iff) {
+Real NumFaceDirs(const SolveArgs &x, const int b, const int dir, const int m,
+                 const int kf, const int jf, const int iff) {
   return x.cub ? x.g.At<CLG_N>(m,3*dir+b,kf,jf,iff) : ((b == dir) ? 1.0 : 0.0);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanCsFrame
+//! \fn Real CsFrame
 //! \brief cubed sphere: frame of y, rows r_hat, theta_hat = phi_hat x r_hat, phi_hat =
 //! z x r_hat/|.| (y_cart = Q^T y).  Returns the L_z arm R = x1v |z x r_hat| (> 0: odd
 //! panel resolutions are refused)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, const int i,
-                  Real q[3][3]) {
+Real CsFrame(const SolveArgs &x, const int m, const int k, const int j, const int i,
+             Real q[3][3]) {
   for (int c = 0; c < 3; ++c) q[0][c] = x.g.At<CLG_R>(m,c,k,j,i);
   const Real rho = std::sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
   q[2][0] = -q[0][1]/rho;
@@ -263,25 +263,25 @@ Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, con
 }
 
 //! \brief the arm R of L_z = R p_phi of a cell vector p in the frame of y: spherical
-//! polar x1v sin(theta), the cubed sphere CleanCsFrame's; Cartesian |(x, y)| with the
+//! polar x1v sin(theta), the cubed sphere CsFrame's; Cartesian |(x, y)| with the
 //! cell centres of clean_lz_spin, else 0
 KOKKOS_INLINE_FUNCTION
-Real CleanLzArm(const CleanArgs &x, const int m, const int k, const int j, const int i) {
+Real LzArm(const SolveArgs &x, const int m, const int k, const int j, const int i) {
   Real q[3][3];
   if (!x.sph && !x.cub) {
     return (x.x2v.extent_int(0) > 0) ? sqrt(SQR(x.x1v(m,i)) + SQR(x.x2v(m,j))) : 0.0;
   }
-  return x.cub ? CleanCsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
+  return x.cub ? CsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanCsFamily
+//! \fn void CsFamily
 //! \brief cubed sphere: face family normals of the half-range closure: r_hat and the
 //! mean normals of the x2 and x3 face pairs
 
 KOKKOS_INLINE_FUNCTION
-void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, const int i,
-                   Real nd[3][3]) {
+void CsFamily(const SolveArgs &x, const int m, const int k, const int j, const int i,
+              Real nd[3][3]) {
   for (int d = 0; d < 3; ++d) {
     const int dk = (d == 2), dj = (d == 1);
     Real s = 0.0;
@@ -295,17 +295,17 @@ void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, co
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanRayFlux
+//! \fn void RayFlux
 //! \brief rays' flux factor h = H/J from s_b = h+_b + h-_b: s; cubed sphere: solves
-//! n_b . h = s_b (CleanCsFamily normals)
+//! n_b . h = s_b (CsFamily normals)
 
 KOKKOS_INLINE_FUNCTION
-void CleanRayFlux(const CleanArgs &x, const int m, const int k, const int j, const int i,
-                  const Real s[3], Real h[3]) {
+void RayFlux(const SolveArgs &x, const int m, const int k, const int j, const int i,
+             const Real s[3], Real h[3]) {
   for (int b = 0; b < 3; ++b) h[b] = s[b];
   if (!x.cub) return;
   Real nd[3][3], c[3][3];   // c_b = n_{b+1} x n_{b+2}
-  CleanCsFamily(x, m, k, j, i, nd);
+  CsFamily(x, m, k, j, i, nd);
   for (int b = 0; b < 3; ++b) {
     const Real *p = nd[(b+1)%3], *q = nd[(b+2)%3];
     for (int e = 0; e < 3; ++e) c[b][e] = p[(e+1)%3]*q[(e+2)%3] - p[(e+2)%3]*q[(e+1)%3];
@@ -315,17 +315,17 @@ void CleanRayFlux(const CleanArgs &x, const int m, const int k, const int j, con
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanGasVector, CleanGasMomentum
+//! \fn void GasVector, GasMomentum
 //! \brief gas momentum in the frame of y.  Cubed sphere: the hydro stores m_r = p.r_hat
 //! and covariant m_a = p.e_a on non-orthogonal panel tangents: p_t = g^ab m_b e_a
 
 KOKKOS_INLINE_FUNCTION
-void CleanGasVector(const CleanArgs &x, const int m, const int k, const int j,
-                    const int i, const Real u[3], Real p[3]) {
+void GasVector(const SolveArgs &x, const int m, const int k, const int j,
+               const int i, const Real u[3], Real p[3]) {
   for (int n = 0; n < 3; ++n) p[n] = u[n];
   if (!x.cub) return;
   Real q[3][3], pt[3], c = 0.0;
-  CleanCsFrame(x, m, k, j, i, q);
+  CsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) c += x.g.At<CLG_E>(m,b,k,j,i)*x.g.At<CLG_E>(m,3+b,k,j,i);
   const Real u1 = (p[1] - c*p[2])/(1.0 - c*c), u2 = (p[2] - c*p[1])/(1.0 - c*c);
   for (int b = 0; b < 3; ++b) {
@@ -334,50 +334,50 @@ void CleanGasVector(const CleanArgs &x, const int m, const int k, const int j,
   for (int a = 1; a < 3; ++a) p[a] = q[a][0]*pt[0] + q[a][1]*pt[1] + q[a][2]*pt[2];
 }
 
-//! (CleanGasMomentum: CleanGasVector of the hydro's momentum)
+//! (GasMomentum: GasVector of the hydro's momentum)
 KOKKOS_INLINE_FUNCTION
-void CleanGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh, const int m,
-                      const int k, const int j, const int i, Real p[3]) {
+void GasMomentum(const SolveArgs &x, const DvceArray5D<Real> &uh, const int m,
+                 const int k, const int j, const int i, Real p[3]) {
   const Real u[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
-  CleanGasVector(x, m, k, j, i, u, p);
+  GasVector(x, m, k, j, i, u, p);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanAdvect
+//! \fn void AdvectCoeff
 //! \brief a = v + D v of cell (k,j,i), v in the frame of y
 
 KOKKOS_INLINE_FUNCTION
-void CleanAdvect(const CleanArgs &x, const int m, const int k, const int j, const int i,
+void AdvectCoeff(const SolveArgs &x, const int m, const int k, const int j, const int i,
                  const Real v[3], Real a[3]) {
   if (!x.cub) {
     for (int b = 0; b < 3; ++b) {
       a[b] = v[b];
-      for (int c = 0; c < 3; ++c) a[b] += CleanDiag(x, b, c, m, k, j, i)*v[c];
+      for (int c = 0; c < 3; ++c) a[b] += DiagD(x, b, c, m, k, j, i)*v[c];
     }
     return;
   }
   Real q[3][3], vc[3], ac[3];
-  CleanCsFrame(x, m, k, j, i, q);
+  CsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) vc[b] = v[0]*q[0][b] + v[1]*q[1][b] + v[2]*q[2][b];
   for (int b = 0; b < 3; ++b) {
     ac[b] = vc[b];
-    for (int c = 0; c < 3; ++c) ac[b] += CleanDiag(x, b, c, m, k, j, i)*vc[c];
+    for (int c = 0; c < 3; ++c) ac[b] += DiagD(x, b, c, m, k, j, i)*vc[c];
   }
   for (int b = 0; b < 3; ++b) a[b] = q[b][0]*ac[0] + q[b][1]*ac[1] + q[b][2]*ac[2];
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanGasChange
+//! \fn void GasChange
 //! \brief hydro momentum change dh for a change dm in the frame of y (inverse of
-//! CleanGasMomentum; cubed sphere: dh_r = dm_r, covariant dh_a = dm_t.e_a)
+//! GasMomentum; cubed sphere: dh_r = dm_r, covariant dh_a = dm_t.e_a)
 
 KOKKOS_INLINE_FUNCTION
-void CleanGasChange(const CleanArgs &x, const int m, const int k, const int j,
-                    const int i, const Real dm[3], Real dh[3]) {
+void GasChange(const SolveArgs &x, const int m, const int k, const int j,
+               const int i, const Real dm[3], Real dh[3]) {
   for (int n = 0; n < 3; ++n) dh[n] = dm[n];
   if (!x.cub) return;
   Real q[3][3], dt[3];
-  CleanCsFrame(x, m, k, j, i, q);
+  CsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) dt[b] = dm[1]*q[1][b] + dm[2]*q[2][b];
   for (int a = 1; a < 3; ++a) {
     dh[a] = dt[0]*x.g.At<CLG_E>(m,3*(a-1),k,j,i) +
@@ -387,24 +387,24 @@ void CleanGasChange(const CleanArgs &x, const int m, const int k, const int j,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanCellFaceDistance
+//! \fn Real CellFaceDistance
 //! \brief distance between the two cell centroids across face (k,j,i)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const int k,
-                           const int j, const int i) {
+Real CellFaceDistance(const SolveArgs &x, const int dir, const int m, const int k,
+                      const int j, const int i) {
   return (x.sph || x.cub) ? x.dxf[dir](m,k,j,i) : 1.0/x.idx[dir];
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanHcTauW
+//! \fn void HcTauW
 //! \brief clean_face_hctau / clean_face_jse: weights of a cell value interpolated
 //! linearly in optical depth to the face, wl = tau_R/(tau_L + tau_R) (half-cell depths),
 //! times (r/r_f)^2 on radial faces; tg: tau_L, tau_R and the two (r/r_f)^2
 
 KOKKOS_INLINE_FUNCTION
-void CleanHcTauW(const CleanArgs &x, const int dir, const int m, const int k, const int j,
-                 const int i, Real &wl, Real &wr, Real *tg = nullptr) {
+void HcTauW(const SolveArgs &x, const int dir, const int m, const int k, const int j,
+            const int i, Real &wl, Real &wr, Real *tg = nullptr) {
   const int il = i - (dir == 0), jl = j - (dir == 1), kl = k - (dir == 2);
   const bool rad = (dir == 0 && (x.sph || x.cub));
   const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : 1.0;
@@ -422,16 +422,16 @@ void CleanHcTauW(const CleanArgs &x, const int dir, const int m, const int k, co
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanOverlapFor
+//! \fn void OverlapFor
 //! \brief f over the inner cells (inset by ng) while a ghost exchange is in flight, then
 //! fin(), then the shell; ov = false: fin() then all (same values).  fd >= 0: over faces
 //! normal to fd.  post: shell first, post(), inner, fin() (the sending side)
 
 // (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
 template <typename F>
-void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F &f,
-                     const std::function<void()> &fin, const int fd = -1,
-                     const std::function<void()> &post = nullptr) {
+void OverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F &f,
+                const std::function<void()> &fin, const int fd = -1,
+                const std::function<void()> &post = nullptr) {
   auto &id = pp->pmesh->mb_indcs;
   const int g = id.ng, nmb1 = pp->nmb_thispack - 1, is = id.is, js = id.js, ks = id.ks;
   const bool md = pp->pmesh->multi_d, td = pp->pmesh->three_d;
@@ -443,8 +443,8 @@ void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, co
     lo[d] = (fd < 0) ? (ac ? g : 0) : (d == fd);
     hi[d] = (fd < 0) ? (ac ? nx[d] - 1 - g : nx[d] - 1) : nx[d] - 1 - (d == fd);
   }
-  const CleanShell sh(n[2], n[1], n[0], 0, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2],
-                      true, true);
+  const HaloShell sh(n[2], n[1], n[0], 0, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2],
+                     true, true);
   if (!ov || sh.Empty()) {
     if (!post) fin();
     par_for(nm, DevExeSpace(), 0, nmb1, ks, id.ke + (fd == 2), js, id.je + (fd == 1), is,
@@ -460,18 +460,18 @@ void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, co
   par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
   KOKKOS_LAMBDA(const int m, const int q) {
     int k, j, i;
-    CleanShellCell(sh, q, k, j, i);
+    HaloShellCell(sh, q, k, j, i);
     f(m, ks + k, js + j, is + i);
   });
   if (post) post(), inner(), fin();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanPredictE
+//! \fn Real PredictE
 //! \brief predicted E = e0 + de, positive: e0 exp(de/e0) where e0 + de <= 0
 
 KOKKOS_INLINE_FUNCTION
-Real CleanPredictE(const Real e0, const Real de) {
+Real PredictE(const Real e0, const Real de) {
   return (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
 }
 
@@ -484,49 +484,49 @@ inline void ZalesakCapWarn(const char *who, const int cycle, const int t2s) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStagGasMomentum
+//! \fn void FaceFrameGasMomentum
 //! \brief staggered: the gas momentum of cell (k,j,i) in the mesh's face-flux components
 //! (Cartesian on the cubed sphere)
 
 KOKKOS_INLINE_FUNCTION
-static void CleanStagGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh,
+static void FaceFrameGasMomentum(const SolveArgs &x, const DvceArray5D<Real> &uh,
                                  const int m, const int k, const int j, const int i,
                                  Real p[3]) {
-  CleanGasMomentum(x, uh, m, k, j, i, p);
+  GasMomentum(x, uh, m, k, j, i, p);
   if (!x.cub) return;
   Real q[3][3];
   const Real y[3] = {p[0], p[1], p[2]};
-  CleanCsFrame(x, m, k, j, i, q);
+  CsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) p[b] = y[0]*q[0][b] + y[1]*q[1][b] + y[2]*q[2][b];
 }
 
-//! \brief staggered: v from CleanStagGasMomentum's components to the hydro's (changed on
+//! \brief staggered: v from FaceFrameGasMomentum's components to the hydro's (changed on
 //! the cubed sphere only)
 
 KOKKOS_INLINE_FUNCTION
-static void CleanStagHydro(const CleanArgs &x, const int m, const int k, const int j,
-                           const int i, Real v[3]) {
+static void ToHydroFrame(const SolveArgs &x, const int m, const int k, const int j,
+                         const int i, Real v[3]) {
   if (!x.cub) return;
   Real q[3][3];
   const Real y[3] = {v[0], v[1], v[2]};
-  CleanCsFrame(x, m, k, j, i, q);
+  CsFrame(x, m, k, j, i, q);
   for (int d = 0; d < 3; ++d) v[d] = q[d][0]*y[0] + q[d][1]*y[1] + q[d][2]*y[2];
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStagRefForce
+//! \fn void RefForce
 //! \brief staggered: the reference force density withheld from the gas of cell (k,j,i),
-//! in CleanStagGasMomentum's components.  clean: the stored force; wb_arad: d arad_ref
+//! in FaceFrameGasMomentum's components.  clean: the stored force; wb_arad: d arad_ref
 //! along x1 (radial on the cubed sphere: no torque); wb_arad_md: d times the stored
 //! acceleration; else 0.  The gas then takes the residual of the radiation force.
 
 KOKKOS_INLINE_FUNCTION
-static void CleanStagRefForce(const CleanArgs &x, const int fref,
-                              const DvceArray5D<Real> &fr, const DvceArray4D<Real> &aref,
-                              const Real d, const int m, const int k, const int j,
-                              const int i, Real rf[3]) {
+static void RefForce(const SolveArgs &x, const int fref,
+                     const DvceArray5D<Real> &fr, const DvceArray4D<Real> &aref,
+                     const Real d, const int m, const int k, const int j,
+                     const int i, Real rf[3]) {
   Real q[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
-  if (fref == VET_FREF_WB_ARAD && x.cub) CleanCsFrame(x, m, k, j, i, q);
+  if (fref == VET_FREF_WB_ARAD && x.cub) CsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) {
     rf[b] = (fref == VET_FREF_CLEAN) ? fr(m,b,k,j,i) :
             ((fref == VET_FREF_WB_ARAD) ? d*aref(m,k,j,i)*q[0][b] :
@@ -535,32 +535,32 @@ static void CleanStagRefForce(const CleanArgs &x, const int fref,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStagMomentum
+//! \fn void CellMomentumChange
 //! \brief staggered: the radiation's momentum change of cell (k,j,i) over the stage, the
-//! cell's shares of its faces' absorption (CleanMomentumChange; mag: the terms' size), in
-//! CleanStagGasMomentum's components.
-//! Cubed sphere: the face changes combine by CleanStagCsVector (weights 1/2).  Lateral
+//! cell's shares of its faces' absorption (FaceMomentumChange; mag: the terms' size), in
+//! FaceFrameGasMomentum's components.
+//! Cubed sphere: the face changes combine by CsVector (weights 1/2).  Lateral
 //! faces are no phi faces, so L_z does not telescope: dlz = -V R (dF_phi/c^2 + dp_phi) is
-//! booked as the radiation's (CleanLzBook).  3-D spherical polar: dlz of the phi faces,
+//! booked as the radiation's (LzBook).  3-D spherical polar: dlz of the phi faces,
 //! which telescopes to the L_z crossing the boundaries.
 
 template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
-static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, const int k,
-                              const int j, const int i, Real dm[3], Real mag[3],
-                              Real *dlz = nullptr) {
+static void CellMomentumChange(const SolveArgs &x, const int e, const int m, const int k,
+                               const int j, const int i, Real dm[3], Real mag[3],
+                               Real *dlz = nullptr) {
   Real cf[6], wf[6];
   for (int d = 0; d < 3; ++d) {
     mag[d] = 0.0;
-    dm[d] = (d < x.nf) ? CleanMomentumChange<kFs>(x, e, d, m, k, j, i, &mag[d],
-                                                  &cf[2*d], &wf[2*d]) : 0.0;
+    dm[d] = (d < x.nf) ? FaceMomentumChange<kFs>(x, e, d, m, k, j, i, &mag[d],
+                                                 &cf[2*d], &wf[2*d]) : 0.0;
   }
   if (!x.cub) {
     if (dlz && x.sph && x.nf > 2) {
       Real df[2];
       for (int s = 0; s < 2; ++s) {
         const Real f = (kFs || x.fs) ? x.fc[2](m,CLF_N,k+s,j,i)
-                                     : CleanFaceFlux(x, e, 2, m, k+s, j, i, true);
+                                     : FaceFlux(x, e, 2, m, k+s, j, i, true);
         df[s] = f - x.fc[2](m,CLF_G,k+s,j,i);
       }
       *dlz = (-0.5*(df[0] + df[1])/(x.c*x.c) - dm[2])*x.vol(m,k,j,i)*x.x1v(m,i)*
@@ -570,8 +570,8 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
   }
   Real dv[3], q[3][3];
   const Real hw[6] = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5};
-  CleanStagCsVector(x, m, k, j, i, cf, hw, dv);
-  const Real rc = CleanCsFrame(x, m, k, j, i, q);
+  CsVector(x, m, k, j, i, cf, hw, dv);
+  const Real rc = CsFrame(x, m, k, j, i, q);
   const Real dr = q[0][0]*dv[0] + q[0][1]*dv[1] + q[0][2]*dv[2];
   const Real dt = q[1][0]*dv[0] + q[1][1]*dv[1] + q[1][2]*dv[2];
   const Real dp = q[2][0]*dv[0] + q[2][1]*dv[1] + q[2][2]*dv[2];
@@ -582,10 +582,10 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
       const int n = d/2, kf = k + (d%2)*(n == 2), jf = j + (d%2)*(n == 1);
       const int iff = i + (d%2)*(n == 0);
       const Real f = (kFs || x.fs) ? x.fc[n](m,CLF_N,kf,jf,iff)
-                                   : CleanFaceFlux(x, e, n, m, kf, jf, iff, true);
+                                   : FaceFlux(x, e, n, m, kf, jf, iff, true);
       df[d] = f - x.fc[n](m,CLF_G,kf,jf,iff);
     }
-    CleanStagCsVector(x, m, k, j, i, df, one, fd);
+    CsVector(x, m, k, j, i, df, one, fd);
     *dlz = (-(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) - dp)*
            x.vol(m,k,j,i)*rc;
   }

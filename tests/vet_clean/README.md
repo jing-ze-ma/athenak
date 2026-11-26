@@ -45,7 +45,7 @@ is a FAIL with the path of its `run.log`.
 | `restart_cs` | `shell_cs` | 8 straight vs 4 + restart + 4 | identical |
 | `dt_retry` | `shell_sp` | a forced step retry at cycle 4 with factor 1 (the step is repeated at the same dt) and with factor 0.5 | factor 1: identical to the run without retry; factor 0.5: runs on; one retry each |
 | `layout_tile` | `shell_sp` (16 x 16 lateral) | `<mesh>/layout_invariant_mode = tile`, `layout_tile = 8`, 8 cycles: 1 MeshBlock vs 1 x 2 MeshBlocks (along phi) and vs 2 x 2 (theta x phi, vacuum ray walls) | 1 x 2: identical (difference 0); 2 x 2: largest difference / largest value <= 1e-8 (see below); the 1 x 2 pair again with `dfloor_flux_limit` and `dfloor` just below the gas density (the limiter acts in every cell): identical, and its dE, dM, dLz <= 1e-13 |
-| `layout_cs` | `shell_cs` (16 x 16 per panel) | tile mode on the cubed sphere: an optically thin rotating shell with turning rays, 8 cycles, one MeshBlock per panel vs 2 x 2; again with `clean_ray_min = 1` (most cells hold no rays) | identical (8e-3 of the largest lateral flux while a MeshBlock's high face took its last cell's ray sum, `CleanRayFace`); dE, dM, dLz <= 1e-13; no `CLEAN WARNING` |
+| `layout_cs` | `shell_cs` (16 x 16 per panel) | tile mode on the cubed sphere: an optically thin rotating shell with turning rays, 8 cycles, one MeshBlock per panel vs 2 x 2; again with `clean_ray_min = 1` (most cells hold no rays) | identical (8e-3 of the largest lateral flux while a MeshBlock's high face took its last cell's ray sum, `RayFace`); dE, dM, dLz <= 1e-13; no `CLEAN WARNING` |
 | `fofc_layout_cs` | `fofc_cs` | hydro shell on the cubed sphere whose fluxes FOFC replaces (density floor, cfl 0.8), 8 cycles: one MeshBlock per panel vs 2 x 2, 2 along r and 2 x 2 x 2; restart and a forced dt_retry of the 2 x 2 run | identical; E, L_z drifts of the 2 x 2 run, M drift of a fast shell without the density floor <= 1e-13 |
 | `order_time` | `deckD` | time step halved at a fixed grid (3 levels quick, 5 full); successive-difference L1 of E, F_r, T | order of the finest pair >= 1.7; errors within 5 % of the reference |
 | `order_stiff` | `wave_cart` | radiation-acoustic wave in the trapped regime (x = 100, P_rad/P_gas 1), time step T/64 ... T/512, strict solves (full only) | order of the finest pair >= 1.7; errors within 5 % of the reference |
@@ -171,7 +171,7 @@ Notes on the results of this release:
   1`). On the cubed
   sphere the ledger stays at round-off; there `dLz_gr` (6e-5) is not a conservation measure,
   because the history's `Lrz` is the cell vector u0 F while the scheme's radiation momentum
-  is its face momenta (`CleanLzTotal`; ~0.6 % of the radiation's L_z apart).
+  is its face momenta (`LzTotal`; ~0.6 % of the radiation's L_z apart).
 - **Layout.** Tile mode gives bit-identical results for every layout of whole-tile
   MeshBlocks with one MeshBlock along x1 and x2 (theta): 1 x 2 (along phi) is identical.
   2 x 2 differs after 8 cycles by 8e-14 of the largest value (CPU): splitting theta puts ray walls (mirror or vacuum) inside the mesh,

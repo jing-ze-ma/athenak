@@ -20,7 +20,7 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetSweepMB
+//! \fn void RadiationVet::ScCartSweepMB
 //! \brief the short-characteristics sweep over several MeshBlocks, exact.
 //! Launch L does global layer L for the up rays and nx1g-1-L for the down rays in
 //! whichever block holds them.  Extinction and source go into banded planes with their
@@ -28,12 +28,12 @@ namespace radvet {
 //! band is exchanged, and at an x1 block face the upwind plane moves to the next block
 //! (VetX1Move).  Bit-identical to the single-block sweep on one MeshBlock.
 
-void RadiationVet::VetSweepMB() {
+void RadiationVet::ScCartSweepMB() {
   // vet_source_noesrc: source and boundary intensity read the physical E^n = u0
   const bool noes_ = VsrcNoes();
   auto esv_ = noes_ ? u0 : iw;
   const int esc_ = noes_ ? VET_E : VET_IW_EN;
-  VetMBState &st = *vet_mbs;
+  ScCartMBState &st = *vet_mbs;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -198,7 +198,7 @@ void RadiationVet::VetSweepMB() {
           }
           if (f2s_) {
             // upwind plane's intensity carried across the low x2 (x3) face by the foot
-            // shift (VetShortCharSweep)
+            // shift (ScCartSweep)
             auto g2 = [&](const int d) {
               if (!thrd) return ip_(m,pr,r,kc,jc + d);
               return 0.5*(ip_(m,pr,r,kc,jc + d) + (1.0 - a3)*ip_(m,pr,r,ka,jc + d)
@@ -254,7 +254,7 @@ void RadiationVet::VetSweepMB() {
             iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
                              f2s_ ? &ifc : nullptr,
                              juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
-                                 : -1.0, sdd);
+                                    : -1.0, sdd);
           } else {
             const Real dtau = 0.5*(cu + c0)*dx1/am1;
             Real ex, w0, wu;
@@ -285,7 +285,7 @@ void RadiationVet::VetSweepMB() {
         ac[7] += a*m1;
         ac[8] += a*m2;
         ac[9] += a*m3;
-        if (hrs_) {   // the half-range sums, as VetShortChar
+        if (hrs_) {   // the half-range sums, as ScCartBuild
           Real *hp = up ? hpu : hpd;
           hp[0] += a*fmax(m1, 0.0);
           hp[1] += a*fmax(m2, 0.0);

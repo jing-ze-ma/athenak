@@ -16,7 +16,7 @@
 //! Upwind I, ln chi, ln S are bilinear in (theta, phi) index space; S is linear in tau.
 //! Periodic theta/phi walls: ghost intensities are re-indexed by the local-frame map
 //! n -> M n (nearest set direction). Block boundaries: lagged inflow (block-Jacobi).
-//! Output: the intensities vgd_i (CleanClosureFromGd, CleanGdFaceSums).
+//! Output: the intensities vgd_i (ClosureFromSc, RayFaceSums).
 //!
 //!  called from: rad_vet_closure_ring.cpp, rays/sc_build.cpp
 //!  calls into: rad_vet_params_closure.cpp, rays/sc_bandring.cpp, rays/sc_cart_setup.cpp,
@@ -48,12 +48,12 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdSweep
+//! \fn void RadiationVet::ScSweep
 //! \brief one sweep (inward then outward) of every direction
 
-void RadiationVet::VetGdSweep() {
+void RadiationVet::ScSweep() {
   if (vgd_csg) {   // the cubed-sphere sweep (rays/sc_cs_sweep.cpp)
-    VetGdCsSweep();
+    ScCsSweep();
     return;
   }
   Mesh *pm = pmy_pack->pmesh;
@@ -74,7 +74,7 @@ void RadiationVet::VetGdSweep() {
   auto mr_ = vgd_mr;
   auto x1f_ = vgd_x1f;
   // outside the block: on-rank neighbours are read from their interior (re-indexed at
-  // a wall), remote ones from the band filled per shell by VetGdHalo (vgd_raw: owner or
+  // a wall), remote ones from the band filled per shell by ScHalo (vgd_raw: owner or
   // band, re-indexed at the read)
   auto hl_ = vgd_hloc;
   const bool raw_ = vgd_raw;
@@ -104,7 +104,7 @@ void RadiationVet::VetGdSweep() {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  const VgdLG lg_ = vgd_lg;
+  const ScLG lg_ = vgd_lg;
   const int jlo = 0, jhi = je + wb - 1;
   const int klo = 0, khi = ke + wb - 1;
   const Real twopi = 2.0*M_PI;
@@ -188,10 +188,10 @@ void RadiationVet::VetGdSweep() {
   }
   auto tg_ = vgd_trig;
   // the exact lists of every (pass, shell) whose record does not match (new set, cut or
-  // depth), in a few batched collectives (VetGdHxBatch)
+  // depth), in a few batched collectives (ScHxBatch)
   if (vgd_ipc_on && vgd_ipc_state == 0 && vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0)) {
     const size_t cs = std::max<size_t>(vgd_crb.extent(0), 1);
-    VetGdIpcInit(vgd_prk, cs, 2*cs);   // vet_gd_halo_ipc (collective, once)
+    ScIpcInit(vgd_prk, cs, 2*cs);   // vet_gd_halo_ipc (collective, once)
   }
   if (vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0)) {
     const int n1c = indcs.nx1 + 2*indcs.ng;
@@ -205,22 +205,22 @@ void RadiationVet::VetGdSweep() {
         const int i = is + l;
         const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
         if (wsx < 1 || wsx > vgd_w) {continue;}
-        if (!VetGdHxKey(pass*n1c + i, wsx)) {jobs.push_back({pass, i, l, wsx});}
+        if (!ScHxKey(pass*n1c + i, wsx)) {jobs.push_back({pass, i, l, wsx});}
       }
     }
-    VetGdHxBatch(jobs);
+    ScHxBatch(jobs);
   }
   // a list-only preparation of this set (shell lists, exact halo lists)
   if (vgd_xff_prep) {return;}
   const bool xffs = vgd_xff_now;
-  if (ibc_x1max == VET_IBC_REFLECT) {VetGdTopMirror();}
+  if (ibc_x1max == VET_IBC_REFLECT) {ScTopMirror();}
   // vet_gd_band_ring: shells are lent a wide slab while their band is needed (the
-  // other set's array as the second one, VetGdRingFlush)
-  VetGdRingSweepBegin(xffs);
+  // other set's array as the second one, ScRingFlush)
+  ScRingSweepBegin(xffs);
   const bool rga = vgd_ring_act;
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
-    if (imir && !inw) {VetGdInnerMirror();}
+    if (imir && !inw) {ScInnerMirror();}
     auto isc_ = vgd_isc;
 #define VET_VGD_BODY_NAME body
 #define VET_VGD_BODY_MIR 0
@@ -254,16 +254,16 @@ void RadiationVet::VetGdSweep() {
 #if defined(KOKKOS_ENABLE_CUDA)
 #define VET_VGD_BODY_GX0
 #endif
-    using VgdDirV = decltype(vgd_dir);
-    using VgdWallV = decltype(vgd_wall);
-    using VgdMapV = decltype(vgd_map);
-    using VgdMrV = decltype(vgd_mr);
-    using VgdM3V = decltype(vgd_m3);
-    using VgdW3V = decltype(vgd_w3);
-    using VgdIV = decltype(vgd_i);
-    auto mkx0 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
-                    const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
-                    const VgdIV vi_) {
+    using ScDirV = decltype(vgd_dir);
+    using ScWallV = decltype(vgd_wall);
+    using ScMapV = decltype(vgd_map);
+    using ScMrV = decltype(vgd_mr);
+    using ScM3V = decltype(vgd_m3);
+    using ScW3V = decltype(vgd_w3);
+    using ScIV = decltype(vgd_i);
+    auto mkx0 = [&](const ScDirV dir_, const ScWallV wl_, const ScMapV mp_,
+                    const ScMrV mr_, const ScM3V m3_, const ScW3V w3_,
+                    const ScIV vi_) {
 #define VET_VGD_BODY_NAME bodyx
 #define VET_VGD_BODY_MIR 0
 #include "rad_vet/rays/sc_sph_sweep_body.inc"
@@ -271,9 +271,9 @@ void RadiationVet::VetGdSweep() {
 #undef VET_VGD_BODY_MIR
       return bodyx;
     };
-    auto mkx1 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
-                    const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
-                    const VgdIV vi_) {
+    auto mkx1 = [&](const ScDirV dir_, const ScWallV wl_, const ScMapV mp_,
+                    const ScMrV mr_, const ScM3V m3_, const ScW3V w3_,
+                    const ScIV vi_) {
 #define VET_VGD_BODY_NAME bodyx
 #define VET_VGD_BODY_MIR 1
 #include "rad_vet/rays/sc_sph_sweep_body.inc"
@@ -286,30 +286,30 @@ void RadiationVet::VetGdSweep() {
 #endif
     // vet_gd_body_global: this pass's closure copied once to device memory; launches
     // carry only its address (bitwise)
-    using VgdBodyT = decltype(body);
-    using VgdBodymT = decltype(bodym);
-    const VgdBodyT *bdp = nullptr;
-    const VgdBodymT *bmp = nullptr;
+    using ScBodyT = decltype(body);
+    using ScBodymT = decltype(bodym);
+    const ScBodyT *bdp = nullptr;
+    const ScBodymT *bmp = nullptr;
     if (thm) {
-      bmp = VgdClosureToDevice(bodym, vgd_bbuf1);
+      bmp = ScClosureToDevice(bodym, vgd_bbuf1);
     } else {
-      bdp = VgdClosureToDevice(body, vgd_bbuf0);
+      bdp = ScClosureToDevice(body, vgd_bbuf0);
     }
 #if defined(KOKKOS_ENABLE_CUDA)
-    using VgdBodygT = decltype(bodyg);
-    using VgdBodymgT = decltype(bodymg);
-    const VgdBodygT *bgp = nullptr;
-    const VgdBodymgT *bgq = nullptr;
-    if (bmp != nullptr) {bgq = VgdClosureToDevice(bodymg, vgd_bbuf3);}
-    if (bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
+    using ScBodygT = decltype(bodyg);
+    using ScBodymgT = decltype(bodymg);
+    const ScBodygT *bgp = nullptr;
+    const ScBodymgT *bgq = nullptr;
+    if (bmp != nullptr) {bgq = ScClosureToDevice(bodymg, vgd_bbuf3);}
+    if (bdp != nullptr) {bgp = ScClosureToDevice(bodyg, vgd_bbuf2);}
 #endif
-    // both sets' gx-false closures in device memory (VetGdXffOk)
-    using VgdXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                  vgd_i));
-    using VgdXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                  vgd_i));
-    const VgdXb0T *xa0 = nullptr, *xq0 = nullptr;
-    const VgdXb1T *xa1 = nullptr, *xq1 = nullptr;
+    // both sets' gx-false closures in device memory (ScXffOk)
+    using ScXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                 vgd_i));
+    using ScXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                 vgd_i));
+    const ScXb0T *xa0 = nullptr, *xq0 = nullptr;
+    const ScXb1T *xa1 = nullptr, *xq1 = nullptr;
     if (xffs) {
 #if defined(KOKKOS_ENABLE_CUDA)
       // the current set's closure: the buffer of its gx-false body
@@ -318,17 +318,17 @@ void RadiationVet::VetGdSweep() {
       auto &bba = vgd_bbuf0;
 #endif
       if (thm) {
-        xa1 = VgdClosureToDevice(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                      vgd_i), bba);
-        xq1 = VgdClosureToDevice(mkx1(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
-                                      vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
-                                 vgd_bbufx);
+        xa1 = ScClosureToDevice(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                     vgd_i), bba);
+        xq1 = ScClosureToDevice(mkx1(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
+                                     vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
+                                vgd_bbufx);
       } else {
-        xa0 = VgdClosureToDevice(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                      vgd_i), bba);
-        xq0 = VgdClosureToDevice(mkx0(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
-                                      vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
-                                 vgd_bbufx);
+        xa0 = ScClosureToDevice(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                     vgd_i), bba);
+        xq0 = ScClosureToDevice(mkx0(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
+                                     vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
+                                vgd_bbufx);
       }
     }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
@@ -346,7 +346,7 @@ void RadiationVet::VetGdSweep() {
       if (thm) {
         const auto *qa = xa1;
         const auto *qb = xq1;
-        Kokkos::parallel_for("vet_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nP + nB),
+        Kokkos::parallel_for("vet_vgd_shell_xff", ScShellPol(vgd_cur, 0, nP + nB),
         KOKKOS_LAMBDA(const int c) {
           const bool sb = (c >= nP);
           if (!sb && c >= nA) {return;}
@@ -362,7 +362,7 @@ void RadiationVet::VetGdSweep() {
       } else {
         const auto *qa = xa0;
         const auto *qb = xq0;
-        Kokkos::parallel_for("vet_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nP + nB),
+        Kokkos::parallel_for("vet_vgd_shell_xff", ScShellPol(vgd_cur, 0, nP + nB),
         KOKKOS_LAMBDA(const int c) {
           const bool sb = (c >= nP);
           if (!sb && c >= nA) {return;}
@@ -387,15 +387,15 @@ void RadiationVet::VetGdSweep() {
       const std::false_type f_;
 #if defined(KOKKOS_ENABLE_CUDA)
       // on CUDA the gx-false closures bodyg / bodymg
-      const VgdBodygT *bp_ = bgp;
-      const VgdBodymgT *bq_ = bgq;
+      const ScBodygT *bp_ = bgp;
+      const ScBodymgT *bq_ = bgq;
 #else
-      const VgdBodyT *bp_ = bdp;
-      const VgdBodymT *bq_ = bmp;
+      const ScBodyT *bp_ = bdp;
+      const ScBodymT *bq_ = bmp;
 #endif
 #if defined(KOKKOS_ENABLE_CUDA)
       // launch-bounds variants of the CUDA gx-false kernel (VET_VGD_CUDA_LB; 0 = the
-      // VgdShellPol launch): register allocation and block size only (same bits)
+      // ScShellPol launch): register allocation and block size only (same bits)
 #define VET_VGD_GF_CU(...)                                                    \
       if (bq_ != nullptr) {                                               \
         Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
@@ -421,17 +421,17 @@ void RadiationVet::VetGdSweep() {
         });                                                               \
       }
       switch (VET_VGD_CUDA_LB) {
-        case 1: VET_VGD_GF_CU(VgdLbPol<128, 4>(vgd_cur, c0, c1)); break;
-        case 2: VET_VGD_GF_CU(VgdLbPol<128, 5>(vgd_cur, c0, c1)); break;
-        case 3: VET_VGD_GF_CU(VgdLbPol<128, 6>(vgd_cur, c0, c1)); break;
-        case 4: VET_VGD_GF_CU(VgdLbPol<256, 2>(vgd_cur, c0, c1)); break;
-        case 5: VET_VGD_GF_CU(VgdLbPol<256, 3>(vgd_cur, c0, c1)); break;
-        default: VET_VGD_GF_CU(VgdShellPol(vgd_cur, c0, c1)); break;
+        case 1: VET_VGD_GF_CU(ScLbPol<128, 4>(vgd_cur, c0, c1)); break;
+        case 2: VET_VGD_GF_CU(ScLbPol<128, 5>(vgd_cur, c0, c1)); break;
+        case 3: VET_VGD_GF_CU(ScLbPol<128, 6>(vgd_cur, c0, c1)); break;
+        case 4: VET_VGD_GF_CU(ScLbPol<256, 2>(vgd_cur, c0, c1)); break;
+        case 5: VET_VGD_GF_CU(ScLbPol<256, 3>(vgd_cur, c0, c1)); break;
+        default: VET_VGD_GF_CU(ScShellPol(vgd_cur, c0, c1)); break;
       }
 #undef VET_VGD_GF_CU
 #else
       if (bq_ != nullptr) {
-        Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
+        Kokkos::parallel_for(name, ScShellPol(vgd_cur, c0, c1),
         KOKKOS_LAMBDA(const int c) {
           int t = L_(c);
           const int d = t % n;
@@ -443,7 +443,7 @@ void RadiationVet::VetGdSweep() {
           (*bq_)(m, k, j, d, i, l, f_, f_);
         });
       } else {
-        Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
+        Kokkos::parallel_for(name, ScShellPol(vgd_cur, c0, c1),
         KOKKOS_LAMBDA(const int c) {
           int t = L_(c);
           const int d = t % n;
@@ -465,7 +465,7 @@ void RadiationVet::VetGdSweep() {
     auto hx_mark = [&](const int i, const int l, const int wsx) -> bool {
       const int n1c = indcs.nx1 + 2*indcs.ng;
       if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
-      if (VetGdHxKey(pass*n1c + i, wsx)) {return false;}
+      if (ScHxKey(pass*n1c + i, wsx)) {return false;}
       const size_t nall = static_cast<size_t>(nmb1 + 1)*n*c3b*c2b;
       // stamped marks (no clearing): a ghost is marked when it holds the build's stamp
       if (vgd_hx_mk.extent(0) < nall) {
@@ -493,8 +493,8 @@ void RadiationVet::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir,
+          ScCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
+                 mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb,
               const int dr) {
             if (iu != i) {return;}
@@ -504,16 +504,16 @@ void RadiationVet::VetGdSweep() {
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
                 if (ej != 0 && wl_(m,kk,jj) >= 2) {
-                  // the main sweep reads the mirror row (flag 2) or the edge row
-                  // (extrap, 4) through the phi-edge slot; vacuum (3) reads nothing.
-                  // Flags 3, 4: the twin's periodic reads below too
-                  const int wf = wl_(m,kk,jj);
-                  const int o2 = 3*(ek + 1) + 1;
-                  if (wf != 3 && ek != 0 && hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) < 0) {
+                 // the main sweep reads the mirror row (flag 2) or the edge row
+                 // (extrap, 4) through the phi-edge slot; vacuum (3) reads nothing.
+                 // Flags 3, 4: the twin's periodic reads below too
+                 const int wf = wl_(m,kk,jj);
+                 const int o2 = 3*(ek + 1) + 1;
+                 if (wf != 3 && ek != 0 && hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) < 0) {
                     const bool hi = (ej > 0);
                     const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
-                                             : VgdMirRow(g, hi, wb, nx2b);
+                                             : ScMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
                       if (t > 0 && w3_(m,kk,jj,dr,t) == 0.0) {continue;}
                       const int dq = (wf == 4) ? dr : (wint ? m3_(m,kk,jj,dr,t)
@@ -523,15 +523,15 @@ void RadiationVet::VetGdSweep() {
                     if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
                       Kokkos::atomic_add(&oc_(), 1);
                     }
-                  }
-                  if (wf == 2) {continue;}
+                 }
+                 if (wf == 2) {continue;}
                 }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
                 mk_(((m*n + dr)*c3b + kk)*c2b + jj) = stamp;
                 if (jj < wb - wsx || jj >= wb + nx2b + wsx || kk < wb - wsx ||
                     kk >= wb + nx3b + wsx) {
-                  Kokkos::atomic_add(&oc_(), 1);
+                 Kokkos::atomic_add(&oc_(), 1);
                 }
               }
             }
@@ -552,7 +552,7 @@ void RadiationVet::VetGdSweep() {
     const int nst = vgd_nb1;
     for (int qq = 0; qq < nst*nsh; ++qq) {
       const int q = qq % nsh, lv = inw ? (nst - 1 - qq/nsh) : qq/nsh;
-      if (nst > 1 && q == 0 && qq > 0) {VetGdX1Hand(!inw);}
+      if (nst > 1 && q == 0 && qq > 0) {ScX1Hand(!inw);}
       const int l = inw ? (n1 - 1 - q) : (lcut + q);
       const int i = is + l;
       // the shell exchanged after this one (its mask is prepared while this shell's
@@ -573,16 +573,16 @@ void RadiationVet::VetGdSweep() {
       if (rga) {
         // this shell's wide slab (queued during the previous exchange, else now):
         // inward from scratch, outward with its interior and inward band
-        VetGdRingFlush();
+        ScRingFlush();
         if (vgd_rg_state[i] < 0) {
-          VgdRingOp o;
+          ScRingOp o;
           o.kind = 3;
           o.i = i;
           o.copyin = !inw;
           o.restore = !inw;
           vgd_rg_pend.push_back(o);
         }
-        VetGdRingFlush();
+        ScRingFlush();
       }
       if (xffs) {
         // both cross-fade sets, one launch
@@ -595,10 +595,10 @@ void RadiationVet::VetGdSweep() {
       if (rga) {
         // the previous shell has been read (stream order): save its inward band
         // (inward pass), its interior back to the compact slab, lend the next shell a
-        // slab; in this shell's exchange hook (VetGdHlBegin) or before the next kernel
+        // slab; in this shell's exchange hook (ScHlBegin) or before the next kernel
         if (q > 0) {
           const int ip = inw ? (i + 1) : (i - 1);
-          VgdRingOp o;
+          ScRingOp o;
           if (inw) {
             o.kind = 1;
             o.i = ip;
@@ -609,7 +609,7 @@ void RadiationVet::VetGdSweep() {
           vgd_rg_pend.push_back(o);
         }
         if (q + 1 < nsh) {
-          VgdRingOp o;
+          ScRingOp o;
           o.kind = 3;
           o.i = inw ? (i - 1) : (i + 1);
           o.copyin = !inw;
@@ -623,40 +623,40 @@ void RadiationVet::VetGdSweep() {
       vgd_hinw = inw;
       if (hxm && hx_mark(i, l, wsx)) {
         // vet_gd_halo_exact = 2: lists from the marks alone, before the exchange
-        VetGdHxBuild2(pass*(indcs.nx1 + 2*indcs.ng) + i, i, wsx);
+        ScHxBuild2(pass*(indcs.nx1 + 2*indcs.ng) + i, i, wsx);
       }
       if (xffs) {
-        // one message per partner with both sets' exact lists (vgd_raw: VetGdGbHaloX);
+        // one message per partner with both sets' exact lists (vgd_raw: ScGbHaloX);
         // else two exchanges, the other set's first (each writes only its own band)
         vgd_rg_lastx = false;
-        const bool hx2 = vgd_raw ? VetGdGbHaloX(i, wsx)
-                                 : VetGdHlXff(i, wsx);
+        const bool hx2 = vgd_raw ? ScGbHaloX(i, wsx)
+                              : ScHlXff(i, wsx);
         if (!hx2 && rga && !vgd_raw) {
-          VgdFatal("vet_gd_rotate_xfade_fuse: the band ring needs the merged exchange");
+          ScFatal("vet_gd_rotate_xfade_fuse: the band ring needs the merged exchange");
         }
         if (rga && inw) {   // record of the saved inward band, as below; both sets
           vgd_rg_sk[i] = vgd_raw ? 3 : (vgd_rg_lastx ? 1 : 2);
-          vgd_rg_se[i] = vgd_raw ? VetGdRawKey(i, true, wsx) : (vgd_rg_lastx ? i : -1);
+          vgd_rg_se[i] = vgd_raw ? ScRawKey(i, true, wsx) : (vgd_rg_lastx ? i : -1);
         }
         if (!hx2) {
-          VgdXffSwap();
-          VetGdHalo(vgd_i, n, i, i, wsx, true);
-          VgdXffSwap();
-          VetGdHalo(vgd_i, n, i, i, wsx, true);
+          ScXffSwap();
+          ScHalo(vgd_i, n, i, i, wsx, true);
+          ScXffSwap();
+          ScHalo(vgd_i, n, i, i, wsx, true);
         }
       } else {
         vgd_rg_lastx = false;
-        VetGdHalo(vgd_i, n, i, i, wsx, true);
+        ScHalo(vgd_i, n, i, i, wsx, true);
         if (rga && inw) {
           // record of the values to save from this shell's inward band: the exchange's
           // exact list (vgd_raw: what it wrote), else the whole band
           const int ex = i;
           const bool xl = vgd_rg_lastx && (vgd_rg_lastx_e == ex);
           vgd_rg_sk[i] = vgd_raw ? 3 : (xl ? 1 : 2);
-          vgd_rg_se[i] = vgd_raw ? VetGdRawKey(i, true, wsx) : (xl ? ex : -1);
+          vgd_rg_se[i] = vgd_raw ? ScRawKey(i, true, wsx) : (xl ? ex : -1);
         }
       }
-      if (rga) {VetGdRingFlush();}
+      if (rga) {ScRingFlush();}
       // the next kernel is stream-ordered behind the unpack: no fence needed
       vgd_thalo += th.seconds();
     }
@@ -664,7 +664,7 @@ void RadiationVet::VetGdSweep() {
       // last shell of the pass: saved (inward) and back to its compact slab
       const int il = is + (inw ? lcut : (n1 - 1));
       if (vgd_rg_state[il] >= 0) {
-        VgdRingOp o;
+        ScRingOp o;
         if (inw) {
           o.kind = 1;
           o.i = il;
@@ -674,10 +674,10 @@ void RadiationVet::VetGdSweep() {
         o.i = il;
         vgd_rg_pend.push_back(o);
       }
-      VetGdRingFlush();
+      ScRingFlush();
     }
   }
-  VetGdRingSweepEnd();
+  ScRingSweepEnd();
 }
 
 }  // namespace radvet

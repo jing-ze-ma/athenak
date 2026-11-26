@@ -1659,7 +1659,7 @@ void RadVetAtmGas(Mesh *pm, const Real bdt) {
 //! active cells, V = Coordinates volume, arm r_c rhat (cell-centre radius, as the
 //! <hydro>/am_transport correction): Eg = sum V u(IEN), Er = sum V E, Lg = sum V r x m
 //! (x, y, z), Lr = sum V r x F/c^2 (x, y, z).  cs: covariant m, F raised with the cell's
-//! e_xi.e_eta (the clean scheme's F in its frame of y, CleanCsFrame); sp: orthonormal.
+//! e_xi.e_eta (the clean scheme's F in its frame of y, CsFrame); sp: orthonormal.
 
 void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   pdata->nhist = vet_am_ebnd ? 15 : 14;
@@ -1782,10 +1782,10 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   if (vet_am_ebnd) {
     pdata->hdata[14] = (global_variable::my_rank == 0) ? pmbp->pradvet->ebnd_acc : 0.0;
   }
-  // Lz_tot: gas + radiation + ledger L_z of the clean scheme (CleanLzTotal; with
+  // Lz_tot: gas + radiation + ledger L_z of the clean scheme (LzTotal; with
   // clean_cs_lz_tel the radiation's is that of its face momenta), last column
   const int nl = pdata->nhist;
-  const Real lzt = pmbp->pradvet->CleanLzTotal();   // (collective)
+  const Real lzt = pmbp->pradvet->LzTotal();   // (collective)
   pdata->label[nl] = "Lz_tot";
   pdata->hdata[nl] = (global_variable::my_rank == 0) ? lzt : 0.0;
   pdata->nhist = nl + 1;

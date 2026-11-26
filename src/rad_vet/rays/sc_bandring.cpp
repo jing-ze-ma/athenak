@@ -26,14 +26,14 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdRingSweepBegin / VetGdRingSweepEnd / VetGdRingFlush
+//! \fn void RadiationVet::ScRingSweepBegin / ScRingSweepEnd / ScRingFlush
 //! \brief vet_gd_band_ring (rad_vet.hpp): per-sweep bookkeeping and the kernel of a
 //! group of slab operations (save a shell's inward band; release = interior back to
 //! the compact slab; acquire = interior in and saved band back, then both shells'
 //! tables). Pure copies: the sweep reads the values of the dense-band layout.
 
 // band_ring copy kernel (one thread per value; the last thread sets the tables)
-struct VgdRingK {
+struct ScRingK {
   Real *da, *db, *st;
   int64_t *aoff, *boff;
   int *awi, *bwi;
@@ -187,13 +187,13 @@ struct VgdRingK {
   }
 };
 
-static_assert(sizeof(VgdRingK) <= 512, "VgdRingK: keep below the by-value launch limit");
+static_assert(sizeof(ScRingK) <= 512, "ScRingK: keep below the by-value launch limit");
 
-void RadiationVet::VetGdRingSweepBegin(const bool two) {
+void RadiationVet::ScRingSweepBegin(const bool two) {
   vgd_ring_act = vgd_ring;
   if (!vgd_ring_act) {return;}
   for (size_t i = 0; i < vgd_rg_state.size(); ++i) {
-    if (vgd_rg_state[i] >= 0) {VgdFatal("vet_gd_band_ring: a shell still holds a slot");}
+    if (vgd_rg_state[i] >= 0) {ScFatal("vet_gd_band_ring: a shell still holds a slot");}
   }
   for (int s = 0; s < vgd_rg_k; ++s) {vgd_rg_sown[s] = -1;}
   vgd_rg_pend.clear();
@@ -208,8 +208,8 @@ void RadiationVet::VetGdRingSweepBegin(const bool two) {
   int64_t need = 0;
   if (static_cast<int>(vgd_hxe.size()) == 2*n1c) {
     for (int i = indcs.is; i <= indcs.ie; ++i) {
-      const VgdHlEntry &X = vgd_hxe[i];
-      if (X.gen != -1 && X.exact && X.alpha == vgd_alpha && VetGdHxCut(i, X)) {
+      const ScHlEntry &X = vgd_hxe[i];
+      if (X.gen != -1 && X.exact && X.alpha == vgd_alpha && ScHxCut(i, X)) {
         need += static_cast<int64_t>(X.nr) + X.nw;
       }
     }
@@ -222,23 +222,23 @@ void RadiationVet::VetGdRingSweepBegin(const bool two) {
   }
 }
 
-void RadiationVet::VetGdRingSweepEnd() {
+void RadiationVet::ScRingSweepEnd() {
   if (!vgd_ring_act) {return;}
-  VetGdRingFlush();
+  ScRingFlush();
   for (size_t i = 0; i < vgd_rg_state.size(); ++i) {
-    if (vgd_rg_state[i] >= 0) {VgdFatal("vet_gd_band_ring: a shell kept its slot");}
+    if (vgd_rg_state[i] >= 0) {ScFatal("vet_gd_band_ring: a shell kept its slot");}
   }
   vgd_ring_act = false;
 }
 
-int RadiationVet::VetGdRingFreeSlot(const int avoid) const {
+int RadiationVet::ScRingFreeSlot(const int avoid) const {
   for (int s = 0; s < vgd_rg_k; ++s) {
     if (vgd_rg_sown[s] < 0 && s != avoid) {return s;}
   }
   return -1;
 }
 
-void RadiationVet::VetGdRingFlush() {
+void RadiationVet::ScRingFlush() {
   if (!vgd_ring_act || vgd_rg_pend.empty()) {return;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -249,9 +249,9 @@ void RadiationVet::VetGdRingFlush() {
   // one group: at most one save, one release, one acquire
   size_t p = 0;
   while (p < vgd_rg_pend.size()) {
-    VgdRingOp sv, rl, aq;
+    ScRingOp sv, rl, aq;
     while (p < vgd_rg_pend.size()) {
-      const VgdRingOp &o = vgd_rg_pend[p];
+      const ScRingOp &o = vgd_rg_pend[p];
       if ((o.kind == 1 && sv.kind) || (o.kind == 2 && rl.kind) ||
           (o.kind == 3 && aq.kind)) {
         break;
@@ -259,17 +259,17 @@ void RadiationVet::VetGdRingFlush() {
       if (o.kind == 1) {
         sv = o;
         sv.slot = vgd_rg_state[o.i];
-        if (sv.slot < 0) {VgdFatal("vet_gd_band_ring: save of a compact shell");}
+        if (sv.slot < 0) {ScFatal("vet_gd_band_ring: save of a compact shell");}
       } else if (o.kind == 2) {
         rl = o;
         rl.slot = vgd_rg_state[o.i];
-        if (rl.slot < 0) {VgdFatal("vet_gd_band_ring: release of a compact shell");}
-        if (sv.kind && sv.i != o.i) {VgdFatal("vet_gd_band_ring: save / release differ");}
+        if (rl.slot < 0) {ScFatal("vet_gd_band_ring: release of a compact shell");}
+        if (sv.kind && sv.i != o.i) {ScFatal("vet_gd_band_ring: save / release differ");}
       } else {
         aq = o;
-        if (vgd_rg_state[o.i] >= 0) {VgdFatal("vet_gd_band_ring: shell already lent");}
-        aq.slot = VetGdRingFreeSlot(rl.kind ? rl.slot : -1);
-        if (aq.slot < 0) {VgdFatal("vet_gd_band_ring: no free slot");}
+        if (vgd_rg_state[o.i] >= 0) {ScFatal("vet_gd_band_ring: shell already lent");}
+        aq.slot = ScRingFreeSlot(rl.kind ? rl.slot : -1);
+        if (aq.slot < 0) {ScFatal("vet_gd_band_ring: no free slot");}
       }
       ++p;
     }
@@ -284,18 +284,18 @@ void RadiationVet::VetGdRingFlush() {
       if (vgd_rg_sk[i] != 1 && vgd_rg_sk[i] != 3) {vgd_rg_sk[i] = 2;}   // whole band
       sv_k = vgd_rg_sk[i];
       if (xb && sv_k == 3) {   // the other set's own kept list
-        VgdGbSwap();
-        sv_dl2 = VetGdRawRec(vgd_rg_se[i]);
-        VgdGbSwap();
+        ScGbSwap();
+        sv_dl2 = ScRawRec(vgd_rg_se[i]);
+        ScGbSwap();
         sv_nr2 = sv_dl2.extent_int(0);
       }
       if (sv_k == 3) {   // vgd_raw: the positions the raw exchange wrote
-        sv_dl = VetGdRawRec(vgd_rg_se[i]);
+        sv_dl = ScRawRec(vgd_rg_se[i]);
         sv_nr = sv_dl.extent_int(0);
         sv_n = sv_nr;
         sv_k = 1;
       } else if (sv_k == 1) {
-        const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
+        const ScHlEntry &X = vgd_hxe[vgd_rg_se[i]];
         sv_dl = X.dl;
         sv_dw = X.dw;
         sv_nr = X.nr;
@@ -306,7 +306,7 @@ void RadiationVet::VetGdRingFlush() {
       }
       sv_n2 = (xb && vgd_rg_sk[i] == 3) ? sv_nr2 : sv_n;
       if (xb && sv_k == 1 && vgd_rg_sk[i] != 3) {
-        const VgdHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
+        const ScHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
         sv_dl2 = X2.dl;
         sv_dw2 = X2.dw;
         sv_nr2 = X2.nr;
@@ -337,40 +337,40 @@ void RadiationVet::VetGdRingFlush() {
       rs_so = vgd_rg_so[i];
       rs_n = vgd_rg_sn[i];
       if (xb && rs_k == 3) {   // the other set's raw record
-        VgdGbSwap();
-        rs_dl2 = VetGdRawRec(vgd_rg_se[i]);
-        VgdGbSwap();
+        ScGbSwap();
+        rs_dl2 = ScRawRec(vgd_rg_se[i]);
+        ScGbSwap();
         rs_nr2 = rs_dl2.extent_int(0);
       }
       if (rs_k == 3) {
-        rs_dl = VetGdRawRec(vgd_rg_se[i]);
+        rs_dl = ScRawRec(vgd_rg_se[i]);
         rs_nr = rs_dl.extent_int(0);
         rs_k = 1;
-        if (rs_nr != rs_n) {VgdFatal("vet_gd_band_ring: the raw record changed");}
+        if (rs_nr != rs_n) {ScFatal("vet_gd_band_ring: the raw record changed");}
       } else if (rs_k == 1) {
-        const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
+        const ScHlEntry &X = vgd_hxe[vgd_rg_se[i]];
         rs_dl = X.dl;
         rs_dw = X.dw;
         rs_nr = X.nr;
         if (static_cast<int64_t>(X.nr) + X.nw != rs_n) {
-          VgdFatal("vet_gd_band_ring: the exact list changed between save and restore");
+          ScFatal("vet_gd_band_ring: the exact list changed between save and restore");
         }
       } else if (rs_k != 2) {
-        VgdFatal("vet_gd_band_ring: restore without a save");
+        ScFatal("vet_gd_band_ring: restore without a save");
       }
       if (xb) {
         rs_n2 = vgd_rg_sn2[i];
         if (vgd_rg_sk[i] == 3 && rs_nr2 != rs_n2) {
-          VgdFatal("vet_gd_band_ring: the other set's raw record changed");
+          ScFatal("vet_gd_band_ring: the other set's raw record changed");
         }
         if (rs_k == 1 && vgd_rg_sk[i] != 3) {
-          const VgdHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
+          const ScHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
           rs_dl2 = X2.dl;
           rs_dw2 = X2.dw;
           rs_nr2 = X2.nr;
           if (static_cast<int64_t>(X2.nr) + X2.nw != rs_n2) {
-            VgdFatal("vet_gd_band_ring: the other set's exact list changed between save "
-                     "and restore");
+            ScFatal("vet_gd_band_ring: the other set's exact list changed between save "
+                    "and restore");
           }
         }
       }
@@ -388,11 +388,11 @@ void RadiationVet::VetGdRingFlush() {
     const int64_t nrs = (aq.kind && aq.restore) ? (xb ? (rs_n + rs_n2) : rs_n) : 0;
     const int64_t ntot = nsv + nrl + ncp + nrs + 1;
     if (nin >= static_cast<int64_t>(INT32_MAX)) {
-      VgdFatal("vet_gd_band_ring: shell interior >= 2^31 values (32-bit copy index)");
+      ScFatal("vet_gd_band_ring: shell interior >= 2^31 values (32-bit copy index)");
     }
     // the copy kernel: a small POD functor of raw pointers (a functor of Views exceeds
     // the 512 B by-value launch limit and would go through constant memory)
-    VgdRingK k;
+    ScRingK k;
     k.da = a_.d.data();
     k.db = b_.d.data();
     k.st = st_.data();
@@ -413,7 +413,7 @@ void RadiationVet::VetGdRingFlush() {
     k.sbs0 = static_cast<int>(sb_.stride(0));
     k.sbs1 = static_cast<int>(sb_.stride(1));
     if (b_.off.stride(0) != a_.off.stride(0) || b_.off.stride(1) != a_.off.stride(1)) {
-      VgdFatal("vet_gd_band_ring: main / twin offset tables differ in layout");
+      ScFatal("vet_gd_band_ring: main / twin offset tables differ in layout");
     }
     k.svdl = sv_dl.data();
     k.svdw = sv_dw.data();
