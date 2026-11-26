@@ -1120,3 +1120,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 02:30 02-11: IDLE -> hold_zb2 r3_S4_RUb
 - 11-26 02:31 02-17: b_rg b_rgsuite -> IDLE
 - 11-26 02:32 02-11: hold_zb2 r3_S4_RUb -> hold_zb2 r3_S4_LB2b
+- 11-26 02:35 02-03: hll_W1E -> lz_X4-bsg lz_X4N-bsg
+- 11-26 02:35 02-11: hold_zb2 r3_S4_LB2b -> hold_zb2 r3_S4_RUc
+- 11-26 02:36 02-03: lz_X4-bsg lz_X4N-bsg -> lz_X4-bsg
+- 11-26 02:37 02-11: hold_zb2 r3_S4_RUc -> hold_zb2 r3_ncu_LB2_vet_vgd_shell_int
