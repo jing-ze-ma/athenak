@@ -871,3 +871,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 23:26 02-11: lz_RST-DFL-m35zams-b2 -> lz_RST-LZD-m35zams-b1
 - 11-25 23:27 01-17: rf_ns7 -> IDLE
 - 11-25 23:27 02-11: lz_RST-LZD-m35zams-b1 -> lz_RST-PLED-bsg-a
+- 11-25 23:28 02-11: lz_RST-PLED-bsg-a -> b_ru b_rusuite lz_RST-PLED-bsg-b1
+- 11-25 23:29 02-09: rk_t9l62 -> rk_t9mlt
+- 11-25 23:29 02-11: b_ru b_rusuite lz_RST-PLED-bsg-b1 -> b_ru b_rusuite lz_RST-PLED-bsg-b2
+- 11-25 23:31 02-09: rk_t9mlt -> b_nxsuite b_nxt rk_t9mlt
+- 11-25 23:31 02-11: b_ru b_rusuite lz_RST-PLED-bsg-b2 -> b_ru b_rusuite lz_RST-MIX-m35mms-a
+- 11-25 23:31 02-17: lz_LZB-t9 -> lz_LZD-bsg
+- 11-25 23:32 02-11: b_ru b_rusuite lz_RST-MIX-m35mms-a -> b_ru b_rusuite lz_RST-MIX-t9l62-b1
