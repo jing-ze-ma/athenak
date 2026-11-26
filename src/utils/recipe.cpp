@@ -68,6 +68,16 @@ void Rule(ParameterInput *pin, const std::string &block, const std::string &key,
           const std::string &value) {
   if (!pin->DoesParameterExist(block, key) ||
       ParameterInput::SameValue(pin->GetString(block, key), value)) return;
+  for (auto &b : pin->block) {   // only the restart file holds it (not named): NOTE
+    if (b.block_name != block || b.GetPtrToLine(key)->origin !=
+        ParameterInput::kOriginRestart) continue;
+    if (global_variable::my_rank == 0) {
+      std::cout << "### NOTE: <" << block << "/" << key << "> = " << pin->GetString(block,
+                key) << " is stored in the restart file (not named): the key was removed, "
+                << "the code runs " << value << std::endl;
+    }
+    return;
+  }
   std::cout << "### FATAL ERROR <" << block << "/" << key << "> = "
             << pin->GetString(block, key) << ": the key was removed, the code runs "
             << value << " here (name " << key << "=" << value << " to continue so)"

@@ -1569,7 +1569,10 @@ def t_restart_keys(c):
     """a restart with a -i deck that does not name a key the file stores with a value
     other than the code default (rad_vet/solver_tol = 5e-11, default 1e-10): one CLEAN
     WARNING line with key, stored value and default (line); the deck naming it: no line
-    (named); the run is that of the restart without a deck (same: dumps and hst)."""
+    (named); the run is that of the restart without a deck (same: dumps and hst).  A
+    removed key's old value stored in the file only (clean_retry_budget = 0): one NOTE
+    (rm_note), the run of the file without it and of the key named true (rm_same); a deck
+    naming false stops the run (rm_fatal)."""
     o = {'time/nlim': 4, 'rad_vet/solver_tol': 5e-11, 'output9/file_type': 'rst',
          'output9/dcycle': 4}
     rst = os.path.abspath(sorted(vett.glob_rst(c.run('shell_sp.athinput', 'w', o)))[-1])
@@ -1583,8 +1586,32 @@ def t_restart_keys(c):
             'CLEAN WARNING restart: rad_vet/solver_tol = 5e-11 from the restart file '
             '(code default 1e-10')
     out['line'] = out.pop('plain')
-    out['same'] = vett.compare_dirs(c.run('shell_sp.athinput', 'nodeck', go, restart=rst),
-                                    os.path.join(c.dir, 'plain'), last_only=True)[1]
+    nd = c.run('shell_sp.athinput', 'nodeck', go, restart=rst)
+    out['same'] = vett.compare_dirs(nd, os.path.join(c.dir, 'plain'), last_only=True)[1]
+    # a removed key's old value only the file holds (as production files of older codes
+    # store clean_retry_budget = 0): NOTE, the run as named with the fixed value; a deck
+    # naming the old value: FATAL
+    old = rst[:-4] + '_rmkey.rst'
+    b = open(rst, 'rb').read()
+    i = b.index(b'<rad_vet>')
+    i = b.index(b'\n', i) + 1
+    open(old, 'wb').write(b[:i] + b'clean_retry_budget = 0  # Default value added at run '
+                          b'time\n' + b[i:])
+    a = c.run('shell_sp.athinput', 'rm_stored', go, restart=old)
+    out['rm_note'] = open(os.path.join(a, 'run.log')).read().count(
+        '<rad_vet/clean_retry_budget> = 0 is stored in the restart file')
+    out['rm_same'] = max(vett.compare_dirs(a, c.run(
+        'shell_sp.athinput', 'rm_named', dict(go, **{'rad_vet/clean_retry_budget': 'true'}),
+        restart=old), last_only=True)[1], vett.compare_dirs(a, nd, last_only=True)[1])
+    p = os.path.join(c.dir, 'rm_false.athinput')
+    vett.make_deck(os.path.join(DECKS, 'shell_sp.athinput'), p,
+                   {'rad_vet/clean_retry_budget': 'false'})
+    try:
+        c.run('shell_sp.athinput', 'rm_fatal', go, restart=old, args=['-i', p])
+        out['rm_fatal'] = 0
+    except RuntimeError:
+        out['rm_fatal'] = int('the key was removed' in open(os.path.join(
+            c.dir, 'rm_fatal', 'run.log')).read())
     return out
 
 

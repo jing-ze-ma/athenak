@@ -236,14 +236,15 @@ round-off change at the restart.
 ## Removed keys
 
 These keys were removed: the code runs the value given here (the production value, one code path).
-**Naming a removed key with that value is accepted; another value stops the run (FATAL), with
-the name of the value the code runs.** This holds for decks, the command line and values
-stored in restart files (also defaults an older code recorded). It is also the only protection
+**Naming a removed key with that value is accepted; naming another value (deck or command line)
+stops the run (FATAL), with the name of the value the code runs.** A value only the restart file
+holds (no deck or command line names the key; also a default an older code recorded) prints a
+NOTE with the stored value and the value the code runs, and the run continues with the latter.
+This is also the only protection
 of decks this list was not checked against: the proof that nothing used another value covers the
 test suite, the star templates, the RSG / HG / HG262 / R136 continuations and the IA123 decks,
 not every deck of a user. A restart file of an older code that does not hold such a key
-prints one NOTE with the keys and values the code runs (where an older restart default was
-another value: FATAL with the key to name).
+prints one NOTE with the keys and values the code runs.
 
 | removed key = value | | |
 |---|---|---|

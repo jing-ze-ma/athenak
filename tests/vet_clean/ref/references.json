@@ -584,8 +584,9 @@
             "views_cs": 1}
  },
  "restart_keys": {
-  "_about": "a restart whose -i deck omits a key the file stores with a non-default value prints one CLEAN WARNING line (key, stored value, default); none when the deck names it; results as the restart without a deck",
-  "equal": {"line": 1, "named": 0, "same": 0.0}
+  "_about": "a restart whose -i deck omits a key the file stores with a non-default value prints one CLEAN WARNING line (key, stored value, default); none when the deck names it; results as the restart without a deck; a removed key's old value stored in the file only: one NOTE, the run as the key named with its fixed value; named by a deck: FATAL",
+  "equal": {"line": 1, "named": 0, "same": 0.0, "rm_note": 1, "rm_same": 0.0,
+            "rm_fatal": 1}
  },
  "merge_lat": {
   "_about": "merged lateral cells, merge_lat_mom = radial: drifts of the closed noisy shells, change of each group's M, E, sum V m_r, L per average, radial flow without lateral velocity, restart / dt_retry / layout bitwise; rigid_dLz: the old operator on the same decks must drift (dropped group rotations)",

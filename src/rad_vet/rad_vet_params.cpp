@@ -301,18 +301,24 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
         // (a removed key's value counts also where an older code recorded its default)
         if (ln.param_comment == ParameterInput::default_comment &&
             !(c[0] == '=' && global_variable::restart_run)) break;
+        // a value only the restart file holds (no deck or command line names it): NOTE,
+        // the code runs its fixed value; a named one: FATAL
+        auto stop = [&](const std::string &msg, const std::string &runs) {
+          if (ln.origin != ParameterInput::kOriginRestart) RadVetFatal(msg);
+          if (say) std::cout << "### NOTE: <" << k << "> = " << v << " is stored in the "
+                             << "restart file (not named): the key was removed, the code "
+                             << "runs " << runs << std::endl;
+        };
         if (c == "x") {
-          RadVetFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
-                      "rays, a debug hook removed or a retired study key); remove it "
-                      "from the input");
-        }
-        if (c[0] == '=' && !ParameterInput::SameValue(v, c.substr(1))) {
-          RadVetFatal("<" + k + "> = " + v + ": the key was removed, the code runs " +
-                      c.substr(1) + " (name " + ln.param_name + "=" + c.substr(1) +
-                      " to continue so)");
-        }
-        if (c == "!" && v != "false" && v != "0" && v != "off") {
-          RadVetFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
+          stop("<" + k + "> belonged to a removed path (the cell layout, the FV rays, a "
+               "debug hook removed or a retired study key); remove it from the input",
+               "without it");
+        } else if (c[0] == '=' && !ParameterInput::SameValue(v, c.substr(1))) {
+          stop("<" + k + "> = " + v + ": the key was removed, the code runs " +
+               c.substr(1) + " (name " + ln.param_name + "=" + c.substr(1) +
+               " to continue so)", c.substr(1));
+        } else if (c == "!" && v != "false" && v != "0" && v != "off") {
+          stop("<" + k + "> = " + v + " has no counterpart in scheme = clean", "it off");
         }
         if (c.empty() || c == "!") none += " " + k;   // (accepted value)
         if (c != "!" && c[0] != '=' && k.compare(0, 17, "rad_vet/implicit_") == 0) {
