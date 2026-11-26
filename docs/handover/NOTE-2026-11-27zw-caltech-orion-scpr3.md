@@ -264,3 +264,19 @@ prsph.sc_rad_J.00001.bin cart sigma=50 grid=(64, 64, 64) exterior profile: r/R  
       0.000047          4 Kokkos::View::initialization [rank_sendbuf_vars] via memset
       0.000042          4 Kokkos::View::initialization [rank_recvbuf_vars] via memset
 ```
+
+## scpr3 note on the PR timing arms
+- Every PR run ends after one cycle with `Terminating on time limit`, even with tlim = 1e30 named (`tlim=1.000000e+30 nlim=10` is in the log). So the 10-cycle s/cycle does not exist; the sc_sphere problem stops itself after its single step.
+- It also prints `### WARNING: SC iteration did not converge in 1 sweeps (max residual = 1.0, iter_tol = 1e-12)`, as expected with iter_max = 1.
+- Use the kernel timer instead. Per run it reports fenced kernel seconds for the whole run (1 sweep + set-up):
+  - G1_P1a: sc_sweep_plane 0.0183 s (128 launches); sc_residual_j 0.0001 s (1 launches); sc_carry_j 0.0000 s (1 launches);  kp total 0.594873 s
+  - G1_P1b: sc_sweep_plane 0.0183 s (128 launches); sc_residual_j 0.0001 s (1 launches); sc_carry_j 0.0000 s (1 launches);  kp total 0.241192 s
+  - G1_P2a: sc_sweep_tiled 0.0110 s (22 launches); sc_residual_j 0.0001 s (1 launches); sc_carry_j 0.0000 s (1 launches);  kp total 0.283824 s
+  - G1_P2b: sc_sweep_tiled 0.0110 s (22 launches); sc_residual_j 0.0001 s (1 launches); sc_carry_j 0.0000 s (1 launches);  kp total 0.508206 s
+  - G4_P1: sc_sweep_plane_byaxis 0.0070 s (256 launches); sc_residual_j 0.0000 s (1 launches); sc_carry_j 0.0000 s (1 launches);  kp total 0.635824 s
+- So one PR sweep of 168 rays at 128^3 costs:
+  - 1 H200: 18.3 ms with the plane kernel (128 launches), 11.0 ms with tiled-16 (22 launches);
+  - 4 H200 (byaxis kernel, 256 launches): 7.0 ms on rank 0.
+- For comparison, our 27zg 1-GPU 128^3 Cartesian arm (160 rays): `vet_sc ... 0.154 s per call`, and sp sweeps 1.91 s over 7 calls (0.27 s per call).
+  - These are not like for like: one of our calls is the full formal solution plus its sums.
+  - The kp.0 of our 27zg G1 arms (posted in 27ze) split it per kernel.
