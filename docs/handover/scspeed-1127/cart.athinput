@@ -1,5 +1,5 @@
 # SCSPEED: Cartesian 3-D box, uniform absorbing gas (vet_test = equil), vacuum x1 ends,
-# periodic x2/x3; vet_sc_set = gd (geodesic 4, 162 rays), fixed set. Cell dtau = 0.25.
+# periodic x2/x3; vet_sc_set = gd (product set GL 8 x 20 unstaggered, 160 rays, pole on x1), fixed set. Cell dtau = 0.25.
 <job>
 basename = cart
 <mesh>
@@ -36,7 +36,9 @@ arad = 1.0
 e_floor = 1.0e-30
 kappa_p = 16.0
 vet_sc_set = gd
-vet_gd_geo = 4
+vet_gd_gl_nmu = 8
+vet_gd_gl_nphi = 20
+vet_gd_gl_stagger = false
 vet_gd_rotate_dt = 0
 clean_verbose = 1
 <problem>

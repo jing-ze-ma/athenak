@@ -1,6 +1,6 @@
-# SCSPEED: spherical-polar shell r 2..3, theta pi/2 +- 0.2 (reflecting walls), phi 0..0.4
+# SCSPEED: spherical-polar shell r 2..3, theta pi/2 +- 0.2 (reflecting walls), phi 0..2pi/20 (one azimuthal period of the set)
 # (periodic), near-cubic cells at r = 2.5; same gas/opacity as cart (cell dtau = 0.25);
-# vet_gd_geo = 4 (162 rays), fixed set.
+# product set GL 8 x 20 unstaggered (160 rays), fixed set.
 <job>
 basename = sp
 <mesh>
@@ -16,7 +16,7 @@ ix2_bc = reflect
 ox2_bc = reflect
 nx3 = 64
 x3min = 0.0
-x3max = 0.4
+x3max = 0.3141592653589793
 ix3_bc = periodic
 ox3_bc = periodic
 use_spherical_polar = true
@@ -37,7 +37,9 @@ c_light = 100.0
 arad = 1.0
 e_floor = 1.0e-30
 kappa_p = 16.0
-vet_gd_geo = 4
+vet_gd_gl_nmu = 8
+vet_gd_gl_nphi = 20
+vet_gd_gl_stagger = false
 vet_gd_rotate_dt = 0
 clean_verbose = 1
 <problem>
