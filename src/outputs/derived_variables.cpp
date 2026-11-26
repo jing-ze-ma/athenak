@@ -29,7 +29,7 @@
 #include "radiation/radiation.hpp"
 #include "radiation/radiation_tetrad.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/rad_vet_clean.hpp"
+#include "rad_vet/rad_vet_momentum.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "particles/particles.hpp"
 #include "outputs.hpp"

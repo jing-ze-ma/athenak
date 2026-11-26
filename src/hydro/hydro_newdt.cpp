@@ -32,7 +32,7 @@
 #include "diffusion/viscosity.hpp"
 #include "srcterms/srcterms.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/rad_vet_clean.hpp"
+#include "rad_vet/rad_vet_momentum.hpp"
 
 namespace hydro {
 // <hydro>/dt_report (read only when named, in the Hydro constructor; 0 = off).

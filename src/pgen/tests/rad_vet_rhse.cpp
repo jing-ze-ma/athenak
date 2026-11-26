@@ -53,7 +53,7 @@
 #include "mhd/mhd.hpp"
 #include "outputs/outputs.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/vet_fluid.hpp"
+#include "rad_vet/rad_vet_fluid.hpp"
 #include "pgen/pgen.hpp"
 
 void RadVetAmHistory(HistoryData *pdata, Mesh *pm);   // rad_vet_tests2.cpp

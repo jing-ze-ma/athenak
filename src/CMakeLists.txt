@@ -185,24 +185,54 @@ add_executable(
         pgen/tests/be_collapse.cpp
 
         rad_vet/rad_vet.cpp
-        rad_vet/rad_vet_fluid.cpp
+        rad_vet/rad_vet_bvals.cpp
+        rad_vet/rad_vet_closure.cpp
+        rad_vet/rad_vet_closure_faces.cpp
+        rad_vet/rad_vet_closure_rays.cpp
+        rad_vet/rad_vet_closure_ring.cpp
+        rad_vet/rad_vet_fct.cpp
+        rad_vet/rad_vet_flux.cpp
+        rad_vet/rad_vet_flux_bounds.cpp
+        rad_vet/rad_vet_flux_schur.cpp
+        rad_vet/rad_vet_flux_seam.cpp
+        rad_vet/rad_vet_gas.cpp
+        rad_vet/rad_vet_geometry.cpp
+        rad_vet/rad_vet_imex.cpp
         rad_vet/rad_vet_init.cpp
-        rad_vet/rad_vet_clean.cpp
-        rad_vet/rad_vet_clean_p1.cpp
-        rad_vet/rad_vet_clean_p2.cpp
-        rad_vet/rad_vet_clean_closure.cpp
-        rad_vet/rad_vet_clean_closure_p1.cpp
-        rad_vet/rad_vet_clean_closure_p2.cpp
-        rad_vet/rad_vet_clean_solver.cpp
-        rad_vet/rad_vet_sph.cpp
-        rad_vet/rad_vet_time2.cpp
-        rad_vet/rad_vet_vetray.cpp
-        rad_vet/rad_vet_vetgd.cpp
-        rad_vet/rad_vet_vetgd_sweep.cpp
-        rad_vet/rad_vet_vetgd_cs.cpp
-        rad_vet/rad_vet_rotavg.cpp
+        rad_vet/rad_vet_ledger.cpp
+        rad_vet/rad_vet_newdt.cpp
+        rad_vet/rad_vet_newton.cpp
+        rad_vet/rad_vet_oldvector.cpp
+        rad_vet/rad_vet_opacity.cpp
+        rad_vet/rad_vet_params.cpp
+        rad_vet/rad_vet_params_closure.cpp
+        rad_vet/rad_vet_params_implicit.cpp
+        rad_vet/rad_vet_params_matter.cpp
+        rad_vet/rad_vet_restart.cpp
+        rad_vet/rad_vet_rhs.cpp
+        rad_vet/rad_vet_solver.cpp
+        rad_vet/rad_vet_steady.cpp
         rad_vet/rad_vet_tasks.cpp
-        rad_vet/rad_vet_vet.cpp
+        rad_vet/rad_vet_update.cpp
+        rad_vet/rays/sc_bandring.cpp
+        rad_vet/rays/sc_build.cpp
+        rad_vet/rays/sc_cart_rotavg.cpp
+        rad_vet/rays/sc_cart_setup.cpp
+        rad_vet/rays/sc_cart_sweep.cpp
+        rad_vet/rays/sc_cart_sweep_mb.cpp
+        rad_vet/rays/sc_cs_halo.cpp
+        rad_vet/rays/sc_cs_setup.cpp
+        rad_vet/rays/sc_cs_sweep.cpp
+        rad_vet/rays/sc_directions.cpp
+        rad_vet/rays/sc_setup.cpp
+        rad_vet/rays/sc_source.cpp
+        rad_vet/rays/sc_sph_globalband.cpp
+        rad_vet/rays/sc_sph_halo.cpp
+        rad_vet/rays/sc_sph_halo_exact.cpp
+        rad_vet/rays/sc_sph_halo_fused.cpp
+        rad_vet/rays/sc_sph_sweep.cpp
+        rad_vet/rays/sc_sph_walls.cpp
+        rad_vet/rays/sc_tables.cpp
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp
         radiation/radiation_newdt.cpp
@@ -337,11 +367,12 @@ if (DEFINED Athena_VET_VGD_NMAX AND NOT "${Athena_VET_VGD_NMAX}" STREQUAL "")
   target_compile_definitions(athena PRIVATE VET_VGD_NMAX_BUILD=${Athena_VET_VGD_NMAX})
 endif()
 
-# HIP: the clean RHS / Newton translation unit without VGPR spills to AGPRs.  On gfx942
+# HIP: the RHS and Newton translation units without VGPR spills to AGPRs.  On gfx942
 # the AGPRs share the register file: cln_rhs's 32 AGPR spill slots left it 1 wave per SIMD
 # (2 with its spills in scratch).  The arithmetic is unchanged (bitwise)
 if (Kokkos_ENABLE_HIP)
-  set_source_files_properties(rad_vet/rad_vet_clean_p1.cpp
+  set_source_files_properties(rad_vet/rad_vet_rhs.cpp
+      rad_vet/rad_vet_newton.cpp
       PROPERTIES COMPILE_OPTIONS "-mllvm;-amdgpu-spill-vgpr-to-agpr=0")
 endif()
 

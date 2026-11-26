@@ -1,0 +1,228 @@
+#ifndef RAD_VET_RAYS_SC_RAY_HPP_
+#define RAD_VET_RAYS_SC_RAY_HPP_
+//========================================================================================
+// AthenaK astrophysical fluid dynamics code
+// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+// Licensed under the 3-clause BSD License (the "LICENSE")
+//========================================================================================
+//! \file sc_ray.hpp
+//! \brief upwind core of the vet_gd ray solve shared by the sp and cs sweeps (chord,
+//! top inflow, inner face, upwind intensity, closing segment), plus sp theta helpers.
+//! Stencil accessor A: N() cells, K(e), J(e) band position, W(e) weight, Interp(f).
+//! Fields: fI(kk,jj) upwind-shell intensity, fC(c,kk,jj,ii) ln chi (c=0) / ln S (c=1).
+
+#include <cmath>
+
+#include "athena.hpp"
+#include "rad_vet/rays/sc_segment.hpp"
+
+//----------------------------------------------------------------------------------------
+//! \fn VgdRayChord
+//! \brief upwind shell iu, chord ds and own-cell part dso (split: centre to shared face).
+//! typ: 1 upwind shell, 2 inner face, 3 own shell (turned ray)
+template <typename VX>
+KOKKOS_INLINE_FUNCTION
+void VgdRayChord(const bool inw, const int l, const int lcut, const int m, const int i,
+                 const Real zr, const Real p2, const VX &cx1v, const VX &cx1f,
+                 const bool spl, int &typ, int &iu, Real &ds, Real &dso) {
+  typ = 1;
+  iu = i + 1;
+  if (inw) {
+    const Real ru = cx1v(m,i+1);
+    ds = sqrt(ru*ru - p2) - zr;
+  } else {
+    const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
+    if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
+      iu = i - 1;
+      ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+    } else if (l == lcut && p2 <= rd*rd) {
+      typ = 2;
+      iu = i;
+      ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+    } else {
+      typ = 3;
+      iu = i;
+      ds = 2.0*zr;
+    }
+  }
+  dso = 0.5*ds;
+  if (spl && typ == 1) {
+    const Real rf = inw ? cx1f(m,i+1) : cx1f(m,i);
+    dso = inw ? (sqrt(fmax(rf*rf - p2, 0.0)) - zr)
+              : (zr - sqrt(fmax(rf*rf - p2, 0.0)));
+    dso = fmin(fmax(dso, 0.0), ds);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VgdTopInflow
+//! \brief inflow at the top face: extrapolated S (vacuum) or attenuated bath intensity;
+//! sbl = S of the shell below
+KOKKOS_INLINE_FUNCTION
+Real VgdTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
+                  const bool tbh, const Real itop) {
+  const Real stp = fmax(1.5*s0 - 0.5*sbl, 1.0e-300);
+  Real ex, w0, wu;
+  VetSegW(ch0*ds, ex, w0, wu);
+  if (tbh) {
+    return itop*ex + wu*stp + w0*s0;
+  } else {
+    return wu*stp + w0*s0;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VgdInnerFace
+//! \brief typ 2 value: emit (ie0 carried in) or diffusion S + mu (-dS/dtau_r) at the
+//! inner face rf (bfc: face S = 1.5 S_a - 0.5 S_b); ra, rb = first two shell radii
+template <typename A, typename FC>
+KOKKOS_INLINE_FUNCTION
+Real VgdInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
+                  const Real ie0, const bool bfc, const Real rf, const Real ra,
+                  const Real rb, const Real p2, const Real ch0, const Real ds,
+                  const Real s0) {
+  const int i1 = i + 1;
+  auto sbt = [&](const int kk, const int jj) {
+    return fmax(1.5*exp(fC(1,kk,jj,i)) - 0.5*exp(fC(1,kk,jj,i1)), 1.0e-300);
+  };
+  if (emi) {
+    Real ex, w0, wu;
+    VetSegW(ch0*ds, ex, w0, wu);
+    const Real qv = acc.Interp(sbt);
+    return ie0*ex + wu*qv + w0*s0;
+  }
+  const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
+  auto ib = [&](const int kk, const int jj) {
+    const Real sa = exp(fC(1,kk,jj,i)), sb = exp(fC(1,kk,jj,i1));
+    const Real g0 = -(sb - sa)/(rb - ra)/exp(fC(0,kk,jj,i));
+    return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
+  };
+  Real ex, w0, wu;
+  VetSegW(ch0*ds, ex, w0, wu);
+  const Real bv = fmax(acc.Interp(ib), 0.0);
+  const Real qv = acc.Interp(sbt);
+  return bv*ex + wu*qv + w0*s0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VgdUpwindI
+//! \brief upwind intensity over the stencil cells of the right pass (ok), weights
+//! renormalised; -1 if none (the segment then starts from the upwind S)
+template <typename A, typename FI>
+KOKKOS_INLINE_FUNCTION
+Real VgdUpwindI(const A &acc, const FI &fI, const bool *ok, const bool all) {
+  if (all) {return acc.Interp(fI);}
+  Real ws = 0.0, vs = 0.0;
+  for (int e = 0; e < acc.N(); ++e) {
+    const Real we = acc.W(e);
+    if (ok[e] && we > 0.0) {ws += we; vs += we*fI(acc.K(e), acc.J(e));}
+  }
+  return (ws > 0.0) ? vs/ws : -1.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VgdSegFinish
+//! \brief closing segment from the upwind point (ivu, chu, su; ivu < 0: none) to the
+//! cell (ch0, s0) over chord ds (own part dso):
+//!  - jump (spe >= 2), turned ray below inner face rfi: piecewise constant per cell
+//!  - corner (vim 2, or 3 where edgef()): one segment per stencil cell, interpolated
+//!  - else split or plain linear-in-tau segment
+//! iuu / idd: shells one further upwind / downstream for the jump plateau tests.
+template <typename A, typename FI, typename FC, typename FE>
+KOKKOS_INLINE_FUNCTION
+Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
+                  const bool *ok, const int iu, const int k, const int j,
+                  const int i, const Real ivu, const Real chu, const Real su,
+                  const Real ch0, const Real s0, const Real ds, const Real dso,
+                  const bool spl, const int spe, const int typ, const int l,
+                  const int lcut, const Real p2, const Real rfi, const Real zr,
+                  const int vim, const int iuu, const int idd) {
+  // jump: S one shell further upwind (iuu) / downstream (idd); -1 where none
+  const bool hu2 = (spl && spe == 2 && typ == 1 && iuu != iu);
+  const Real sdd = (spl && spe == 2 && typ == 1 && idd != i) ? exp(fC(1, k, j, idd))
+                                                              : -1.0;
+  if (spl && spe >= 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
+    auto lind = [&](const int c) {
+      const Real a = acc.Interp([&](const int kk, const int jj) {
+        return fC(c, kk, jj, i - 1);
+      });
+      return exp(0.5*(a + fC(c, k, j, i - 1)));
+    };
+    const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
+    const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
+    const Real e3 = exp(-ch0*(zr - zf));
+    const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
+    return fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
+  } else if (vim == 2 || (vim == 3 && edgef())) {
+    Real ws = 0.0, vs = 0.0;
+    for (int e = 0; e < acc.N(); ++e) {
+      const Real we = acc.W(e);
+      if (!(we > 0.0) || !(ok[e] || ivu < 0.0)) {continue;}
+      const int kk = acc.K(e), jj = acc.J(e);
+      const Real cq = exp(fC(0,kk,jj,iu)), sq = exp(fC(1,kk,jj,iu));
+      const Real iq = (ivu < 0.0) ? sq : fI(kk, jj);
+      Real vq;
+      if (spl) {
+        vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe, nullptr,
+                         hu2 ? exp(fC(1,kk,jj,iuu)) : -1.0, sdd);
+      } else {
+        Real ex, w0, wu;
+        VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
+        vq = iq*ex + wu*sq + w0*s0;
+      }
+      ws += we;
+      vs += we*vq;
+    }
+    return fmax(vs/ws, 0.0);
+  } else if (spl) {
+    const Real suu = hu2 ? exp(acc.Interp([&](const int kk, const int jj) {
+      return fC(1, kk, jj, iuu);
+    })) : -1.0;
+    return fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso), ch0*dso, spe,
+                            nullptr, suu, sdd), 0.0);
+  } else {
+    Real ex, w0, wu;
+    VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
+    return fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+// spherical-polar theta helpers
+
+// fractional band row of theta thu, walking from the guess jb
+template <typename T>
+KOKKOS_INLINE_FUNCTION
+Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c2w,
+             const int sh = 0) {
+  int j0 = (jb < 0) ? 0 : ((jb > c2w - 2) ? (c2w - 2) : jb);
+  while (j0 < c2w - 2 && tn(m,j0+1) <= thu) {++j0;}
+  while (j0 > 0 && tn(m,j0) > thu) {--j0;}
+  // sh: global row of band row 0; the global fractional row rounds layout-invariantly
+  return (j0 + sh) + (thu - tn(m,j0))/(tn(m,j0+1) - tn(m,j0));
+}
+
+// full sphere: an upwind point behind the pole (|dphi| > pi/2) maps to the extended
+// chart: theta -> -theta (north) or 2 pi - theta (south), phi -> phi + pi
+KOKKOS_INLINE_FUNCTION
+void VgdPoleChart(const bool pol, const Real th, Real &thu, Real &dph) {
+  if (!pol || !(fabs(dph) > 0.5*M_PI)) {return;}
+  thu = (th < 0.5*M_PI) ? -thu : (2.0*M_PI - thu);
+  dph += (dph > 0.0) ? -M_PI : M_PI;
+}
+
+// pole-slot band row jj -> row of the on-rank partner, reversed about the pole
+KOKKOS_INLINE_FUNCTION
+int VgdPoleRow(const int jj, const int w, const int nx2) {
+  return (jj < w) ? (2*w - 1 - jj) : (2*(w + nx2) - 1 - jj);
+}
+
+// vet_gd_theta_wall = mirror: interior row read by a ghost g rows beyond the wall (hi:
+// upper), reflected as often as needed
+KOKKOS_INLINE_FUNCTION
+int VgdMirRow(const int g, const bool hi, const int w, const int nx2) {
+  const int p = g % nx2;
+  return (hi == ((g/nx2) % 2 == 0)) ? (w + nx2 - 1 - p) : (w + p);
+}
+
+#endif  // RAD_VET_RAYS_SC_RAY_HPP_

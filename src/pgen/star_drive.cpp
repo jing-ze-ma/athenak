@@ -25,7 +25,7 @@
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/vet_fluid.hpp"
+#include "rad_vet/rad_vet_fluid.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/time_table.hpp"
