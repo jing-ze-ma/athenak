@@ -1,0 +1,600 @@
+CLEAN FCONE cycle 73280 t2s 2 faces 1545 momentum cut sum |dF| V/c^2 4.617110e+22
+CLEAN FWB cycle 73280 t2s 2 faces 49623884 radiation momentum sum |dp| 2.858778e+26 x1 faces sum dp 7.220127e+24
+CLEAN FCONE cycle 73280 t2s 3 faces 92665 momentum cut sum |dF| V/c^2 1.709204e+24
+CLEAN FWB cycle 73280 t2s 3 faces 49623885 radiation momentum sum |dp| 2.874717e+26 x1 faces sum dp 7.251928e+24
+CLEAN LZB cycle 73280 t2s 3 ledger -1.4021971850148013e+41
+CLEAN PLEDGER cycle 73280 dt 5.352572e+00 hflx -2.157836e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145789e+33 cut -2.006539e+23 fwb 0.000000e+00 flr 3.474652e+17 mrg 0.000000e+00 gap 0.000000e+00 P -2.3153506707627816e+32 END 4.380491e+17 gross 5.573729e+34
+CLEAN FCONE cycle 73281 t2s 2 faces 97721 momentum cut sum |dF| V/c^2 1.675871e+24
+CLEAN FWB cycle 73281 t2s 2 faces 49623665 radiation momentum sum |dp| 5.454770e+26 x1 faces sum dp 1.830100e+25
+CLEAN FCONE cycle 73281 t2s 3 faces 124496 momentum cut sum |dF| V/c^2 2.377306e+24
+CLEAN FWB cycle 73281 t2s 3 faces 49623668 radiation momentum sum |dp| 5.470270e+26 x1 faces sum dp 1.837720e+25
+CLEAN LZB cycle 73281 t2s 3 ledger -1.4022245315151229e+41
+CLEAN PLEDGER cycle 73281 dt 1.070514e+01 hflx -2.157836e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145789e+33 cut -3.130938e+23 fwb 0.000000e+00 flr 4.579196e+17 mrg 0.000000e+00 gap 0.000000e+00 P -2.2735869179805176e+32 END -2.046605e+18 gross 5.573984e+34
+CLEAN FCONE cycle 73282 t2s 2 faces 130886 momentum cut sum |dF| V/c^2 2.515507e+24
+CLEAN FWB cycle 73282 t2s 2 faces 49623411 radiation momentum sum |dp| 6.051878e+26 x1 faces sum dp 2.113894e+25
+CLEAN FCONE cycle 73282 t2s 3 faces 165236 momentum cut sum |dF| V/c^2 2.987610e+24
+CLEAN FWB cycle 73282 t2s 3 faces 49623410 radiation momentum sum |dp| 6.054053e+26 x1 faces sum dp 2.126502e+25
+CLEAN LZB cycle 73282 t2s 3 ledger -1.4022585627995628e+41
+CLEAN PLEDGER cycle 73282 dt 1.196666e+01 hflx -2.157836e+33 ntel -1.926889e+17 src -3.303235e+33 rad 1.145789e+33 cut -3.479318e+23 fwb 0.000000e+00 flr 8.206054e+17 mrg 0.000000e+00 gap 0.000000e+00 P -2.2269391338898373e+32 END 5.333548e+18 gross 5.574269e+34
+CLEAN FCONE cycle 73283 t2s 2 faces 175549 momentum cut sum |dF| V/c^2 3.161191e+24
+CLEAN FWB cycle 73283 t2s 2 faces 49623115 radiation momentum sum |dp| 6.068840e+26 x1 faces sum dp 2.120663e+25
+CLEAN FCONE cycle 73283 t2s 3 faces 211134 momentum cut sum |dF| V/c^2 3.497359e+24
+CLEAN FWB cycle 73283 t2s 3 faces 49623115 radiation momentum sum |dp| 6.078814e+26 x1 faces sum dp 2.125939e+25
+CLEAN LZB cycle 73283 t2s 3 ledger -1.4022941370398683e+41
+CLEAN PLEDGER cycle 73283 dt 1.196664e+01 hflx -2.157836e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145788e+33 cut -4.154407e+23 fwb 0.000000e+00 flr 1.197673e+18 mrg 0.000000e+00 gap 0.000000e+00 P -2.1803317996730204e+32 END 2.419200e+18 gross 5.574555e+34
+CLEAN FCONE cycle 73284 t2s 2 faces 219647 momentum cut sum |dF| V/c^2 3.576145e+24
+CLEAN FWB cycle 73284 t2s 2 faces 49622863 radiation momentum sum |dp| 6.097216e+26 x1 faces sum dp 2.124182e+25
+CLEAN FCONE cycle 73284 t2s 3 faces 252294 momentum cut sum |dF| V/c^2 3.964065e+24
+CLEAN FWB cycle 73284 t2s 3 faces 49622865 radiation momentum sum |dp| 6.115471e+26 x1 faces sum dp 2.133028e+25
+CLEAN LZB cycle 73284 t2s 3 ledger -1.4023315881551810e+41
+CLEAN PLEDGER cycle 73284 dt 1.196662e+01 hflx -2.157836e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145788e+33 cut -4.649723e+23 fwb 0.000000e+00 flr 1.669444e+18 mrg 0.000000e+00 gap 0.000000e+00 P -2.1337667258431425e+32 END -3.335494e+18 gross 5.574841e+34
+CLEAN FCONE cycle 73285 t2s 2 faces 262402 momentum cut sum |dF| V/c^2 4.083210e+24
+CLEAN FWB cycle 73285 t2s 2 faces 49622604 radiation momentum sum |dp| 6.124505e+26 x1 faces sum dp 2.132489e+25
+CLEAN FCONE cycle 73285 t2s 3 faces 295235 momentum cut sum |dF| V/c^2 4.341652e+24
+CLEAN FWB cycle 73285 t2s 3 faces 49622607 radiation momentum sum |dp| 6.121919e+26 x1 faces sum dp 2.141064e+25
+CLEAN LZB cycle 73285 t2s 3 ledger -1.4023700392285380e+41
+CLEAN PLEDGER cycle 73285 dt 1.196659e+01 hflx -2.157836e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145788e+33 cut -5.171356e+23 fwb 0.000000e+00 flr 2.021732e+18 mrg 0.000000e+00 gap 0.000000e+00 P -2.0872456653271045e+32 END -1.934853e+18 gross 5.575127e+34
+CLEAN FCONE cycle 73286 t2s 2 faces 303841 momentum cut sum |dF| V/c^2 4.464691e+24
+CLEAN FWB cycle 73286 t2s 2 faces 49622298 radiation momentum sum |dp| 6.146998e+26 x1 faces sum dp 2.133913e+25
+CLEAN FCONE cycle 73286 t2s 3 faces 332334 momentum cut sum |dF| V/c^2 4.713868e+24
+CLEAN FWB cycle 73286 t2s 3 faces 49622295 radiation momentum sum |dp| 6.149753e+26 x1 faces sum dp 2.142619e+25
+CLEAN LZB cycle 73286 t2s 3 ledger -1.4024115213415557e+41
+CLEAN PLEDGER cycle 73286 dt 1.196657e+01 hflx -2.157836e+33 ntel 1.926904e+17 src -3.303235e+33 rad 1.145788e+33 cut -5.618274e+23 fwb 0.000000e+00 flr 2.681808e+18 mrg 0.000000e+00 gap 0.000000e+00 P -2.0407702490558534e+32 END -4.319447e+18 gross 5.575413e+34
+CLEAN FCONE cycle 73287 t2s 2 faces 342556 momentum cut sum |dF| V/c^2 4.809497e+24
+CLEAN FWB cycle 73287 t2s 2 faces 49621985 radiation momentum sum |dp| 6.179681e+26 x1 faces sum dp 2.144355e+25
+CLEAN FCONE cycle 73287 t2s 3 faces 371107 momentum cut sum |dF| V/c^2 5.061041e+24
+CLEAN FWB cycle 73287 t2s 3 faces 49621983 radiation momentum sum |dp| 6.184790e+26 x1 faces sum dp 2.152483e+25
+CLEAN LZB cycle 73287 t2s 3 ledger -1.4024526585620303e+41
+CLEAN PLEDGER cycle 73287 dt 1.196655e+01 hflx -2.157835e+33 ntel 1.926907e+17 src -3.303235e+33 rad 1.145787e+33 cut -6.033693e+23 fwb 0.000000e+00 flr 3.261958e+18 mrg 0.000000e+00 gap 0.000000e+00 P -1.9943420861536109e+32 END 9.774763e+17 gross 5.575699e+34
+CLEAN FCONE cycle 73288 t2s 2 faces 378350 momentum cut sum |dF| V/c^2 5.171360e+24
+CLEAN FWB cycle 73288 t2s 2 faces 49621757 radiation momentum sum |dp| 6.196575e+26 x1 faces sum dp 2.149259e+25
+CLEAN FCONE cycle 73288 t2s 3 faces 404435 momentum cut sum |dF| V/c^2 5.358663e+24
+CLEAN FWB cycle 73288 t2s 3 faces 49621757 radiation momentum sum |dp| 6.201694e+26 x1 faces sum dp 2.158981e+25
+CLEAN LZB cycle 73288 t2s 3 ledger -1.4024969585806859e+41
+CLEAN PLEDGER cycle 73288 dt 1.196653e+01 hflx -2.157835e+33 ntel 1.926911e+17 src -3.303235e+33 rad 1.145787e+33 cut -6.427016e+23 fwb 0.000000e+00 flr 4.318955e+18 mrg 0.000000e+00 gap 0.000000e+00 P -1.9479628622287814e+32 END 3.595117e+18 gross 5.575985e+34
+CLEAN FCONE cycle 73289 t2s 2 faces 411344 momentum cut sum |dF| V/c^2 5.400116e+24
+CLEAN FWB cycle 73289 t2s 2 faces 49621505 radiation momentum sum |dp| 6.220612e+26 x1 faces sum dp 2.156934e+25
+CLEAN FCONE cycle 73289 t2s 3 faces 435080 momentum cut sum |dF| V/c^2 5.634706e+24
+CLEAN FWB cycle 73289 t2s 3 faces 49621506 radiation momentum sum |dp| 6.220609e+26 x1 faces sum dp 2.164029e+25
+CLEAN LZB cycle 73289 t2s 3 ledger -1.4025413103943979e+41
+CLEAN PLEDGER cycle 73289 dt 1.196651e+01 hflx -2.157835e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145787e+33 cut -6.734233e+23 fwb 0.000000e+00 flr 5.785286e+18 mrg 0.000000e+00 gap 0.000000e+00 P -1.9016341734379244e+32 END 1.773511e+18 gross 5.576269e+34
+CLEAN FCONE cycle 73290 t2s 2 faces 442447 momentum cut sum |dF| V/c^2 5.760267e+24
+CLEAN FWB cycle 73290 t2s 2 faces 49621144 radiation momentum sum |dp| 6.237275e+26 x1 faces sum dp 2.166272e+25
+CLEAN FCONE cycle 73290 t2s 3 faces 462749 momentum cut sum |dF| V/c^2 5.845182e+24
+CLEAN FWB cycle 73290 t2s 3 faces 49621137 radiation momentum sum |dp| 6.240479e+26 x1 faces sum dp 2.177706e+25
+CLEAN LZB cycle 73290 t2s 3 ledger -1.4025868857359628e+41
+CLEAN PLEDGER cycle 73290 dt 1.196649e+01 hflx -2.157835e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145787e+33 cut -7.077157e+23 fwb 0.000000e+00 flr 6.721798e+18 mrg 0.000000e+00 gap 0.000000e+00 P -1.8553574905885068e+32 END -6.441206e+18 gross 5.576553e+34
+CLEAN FCONE cycle 73291 t2s 2 faces 468590 momentum cut sum |dF| V/c^2 5.905081e+24
+CLEAN FWB cycle 73291 t2s 2 faces 49620793 radiation momentum sum |dp| 6.265096e+26 x1 faces sum dp 2.173989e+25
+CLEAN FCONE cycle 73291 t2s 3 faces 487571 momentum cut sum |dF| V/c^2 6.143742e+24
+CLEAN FWB cycle 73291 t2s 3 faces 49620789 radiation momentum sum |dp| 6.270302e+26 x1 faces sum dp 2.179994e+25
+CLEAN LZB cycle 73291 t2s 3 ledger -1.4026337379837949e+41
+CLEAN PLEDGER cycle 73291 dt 1.196647e+01 hflx -2.157835e+33 ntel -1.926921e+17 src -3.303235e+33 rad 1.145786e+33 cut -7.325602e+23 fwb 0.000000e+00 flr 7.927823e+18 mrg 0.000000e+00 gap 0.000000e+00 P -1.8091342653146439e+32 END -7.667898e+18 gross 5.576837e+34
+CLEAN FCONE cycle 73292 t2s 2 faces 494004 momentum cut sum |dF| V/c^2 6.187512e+24
+CLEAN FWB cycle 73292 t2s 2 faces 49620482 radiation momentum sum |dp| 6.290653e+26 x1 faces sum dp 2.181263e+25
+CLEAN FCONE cycle 73292 t2s 3 faces 510470 momentum cut sum |dF| V/c^2 6.251363e+24
+CLEAN FWB cycle 73292 t2s 3 faces 49620480 radiation momentum sum |dp| 6.288203e+26 x1 faces sum dp 2.192551e+25
+CLEAN LZB cycle 73292 t2s 3 ledger -1.4026817597577287e+41
+CLEAN PLEDGER cycle 73292 dt 1.196645e+01 hflx -2.157835e+33 ntel 1.926924e+17 src -3.303235e+33 rad 1.145786e+33 cut -7.598826e+23 fwb 0.000000e+00 flr 9.229853e+18 mrg 0.000000e+00 gap 0.000000e+00 P -1.7629658913183609e+32 END 2.360189e+18 gross 5.577119e+34
+CLEAN FCONE cycle 73293 t2s 2 faces 516199 momentum cut sum |dF| V/c^2 6.354945e+24
+CLEAN FWB cycle 73293 t2s 2 faces 49620189 radiation momentum sum |dp| 6.310463e+26 x1 faces sum dp 2.188600e+25
+CLEAN FCONE cycle 73293 t2s 3 faces 532624 momentum cut sum |dF| V/c^2 6.519260e+24
+CLEAN FWB cycle 73293 t2s 3 faces 49620193 radiation momentum sum |dp| 6.321857e+26 x1 faces sum dp 2.197283e+25
+CLEAN LZB cycle 73293 t2s 3 ledger -1.4027307703373893e+41
+CLEAN PLEDGER cycle 73293 dt 1.196643e+01 hflx -2.157835e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145786e+33 cut -7.827518e+23 fwb 0.000000e+00 flr 1.001268e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.7168535862879228e+32 END -1.841461e+18 gross 5.577400e+34
+CLEAN FCONE cycle 73294 t2s 2 faces 537093 momentum cut sum |dF| V/c^2 6.535162e+24
+CLEAN FWB cycle 73294 t2s 2 faces 49619796 radiation momentum sum |dp| 6.339271e+26 x1 faces sum dp 2.195272e+25
+CLEAN FCONE cycle 73294 t2s 3 faces 551940 momentum cut sum |dF| V/c^2 6.657448e+24
+CLEAN FWB cycle 73294 t2s 3 faces 49619793 radiation momentum sum |dp| 6.333433e+26 x1 faces sum dp 2.203694e+25
+CLEAN LZB cycle 73294 t2s 3 ledger -1.4027808971996524e+41
+CLEAN PLEDGER cycle 73294 dt 1.196641e+01 hflx -2.157834e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145786e+33 cut -8.043772e+23 fwb 0.000000e+00 flr 1.121710e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.6707985833400621e+32 END 4.790823e+18 gross 5.577680e+34
+CLEAN FCONE cycle 73295 t2s 2 faces 557254 momentum cut sum |dF| V/c^2 6.759568e+24
+CLEAN FWB cycle 73295 t2s 2 faces 49619483 radiation momentum sum |dp| 6.353532e+26 x1 faces sum dp 2.202784e+25
+CLEAN FCONE cycle 73295 t2s 3 faces 571487 momentum cut sum |dF| V/c^2 6.816861e+24
+CLEAN FWB cycle 73295 t2s 3 faces 49619481 radiation momentum sum |dp| 6.363670e+26 x1 faces sum dp 2.212637e+25
+CLEAN LZB cycle 73295 t2s 3 ledger -1.4028328304373454e+41
+CLEAN PLEDGER cycle 73295 dt 1.196639e+01 hflx -2.157834e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145785e+33 cut -8.263750e+23 fwb 0.000000e+00 flr 1.245378e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.6248021443235837e+32 END -2.711026e+18 gross 5.577959e+34
+CLEAN FCONE cycle 73296 t2s 2 faces 576018 momentum cut sum |dF| V/c^2 6.849313e+24
+CLEAN FWB cycle 73296 t2s 2 faces 49619176 radiation momentum sum |dp| 6.378595e+26 x1 faces sum dp 2.208757e+25
+CLEAN FCONE cycle 73296 t2s 3 faces 590549 momentum cut sum |dF| V/c^2 7.049100e+24
+CLEAN FWB cycle 73296 t2s 3 faces 49619177 radiation momentum sum |dp| 6.397192e+26 x1 faces sum dp 2.215019e+25
+CLEAN LZB cycle 73296 t2s 3 ledger -1.4028847700847145e+41
+CLEAN PLEDGER cycle 73296 dt 1.196637e+01 hflx -2.157834e+33 ntel -1.926936e+17 src -3.303235e+33 rad 1.145785e+33 cut -8.456091e+23 fwb 0.000000e+00 flr 1.411795e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.5788656055020025e+32 END -4.115754e+18 gross 5.578238e+34
+CLEAN FCONE cycle 73297 t2s 2 faces 592910 momentum cut sum |dF| V/c^2 7.048761e+24
+CLEAN FWB cycle 73297 t2s 2 faces 49618734 radiation momentum sum |dp| 6.408056e+26 x1 faces sum dp 2.216497e+25
+CLEAN FCONE cycle 73297 t2s 3 faces 603113 momentum cut sum |dF| V/c^2 7.099129e+24
+CLEAN FWB cycle 73297 t2s 3 faces 49618730 radiation momentum sum |dp| 6.401903e+26 x1 faces sum dp 2.228476e+25
+CLEAN LZB cycle 73297 t2s 3 ledger -1.4029386303369943e+41
+CLEAN PLEDGER cycle 73297 dt 1.196635e+01 hflx -2.157834e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145785e+33 cut -8.629931e+23 fwb 0.000000e+00 flr 1.563564e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.5329902933641726e+32 END 6.474432e+18 gross 5.578516e+34
+CLEAN FCONE cycle 73298 t2s 2 faces 607563 momentum cut sum |dF| V/c^2 7.212176e+24
+CLEAN FWB cycle 73298 t2s 2 faces 49618373 radiation momentum sum |dp| 6.418615e+26 x1 faces sum dp 2.224014e+25
+CLEAN FCONE cycle 73298 t2s 3 faces 619651 momentum cut sum |dF| V/c^2 7.310443e+24
+CLEAN FWB cycle 73298 t2s 3 faces 49618369 radiation momentum sum |dp| 6.434393e+26 x1 faces sum dp 2.232305e+25
+CLEAN LZB cycle 73298 t2s 3 ledger -1.4029935052928437e+41
+CLEAN PLEDGER cycle 73298 dt 1.196633e+01 hflx -2.157834e+33 ntel -1.926942e+17 src -3.303235e+33 rad 1.145784e+33 cut -8.820848e+23 fwb 0.000000e+00 flr 1.724098e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.4871774084654484e+32 END 2.985242e+18 gross 5.578794e+34
+CLEAN FCONE cycle 73299 t2s 2 faces 621756 momentum cut sum |dF| V/c^2 7.267543e+24
+CLEAN FWB cycle 73299 t2s 2 faces 49617973 radiation momentum sum |dp| 6.449722e+26 x1 faces sum dp 2.229737e+25
+CLEAN FCONE cycle 73299 t2s 3 faces 632660 momentum cut sum |dF| V/c^2 7.440180e+24
+CLEAN FWB cycle 73299 t2s 3 faces 49617970 radiation momentum sum |dp| 6.454827e+26 x1 faces sum dp 2.240165e+25
+CLEAN LZB cycle 73299 t2s 3 ledger -1.4030490136950905e+41
+CLEAN PLEDGER cycle 73299 dt 1.196631e+01 hflx -2.157833e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145784e+33 cut -8.946182e+23 fwb 0.000000e+00 flr 1.912150e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.4414282021437860e+32 END 4.983154e+18 gross 5.579070e+34
+CLEAN FCONE cycle 73300 t2s 2 faces 636452 momentum cut sum |dF| V/c^2 7.518448e+24
+CLEAN FWB cycle 73300 t2s 2 faces 49617654 radiation momentum sum |dp| 6.462031e+26 x1 faces sum dp 2.238577e+25
+CLEAN FCONE cycle 73300 t2s 3 faces 647033 momentum cut sum |dF| V/c^2 7.549943e+24
+CLEAN FWB cycle 73300 t2s 3 faces 49617656 radiation momentum sum |dp| 6.467080e+26 x1 faces sum dp 2.249427e+25
+CLEAN LZB cycle 73300 t2s 3 ledger -1.4031073790576899e+41
+CLEAN PLEDGER cycle 73300 dt 1.196629e+01 hflx -2.157833e+33 ntel 1.926948e+17 src -3.303235e+33 rad 1.145784e+33 cut -9.141584e+23 fwb 0.000000e+00 flr 2.147211e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.3957438887185344e+32 END 2.574068e+18 gross 5.579346e+34
+CLEAN FCONE cycle 73301 t2s 2 faces 649644 momentum cut sum |dF| V/c^2 7.549021e+24
+CLEAN FWB cycle 73301 t2s 2 faces 49617248 radiation momentum sum |dp| 6.484679e+26 x1 faces sum dp 2.243621e+25
+CLEAN FCONE cycle 73301 t2s 3 faces 660629 momentum cut sum |dF| V/c^2 7.700592e+24
+CLEAN FWB cycle 73301 t2s 3 faces 49617249 radiation momentum sum |dp| 6.494685e+26 x1 faces sum dp 2.254184e+25
+CLEAN LZB cycle 73301 t2s 3 ledger -1.4031652481266080e+41
+CLEAN PLEDGER cycle 73301 dt 1.196628e+01 hflx -2.157833e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145784e+33 cut -9.251862e+23 fwb 0.000000e+00 flr 2.307253e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.3501256193530803e+32 END 4.491962e+18 gross 5.579621e+34
+CLEAN FCONE cycle 73302 t2s 2 faces 663637 momentum cut sum |dF| V/c^2 7.754836e+24
+CLEAN FWB cycle 73302 t2s 2 faces 49616875 radiation momentum sum |dp| 6.507746e+26 x1 faces sum dp 2.254609e+25
+CLEAN FCONE cycle 73302 t2s 3 faces 672483 momentum cut sum |dF| V/c^2 7.820036e+24
+CLEAN FWB cycle 73302 t2s 3 faces 49616876 radiation momentum sum |dp| 6.505046e+26 x1 faces sum dp 2.265171e+25
+CLEAN LZB cycle 73302 t2s 3 ledger -1.4032264922377632e+41
+CLEAN PLEDGER cycle 73302 dt 1.196626e+01 hflx -2.157833e+33 ntel -1.926954e+17 src -3.303235e+33 rad 1.145783e+33 cut -9.438518e+23 fwb 0.000000e+00 flr 2.511774e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.3045744905683413e+32 END -6.131102e+18 gross 5.579895e+34
+CLEAN FCONE cycle 73303 t2s 2 faces 674514 momentum cut sum |dF| V/c^2 7.845120e+24
+CLEAN FWB cycle 73303 t2s 2 faces 49616467 radiation momentum sum |dp| 6.520247e+26 x1 faces sum dp 2.259926e+25
+CLEAN FCONE cycle 73303 t2s 3 faces 683558 momentum cut sum |dF| V/c^2 7.939110e+24
+CLEAN FWB cycle 73303 t2s 3 faces 49616471 radiation momentum sum |dp| 6.526598e+26 x1 faces sum dp 2.271699e+25
+CLEAN LZB cycle 73303 t2s 3 ledger -1.4032873162704872e+41
+CLEAN PLEDGER cycle 73303 dt 1.196624e+01 hflx -2.157833e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145783e+33 cut -9.557573e+23 fwb 0.000000e+00 flr 2.690742e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.2590916435747641e+32 END 6.947476e+17 gross 5.580167e+34
+CLEAN FCONE cycle 73304 t2s 2 faces 685378 momentum cut sum |dF| V/c^2 7.925792e+24
+CLEAN FWB cycle 73304 t2s 2 faces 49616096 radiation momentum sum |dp| 6.538309e+26 x1 faces sum dp 2.269875e+25
+CLEAN FCONE cycle 73304 t2s 3 faces 694811 momentum cut sum |dF| V/c^2 8.070944e+24
+CLEAN FWB cycle 73304 t2s 3 faces 49616094 radiation momentum sum |dp| 6.544396e+26 x1 faces sum dp 2.281392e+25
+CLEAN LZB cycle 73304 t2s 3 ledger -1.4033493536211987e+41
+CLEAN PLEDGER cycle 73304 dt 1.196623e+01 hflx -2.157832e+33 ntel 1.926959e+17 src -3.303235e+33 rad 1.145783e+33 cut -9.693035e+23 fwb 0.000000e+00 flr 2.894454e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.2136783217367236e+32 END -1.821293e+18 gross 5.580439e+34
+CLEAN FCONE cycle 73305 t2s 2 faces 697033 momentum cut sum |dF| V/c^2 8.125265e+24
+CLEAN FWB cycle 73305 t2s 2 faces 49615741 radiation momentum sum |dp| 6.555307e+26 x1 faces sum dp 2.280632e+25
+CLEAN FCONE cycle 73305 t2s 3 faces 704457 momentum cut sum |dF| V/c^2 8.159011e+24
+CLEAN FWB cycle 73305 t2s 3 faces 49615743 radiation momentum sum |dp| 6.556250e+26 x1 faces sum dp 2.294273e+25
+CLEAN LZB cycle 73305 t2s 3 ledger -1.4034141869120693e+41
+CLEAN PLEDGER cycle 73305 dt 1.196621e+01 hflx -2.157832e+33 ntel -1.926962e+17 src -3.303235e+33 rad 1.145782e+33 cut -9.848089e+23 fwb 0.000000e+00 flr 3.111045e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.1683358695591625e+32 END 1.016539e+19 gross 5.580710e+34
+CLEAN FCONE cycle 73306 t2s 2 faces 706539 momentum cut sum |dF| V/c^2 8.163698e+24
+CLEAN FWB cycle 73306 t2s 2 faces 49615413 radiation momentum sum |dp| 6.571963e+26 x1 faces sum dp 2.287654e+25
+CLEAN FCONE cycle 73306 t2s 3 faces 714498 momentum cut sum |dF| V/c^2 8.278644e+24
+CLEAN FWB cycle 73306 t2s 3 faces 49615414 radiation momentum sum |dp| 6.578897e+26 x1 faces sum dp 2.297081e+25
+CLEAN LZB cycle 73306 t2s 3 ledger -1.4034785598192324e+41
+CLEAN PLEDGER cycle 73306 dt 1.196620e+01 hflx -2.157832e+33 ntel 1.926964e+17 src -3.303235e+33 rad 1.145782e+33 cut -9.951611e+23 fwb 0.000000e+00 flr 3.371677e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.1230656430190046e+32 END -2.036849e+18 gross 5.580980e+34
+CLEAN FCONE cycle 73307 t2s 2 faces 716465 momentum cut sum |dF| V/c^2 8.315588e+24
+CLEAN FWB cycle 73307 t2s 2 faces 49614982 radiation momentum sum |dp| 6.591294e+26 x1 faces sum dp 2.299250e+25
+CLEAN FCONE cycle 73307 t2s 3 faces 725001 momentum cut sum |dF| V/c^2 8.411015e+24
+CLEAN FWB cycle 73307 t2s 3 faces 49614979 radiation momentum sum |dp| 6.593975e+26 x1 faces sum dp 2.313952e+25
+CLEAN LZB cycle 73307 t2s 3 ledger -1.4035453730075336e+41
+CLEAN PLEDGER cycle 73307 dt 1.196618e+01 hflx -2.157832e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145782e+33 cut -1.010470e+24 fwb 0.000000e+00 flr 3.558082e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.0778690190550584e+32 END -4.567313e+18 gross 5.581251e+34
+CLEAN FCONE cycle 73308 t2s 2 faces 726466 momentum cut sum |dF| V/c^2 8.435486e+24
+CLEAN FWB cycle 73308 t2s 2 faces 49614680 radiation momentum sum |dp| 6.604193e+26 x1 faces sum dp 2.309377e+25
+CLEAN FCONE cycle 73308 t2s 3 faces 733279 momentum cut sum |dF| V/c^2 8.487484e+24
+CLEAN FWB cycle 73308 t2s 3 faces 49614680 radiation momentum sum |dp| 6.608386e+26 x1 faces sum dp 2.318277e+25
+CLEAN LZB cycle 73308 t2s 3 ledger -1.4036141132089041e+41
+CLEAN PLEDGER cycle 73308 dt 1.196617e+01 hflx -2.157831e+33 ntel -1.926969e+17 src -3.303236e+33 rad 1.145781e+33 cut -1.023023e+24 fwb 0.000000e+00 flr 3.808657e+19 mrg 0.000000e+00 gap 0.000000e+00 P -1.0327473376138116e+32 END 2.494660e+18 gross 5.581520e+34
+CLEAN FCONE cycle 73309 t2s 2 faces 734732 momentum cut sum |dF| V/c^2 8.476098e+24
+CLEAN FWB cycle 73309 t2s 2 faces 49614219 radiation momentum sum |dp| 6.615103e+26 x1 faces sum dp 2.318479e+25
+CLEAN FCONE cycle 73309 t2s 3 faces 742065 momentum cut sum |dF| V/c^2 8.618987e+24
+CLEAN FWB cycle 73309 t2s 3 faces 49614217 radiation momentum sum |dp| 6.621766e+26 x1 faces sum dp 2.335396e+25
+CLEAN LZB cycle 73309 t2s 3 ledger -1.4036827618690002e+41
+CLEAN PLEDGER cycle 73309 dt 1.196615e+01 hflx -2.157831e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145781e+33 cut -1.032735e+24 fwb 0.000000e+00 flr 4.097495e+19 mrg 0.000000e+00 gap 0.000000e+00 P -9.8770182628057707e+31 END -2.777484e+18 gross 5.581790e+34
+CLEAN FCONE cycle 73310 t2s 2 faces 743964 momentum cut sum |dF| V/c^2 8.651569e+24
+CLEAN FWB cycle 73310 t2s 2 faces 49613886 radiation momentum sum |dp| 6.627110e+26 x1 faces sum dp 2.332150e+25
+CLEAN FCONE cycle 73310 t2s 3 faces 750289 momentum cut sum |dF| V/c^2 8.745844e+24
+CLEAN FWB cycle 73310 t2s 3 faces 49613886 radiation momentum sum |dp| 6.631923e+26 x1 faces sum dp 2.341510e+25
+CLEAN LZB cycle 73310 t2s 3 ledger -1.4037548572392123e+41
+CLEAN PLEDGER cycle 73310 dt 1.196614e+01 hflx -2.157831e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145781e+33 cut -1.048616e+24 fwb 0.000000e+00 flr 4.347048e+19 mrg 0.000000e+00 gap 0.000000e+00 P -9.4273369456784682e+31 END 1.226067e+18 gross 5.582059e+34
+CLEAN FCONE cycle 73311 t2s 2 faces 751243 momentum cut sum |dF| V/c^2 8.737863e+24
+CLEAN FWB cycle 73311 t2s 2 faces 49613460 radiation momentum sum |dp| 6.639444e+26 x1 faces sum dp 2.341322e+25
+CLEAN FCONE cycle 73311 t2s 3 faces 755818 momentum cut sum |dF| V/c^2 8.792074e+24
+CLEAN FWB cycle 73311 t2s 3 faces 49613459 radiation momentum sum |dp| 6.637454e+26 x1 faces sum dp 2.358152e+25
+CLEAN LZB cycle 73311 t2s 3 ledger -1.4038275745988045e+41
+CLEAN PLEDGER cycle 73311 dt 1.196613e+01 hflx -2.157830e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145780e+33 cut -1.057851e+24 fwb 0.000000e+00 flr 4.622725e+19 mrg 0.000000e+00 gap 0.000000e+00 P -8.9784394114102158e+31 END -6.330823e+18 gross 5.582327e+34
+CLEAN FCONE cycle 73312 t2s 2 faces 757702 momentum cut sum |dF| V/c^2 8.812686e+24
+CLEAN FWB cycle 73312 t2s 2 faces 49613052 radiation momentum sum |dp| 6.648220e+26 x1 faces sum dp 2.355944e+25
+CLEAN FCONE cycle 73312 t2s 3 faces 764257 momentum cut sum |dF| V/c^2 8.938973e+24
+CLEAN FWB cycle 73312 t2s 3 faces 49613051 radiation momentum sum |dp| 6.655859e+26 x1 faces sum dp 2.367951e+25
+CLEAN LZB cycle 73312 t2s 3 ledger -1.4039023246984708e+41
+CLEAN PLEDGER cycle 73312 dt 1.196611e+01 hflx -2.157830e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145780e+33 cut -1.068522e+24 fwb 0.000000e+00 flr 4.880256e+19 mrg 0.000000e+00 gap 0.000000e+00 P -8.5303329044824192e+31 END 2.515631e+18 gross 5.582595e+34
+CLEAN FCONE cycle 73313 t2s 2 faces 764965 momentum cut sum |dF| V/c^2 8.900555e+24
+CLEAN FWB cycle 73313 t2s 2 faces 49612498 radiation momentum sum |dp| 6.663712e+26 x1 faces sum dp 2.365355e+25
+CLEAN FCONE cycle 73313 t2s 3 faces 771129 momentum cut sum |dF| V/c^2 8.996095e+24
+CLEAN FWB cycle 73313 t2s 3 faces 49612495 radiation momentum sum |dp| 6.673581e+26 x1 faces sum dp 2.379394e+25
+CLEAN LZB cycle 73313 t2s 3 ledger -1.4039780366229572e+41
+CLEAN PLEDGER cycle 73313 dt 1.196610e+01 hflx -2.157830e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145780e+33 cut -1.078719e+24 fwb 0.000000e+00 flr 5.118307e+19 mrg 0.000000e+00 gap 0.000000e+00 P -8.0830250900217099e+31 END -1.354671e+18 gross 5.582864e+34
+CLEAN FCONE cycle 73314 t2s 2 faces 772405 momentum cut sum |dF| V/c^2 9.014896e+24
+CLEAN FWB cycle 73314 t2s 2 faces 49612112 radiation momentum sum |dp| 6.681888e+26 x1 faces sum dp 2.379394e+25
+CLEAN FCONE cycle 73314 t2s 3 faces 777519 momentum cut sum |dF| V/c^2 9.101735e+24
+CLEAN FWB cycle 73314 t2s 3 faces 49612109 radiation momentum sum |dp| 6.682129e+26 x1 faces sum dp 2.394339e+25
+CLEAN LZB cycle 73314 t2s 3 ledger -1.4040562171868159e+41
+CLEAN PLEDGER cycle 73314 dt 1.196609e+01 hflx -2.157830e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145779e+33 cut -1.090175e+24 fwb 0.000000e+00 flr 5.435916e+19 mrg 0.000000e+00 gap 0.000000e+00 P -7.6365231151553353e+31 END -4.540288e+18 gross 5.583133e+34
+CLEAN FCONE cycle 73315 t2s 2 faces 778345 momentum cut sum |dF| V/c^2 9.119306e+24
+CLEAN FWB cycle 73315 t2s 2 faces 49611680 radiation momentum sum |dp| 6.685338e+26 x1 faces sum dp 2.393859e+25
+CLEAN FCONE cycle 73315 t2s 3 faces 783456 momentum cut sum |dF| V/c^2 9.231305e+24
+CLEAN FWB cycle 73315 t2s 3 faces 49611681 radiation momentum sum |dp| 6.687322e+26 x1 faces sum dp 2.408428e+25
+CLEAN LZB cycle 73315 t2s 3 ledger -1.4041353058923300e+41
+CLEAN PLEDGER cycle 73315 dt 1.196607e+01 hflx -2.157829e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145779e+33 cut -1.100133e+24 fwb 0.000000e+00 flr 5.734087e+19 mrg 0.000000e+00 gap 0.000000e+00 P -7.1908332750733780e+31 END 2.349277e+17 gross 5.583400e+34
+CLEAN FCONE cycle 73316 t2s 2 faces 784837 momentum cut sum |dF| V/c^2 9.182152e+24
+CLEAN FWB cycle 73316 t2s 2 faces 49611161 radiation momentum sum |dp| 6.700467e+26 x1 faces sum dp 2.407431e+25
+CLEAN FCONE cycle 73316 t2s 3 faces 790075 momentum cut sum |dF| V/c^2 9.289550e+24
+CLEAN FWB cycle 73316 t2s 3 faces 49611153 radiation momentum sum |dp| 6.707664e+26 x1 faces sum dp 2.421827e+25
+CLEAN LZB cycle 73316 t2s 3 ledger -1.4042171404168578e+41
+CLEAN PLEDGER cycle 73316 dt 1.196606e+01 hflx -2.157829e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145779e+33 cut -1.110552e+24 fwb 0.000000e+00 flr 6.030684e+19 mrg 0.000000e+00 gap 0.000000e+00 P -6.7459623901451448e+31 END -3.311167e+18 gross 5.583667e+34
+CLEAN FCONE cycle 73317 t2s 2 faces 789725 momentum cut sum |dF| V/c^2 9.301401e+24
+CLEAN FWB cycle 73317 t2s 2 faces 49610660 radiation momentum sum |dp| 6.712766e+26 x1 faces sum dp 2.423673e+25
+CLEAN FCONE cycle 73317 t2s 3 faces 794198 momentum cut sum |dF| V/c^2 9.368650e+24
+CLEAN FWB cycle 73317 t2s 3 faces 49610658 radiation momentum sum |dp| 6.720079e+26 x1 faces sum dp 2.439568e+25
+CLEAN LZB cycle 73317 t2s 3 ledger -1.4043000910115411e+41
+CLEAN PLEDGER cycle 73317 dt 1.196605e+01 hflx -2.157829e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145778e+33 cut -1.119128e+24 fwb 0.000000e+00 flr 6.358883e+19 mrg 0.000000e+00 gap 0.000000e+00 P -6.3019163050029323e+31 END 1.421650e+18 gross 5.583933e+34
+CLEAN FCONE cycle 73318 t2s 2 faces 796070 momentum cut sum |dF| V/c^2 9.369953e+24
+CLEAN FWB cycle 73318 t2s 2 faces 49610170 radiation momentum sum |dp| 6.725670e+26 x1 faces sum dp 2.436218e+25
+CLEAN FCONE cycle 73318 t2s 3 faces 800814 momentum cut sum |dF| V/c^2 9.515222e+24
+CLEAN FWB cycle 73318 t2s 3 faces 49610170 radiation momentum sum |dp| 6.731686e+26 x1 faces sum dp 2.449321e+25
+CLEAN LZB cycle 73318 t2s 3 ledger -1.4043844006836560e+41
+CLEAN PLEDGER cycle 73318 dt 1.196604e+01 hflx -2.157828e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145778e+33 cut -1.131225e+24 fwb 0.000000e+00 flr 6.793002e+19 mrg 0.000000e+00 gap 0.000000e+00 P -5.8587002294582131e+31 END -1.812717e+18 gross 5.584199e+34
+CLEAN FCONE cycle 73319 t2s 2 faces 800911 momentum cut sum |dF| V/c^2 9.439083e+24
+CLEAN FWB cycle 73319 t2s 2 faces 49609716 radiation momentum sum |dp| 6.739232e+26 x1 faces sum dp 2.452503e+25
+CLEAN FCONE cycle 73319 t2s 3 faces 805185 momentum cut sum |dF| V/c^2 9.513831e+24
+CLEAN FWB cycle 73319 t2s 3 faces 49609711 radiation momentum sum |dp| 6.744006e+26 x1 faces sum dp 2.470079e+25
+CLEAN LZB cycle 73319 t2s 3 ledger -1.4044709208859568e+41
+CLEAN PLEDGER cycle 73319 dt 1.196603e+01 hflx -2.157828e+33 ntel -1.926992e+17 src -3.303236e+33 rad 1.145777e+33 cut -1.137291e+24 fwb 0.000000e+00 flr 7.159230e+19 mrg 0.000000e+00 gap 0.000000e+00 P -5.4163188877677498e+31 END 3.074653e+18 gross 5.584463e+34
+CLEAN FCONE cycle 73320 t2s 2 faces 806000 momentum cut sum |dF| V/c^2 9.557300e+24
+CLEAN FWB cycle 73320 t2s 2 faces 49609202 radiation momentum sum |dp| 6.752347e+26 x1 faces sum dp 2.467540e+25
+CLEAN FCONE cycle 73320 t2s 3 faces 810559 momentum cut sum |dF| V/c^2 9.640785e+24
+CLEAN FWB cycle 73320 t2s 3 faces 49609200 radiation momentum sum |dp| 6.755995e+26 x1 faces sum dp 2.481158e+25
+CLEAN LZB cycle 73320 t2s 3 ledger -1.4045592500494095e+41
+CLEAN PLEDGER cycle 73320 dt 1.196601e+01 hflx -2.157828e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145777e+33 cut -1.148068e+24 fwb 0.000000e+00 flr 7.567966e+19 mrg 0.000000e+00 gap 0.000000e+00 P -4.9747784157376264e+31 END 8.591183e+18 gross 5.584727e+34
+CLEAN FCONE cycle 73321 t2s 2 faces 810627 momentum cut sum |dF| V/c^2 9.591621e+24
+CLEAN FWB cycle 73321 t2s 2 faces 49608744 radiation momentum sum |dp| 6.767544e+26 x1 faces sum dp 2.480153e+25
+CLEAN FCONE cycle 73321 t2s 3 faces 814067 momentum cut sum |dF| V/c^2 9.698891e+24
+CLEAN FWB cycle 73321 t2s 3 faces 49608746 radiation momentum sum |dp| 6.770300e+26 x1 faces sum dp 2.499206e+25
+CLEAN LZB cycle 73321 t2s 3 ledger -1.4046483260011434e+41
+CLEAN PLEDGER cycle 73321 dt 1.196600e+01 hflx -2.157827e+33 ntel 1.926995e+17 src -3.303236e+33 rad 1.145777e+33 cut -1.154206e+24 fwb 0.000000e+00 flr 7.954572e+19 mrg 0.000000e+00 gap 0.000000e+00 P -4.5340848125844580e+31 END 9.009895e+18 gross 5.584991e+34
+CLEAN FCONE cycle 73322 t2s 2 faces 815121 momentum cut sum |dF| V/c^2 9.650178e+24
+CLEAN FWB cycle 73322 t2s 2 faces 49608354 radiation momentum sum |dp| 6.776655e+26 x1 faces sum dp 2.497229e+25
+CLEAN FCONE cycle 73322 t2s 3 faces 820253 momentum cut sum |dF| V/c^2 9.752795e+24
+CLEAN FWB cycle 73322 t2s 3 faces 49608353 radiation momentum sum |dp| 6.785929e+26 x1 faces sum dp 2.512376e+25
+CLEAN LZB cycle 73322 t2s 3 ledger -1.4047392930416242e+41
+CLEAN PLEDGER cycle 73322 dt 1.196599e+01 hflx -2.157827e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145776e+33 cut -1.161092e+24 fwb 0.000000e+00 flr 8.337597e+19 mrg 0.000000e+00 gap 0.000000e+00 P -4.0942432729896350e+31 END -4.067226e+18 gross 5.585255e+34
+CLEAN FCONE cycle 73323 t2s 2 faces 819705 momentum cut sum |dF| V/c^2 9.756320e+24
+CLEAN FWB cycle 73323 t2s 2 faces 49607739 radiation momentum sum |dp| 6.793404e+26 x1 faces sum dp 2.509182e+25
+CLEAN FCONE cycle 73323 t2s 3 faces 821864 momentum cut sum |dF| V/c^2 9.786620e+24
+CLEAN FWB cycle 73323 t2s 3 faces 49607738 radiation momentum sum |dp| 6.796239e+26 x1 faces sum dp 2.525956e+25
+CLEAN LZB cycle 73323 t2s 3 ledger -1.4048314451452903e+41
+CLEAN PLEDGER cycle 73323 dt 1.196598e+01 hflx -2.157827e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145776e+33 cut -1.169159e+24 fwb 0.000000e+00 flr 8.713067e+19 mrg 0.000000e+00 gap 0.000000e+00 P -3.6552597013086670e+31 END -1.584947e+17 gross 5.585518e+34
+CLEAN FCONE cycle 73324 t2s 2 faces 823797 momentum cut sum |dF| V/c^2 9.802948e+24
+CLEAN FWB cycle 73324 t2s 2 faces 49607277 radiation momentum sum |dp| 6.804005e+26 x1 faces sum dp 2.521011e+25
+CLEAN FCONE cycle 73324 t2s 3 faces 828070 momentum cut sum |dF| V/c^2 9.930006e+24
+CLEAN FWB cycle 73324 t2s 3 faces 49607277 radiation momentum sum |dp| 6.821791e+26 x1 faces sum dp 2.537909e+25
+CLEAN LZB cycle 73324 t2s 3 ledger -1.4049259367975664e+41
+CLEAN PLEDGER cycle 73324 dt 1.196597e+01 hflx -2.157826e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145776e+33 cut -1.177480e+24 fwb 0.000000e+00 flr 9.205181e+19 mrg 0.000000e+00 gap 0.000000e+00 P -3.2171401626328980e+31 END 1.659158e+18 gross 5.585780e+34
+CLEAN FCONE cycle 73325 t2s 2 faces 827079 momentum cut sum |dF| V/c^2 9.822339e+24
+CLEAN FWB cycle 73325 t2s 2 faces 49606796 radiation momentum sum |dp| 6.814554e+26 x1 faces sum dp 2.534293e+25
+CLEAN FCONE cycle 73325 t2s 3 faces 831728 momentum cut sum |dF| V/c^2 9.934039e+24
+CLEAN FWB cycle 73325 t2s 3 faces 49606793 radiation momentum sum |dp| 6.817232e+26 x1 faces sum dp 2.552788e+25
+CLEAN LZB cycle 73325 t2s 3 ledger -1.4050197638584209e+41
+CLEAN PLEDGER cycle 73325 dt 1.196596e+01 hflx -2.157826e+33 ntel -1.927002e+17 src -3.303236e+33 rad 1.145775e+33 cut -1.180972e+24 fwb 0.000000e+00 flr 9.541731e+19 mrg 0.000000e+00 gap 0.000000e+00 P -2.7798898976282347e+31 END 4.283043e+18 gross 5.586041e+34
+CLEAN FCONE cycle 73326 t2s 2 faces 832758 momentum cut sum |dF| V/c^2 9.996940e+24
+CLEAN FWB cycle 73326 t2s 2 faces 49606287 radiation momentum sum |dp| 6.827698e+26 x1 faces sum dp 2.545978e+25
+CLEAN FCONE cycle 73326 t2s 3 faces 835327 momentum cut sum |dF| V/c^2 1.002416e+25
+CLEAN FWB cycle 73326 t2s 3 faces 49606283 radiation momentum sum |dp| 6.848643e+26 x1 faces sum dp 2.564592e+25
+CLEAN LZB cycle 73326 t2s 3 ledger -1.4051170946034686e+41
+CLEAN PLEDGER cycle 73326 dt 1.196595e+01 hflx -2.157826e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145775e+33 cut -1.194586e+24 fwb 0.000000e+00 flr 9.990324e+19 mrg 0.000000e+00 gap 0.000000e+00 P -2.3435139279782987e+31 END -5.314861e+18 gross 5.586302e+34
+CLEAN FCONE cycle 73327 t2s 2 faces 835239 momentum cut sum |dF| V/c^2 9.956499e+24
+CLEAN FWB cycle 73327 t2s 2 faces 49605793 radiation momentum sum |dp| 6.836101e+26 x1 faces sum dp 2.555626e+25
+CLEAN FCONE cycle 73327 t2s 3 faces 840825 momentum cut sum |dF| V/c^2 1.008172e+25
+CLEAN FWB cycle 73327 t2s 3 faces 49605791 radiation momentum sum |dp| 6.838763e+26 x1 faces sum dp 2.577435e+25
+CLEAN LZB cycle 73327 t2s 3 ledger -1.4052144365338194e+41
+CLEAN PLEDGER cycle 73327 dt 1.196594e+01 hflx -2.157825e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145775e+33 cut -1.196037e+24 fwb 0.000000e+00 flr 1.029626e+20 mrg 0.000000e+00 gap 0.000000e+00 P -1.9080167682089167e+31 END 3.566694e+18 gross 5.586562e+34
+CLEAN FCONE cycle 73328 t2s 2 faces 839774 momentum cut sum |dF| V/c^2 1.007062e+25
+CLEAN FWB cycle 73328 t2s 2 faces 49605300 radiation momentum sum |dp| 6.845365e+26 x1 faces sum dp 2.569507e+25
+CLEAN FCONE cycle 73328 t2s 3 faces 841800 momentum cut sum |dF| V/c^2 1.007185e+25
+CLEAN FWB cycle 73328 t2s 3 faces 49605295 radiation momentum sum |dp| 6.848627e+26 x1 faces sum dp 2.586869e+25
+CLEAN LZB cycle 73328 t2s 3 ledger -1.4053132008555603e+41
+CLEAN PLEDGER cycle 73328 dt 1.196593e+01 hflx -2.157825e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145774e+33 cut -1.204802e+24 fwb 0.000000e+00 flr 1.071816e+20 mrg 0.000000e+00 gap 0.000000e+00 P -1.4734033823091674e+31 END 7.774660e+18 gross 5.586822e+34
+CLEAN FCONE cycle 73329 t2s 2 faces 842373 momentum cut sum |dF| V/c^2 1.011249e+25
+CLEAN FWB cycle 73329 t2s 2 faces 49604827 radiation momentum sum |dp| 6.856920e+26 x1 faces sum dp 2.581424e+25
+CLEAN FCONE cycle 73329 t2s 3 faces 846727 momentum cut sum |dF| V/c^2 1.020929e+25
+CLEAN FWB cycle 73329 t2s 3 faces 49604828 radiation momentum sum |dp| 6.868788e+26 x1 faces sum dp 2.603109e+25
+CLEAN LZB cycle 73329 t2s 3 ledger -1.4054143296123877e+41
+CLEAN PLEDGER cycle 73329 dt 1.196592e+01 hflx -2.157824e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145774e+33 cut -1.211434e+24 fwb 0.000000e+00 flr 1.110312e+20 mrg 0.000000e+00 gap -9.409224e+13 P -1.0396792345298610e+31 END 3.611798e+18 gross 5.587082e+34
+CLEAN FCONE cycle 73330 t2s 2 faces 846439 momentum cut sum |dF| V/c^2 1.017566e+25
+CLEAN FWB cycle 73330 t2s 2 faces 49604382 radiation momentum sum |dp| 6.864226e+26 x1 faces sum dp 2.592209e+25
+CLEAN FCONE cycle 73330 t2s 3 faces 848525 momentum cut sum |dF| V/c^2 1.024948e+25
+CLEAN FWB cycle 73330 t2s 3 faces 49604385 radiation momentum sum |dp| 6.875483e+26 x1 faces sum dp 2.609382e+25
+CLEAN LZB cycle 73330 t2s 3 ledger -1.4055165945120014e+41
+CLEAN PLEDGER cycle 73330 dt 1.196591e+01 hflx -2.157824e+33 ntel 1.927011e+17 src -3.303236e+33 rad 1.145773e+33 cut -1.218357e+24 fwb 0.000000e+00 flr 1.136788e+20 mrg 0.000000e+00 gap 0.000000e+00 P -6.0684977839721070e+30 END -2.313277e+18 gross 5.587340e+34
+CLEAN FCONE cycle 73331 t2s 2 faces 848098 momentum cut sum |dF| V/c^2 1.021036e+25
+CLEAN FWB cycle 73331 t2s 2 faces 49603887 radiation momentum sum |dp| 6.874144e+26 x1 faces sum dp 2.603553e+25
+CLEAN FCONE cycle 73331 t2s 3 faces 851443 momentum cut sum |dF| V/c^2 1.031453e+25
+CLEAN FWB cycle 73331 t2s 3 faces 49603886 radiation momentum sum |dp| 6.879860e+26 x1 faces sum dp 2.625529e+25
+CLEAN LZB cycle 73331 t2s 3 ledger -1.4056198985169377e+41
+CLEAN PLEDGER cycle 73331 dt 1.196589e+01 hflx -2.157824e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145773e+33 cut -1.222517e+24 fwb 0.000000e+00 flr 1.171937e+20 mrg 0.000000e+00 gap 0.000000e+00 P -1.7492009451734928e+30 END 6.570323e+18 gross 5.587597e+34
+CLEAN FCONE cycle 73332 t2s 2 faces 850320 momentum cut sum |dF| V/c^2 1.027264e+25
+CLEAN FWB cycle 73332 t2s 2 faces 49603366 radiation momentum sum |dp| 6.879468e+26 x1 faces sum dp 2.616184e+25
+CLEAN FCONE cycle 73332 t2s 3 faces 852756 momentum cut sum |dF| V/c^2 1.037038e+25
+CLEAN FWB cycle 73332 t2s 3 faces 49603365 radiation momentum sum |dp| 6.898962e+26 x1 faces sum dp 2.635029e+25
+CLEAN LZB cycle 73332 t2s 3 ledger -1.4057257636562699e+41
+CLEAN PLEDGER cycle 73332 dt 1.196588e+01 hflx -2.157823e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145773e+33 cut -1.229495e+24 fwb 0.000000e+00 flr 1.208531e+20 mrg 0.000000e+00 gap 0.000000e+00 P 2.5610490778998391e+30 END -5.149093e+18 gross 5.587854e+34
+CLEAN FCONE cycle 73333 t2s 2 faces 851867 momentum cut sum |dF| V/c^2 1.030096e+25
+CLEAN FWB cycle 73333 t2s 2 faces 49602853 radiation momentum sum |dp| 6.890976e+26 x1 faces sum dp 2.626420e+25
+CLEAN FCONE cycle 73333 t2s 3 faces 855250 momentum cut sum |dF| V/c^2 1.036202e+25
+CLEAN FWB cycle 73333 t2s 3 faces 49602851 radiation momentum sum |dp| 6.900592e+26 x1 faces sum dp 2.647960e+25
+CLEAN LZB cycle 73333 t2s 3 ledger -1.4058313401898061e+41
+CLEAN PLEDGER cycle 73333 dt 1.196587e+01 hflx -2.157823e+33 ntel -1.927016e+17 src -3.303236e+33 rad 1.145772e+33 cut -1.232551e+24 fwb 0.000000e+00 flr 1.240056e+20 mrg 0.000000e+00 gap 0.000000e+00 P 6.8622066186313664e+30 END -2.912536e+18 gross 5.588109e+34
+CLEAN FCONE cycle 73334 t2s 2 faces 854657 momentum cut sum |dF| V/c^2 1.040691e+25
+CLEAN FWB cycle 73334 t2s 2 faces 49602360 radiation momentum sum |dp| 6.892477e+26 x1 faces sum dp 2.638394e+25
+CLEAN FCONE cycle 73334 t2s 3 faces 857684 momentum cut sum |dF| V/c^2 1.046132e+25
+CLEAN FWB cycle 73334 t2s 3 faces 49602361 radiation momentum sum |dp| 6.900110e+26 x1 faces sum dp 2.657849e+25
+CLEAN LZB cycle 73334 t2s 3 ledger -1.4059407893368613e+41
+CLEAN PLEDGER cycle 73334 dt 1.196586e+01 hflx -2.157823e+33 ntel -3.854036e+17 src -3.303236e+33 rad 1.145772e+33 cut -1.242548e+24 fwb 0.000000e+00 flr 1.274322e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.1154234773994729e+31 END 4.892050e+18 gross 5.588363e+34
+CLEAN FCONE cycle 73335 t2s 2 faces 856688 momentum cut sum |dF| V/c^2 1.043799e+25
+CLEAN FWB cycle 73335 t2s 2 faces 49601800 radiation momentum sum |dp| 6.911595e+26 x1 faces sum dp 2.653545e+25
+CLEAN FCONE cycle 73335 t2s 3 faces 858666 momentum cut sum |dF| V/c^2 1.048421e+25
+CLEAN FWB cycle 73335 t2s 3 faces 49601799 radiation momentum sum |dp| 6.912035e+26 x1 faces sum dp 2.676674e+25
+CLEAN LZB cycle 73335 t2s 3 ledger -1.4060510416328667e+41
+CLEAN PLEDGER cycle 73335 dt 1.196585e+01 hflx -2.157822e+33 ntel 1.927020e+17 src -3.303236e+33 rad 1.145771e+33 cut -1.246292e+24 fwb 0.000000e+00 flr 1.313638e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.5437087795740920e+31 END -6.387794e+17 gross 5.588617e+34
+CLEAN FCONE cycle 73336 t2s 2 faces 858697 momentum cut sum |dF| V/c^2 1.047860e+25
+CLEAN FWB cycle 73336 t2s 2 faces 49601352 radiation momentum sum |dp| 6.901443e+26 x1 faces sum dp 2.663191e+25
+CLEAN FCONE cycle 73336 t2s 3 faces 861629 momentum cut sum |dF| V/c^2 1.058000e+25
+CLEAN FWB cycle 73336 t2s 3 faces 49601349 radiation momentum sum |dp| 6.908816e+26 x1 faces sum dp 2.683618e+25
+CLEAN LZB cycle 73336 t2s 3 ledger -1.4061630621561686e+41
+CLEAN PLEDGER cycle 73336 dt 1.196584e+01 hflx -2.157822e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145771e+33 cut -1.252058e+24 fwb 0.000000e+00 flr 1.341127e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.9710716725034273e+31 END 4.291920e+18 gross 5.588869e+34
+CLEAN FCONE cycle 73337 t2s 2 faces 860878 momentum cut sum |dF| V/c^2 1.054517e+25
+CLEAN FWB cycle 73337 t2s 2 faces 49600849 radiation momentum sum |dp| 6.914737e+26 x1 faces sum dp 2.677194e+25
+CLEAN FCONE cycle 73337 t2s 3 faces 862041 momentum cut sum |dF| V/c^2 1.055130e+25
+CLEAN FWB cycle 73337 t2s 3 faces 49600845 radiation momentum sum |dp| 6.913794e+26 x1 faces sum dp 2.699640e+25
+CLEAN LZB cycle 73337 t2s 3 ledger -1.4062765426628069e+41
+CLEAN PLEDGER cycle 73337 dt 1.196583e+01 hflx -2.157821e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145771e+33 cut -1.255323e+24 fwb 0.000000e+00 flr 1.366012e+20 mrg 0.000000e+00 gap 0.000000e+00 P 2.3975066758868942e+31 END 1.203527e+18 gross 5.589120e+34
+CLEAN FCONE cycle 73338 t2s 2 faces 862804 momentum cut sum |dF| V/c^2 1.059587e+25
+CLEAN FWB cycle 73338 t2s 2 faces 49600285 radiation momentum sum |dp| 6.910611e+26 x1 faces sum dp 2.689168e+25
+CLEAN FCONE cycle 73338 t2s 3 faces 866169 momentum cut sum |dF| V/c^2 1.068735e+25
+CLEAN FWB cycle 73338 t2s 3 faces 49600282 radiation momentum sum |dp| 6.921650e+26 x1 faces sum dp 2.711436e+25
+CLEAN LZB cycle 73338 t2s 3 ledger -1.4063901033725433e+41
+CLEAN PLEDGER cycle 73338 dt 1.196582e+01 hflx -2.157821e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145770e+33 cut -1.263529e+24 fwb 0.000000e+00 flr 1.396547e+20 mrg 0.000000e+00 gap 0.000000e+00 P 2.8230107977733480e+31 END -2.820179e+18 gross 5.589370e+34
+CLEAN FCONE cycle 73339 t2s 2 faces 864898 momentum cut sum |dF| V/c^2 1.069043e+25
+CLEAN FWB cycle 73339 t2s 2 faces 49599778 radiation momentum sum |dp| 6.915661e+26 x1 faces sum dp 2.701540e+25
+CLEAN FCONE cycle 73339 t2s 3 faces 865106 momentum cut sum |dF| V/c^2 1.065117e+25
+CLEAN FWB cycle 73339 t2s 3 faces 49599781 radiation momentum sum |dp| 6.910844e+26 x1 faces sum dp 2.724251e+25
+CLEAN LZB cycle 73339 t2s 3 ledger -1.4065072431186551e+41
+CLEAN PLEDGER cycle 73339 dt 1.196581e+01 hflx -2.157821e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145770e+33 cut -1.267178e+24 fwb 0.000000e+00 flr 1.421881e+20 mrg 0.000000e+00 gap 0.000000e+00 P 3.2475813435225559e+31 END -2.875670e+18 gross 5.589620e+34
+CLEAN FCONE cycle 73340 t2s 2 faces 865613 momentum cut sum |dF| V/c^2 1.067972e+25
+CLEAN FWB cycle 73340 t2s 2 faces 49599339 radiation momentum sum |dp| 6.921414e+26 x1 faces sum dp 2.715203e+25
+CLEAN FCONE cycle 73340 t2s 3 faces 867901 momentum cut sum |dF| V/c^2 1.071103e+25
+CLEAN FWB cycle 73340 t2s 3 faces 49599339 radiation momentum sum |dp| 6.926794e+26 x1 faces sum dp 2.737659e+25
+CLEAN LZB cycle 73340 t2s 3 ledger -1.4066252889628323e+41
+CLEAN PLEDGER cycle 73340 dt 1.196579e+01 hflx -2.157820e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145769e+33 cut -1.270045e+24 fwb 0.000000e+00 flr 1.444911e+20 mrg 0.000000e+00 gap 0.000000e+00 P 3.6712162778765072e+31 END 4.141124e+18 gross 5.589869e+34
+CLEAN FCONE cycle 73341 t2s 2 faces 867502 momentum cut sum |dF| V/c^2 1.070442e+25
+CLEAN FWB cycle 73341 t2s 2 faces 49598710 radiation momentum sum |dp| 6.925208e+26 x1 faces sum dp 2.725449e+25
+CLEAN FCONE cycle 73341 t2s 3 faces 870209 momentum cut sum |dF| V/c^2 1.078523e+25
+CLEAN FWB cycle 73341 t2s 3 faces 49598705 radiation momentum sum |dp| 6.925520e+26 x1 faces sum dp 2.752138e+25
+CLEAN LZB cycle 73341 t2s 3 ledger -1.4067431006773759e+41
+CLEAN PLEDGER cycle 73341 dt 1.196578e+01 hflx -2.157820e+33 ntel 1.927031e+17 src -3.303236e+33 rad 1.145769e+33 cut -1.275235e+24 fwb 0.000000e+00 flr 1.475365e+20 mrg 0.000000e+00 gap 0.000000e+00 P 4.0939144090051718e+31 END 5.251337e+18 gross 5.590118e+34
+CLEAN FCONE cycle 73342 t2s 2 faces 869723 momentum cut sum |dF| V/c^2 1.077881e+25
+CLEAN FWB cycle 73342 t2s 2 faces 49598174 radiation momentum sum |dp| 6.927980e+26 x1 faces sum dp 2.741630e+25
+CLEAN FCONE cycle 73342 t2s 3 faces 870516 momentum cut sum |dF| V/c^2 1.074184e+25
+CLEAN FWB cycle 73342 t2s 3 faces 49598170 radiation momentum sum |dp| 6.921706e+26 x1 faces sum dp 2.763528e+25
+CLEAN LZB cycle 73342 t2s 3 ledger -1.4068640071209340e+41
+CLEAN PLEDGER cycle 73342 dt 1.196577e+01 hflx -2.157820e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145769e+33 cut -1.278452e+24 fwb 0.000000e+00 flr 1.505789e+20 mrg 0.000000e+00 gap 0.000000e+00 P 4.5156742257639018e+31 END 1.093079e+19 gross 5.590365e+34
+CLEAN FCONE cycle 73343 t2s 2 faces 870129 momentum cut sum |dF| V/c^2 1.075456e+25
+CLEAN FWB cycle 73343 t2s 2 faces 49597550 radiation momentum sum |dp| 6.922742e+26 x1 faces sum dp 2.750645e+25
+CLEAN FCONE cycle 73343 t2s 3 faces 872014 momentum cut sum |dF| V/c^2 1.082257e+25
+CLEAN FWB cycle 73343 t2s 3 faces 49597551 radiation momentum sum |dp| 6.930184e+26 x1 faces sum dp 2.779501e+25
+CLEAN LZB cycle 73343 t2s 3 ledger -1.4069850964816049e+41
+CLEAN PLEDGER cycle 73343 dt 1.196576e+01 hflx -2.157819e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145768e+33 cut -1.280785e+24 fwb 0.000000e+00 flr 1.529875e+20 mrg 0.000000e+00 gap 0.000000e+00 P 4.9364953917140802e+31 END 5.194084e+18 gross 5.590612e+34
+CLEAN FCONE cycle 73344 t2s 2 faces 871598 momentum cut sum |dF| V/c^2 1.082154e+25
+CLEAN FWB cycle 73344 t2s 2 faces 49597003 radiation momentum sum |dp| 6.926843e+26 x1 faces sum dp 2.769058e+25
+CLEAN FCONE cycle 73344 t2s 3 faces 874613 momentum cut sum |dF| V/c^2 1.081966e+25
+CLEAN FWB cycle 73344 t2s 3 faces 49597002 radiation momentum sum |dp| 6.927555e+26 x1 faces sum dp 2.791348e+25
+CLEAN LZB cycle 73344 t2s 3 ledger -1.4071067073155700e+41
+CLEAN PLEDGER cycle 73344 dt 1.196574e+01 hflx -2.157819e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145768e+33 cut -1.285813e+24 fwb 0.000000e+00 flr 1.541708e+20 mrg 0.000000e+00 gap 0.000000e+00 P 5.3563786814368091e+31 END 4.795471e+17 gross 5.590859e+34
+CLEAN FCONE cycle 73345 t2s 2 faces 873305 momentum cut sum |dF| V/c^2 1.082566e+25
+CLEAN FWB cycle 73345 t2s 2 faces 49596434 radiation momentum sum |dp| 6.922154e+26 x1 faces sum dp 2.773300e+25
+CLEAN FCONE cycle 73345 t2s 3 faces 872906 momentum cut sum |dF| V/c^2 1.086094e+25
+CLEAN FWB cycle 73345 t2s 3 faces 49596434 radiation momentum sum |dp| 6.936410e+26 x1 faces sum dp 2.800588e+25
+CLEAN LZB cycle 73345 t2s 3 ledger -1.4072306876751808e+41
+CLEAN PLEDGER cycle 73345 dt 1.196573e+01 hflx -2.157818e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145768e+33 cut -1.287099e+24 fwb 0.000000e+00 flr 1.578730e+20 mrg 0.000000e+00 gap 0.000000e+00 P 5.7753248089890522e+31 END -2.004346e+18 gross 5.591106e+34
+CLEAN FCONE cycle 73346 t2s 2 faces 873630 momentum cut sum |dF| V/c^2 1.087053e+25
+CLEAN FWB cycle 73346 t2s 2 faces 49595826 radiation momentum sum |dp| 6.926423e+26 x1 faces sum dp 2.788309e+25
+CLEAN FCONE cycle 73346 t2s 3 faces 876631 momentum cut sum |dF| V/c^2 1.085084e+25
+CLEAN FWB cycle 73346 t2s 3 faces 49595829 radiation momentum sum |dp| 6.929445e+26 x1 faces sum dp 2.812505e+25
+CLEAN LZB cycle 73346 t2s 3 ledger -1.4073555064506778e+41
+CLEAN PLEDGER cycle 73346 dt 1.196572e+01 hflx -2.157818e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145767e+33 cut -1.291425e+24 fwb 0.000000e+00 flr 1.604647e+20 mrg 0.000000e+00 gap 0.000000e+00 P 6.1933338866321816e+31 END 9.901349e+16 gross 5.591352e+34
+CLEAN FCONE cycle 73347 t2s 2 faces 875031 momentum cut sum |dF| V/c^2 1.083660e+25
+CLEAN FWB cycle 73347 t2s 2 faces 49595309 radiation momentum sum |dp| 6.931794e+26 x1 faces sum dp 2.796647e+25
+CLEAN FCONE cycle 73347 t2s 3 faces 876151 momentum cut sum |dF| V/c^2 1.091456e+25
+CLEAN FWB cycle 73347 t2s 3 faces 49595313 radiation momentum sum |dp| 6.934874e+26 x1 faces sum dp 2.823317e+25
+CLEAN LZB cycle 73347 t2s 3 ledger -1.4074800324982377e+41
+CLEAN PLEDGER cycle 73347 dt 1.196570e+01 hflx -2.157818e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145767e+33 cut -1.292997e+24 fwb 0.000000e+00 flr 1.616624e+20 mrg 0.000000e+00 gap 0.000000e+00 P 6.6104052913997097e+31 END -3.480287e+18 gross 5.591597e+34
+CLEAN FCONE cycle 73348 t2s 2 faces 875606 momentum cut sum |dF| V/c^2 1.093745e+25
+CLEAN FWB cycle 73348 t2s 2 faces 49594727 radiation momentum sum |dp| 6.930413e+26 x1 faces sum dp 2.808167e+25
+CLEAN FCONE cycle 73348 t2s 3 faces 876193 momentum cut sum |dF| V/c^2 1.090684e+25
+CLEAN FWB cycle 73348 t2s 3 faces 49594726 radiation momentum sum |dp| 6.935547e+26 x1 faces sum dp 2.833710e+25
+CLEAN LZB cycle 73348 t2s 3 ledger -1.4076073905260343e+41
+CLEAN PLEDGER cycle 73348 dt 1.196568e+01 hflx -2.157817e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145766e+33 cut -1.299001e+24 fwb 0.000000e+00 flr 1.639613e+20 mrg 0.000000e+00 gap 0.000000e+00 P 7.0265386450770781e+31 END 6.608200e+18 gross 5.591841e+34
+CLEAN FCONE cycle 73349 t2s 2 faces 875698 momentum cut sum |dF| V/c^2 1.090748e+25
+CLEAN FWB cycle 73349 t2s 2 faces 49594137 radiation momentum sum |dp| 6.933807e+26 x1 faces sum dp 2.817384e+25
+CLEAN FCONE cycle 73349 t2s 3 faces 876964 momentum cut sum |dF| V/c^2 1.092695e+25
+CLEAN FWB cycle 73349 t2s 3 faces 49594132 radiation momentum sum |dp| 6.935207e+26 x1 faces sum dp 2.843902e+25
+CLEAN LZB cycle 73349 t2s 3 ledger -1.4077355861235220e+41
+CLEAN PLEDGER cycle 73349 dt 1.196566e+01 hflx -2.157817e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145766e+33 cut -1.299284e+24 fwb 0.000000e+00 flr 1.653722e+20 mrg 0.000000e+00 gap 0.000000e+00 P 7.4417336361041919e+31 END -4.660201e+18 gross 5.592087e+34
+CLEAN FCONE cycle 73350 t2s 2 faces 874834 momentum cut sum |dF| V/c^2 1.089808e+25
+CLEAN FWB cycle 73350 t2s 2 faces 49593576 radiation momentum sum |dp| 6.935462e+26 x1 faces sum dp 2.826444e+25
+CLEAN FCONE cycle 73350 t2s 3 faces 876826 momentum cut sum |dF| V/c^2 1.091541e+25
+CLEAN FWB cycle 73350 t2s 3 faces 49593578 radiation momentum sum |dp| 6.947250e+26 x1 faces sum dp 2.854682e+25
+CLEAN LZB cycle 73350 t2s 3 ledger -1.4078630275380650e+41
+CLEAN PLEDGER cycle 73350 dt 1.196563e+01 hflx -2.157816e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145766e+33 cut -1.299202e+24 fwb 0.000000e+00 flr 1.680784e+20 mrg 0.000000e+00 gap 0.000000e+00 P 7.8559905552795076e+31 END 3.243726e+17 gross 5.592332e+34
+CLEAN FCONE cycle 73351 t2s 2 faces 876416 momentum cut sum |dF| V/c^2 1.096242e+25
+CLEAN FWB cycle 73351 t2s 2 faces 49593024 radiation momentum sum |dp| 6.928067e+26 x1 faces sum dp 2.833922e+25
+CLEAN FCONE cycle 73351 t2s 3 faces 876040 momentum cut sum |dF| V/c^2 1.091782e+25
+CLEAN FWB cycle 73351 t2s 3 faces 49593023 radiation momentum sum |dp| 6.931628e+26 x1 faces sum dp 2.858940e+25
+CLEAN LZB cycle 73351 t2s 3 ledger -1.4079935803304358e+41
+CLEAN PLEDGER cycle 73351 dt 1.196560e+01 hflx -2.157816e+33 ntel 1.927059e+17 src -3.303236e+33 rad 1.145765e+33 cut -1.302684e+24 fwb 0.000000e+00 flr 1.697212e+20 mrg 0.000000e+00 gap 0.000000e+00 P 8.2693090879462335e+31 END 4.976294e+18 gross 5.592576e+34
+CLEAN FCONE cycle 73352 t2s 2 faces 875413 momentum cut sum |dF| V/c^2 1.088796e+25
+CLEAN FWB cycle 73352 t2s 2 faces 49592481 radiation momentum sum |dp| 6.931735e+26 x1 faces sum dp 2.840698e+25
+CLEAN FCONE cycle 73352 t2s 3 faces 877199 momentum cut sum |dF| V/c^2 1.091100e+25
+CLEAN FWB cycle 73352 t2s 3 faces 49592481 radiation momentum sum |dp| 6.938405e+26 x1 faces sum dp 2.870855e+25
+CLEAN LZB cycle 73352 t2s 3 ledger -1.4081232959829369e+41
+CLEAN PLEDGER cycle 73352 dt 1.196558e+01 hflx -2.157816e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145765e+33 cut -1.298519e+24 fwb 0.000000e+00 flr 1.716961e+20 mrg 0.000000e+00 gap 0.000000e+00 P 8.6816879731042508e+31 END 5.955059e+18 gross 5.592820e+34
+CLEAN FCONE cycle 73353 t2s 2 faces 876129 momentum cut sum |dF| V/c^2 1.091686e+25
+CLEAN FWB cycle 73353 t2s 2 faces 49591931 radiation momentum sum |dp| 6.925848e+26 x1 faces sum dp 2.850734e+25
+CLEAN FCONE cycle 73353 t2s 3 faces 877689 momentum cut sum |dF| V/c^2 1.091314e+25
+CLEAN FWB cycle 73353 t2s 3 faces 49591929 radiation momentum sum |dp| 6.932779e+26 x1 faces sum dp 2.875982e+25
+CLEAN LZB cycle 73353 t2s 3 ledger -1.4082545758879218e+41
+CLEAN PLEDGER cycle 73353 dt 1.196555e+01 hflx -2.157815e+33 ntel -1.927068e+17 src -3.303236e+33 rad 1.145764e+33 cut -1.302431e+24 fwb 0.000000e+00 flr 1.734949e+20 mrg 0.000000e+00 gap 0.000000e+00 P 9.0931272993750182e+31 END 8.516633e+17 gross 5.593063e+34
+CLEAN FCONE cycle 73354 t2s 2 faces 875791 momentum cut sum |dF| V/c^2 1.091703e+25
+CLEAN FWB cycle 73354 t2s 2 faces 49591339 radiation momentum sum |dp| 6.920194e+26 x1 faces sum dp 2.858405e+25
+CLEAN FCONE cycle 73354 t2s 3 faces 874836 momentum cut sum |dF| V/c^2 1.085573e+25
+CLEAN FWB cycle 73354 t2s 3 faces 49591334 radiation momentum sum |dp| 6.927878e+26 x1 faces sum dp 2.887902e+25
+CLEAN LZB cycle 73354 t2s 3 ledger -1.4083877788684701e+41
+CLEAN PLEDGER cycle 73354 dt 1.196553e+01 hflx -2.157815e+33 ntel 1.927072e+17 src -3.303236e+33 rad 1.145764e+33 cut -1.299962e+24 fwb 0.000000e+00 flr 1.752529e+20 mrg 0.000000e+00 gap 0.000000e+00 P 9.5036268648728668e+31 END -9.698143e+16 gross 5.593305e+34
+CLEAN FCONE cycle 73355 t2s 2 faces 875057 momentum cut sum |dF| V/c^2 1.085000e+25
+CLEAN FWB cycle 73355 t2s 2 faces 49590765 radiation momentum sum |dp| 6.926810e+26 x1 faces sum dp 2.867900e+25
+CLEAN FCONE cycle 73355 t2s 3 faces 876600 momentum cut sum |dF| V/c^2 1.089743e+25
+CLEAN FWB cycle 73355 t2s 3 faces 49590768 radiation momentum sum |dp| 6.931203e+26 x1 faces sum dp 2.896007e+25
+CLEAN LZB cycle 73355 t2s 3 ledger -1.4085208083931742e+41
+CLEAN PLEDGER cycle 73355 dt 1.196550e+01 hflx -2.157814e+33 ntel 1.927076e+17 src -3.303236e+33 rad 1.145764e+33 cut -1.299019e+24 fwb 0.000000e+00 flr 1.764134e+20 mrg 0.000000e+00 gap 0.000000e+00 P 9.9131855051516129e+31 END -9.935086e+18 gross 5.593546e+34
+CLEAN FCONE cycle 73356 t2s 2 faces 875227 momentum cut sum |dF| V/c^2 1.089544e+25
+CLEAN FWB cycle 73356 t2s 2 faces 49590156 radiation momentum sum |dp| 6.921778e+26 x1 faces sum dp 2.874561e+25
+CLEAN FCONE cycle 73356 t2s 3 faces 875825 momentum cut sum |dF| V/c^2 1.084146e+25
+CLEAN FWB cycle 73356 t2s 3 faces 49590160 radiation momentum sum |dp| 6.928771e+26 x1 faces sum dp 2.904346e+25
+CLEAN LZB cycle 73356 t2s 3 ledger -1.4086557907710088e+41
+CLEAN PLEDGER cycle 73356 dt 1.196548e+01 hflx -2.157814e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145763e+33 cut -1.300174e+24 fwb 0.000000e+00 flr 1.774697e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.0321802170293656e+32 END -1.582399e+17 gross 5.593787e+34
+CLEAN FCONE cycle 73357 t2s 2 faces 874923 momentum cut sum |dF| V/c^2 1.087313e+25
+CLEAN FWB cycle 73357 t2s 2 faces 49589557 radiation momentum sum |dp| 6.919255e+26 x1 faces sum dp 2.884081e+25
+CLEAN FCONE cycle 73357 t2s 3 faces 873348 momentum cut sum |dF| V/c^2 1.084455e+25
+CLEAN FWB cycle 73357 t2s 3 faces 49589553 radiation momentum sum |dp| 6.924803e+26 x1 faces sum dp 2.914056e+25
+CLEAN LZB cycle 73357 t2s 3 ledger -1.4087907363588738e+41
+CLEAN PLEDGER cycle 73357 dt 1.196545e+01 hflx -2.157814e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145763e+33 cut -1.299010e+24 fwb 0.000000e+00 flr 1.785517e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.0729475086303828e+32 END -3.116984e+18 gross 5.594028e+34
+CLEAN FCONE cycle 73358 t2s 2 faces 874685 momentum cut sum |dF| V/c^2 1.086860e+25
+CLEAN FWB cycle 73358 t2s 2 faces 49588961 radiation momentum sum |dp| 6.920550e+26 x1 faces sum dp 2.890716e+25
+CLEAN FCONE cycle 73358 t2s 3 faces 878343 momentum cut sum |dF| V/c^2 1.092765e+25
+CLEAN FWB cycle 73358 t2s 3 faces 49588958 radiation momentum sum |dp| 6.941528e+26 x1 faces sum dp 2.920719e+25
+CLEAN LZB cycle 73358 t2s 3 ledger -1.4089286513275447e+41
+CLEAN PLEDGER cycle 73358 dt 1.196543e+01 hflx -2.157813e+33 ntel 0.000000e+00 src -3.303236e+33 rad 1.145762e+33 cut -1.302255e+24 fwb 0.000000e+00 flr 1.799267e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.1136202299170085e+32 END -1.510894e+18 gross 5.594268e+34
+CLEAN FCONE cycle 73359 t2s 2 faces 874489 momentum cut sum |dF| V/c^2 1.090518e+25
+CLEAN FWB cycle 73359 t2s 2 faces 49588459 radiation momentum sum |dp| 6.917848e+26 x1 faces sum dp 2.899103e+25
+CLEAN FCONE cycle 73359 t2s 3 faces 872490 momentum cut sum |dF| V/c^2 1.083597e+25
+CLEAN FWB cycle 73359 t2s 3 faces 49588462 radiation momentum sum |dp| 6.927112e+26 x1 faces sum dp 2.929371e+25
+CLEAN LZB cycle 73359 t2s 3 ledger -1.4090655188687974e+41
+CLEAN PLEDGER cycle 73359 dt 1.196540e+01 hflx -2.157813e+33 ntel 1.927092e+17 src -3.303236e+33 rad 1.145762e+33 cut -1.300110e+24 fwb 0.000000e+00 flr 1.810020e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.1541983025855902e+32 END 2.506041e+18 gross 5.594506e+34
+CLEAN FCONE cycle 73360 t2s 2 faces 874304 momentum cut sum |dF| V/c^2 1.088785e+25
+CLEAN FWB cycle 73360 t2s 2 faces 49587847 radiation momentum sum |dp| 6.908111e+26 x1 faces sum dp 2.907337e+25
+CLEAN FCONE cycle 73360 t2s 3 faces 877218 momentum cut sum |dF| V/c^2 1.095195e+25
+CLEAN FWB cycle 73360 t2s 3 faces 49587844 radiation momentum sum |dp| 6.922566e+26 x1 faces sum dp 2.935925e+25
+CLEAN LZB cycle 73360 t2s 3 ledger -1.4092051517566294e+41
+CLEAN PLEDGER cycle 73360 dt 1.196538e+01 hflx -2.157812e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145761e+33 cut -1.303682e+24 fwb 0.000000e+00 flr 1.824200e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.1946816581982601e+32 END 2.883368e+18 gross 5.594743e+34
+CLEAN FCONE cycle 73361 t2s 2 faces 873388 momentum cut sum |dF| V/c^2 1.089725e+25
+CLEAN FWB cycle 73361 t2s 2 faces 49587211 radiation momentum sum |dp| 6.915699e+26 x1 faces sum dp 2.914451e+25
+CLEAN FCONE cycle 73361 t2s 3 faces 870413 momentum cut sum |dF| V/c^2 1.081436e+25
+CLEAN FWB cycle 73361 t2s 3 faces 49587211 radiation momentum sum |dp| 6.915526e+26 x1 faces sum dp 2.943196e+25
+CLEAN LZB cycle 73361 t2s 3 ledger -1.4093452918371410e+41
+CLEAN PLEDGER cycle 73361 dt 1.196536e+01 hflx -2.157812e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145761e+33 cut -1.298635e+24 fwb 0.000000e+00 flr 1.825981e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.2350702365662798e+32 END 4.528755e+18 gross 5.594979e+34
+CLEAN FCONE cycle 73362 t2s 2 faces 872529 momentum cut sum |dF| V/c^2 1.087629e+25
+CLEAN FWB cycle 73362 t2s 2 faces 49586600 radiation momentum sum |dp| 6.909299e+26 x1 faces sum dp 2.922560e+25
+CLEAN FCONE cycle 73362 t2s 3 faces 875558 momentum cut sum |dF| V/c^2 1.095415e+25
+CLEAN FWB cycle 73362 t2s 3 faces 49586598 radiation momentum sum |dp| 6.925557e+26 x1 faces sum dp 2.951325e+25
+CLEAN LZB cycle 73362 t2s 3 ledger -1.4094860385236113e+41
+CLEAN PLEDGER cycle 73362 dt 1.196533e+01 hflx -2.157811e+33 ntel -1.927103e+17 src -3.303235e+33 rad 1.145761e+33 cut -1.302625e+24 fwb 0.000000e+00 flr 1.847083e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.2753639936934286e+32 END -1.085481e+18 gross 5.595214e+34
+CLEAN FCONE cycle 73363 t2s 2 faces 871053 momentum cut sum |dF| V/c^2 1.081955e+25
+CLEAN FWB cycle 73363 t2s 2 faces 49585916 radiation momentum sum |dp| 6.900067e+26 x1 faces sum dp 2.929382e+25
+CLEAN FCONE cycle 73363 t2s 3 faces 868649 momentum cut sum |dF| V/c^2 1.078336e+25
+CLEAN FWB cycle 73363 t2s 3 faces 49585910 radiation momentum sum |dp| 6.905416e+26 x1 faces sum dp 2.960149e+25
+CLEAN LZB cycle 73363 t2s 3 ledger -1.4096270623860339e+41
+CLEAN PLEDGER cycle 73363 dt 1.196531e+01 hflx -2.157811e+33 ntel 1.927107e+17 src -3.303235e+33 rad 1.145760e+33 cut -1.293202e+24 fwb 0.000000e+00 flr 1.849211e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.3155629770872186e+32 END 4.085462e+18 gross 5.595448e+34
+CLEAN FCONE cycle 73364 t2s 2 faces 871219 momentum cut sum |dF| V/c^2 1.088660e+25
+CLEAN FWB cycle 73364 t2s 2 faces 49585360 radiation momentum sum |dp| 6.898376e+26 x1 faces sum dp 2.936494e+25
+CLEAN FCONE cycle 73364 t2s 3 faces 874844 momentum cut sum |dF| V/c^2 1.092127e+25
+CLEAN FWB cycle 73364 t2s 3 faces 49585356 radiation momentum sum |dp| 6.914820e+26 x1 faces sum dp 2.966069e+25
+CLEAN LZB cycle 73364 t2s 3 ledger -1.4097680396066340e+41
+CLEAN PLEDGER cycle 73364 dt 1.196529e+01 hflx -2.157811e+33 ntel 1.927111e+17 src -3.303235e+33 rad 1.145760e+33 cut -1.301561e+24 fwb 0.000000e+00 flr 1.856118e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.3556673161108514e+32 END 2.089961e+18 gross 5.595681e+34
+CLEAN FCONE cycle 73365 t2s 2 faces 869813 momentum cut sum |dF| V/c^2 1.077965e+25
+CLEAN FWB cycle 73365 t2s 2 faces 49584717 radiation momentum sum |dp| 6.889450e+26 x1 faces sum dp 2.944167e+25
+CLEAN FCONE cycle 73365 t2s 3 faces 868453 momentum cut sum |dF| V/c^2 1.086427e+25
+CLEAN FWB cycle 73365 t2s 3 faces 49584718 radiation momentum sum |dp| 6.901534e+26 x1 faces sum dp 2.973761e+25
+CLEAN LZB cycle 73365 t2s 3 ledger -1.4099109304691517e+41
+CLEAN PLEDGER cycle 73365 dt 1.196526e+01 hflx -2.157810e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145759e+33 cut -1.291761e+24 fwb 0.000000e+00 flr 1.849961e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.3956772621778449e+32 END 3.720950e+18 gross 5.595913e+34
+CLEAN FCONE cycle 73366 t2s 2 faces 869934 momentum cut sum |dF| V/c^2 1.088669e+25
+CLEAN FWB cycle 73366 t2s 2 faces 49584138 radiation momentum sum |dp| 6.887291e+26 x1 faces sum dp 2.950541e+25
+CLEAN FCONE cycle 73366 t2s 3 faces 872781 momentum cut sum |dF| V/c^2 1.090253e+25
+CLEAN FWB cycle 73366 t2s 3 faces 49584136 radiation momentum sum |dp| 6.904205e+26 x1 faces sum dp 2.980168e+25
+CLEAN LZB cycle 73366 t2s 3 ledger -1.4100539287855926e+41
+CLEAN PLEDGER cycle 73366 dt 1.196524e+01 hflx -2.157810e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145759e+33 cut -1.301001e+24 fwb 0.000000e+00 flr 1.847248e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.4355930981460898e+32 END 4.812695e+18 gross 5.596146e+34
+CLEAN FCONE cycle 73367 t2s 2 faces 869335 momentum cut sum |dF| V/c^2 1.084700e+25
+CLEAN FWB cycle 73367 t2s 2 faces 49583581 radiation momentum sum |dp| 6.878388e+26 x1 faces sum dp 2.957010e+25
+CLEAN FCONE cycle 73367 t2s 3 faces 868806 momentum cut sum |dF| V/c^2 1.085849e+25
+CLEAN FWB cycle 73367 t2s 3 faces 49583582 radiation momentum sum |dp| 6.891566e+26 x1 faces sum dp 2.985393e+25
+CLEAN LZB cycle 73367 t2s 3 ledger -1.4101983777640871e+41
+CLEAN PLEDGER cycle 73367 dt 1.196521e+01 hflx -2.157809e+33 ntel 1.927123e+17 src -3.303235e+33 rad 1.145759e+33 cut -1.294939e+24 fwb 0.000000e+00 flr 1.850085e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.4754151220123071e+32 END 5.970148e+18 gross 5.596378e+34
+CLEAN FCONE cycle 73368 t2s 2 faces 868560 momentum cut sum |dF| V/c^2 1.084972e+25
+CLEAN FWB cycle 73368 t2s 2 faces 49583019 radiation momentum sum |dp| 6.871337e+26 x1 faces sum dp 2.963253e+25
+CLEAN FCONE cycle 73368 t2s 3 faces 871313 momentum cut sum |dF| V/c^2 1.094497e+25
+CLEAN FWB cycle 73368 t2s 3 faces 49583019 radiation momentum sum |dp| 6.886584e+26 x1 faces sum dp 2.994528e+25
+CLEAN LZB cycle 73368 t2s 3 ledger -1.4103435435573495e+41
+CLEAN PLEDGER cycle 73368 dt 1.196519e+01 hflx -2.157809e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145758e+33 cut -1.299272e+24 fwb 0.000000e+00 flr 1.849747e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.5151435879719584e+32 END -1.211631e+18 gross 5.596608e+34
+CLEAN FCONE cycle 73369 t2s 2 faces 868904 momentum cut sum |dF| V/c^2 1.088694e+25
+CLEAN FWB cycle 73369 t2s 2 faces 49582399 radiation momentum sum |dp| 6.869593e+26 x1 faces sum dp 2.969254e+25
+CLEAN FCONE cycle 73369 t2s 3 faces 867840 momentum cut sum |dF| V/c^2 1.081186e+25
+CLEAN FWB cycle 73369 t2s 3 faces 49582397 radiation momentum sum |dp| 6.885902e+26 x1 faces sum dp 2.998430e+25
+CLEAN LZB cycle 73369 t2s 3 ledger -1.4104897015474124e+41
+CLEAN PLEDGER cycle 73369 dt 1.196516e+01 hflx -2.157809e+33 ntel 1.927130e+17 src -3.303235e+33 rad 1.145758e+33 cut -1.296814e+24 fwb 0.000000e+00 flr 1.845348e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.5547787559869619e+32 END 4.091133e+18 gross 5.596839e+34
+CLEAN FCONE cycle 73370 t2s 2 faces 866612 momentum cut sum |dF| V/c^2 1.083342e+25
+CLEAN FWB cycle 73370 t2s 2 faces 49581690 radiation momentum sum |dp| 6.860376e+26 x1 faces sum dp 2.976282e+25
+CLEAN FCONE cycle 73370 t2s 3 faces 868737 momentum cut sum |dF| V/c^2 1.088722e+25
+CLEAN FWB cycle 73370 t2s 3 faces 49581685 radiation momentum sum |dp| 6.877376e+26 x1 faces sum dp 3.006559e+25
+CLEAN LZB cycle 73370 t2s 3 ledger -1.4106353311471347e+41
+CLEAN PLEDGER cycle 73370 dt 1.196514e+01 hflx -2.157808e+33 ntel 1.927134e+17 src -3.303235e+33 rad 1.145757e+33 cut -1.295673e+24 fwb 0.000000e+00 flr 1.849964e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.5943208321647894e+32 END -1.137529e+17 gross 5.597068e+34
+CLEAN FCONE cycle 73371 t2s 2 faces 866939 momentum cut sum |dF| V/c^2 1.082486e+25
+CLEAN FWB cycle 73371 t2s 2 faces 49581086 radiation momentum sum |dp| 6.850329e+26 x1 faces sum dp 2.977461e+25
+CLEAN FCONE cycle 73371 t2s 3 faces 865684 momentum cut sum |dF| V/c^2 1.083670e+25
+CLEAN FWB cycle 73371 t2s 3 faces 49581085 radiation momentum sum |dp| 6.860369e+26 x1 faces sum dp 3.006223e+25
+CLEAN LZB cycle 73371 t2s 3 ledger -1.4107821414607489e+41
+CLEAN PLEDGER cycle 73371 dt 1.196512e+01 hflx -2.157808e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145757e+33 cut -1.293554e+24 fwb 0.000000e+00 flr 1.855495e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.6337699816406481e+32 END 2.154086e+16 gross 5.597298e+34
+CLEAN FCONE cycle 73372 t2s 2 faces 864834 momentum cut sum |dF| V/c^2 1.083513e+25
+CLEAN FWB cycle 73372 t2s 2 faces 49580584 radiation momentum sum |dp| 6.848452e+26 x1 faces sum dp 2.985199e+25
+CLEAN FCONE cycle 73372 t2s 3 faces 866974 momentum cut sum |dF| V/c^2 1.082101e+25
+CLEAN FWB cycle 73372 t2s 3 faces 49580583 radiation momentum sum |dp| 6.854996e+26 x1 faces sum dp 3.016424e+25
+CLEAN LZB cycle 73372 t2s 3 ledger -1.4109274374961651e+41
+CLEAN PLEDGER cycle 73372 dt 1.196509e+01 hflx -2.157807e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145757e+33 cut -1.291853e+24 fwb 0.000000e+00 flr 1.844716e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.6731263640569300e+32 END 4.446547e+17 gross 5.597526e+34
+CLEAN FCONE cycle 73373 t2s 2 faces 865800 momentum cut sum |dF| V/c^2 1.077990e+25
+CLEAN FWB cycle 73373 t2s 2 faces 49579945 radiation momentum sum |dp| 6.838104e+26 x1 faces sum dp 2.988518e+25
+CLEAN FCONE cycle 73373 t2s 3 faces 864620 momentum cut sum |dF| V/c^2 1.087515e+25
+CLEAN FWB cycle 73373 t2s 3 faces 49579942 radiation momentum sum |dp| 6.855062e+26 x1 faces sum dp 3.014671e+25
+CLEAN LZB cycle 73373 t2s 3 ledger -1.4110748127508758e+41
+CLEAN PLEDGER cycle 73373 dt 1.196507e+01 hflx -2.157807e+33 ntel -1.927145e+17 src -3.303235e+33 rad 1.145756e+33 cut -1.291014e+24 fwb 0.000000e+00 flr 1.847146e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.7123900620757555e+32 END 3.537578e+17 gross 5.597754e+34
+CLEAN FCONE cycle 73374 t2s 2 faces 863757 momentum cut sum |dF| V/c^2 1.084743e+25
+CLEAN FWB cycle 73374 t2s 2 faces 49579360 radiation momentum sum |dp| 6.833716e+26 x1 faces sum dp 2.993307e+25
+CLEAN FCONE cycle 73374 t2s 3 faces 865126 momentum cut sum |dF| V/c^2 1.072317e+25
+CLEAN FWB cycle 73374 t2s 3 faces 49579355 radiation momentum sum |dp| 6.840325e+26 x1 faces sum dp 3.026049e+25
+CLEAN LZB cycle 73374 t2s 3 ledger -1.4112195682020091e+41
+CLEAN PLEDGER cycle 73374 dt 1.196505e+01 hflx -2.157807e+33 ntel -1.927149e+17 src -3.303235e+33 rad 1.145756e+33 cut -1.289087e+24 fwb 0.000000e+00 flr 1.842495e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.7515610091810866e+32 END -4.896287e+18 gross 5.597982e+34
+CLEAN FCONE cycle 73375 t2s 2 faces 863772 momentum cut sum |dF| V/c^2 1.073317e+25
+CLEAN FWB cycle 73375 t2s 2 faces 49578784 radiation momentum sum |dp| 6.818429e+26 x1 faces sum dp 2.994179e+25
+CLEAN FCONE cycle 73375 t2s 3 faces 864298 momentum cut sum |dF| V/c^2 1.082935e+25
+CLEAN FWB cycle 73375 t2s 3 faces 49578782 radiation momentum sum |dp| 6.841095e+26 x1 faces sum dp 3.018269e+25
+CLEAN LZB cycle 73375 t2s 3 ledger -1.4113677244405349e+41
+CLEAN PLEDGER cycle 73375 dt 1.196503e+01 hflx -2.157806e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145755e+33 cut -1.286255e+24 fwb 0.000000e+00 flr 1.842138e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.7906391751235754e+32 END -1.004623e+18 gross 5.598209e+34
+CLEAN FCONE cycle 73376 t2s 2 faces 861350 momentum cut sum |dF| V/c^2 1.074114e+25
+CLEAN FWB cycle 73376 t2s 2 faces 49578107 radiation momentum sum |dp| 6.814623e+26 x1 faces sum dp 3.002742e+25
+CLEAN FCONE cycle 73376 t2s 3 faces 862511 momentum cut sum |dF| V/c^2 1.069903e+25
+CLEAN FWB cycle 73376 t2s 3 faces 49578105 radiation momentum sum |dp| 6.828290e+26 x1 faces sum dp 3.034869e+25
+CLEAN LZB cycle 73376 t2s 3 ledger -1.4115122987081834e+41
+CLEAN PLEDGER cycle 73376 dt 1.196500e+01 hflx -2.157806e+33 ntel 1.927156e+17 src -3.303235e+33 rad 1.145755e+33 cut -1.281736e+24 fwb 0.000000e+00 flr 1.837113e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.8296245545824164e+32 END -2.763427e+18 gross 5.598435e+34
+CLEAN FCONE cycle 73377 t2s 2 faces 862041 momentum cut sum |dF| V/c^2 1.075418e+25
+CLEAN FWB cycle 73377 t2s 2 faces 49577449 radiation momentum sum |dp| 6.812787e+26 x1 faces sum dp 3.005591e+25
+CLEAN FCONE cycle 73377 t2s 3 faces 863292 momentum cut sum |dF| V/c^2 1.077495e+25
+CLEAN FWB cycle 73377 t2s 3 faces 49577448 radiation momentum sum |dp| 6.829905e+26 x1 faces sum dp 3.034877e+25
+CLEAN LZB cycle 73377 t2s 3 ledger -1.4116600792324177e+41
+CLEAN PLEDGER cycle 73377 dt 1.196498e+01 hflx -2.157805e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145755e+33 cut -1.284728e+24 fwb 0.000000e+00 flr 1.840310e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.8685172524612941e+32 END -3.592445e+17 gross 5.598660e+34
+CLEAN FCONE cycle 73378 t2s 2 faces 858436 momentum cut sum |dF| V/c^2 1.066150e+25
+CLEAN FWB cycle 73378 t2s 2 faces 49576791 radiation momentum sum |dp| 6.796886e+26 x1 faces sum dp 3.011008e+25
+CLEAN FCONE cycle 73378 t2s 3 faces 857930 momentum cut sum |dF| V/c^2 1.065505e+25
+CLEAN FWB cycle 73378 t2s 3 faces 49576791 radiation momentum sum |dp| 6.816550e+26 x1 faces sum dp 3.038773e+25
+CLEAN LZB cycle 73378 t2s 3 ledger -1.4118049008335663e+41
+CLEAN PLEDGER cycle 73378 dt 1.196496e+01 hflx -2.157805e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145754e+33 cut -1.273675e+24 fwb 0.000000e+00 flr 1.832286e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.9073174244820864e+32 END -7.434950e+18 gross 5.598885e+34
+CLEAN FCONE cycle 73379 t2s 2 faces 856731 momentum cut sum |dF| V/c^2 1.067663e+25
+CLEAN FWB cycle 73379 t2s 2 faces 49576170 radiation momentum sum |dp| 6.791980e+26 x1 faces sum dp 3.012340e+25
+CLEAN FCONE cycle 73379 t2s 3 faces 858518 momentum cut sum |dF| V/c^2 1.071572e+25
+CLEAN FWB cycle 73379 t2s 3 faces 49576169 radiation momentum sum |dp| 6.806826e+26 x1 faces sum dp 3.042365e+25
+CLEAN LZB cycle 73379 t2s 3 ledger -1.4119512274636103e+41
+CLEAN PLEDGER cycle 73379 dt 1.196494e+01 hflx -2.157805e+33 ntel 0.000000e+00 src -3.303235e+33 rad 1.145754e+33 cut -1.274731e+24 fwb 0.000000e+00 flr 1.825528e+20 mrg 0.000000e+00 gap 0.000000e+00 P 1.9460250565435437e+32 END -5.327132e+18 gross 5.599111e+34
