@@ -22,9 +22,10 @@ def load(s, f):
     if s == 'bsg':
         n = re.search(r'red_(\d+)', f).group(1); q = np.load(P + 'bsg/pipe/cache/view/int2_%s.npz' % n)
         d['t'] = float(z['time']) / 86400; d['vr'] = z['s36_vr'].T / 1e5; d['te'] = np.where(q['fr_own'].T > 0, (np.maximum(q['fr_own'].T, 1e-99) / SIG) ** 0.25, np.nan)     # [theta, phi]
-        d['x1'] = np.degrees(z['x3f']); d['x2'] = 90 - np.degrees(z['x2f']); d['rf'] = z['x1f'] / RS; d['ang'] = z['x2f']; rho = z['p0_rho']; d['sl'] = np.ma.masked_where(rho <= 1.5 * C[s]['fl'], rho / z['rho_sh'] - 1); d['lab'] = 'r = 40.7 R_sun'; d['slk'] = 'theta'
+        d['x1'] = np.degrees(z['x3f']); d['x2'] = 90 - np.degrees(z['x2f']); d['rf'] = z['x1f'] / RS; d['ang'] = z['x2f']; rho = z['p0_rho']; d['sl'] = np.ma.masked_where(rho <= 1.5 * C[s]['fl'], rho / z['rho_sh'] - 1); d['svr'] = np.ma.masked_array(z['p0_vr'] / 1e5, mask=np.ma.getmaskarray(d['sl'])); d['lab'] = 'r = 40.7 R_sun'; d['slk'] = 'theta'
     else:
         c = C[s]; d['t'] = float(z['t']) / 86400; d['vr'] = z['sh_vr_' + c['tag']][0].T; d['te'] = z['sh_Teff'][0].T; d['x1'] = np.degrees(z['ph_f']); d['x2'] = 90 - np.degrees(z['th_f']); rho = 10 ** z['eqa_lrho']; d['sl'] = np.ma.masked_where((rho <= 1.5 * c['fl']) | z['eqa_Tfl'].astype(bool) * 0, rho / z['rho'][:rho.shape[1]] - 1); d['rf'] = z['rf'][:rho.shape[1] + 1] / RS; d['ang'] = z['eqa_phi']; d['slk'] = 'phi'; d['rph_med'] = float(z['Rph_med'])
+    if s != 'bsg': d['svr'] = np.ma.masked_array(z['eqa_vr'].astype(float), mask=np.ma.getmaskarray(d['sl']))   # 27zb: v_r [km/s] on the same slice, floor gas masked as the density slice
     return ph23(s, f, d)
 def ph23(s, f, d):
     # 26z: v_r at tau_R = 2/3 of each column (p23.py), one definition for all stars; bsg also takes its T_eff from the same point
@@ -33,6 +34,9 @@ def ph23(s, f, d):
     if s == 'bsg': d['te'] = z['te'].T.astype(float)
     else: d['te_d'] = float(np.nanmax(abs(z['te'].T - d['te']) / d['te']))
     return d
+def srange(s, d):
+    # the radial cells drawn in the slice panel (as draw())
+    rr = C[s]['rr']; sc = 1 if s == 'bsg' else C[s]['rph'] / RS; rf = np.asarray(d['rf']); i0 = int(np.searchsorted(rf, rr[0] * sc)); i1 = min(len(rf) - 1, int(np.searchsorted(rf, rr[1] * sc))); return slice(i0, i1)
 def zone(s, d):
     """slice cells below 0.97 R_ph (median, this dump) and inside the slice range"""
     sc = 1 if s == 'bsg' else C[s]['rph'] / RS; rm = 0.5 * (np.asarray(d['rf'][1:]) + np.asarray(d['rf'][:-1])); top = 51.0 if s == 'bsg' else 0.97 * d['rph_med'] / RS
@@ -41,13 +45,14 @@ def zone(s, d):
 TEFIX = dict(t9l62=(4900., 10000.), t9mlt=(9000., 29500.))   # USER 11-25: brighter surfaces; same as the 3-D movies
 def lims(s, pick=None):
     f = files(s); idx = pick or list(range(0, len(f), max(1, len(f) // 40))) + [len(f) - 1]
-    V, T, S = [], [], []
+    V, T, S, SV = [], [], [], []
     for i in idx:
         d = load(s, f[i])
         if d['t'] < 0.05: continue
         V.append(np.nanpercentile(abs(d['vr']), 99.5)); T.append(np.nanpercentile(d['te'], [2, 98])); ok = (d['rf'][1:] / (C[s]['rph'] / RS) > 0) if s != 'bsg' else True
-        rr = zone(s, d); q = np.ma.masked_invalid(d['sl'][:, rr]); S.append(np.nanpercentile(abs(q.compressed()), 99))
+        rr = zone(s, d); q = np.ma.masked_invalid(d['sl'][:, rr]); S.append(np.nanpercentile(abs(q.compressed()), 99)); SV.append(np.abs(np.ma.masked_invalid(d['svr'][:, srange(s, d)]).compressed()))
     L = dict(v=float(np.percentile(V, 80)), te=[float(np.percentile([x[0] for x in T], 10)), float(np.percentile([x[1] for x in T], 90))], s=float(min(1.0, np.percentile(S, 60) * 0.8)))
+    L['sv'] = float(np.percentile(np.concatenate(SV), 99))
     if s in TEFIX: L['te'] = list(TEFIX[s])
     return L
 BARS = dict(bsg=10., m35mms=1., m35zams=0.1, t9l62=100., t9mlt=10.)                       # R_sun; lateral scale bar at the median photosphere radius of the dump
@@ -69,8 +74,8 @@ def draw(s, d, L, fn, stamp=True):
     a = fig.add_subplot(gs[0, 2]); rr = C[s]['rr']; sc = 1 if s == 'bsg' else c['rph'] / RS; rf = np.asarray(d['rf']); i0 = int(np.searchsorted(rf, rr[0] * sc)); i1 = min(len(rf) - 1, int(np.searchsorted(rf, rr[1] * sc)))
     if s == 'bsg': A = d['ang']; R, TH = np.meshgrid(rf[i0:i1 + 1], A); X, Y = R * np.sin(TH), R * np.cos(TH); xl, yl = r'$\rm x\ [R_\odot]$', r'$\rm z\ [R_\odot]$'
     else: A = d['ang']; R, TH = np.meshgrid(rf[i0:i1 + 1], A); X, Y = R * np.cos(TH), R * np.sin(TH); xl, yl = r'$\rm x\ [R_\odot]$', r'$\rm y\ [R_\odot]$'
-    pc = a.pcolormesh(Y if s == 'bsg' else X, X if s == 'bsg' else Y, d['sl'][:, i0:i1], cmap=cm_(BAL), vmin=-L['s'], vmax=L['s'], shading='flat', rasterized=True); a.set_aspect('equal'); a.set_xlabel(xl if s != 'bsg' else r'$\rm z\ [R_\odot]$'); a.set_ylabel(yl if s != 'bsg' else r'$\rm x\ [R_\odot]$'); a.xaxis.set_major_locator(MaxNLocator(5)); a.yaxis.set_major_locator(MaxNLocator(5))
-    cb = fig.colorbar(pc, ax=a, orientation='horizontal', shrink=0.85, pad=0.16, extend='both'); cb.set_label(r'$\rm \delta\rho/\langle\rho\rangle$'); cb.locator = MaxNLocator(5); cb.update_ticks()
+    pc = a.pcolormesh(Y if s == 'bsg' else X, X if s == 'bsg' else Y, d['svr'][:, i0:i1], cmap=cm_(FUS), vmin=-L['sv'], vmax=L['sv'], shading='flat', rasterized=True); a.set_aspect('equal'); a.set_xlabel(xl if s != 'bsg' else r'$\rm z\ [R_\odot]$'); a.set_ylabel(yl if s != 'bsg' else r'$\rm x\ [R_\odot]$'); a.xaxis.set_major_locator(MaxNLocator(5)); a.yaxis.set_major_locator(MaxNLocator(5))
+    cb = fig.colorbar(pc, ax=a, orientation='horizontal', shrink=0.85, pad=0.16, extend='both'); cb.set_label(r'$\rm v_r\ on\ the\ slice\ [km\ s^{-1}]$'); cb.locator = MaxNLocator(5); cb.update_ticks()
     fig.savefig(fn); plt.close(fig)
 def frames(s):
     L = json.load(open(O + 'work/lim_%s.json' % s)); F = files(s); D = O + 'frames23/' + s; os.makedirs(D, exist_ok=True); n = len(F)
