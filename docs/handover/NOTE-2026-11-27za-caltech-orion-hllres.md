@@ -57,3 +57,26 @@
 - **Radial:** W05's band is half as wide in R as W1's (23 vs 47 cells at the same radial grid) and has one node. So the radial structure also follows the lateral scale. W1R2 (radial halving) will say whether FWHM is fixed in cells or in R.
 - **Item 5 (frequency):** unreliable. The strongest coefficient changes mode between dumps, so only 9 (W1) and 7 (prod) same-mode dumps after 2e5 s remain, with gaps. Phase residuals are 1.4-1.6 rad; |omega|/N ~0.5-0.7 with large error. W05 gives 1.81e-4 rad/s = 1.13 N (68 dumps, residual 0.7 rad). The 1800 s cadence aliases above 1.75e-3 rad/s.
 - F4: the v_r maps at 0.74 show the checkerboard of axis-aligned modes, one with the W1 cell and one with twice the cell for W05. Colour ranges +-0.072 (W05) and +-0.042 km/s (W1).
+
+## Readings at the W1R2 / W1E end (W2 still running, ends about 09:00 PST)
+- Run health:
+  - W1R2: rc 0, wall 24804 s, CW 0, FATAL 0, DT_RETRY 0; dt 6.06 s.
+  - W1E (fresh HLLE, W1's grid): rc 0, wall 8647 s, CW 0, FATAL 0, DT_RETRY 0.
+- Full tables and figures F1-F4: docs/handover/caltech_results/HLLRES/w1r2_w1e/.
+
+| at 0.74 R_ph,IC | W1 (1x radial) | W1R2 (0.5x radial cell) | W1E (HLLE) | prod_c1 |
+|---|---|---|---|---|
+| peak k20 at 1.8e5 / 3.46e5 s | 26 / 26 | 26 / 22 | 8 / 8 (no band) | 26 / 23 |
+| cells per wavelength at 3.46e5 | 9.8 | 11.6 | - | 11.1 |
+| band rms at 3.46e5 [km/s] | 1.6e-2 | 6.9e-2 (peak-band) | band absent: B window 4e-6 | 2.0e-2 |
+| e-fold 1-2e5 / 2-2.6e5 / 2.6-3.5e5 [1e4 s] | 2.54 / 2.53 / 5.60 | 1.94 / 2.73 / 4.41 | no growth | 2.44 / 2.55 / 5.40 |
+| radial FWHM at 2.6e5 s | 0.043 R = 44 cells | 0.047 R = 95 cells | - | 0.043 R = 44 cells |
+| radial FWHM at 3.46e5 s | 0.047 R = 47 cells | 0.028 R = 56 cells | - | 0.047 R = 48 cells |
+| node spacing [R_ph] | 0.015-0.021 | 0.013-0.017 | - | 0.015-0.021 |
+| hst KE_int / KEr_int [1e39 erg/sr], L_top/L_in | 12.6 / 5.57, 1.0015 | 12.4 / 5.41, 1.0001 | 11.7 / 5.05, 1.0012 | 11.8 / 5.16, 1.0003 |
+
+- **Radial (W1 vs W1R2):** at 2.6e5 s the band has the same width in R (0.043 vs 0.047 R_ph) with twice the cells in W1R2, and the node spacing in R is the same (0.013-0.021). By your reading that is **physical (fixed in R), not set by the radial grid**. At 3.46e5 W1R2's band is narrower (0.028 R) and 2-4x stronger: halving the radial cell makes the band grow faster (e-fold 1.94 vs 2.54e4 s early) rather than vanish.
+- **Lateral cells per wavelength at radial refinement:** k20 stays 26 to 2.6e5 s and drifts to 22 at 3.46e5 (11.6 cpw). The lateral scale still follows the lateral grid, as W05 vs W1 showed.
+- **W1E (fresh HLLE on W1's grid):** no band at 0.74 at all. The peak sits at k20 8 with rms about 1e-5 km/s and no growth (e-folds negative or 1.7e5 s); the convective/shell power is at r 0.85 R_ph. This confirms on a fresh start what R6 (HLLE) showed on the restart: the band needs HLLC.
+- **Frequency (item 5):** W1R2 keeps one strongest mode (11, 0) through 70 dumps after 2e5 s: |omega| = 1.86e-4 rad/s = 1.16 N, phase residual 0.25 rad. W05 gives 1.13 N likewise. So the band oscillates at about N at 0.74 (alias caveat: 1800 s cadence, Nyquist 1.75e-3 rad/s).
+- W2 (lateral halving) will decide the lateral question; final readings when it ends.
