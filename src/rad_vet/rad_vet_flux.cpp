@@ -317,7 +317,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       const size_t scr = ScrArray1D<Real>::shmem_size(8*nx);
       Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), (nmb1 + 1)*na*nb, 256);
       const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
-      Kokkos::parallel_for("cln_fs2p", pol.set_scratch_size(lv0, Kokkos::PerTeam(scr)),
+      AthFor("cln_fs2p", pol.set_scratch_size(lv0, Kokkos::PerTeam(scr)),
       KOKKOS_LAMBDA(TeamMember_t tm) {
         const int m = tm.league_rank()/(na*nb), a = tm.league_rank()%na;
         const int k = ks + (tm.league_rank()/na)%nb, j = js + a;
