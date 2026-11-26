@@ -498,7 +498,8 @@ void RadiationVet::ScTabAlloc(const bool dev) {
 //! swaps them in at the next rotation
 
 void RadiationVet::ScTabPrefetch(const int cyc) {
-  if (!ScRotOn() || vgd_tab_state != 0 || vgd_xf) {return;}
+  // (the slab keys its sets by their turn about x1: ScSlabKey, no prefetch)
+  if (!ScRotOn() || vgd_tab_state != 0 || vgd_xf || vgd_slab == 1) {return;}
   const Real an = RotAngleBlk(RotBlock(cyc) + 1);
   if (an == vgd_alpha) {return;}
   ScTabAlloc(true);

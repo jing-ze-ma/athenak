@@ -995,8 +995,6 @@ void RadiationVet::ScSlabSelect() {
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
   need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
-  need(!(vsc_rot && ScRotOn()) || (cln_ring && vet_ring_n == 0),
-       " rotating set without the ring, or a rotating vet_ring;");
   need(nb1 == 1, " several MeshBlocks along x1;");
   need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
   vgd_slab = lack.empty() ? 1 : 0;

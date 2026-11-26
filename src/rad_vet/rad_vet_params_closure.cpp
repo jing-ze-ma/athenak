@@ -255,6 +255,30 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
                 << std::endl;
     }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
+    // a set rotating in time with a mean of sets: the mean on the ring, live with the
+    // cross-fade, as on spherical polar and the cubed sphere (the old vet_sc averaging
+    // of the moments was removed: ring = off is refused, a restart file without the key
+    // continues on the ring)
+    if (vsc_rot && ScRotOn() && vra_on) {
+      if (cln_ring_named && cln_ring == 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_vet>/ring = off with a rotating Cartesian set and "
+          << "vet_rotate_avg: the moment averaging of the old Cartesian sweep was "
+          << "removed; name ring = live (or jump), or a fixed set (vet_gd_rotate_dt = 0)"
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (!cln_ring_named) {
+        cln_ring = 1;
+        g_vra_adv = true;   // (VetRotInit: the averaged window advances on the ring)
+        pin->SetString("rad_vet", "ring", "live");
+        if (global_variable::restart_run && global_variable::my_rank == 0) {
+          std::cout << "### NOTE: <rad_vet>/ring = live: the restart file's rotating "
+                    << "Cartesian set continues on the ring (the old moment averaging "
+                    << "was removed; its history is not read)" << std::endl;
+        }
+      }
+    }
     // ring = live: the rotating set's cross-fade on the clean ring
     vgd_xf = vsc_rot && cln_ring == 1 && ScRotOn();
     if (ScRotOn()) {

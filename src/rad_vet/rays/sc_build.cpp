@@ -75,7 +75,8 @@ void RadiationVet::ScBuild() {
   // vet_gd_rotate_every: a new z-angle at the first build of a block of N cycles; the
   // stored intensities (read only by a reflecting outer x1 face) belong to the old
   // directions and re-converge there
-  const Real al = RotAngle(pmy_pack->pmesh->ncycle);
+  const Real al = (vgd_slab == 1) ? ScSlabKey(RotBlock(pmy_pack->pmesh->ncycle))
+                                  : RotAngle(pmy_pack->pmesh->ncycle);
   // no vet_rotate_avg or cross-fade here: the clean scheme sweeps rotating sets on its
   // ring (RingMoments); without ring they are refused (InitArrays)
   if (al != vgd_alpha) {

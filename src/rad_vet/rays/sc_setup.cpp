@@ -413,13 +413,25 @@ void RadiationVet::ScInit() {
     const bool srot = slb && vsc_rot && ScRotOn();
     const double dxm = std::min(vgd_lg.Dx2H(mbs, 0),
                                 pm->three_d ? vgd_lg.Dx3H(mbs, 0) : 1.0e300);
-    for (size_t q = 0; slb && q < vgd_base.size()/4; ++q) {
-      const double *u = &vgd_base[4*q];
-      const double t = srot ? std::sqrt(u[1]*u[1] + u[2]*u[2])/dxm
-                            : std::max(std::fabs(u[1])/vgd_lg.Dx2H(mbs, 0), pm->three_d ?
-                                       std::fabs(u[2])/vgd_lg.Dx3H(mbs, 0) : 0.0);
-      tsl = std::max(tsl, t/std::fabs(u[0]));
+    // (a turning vet_ring changes n_1: both ends of its turn range, VetRotBeta, where
+    // the rays come closest to the x1 layers)
+    const bool rring = srot && vet_ring_n > 0;
+    for (int e = 0; e < (rring ? 2 : 1); ++e) {
+      std::vector<double> sb(vgd_base);
+      if (rring) {
+        VetRotSet(((e == 0) ? -0.4 : 0.4)*2.0*M_PI/vet_ring_n);
+        auto ah = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vet_ang);
+        for (int q = 0; q < 4*vet_nray; ++q) {sb[q] = ah(q/4, q%4);}
+      }
+      for (size_t q = 0; slb && q < sb.size()/4; ++q) {
+        const double *u = &sb[4*q];
+        const double t = (srot && !rring) ? std::sqrt(u[1]*u[1] + u[2]*u[2])/dxm
+                         : std::max(std::fabs(u[1])/vgd_lg.Dx2H(mbs, 0), pm->three_d ?
+                                    std::fabs(u[2])/vgd_lg.Dx3H(mbs, 0) : 0.0);
+        tsl = std::max(tsl, t/std::fabs(u[0]));
+      }
     }
+    if (rring) {VetRotSet(vsc_beta);}
     // pass 1: the raw band, where pass 0's exact lists would clamp
     for (int pass = 0; pass < 2; ++pass) {
       int nmax = vgd_raw ? std::numeric_limits<int>::max()
