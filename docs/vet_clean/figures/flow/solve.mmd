@@ -1,0 +1,23 @@
+%% One radiation solve: the steps of StageSolve, then the rest of the task list
+flowchart TD
+  opac["Opacity of the stage's gas<br/>Opacity, rad_vet_opacity.cpp"]
+  clos["Closure of the stage (from the rays)<br/>StageClosure, rad_vet_closure.cpp"]
+  old["Old E and gas, plus stage increments<br/>OldVector, rad_vet_oldvector.cpp"]
+  coef["Face coefficients<br/>FaceCoefficients, rad_vet_solver.cpp"]
+  first["First iterate: E, T, opacity, drag<br/>FirstPass, rad_vet_newton.cpp"]
+  pcl["New closure or opacity, if due<br/>PassClosure, rad_vet_newton.cpp"]
+  rows["Right-hand side and operator<br/>PassRows, rad_vet_newton.cpp"]
+  esol["Solve for E (multigrid, BiCGStab)<br/>SolveBiCGStab, rad_vet_solver.cpp"]
+  newt["Gas temperature (Newton)<br/>NewtonUpdate, rad_vet_newton.cpp"]
+  fsol["Face fluxes F, bounded by c E<br/>FluxSolve, rad_vet_flux.cpp"]
+  mom["Gas momentum and drag<br/>VelocityUpdate, rad_vet_newton.cpp"]
+  test{"Changes settled?<br/>PassSettled, rad_vet_newton.cpp"}
+  verd["Counts; converged or not<br/>VerdictSolve, rad_vet_newton.cpp"]
+  wb["Write-back: E, F, gas, slopes, limiter<br/>WriteBack, rad_vet_update.cpp"]
+  verd2["Floors and gas energy accepted or not<br/>VerdictState, rad_vet_update.cpp"]
+  rays["Ray moments for the next closure<br/>ClosureAfterSolve, rad_vet_closure.cpp"]
+  gas["Floor caps, gas ghosts, primitives<br/>GasUpdate, rad_vet_gas.cpp"]
+  gh["Ghost zones of E and F<br/>SendU, rad_vet_tasks.cpp"]
+  opac --> clos --> old --> coef --> first --> pcl --> rows --> esol --> newt --> fsol --> mom --> test
+  test -->|next pass| pcl
+  test -->|yes| verd --> wb --> verd2 --> rays --> gas --> gh

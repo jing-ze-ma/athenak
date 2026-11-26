@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="464" height="1493"
+ viewBox="0.00 0.00 348.43 1119.91" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(10.8 1109.11)">
+<polygon fill="white" stroke="none" points="-10.8,10.8 -10.8,-1109.11 337.63,-1109.11 337.63,10.8 -10.8,10.8"/>
+<g id="node1" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="274.16,-1098.31 95,-1098.31 95,-1062.31 274.16,-1062.31 274.16,-1098.31"/>
+<text text-anchor="start" x="105.08" y="-1080.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Opacity of the stage&#39;s gas</text>
+<text text-anchor="start" x="111.58" y="-1070.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Opacity, rad_vet_opacity.cpp</text>
+</g>
+<g id="node2" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="303.66,-1037.31 65.5,-1037.31 65.5,-1001.31 303.66,-1001.31 303.66,-1037.31"/>
+<text text-anchor="start" x="75.58" y="-1019.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Closure of the stage (from the rays)</text>
+<text text-anchor="start" x="97.08" y="-1009.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">StageClosure, rad_vet_closure.cpp</text>
+</g>
+<g id="edge1" class="edge">
+<path fill="none" stroke="#4a6674" d="M184.58,-1061.92C184.58,-1056.81 184.58,-1051.1 184.58,-1045.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="187.03,-1045.77 184.58,-1038.77 182.13,-1045.77 187.03,-1045.77"/>
+</g>
+<g id="node3" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="307.66,-976.31 61.5,-976.31 61.5,-940.31 307.66,-940.31 307.66,-976.31"/>
+<text text-anchor="start" x="71.58" y="-958.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Old E and gas, plus stage increments</text>
+<text text-anchor="start" x="101.08" y="-948.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">OldVector, rad_vet_oldvector.cpp</text>
+</g>
+<g id="edge2" class="edge">
+<path fill="none" stroke="#4a6674" d="M184.58,-1000.92C184.58,-995.81 184.58,-990.1 184.58,-984.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="187.03,-984.77 184.58,-977.77 182.13,-984.77 187.03,-984.77"/>
+</g>
+<g id="node4" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="286.66,-915.31 82.5,-915.31 82.5,-879.31 286.66,-879.31 286.66,-915.31"/>
+<text text-anchor="start" x="134.08" y="-897.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Face coefficients</text>
+<text text-anchor="start" x="92.58" y="-887.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">FaceCoefficients, rad_vet_solver.cpp</text>
+</g>
+<g id="edge3" class="edge">
+<path fill="none" stroke="#4a6674" d="M184.58,-939.92C184.58,-934.81 184.58,-929.1 184.58,-923.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="187.03,-923.77 184.58,-916.77 182.13,-923.77 187.03,-923.77"/>
+</g>
+<g id="node5" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="289.16,-854.31 80,-854.31 80,-818.31 289.16,-818.31 289.16,-854.31"/>
+<text text-anchor="start" x="90.08" y="-836.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">First iterate: E, T, opacity, drag</text>
+<text text-anchor="start" x="108.58" y="-826.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">FirstPass, rad_vet_newton.cpp</text>
+</g>
+<g id="edge4" class="edge">
+<path fill="none" stroke="#4a6674" d="M184.58,-878.92C184.58,-873.81 184.58,-868.1 184.58,-862.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="187.03,-862.77 184.58,-855.77 182.13,-862.77 187.03,-862.77"/>
+</g>
+<g id="node6" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="285.16,-793.31 84,-793.31 84,-757.31 285.16,-757.31 285.16,-793.31"/>
+<text text-anchor="start" x="94.08" y="-775.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">New closure or opacity, if due</text>
+<text text-anchor="start" x="100.08" y="-765.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">PassClosure, rad_vet_newton.cpp</text>
+</g>
+<g id="edge5" class="edge">
+<path fill="none" stroke="#4a6674" d="M184.58,-817.92C184.58,-812.81 184.58,-807.1 184.58,-801.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="187.03,-801.77 184.58,-794.77 182.13,-801.77 187.03,-801.77"/>
+</g>
+<g id="node7" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="217.16,-732.31 18,-732.31 18,-696.31 217.16,-696.31 217.16,-732.31"/>
+<text text-anchor="start" x="28.08" y="-714.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Right&#45;hand side and operator</text>
+<text text-anchor="start" x="39.08" y="-704.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">PassRows, rad_vet_newton.cpp</text>
+</g>
+<g id="edge6" class="edge">
+<path fill="none" stroke="#4a6674" d="M164.84,-756.92C158.09,-750.97 150.43,-744.23 143.27,-737.93"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="145.28,-736.56 138.41,-733.77 142.04,-740.23 145.28,-736.56"/>
+</g>
+<g id="node8" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="219.16,-671.31 0,-671.31 0,-635.31 219.16,-635.31 219.16,-671.31"/>
+<text text-anchor="start" x="10.08" y="-653.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Solve for E (multigrid, BiCGStab)</text>
+<text text-anchor="start" x="21.08" y="-643.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">SolveBiCGStab, rad_vet_solver.cpp</text>
+</g>
+<g id="edge7" class="edge">
+<path fill="none" stroke="#4a6674" d="M115.22,-695.92C114.53,-690.81 113.76,-685.1 113.01,-679.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="115.32,-679.38 111.95,-672.77 110.46,-680.03 115.32,-679.38"/>
+</g>
+<g id="node9" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="210.66,-610.31 6.5,-610.31 6.5,-574.31 210.66,-574.31 210.66,-610.31"/>
+<text text-anchor="start" x="27.08" y="-592.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Gas temperature (Newton)</text>
+<text text-anchor="start" x="16.58" y="-582.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">NewtonUpdate, rad_vet_newton.cpp</text>
+</g>
+<g id="edge8" class="edge">
+<path fill="none" stroke="#4a6674" d="M109.29,-634.92C109.2,-629.81 109.1,-624.1 109.01,-618.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="111.44,-618.73 108.88,-611.77 106.55,-618.81 111.44,-618.73"/>
+</g>
+<g id="node10" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="211.66,-549.31 11.5,-549.31 11.5,-513.31 211.66,-513.31 211.66,-549.31"/>
+<text text-anchor="start" x="21.58" y="-531.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Face fluxes F, bounded by c E</text>
+<text text-anchor="start" x="42.08" y="-521.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">FluxSolve, rad_vet_flux.cpp</text>
+</g>
+<g id="edge9" class="edge">
+<path fill="none" stroke="#4a6674" d="M109.46,-573.92C109.72,-568.81 110.01,-563.1 110.29,-557.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="112.78,-557.88 110.69,-550.77 107.89,-557.63 112.78,-557.88"/>
+</g>
+<g id="node11" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="219.66,-488.31 13.5,-488.31 13.5,-452.31 219.66,-452.31 219.66,-488.31"/>
+<text text-anchor="start" x="38.58" y="-470.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Gas momentum and drag</text>
+<text text-anchor="start" x="23.58" y="-460.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">VelocityUpdate, rad_vet_newton.cpp</text>
+</g>
+<g id="edge10" class="edge">
+<path fill="none" stroke="#4a6674" d="M113.05,-512.92C113.49,-507.81 113.97,-502.1 114.44,-496.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="116.95,-496.95 115.1,-489.77 112.07,-496.54 116.95,-496.95"/>
+</g>
+<g id="node12" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="326.83,-392.58 326.83,-412.92 242.91,-427.31 124.25,-427.31 40.33,-412.92 40.33,-392.58 124.25,-378.2 242.91,-378.2 326.83,-392.58"/>
+<text text-anchor="start" x="131.08" y="-403.35" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Changes settled?</text>
+<text text-anchor="start" x="100.08" y="-393.25" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">PassSettled, rad_vet_newton.cpp</text>
+</g>
+<g id="edge11" class="edge">
+<path fill="none" stroke="#4a6674" d="M134.18,-452.08C140.12,-446.27 146.92,-439.62 153.55,-433.14"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="154.75,-435.41 158.04,-428.76 151.32,-431.91 154.75,-435.41"/>
+</g>
+<g id="edge12" class="edge">
+<path fill="none" stroke="#4a6674" d="M226.39,-427.74C239.52,-438.39 250.58,-452.38 250.58,-469.31 250.58,-715.31 250.58,-715.31 250.58,-715.31 250.58,-730.76 240.4,-743.18 228.03,-752.56"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="227.14,-750.89 222.82,-756.92 229.96,-754.9 227.14,-750.89"/>
+<text text-anchor="middle" x="283.08" y="-588.46" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;next pass </text>
+</g>
+<g id="node13" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="280.16,-341 87,-341 87,-305 280.16,-305 280.16,-341"/>
+<text text-anchor="start" x="106.08" y="-323.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Counts; converged or not</text>
+<text text-anchor="start" x="97.08" y="-313.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">VerdictSolve, rad_vet_newton.cpp</text>
+</g>
+<g id="edge13" class="edge">
+<path fill="none" stroke="#4a6674" d="M183.58,-378C183.58,-368.88 183.58,-358.45 183.58,-349.2"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="186.03,-349.44 183.58,-342.44 181.13,-349.44 186.03,-349.44"/>
+<text text-anchor="middle" x="199.08" y="-355.75" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;yes </text>
+</g>
+<g id="node14" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="302.66,-280 64.5,-280 64.5,-244 302.66,-244 302.66,-280"/>
+<text text-anchor="start" x="74.58" y="-262.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Write&#45;back: E, F, gas, slopes, limiter</text>
+<text text-anchor="start" x="104.58" y="-252.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">WriteBack, rad_vet_update.cpp</text>
+</g>
+<g id="edge14" class="edge">
+<path fill="none" stroke="#4a6674" d="M183.58,-304.62C183.58,-299.5 183.58,-293.8 183.58,-288.29"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="186.03,-288.46 183.58,-281.46 181.13,-288.46 186.03,-288.46"/>
+</g>
+<g id="node15" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="310.66,-219 56.5,-219 56.5,-183 310.66,-183 310.66,-219"/>
+<text text-anchor="start" x="66.58" y="-201.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Floors and gas energy accepted or not</text>
+<text text-anchor="start" x="98.58" y="-191.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">VerdictState, rad_vet_update.cpp</text>
+</g>
+<g id="edge15" class="edge">
+<path fill="none" stroke="#4a6674" d="M183.58,-243.62C183.58,-238.5 183.58,-232.8 183.58,-227.29"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="186.03,-227.46 183.58,-220.46 181.13,-227.46 186.03,-227.46"/>
+</g>
+<g id="node16" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="297.16,-158 70,-158 70,-122 297.16,-122 297.16,-158"/>
+<text text-anchor="start" x="80.08" y="-140.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Ray moments for the next closure</text>
+<text text-anchor="start" x="84.58" y="-130.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureAfterSolve, rad_vet_closure.cpp</text>
+</g>
+<g id="edge16" class="edge">
+<path fill="none" stroke="#4a6674" d="M183.58,-182.62C183.58,-177.5 183.58,-171.8 183.58,-166.29"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="186.03,-166.46 183.58,-159.46 181.13,-166.46 186.03,-166.46"/>
+</g>
+<g id="node17" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="295.16,-97 72,-97 72,-61 295.16,-61 295.16,-97"/>
+<text text-anchor="start" x="82.08" y="-79.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Floor caps, gas ghosts, primitives</text>
+<text text-anchor="start" x="110.58" y="-69.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">GasUpdate, rad_vet_gas.cpp</text>
+</g>
+<g id="edge17" class="edge">
+<path fill="none" stroke="#4a6674" d="M183.58,-121.62C183.58,-116.5 183.58,-110.8 183.58,-105.29"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="186.03,-105.46 183.58,-98.46 181.13,-105.46 186.03,-105.46"/>
+</g>
+<g id="node18" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="263.66,-36 103.5,-36 103.5,0 263.66,0 263.66,-36"/>
+<text text-anchor="start" x="113.58" y="-18.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Ghost zones of E and F</text>
+<text text-anchor="start" x="118.08" y="-8.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">SendU, rad_vet_tasks.cpp</text>
+</g>
+<g id="edge18" class="edge">
+<path fill="none" stroke="#4a6674" d="M183.58,-60.62C183.58,-55.5 183.58,-49.8 183.58,-44.29"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="186.03,-44.46 183.58,-37.46 181.13,-44.46 186.03,-44.46"/>
+</g>
+</g>
+</svg>

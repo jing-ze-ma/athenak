@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="772" height="1234"
+ viewBox="0.00 0.00 579.16 925.82" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(10.8 915.02)">
+<polygon fill="white" stroke="none" points="-10.8,10.8 -10.8,-915.02 568.36,-915.02 568.36,10.8 -10.8,10.8"/>
+<g id="node1" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="497.12,-904.22 303.96,-904.22 303.96,-868.22 497.12,-868.22 497.12,-904.22"/>
+<text text-anchor="start" x="314.04" y="-886.82" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Save a checkpoint (dt_retry)</text>
+<text text-anchor="start" x="316.04" y="-876.72" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">DtRetry::Save, driver/dt_retry.cpp</text>
+</g>
+<g id="node2" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="557.56,-808.5 557.56,-828.84 465.58,-843.22 335.5,-843.22 243.52,-828.84 243.52,-808.5 335.5,-794.12 465.58,-794.12 557.56,-808.5"/>
+<text text-anchor="start" x="308.04" y="-819.27" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Valid slope from the last step?</text>
+<text text-anchor="start" x="320.54" y="-809.17" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Time2Active, rad_vet_imex.cpp</text>
+</g>
+<g id="edge1" class="edge">
+<path fill="none" stroke="#4a6674" d="M400.54,-868C400.54,-862.89 400.54,-857.12 400.54,-851.39"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="402.99,-851.68 400.54,-844.68 398.09,-851.68 402.99,-851.68"/>
+</g>
+<g id="node3" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="366.62,-756.92 178.46,-756.92 178.46,-720.92 366.62,-720.92 366.62,-756.92"/>
+<text text-anchor="start" x="201.04" y="-739.52" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Hydro stage 1 (explicit)</text>
+<text text-anchor="start" x="188.54" y="-729.42" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Driver::Execute, driver/driver.cpp</text>
+</g>
+<g id="edge2" class="edge">
+<path fill="none" stroke="#4a6674" d="M361.09,-793.71C343.97,-783.31 324.09,-771.23 307.51,-761.16"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="309.35,-758.8 302.09,-757.26 306.8,-762.99 309.35,-758.8"/>
+<text text-anchor="middle" x="355.04" y="-771.67" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;yes </text>
+</g>
+<g id="node11" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="384.12,-244.31 176.96,-244.31 176.96,-208.31 384.12,-208.31 384.12,-244.31"/>
+<text text-anchor="start" x="187.04" y="-226.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Hydro stages 1 and 2 (explicit)</text>
+<text text-anchor="start" x="196.54" y="-216.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Driver::Execute, driver/driver.cpp</text>
+</g>
+<g id="edge15" class="edge">
+<path fill="none" stroke="#4a6674" d="M400.54,-793.85C400.54,-778.46 400.54,-758.01 400.54,-739.92 400.54,-739.92 400.54,-739.92 400.54,-321.31 400.54,-286.74 369.3,-262.97 338.7,-247.99"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="340.16,-245.5 332.78,-244.74 338.07,-249.93 340.16,-245.5"/>
+<text text-anchor="middle" x="413.54" y="-526.76" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;no </text>
+</g>
+<g id="node4" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="359.62,-695.92 149.46,-695.92 149.46,-659.92 359.62,-659.92 359.62,-695.92"/>
+<text text-anchor="start" x="159.54" y="-678.52" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Radiation stage 1, implicit, g dt</text>
+<text text-anchor="start" x="175.54" y="-668.42" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Time2Stage, rad_vet_imex.cpp</text>
+</g>
+<g id="edge3" class="edge">
+<path fill="none" stroke="#4a6674" d="M267.24,-720.53C265.64,-715.3 263.86,-709.45 262.14,-703.83"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="264.26,-703.36 259.87,-697.38 259.57,-704.79 264.26,-703.36"/>
+</g>
+<g id="node5" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="369.08,-600.19 369.08,-620.54 283.83,-634.92 163.26,-634.92 78,-620.54 78,-600.19 163.26,-585.81 283.83,-585.81 369.08,-600.19"/>
+<text text-anchor="start" x="178.04" y="-610.96" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Stage 1 failed?</text>
+<text text-anchor="start" x="138.54" y="-600.86" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">VerdictState, rad_vet_update.cpp</text>
+</g>
+<g id="edge4" class="edge">
+<path fill="none" stroke="#4a6674" d="M246.4,-659.69C243.87,-654.35 241,-648.29 238.18,-642.31"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="240.1,-641.65 234.9,-636.37 235.67,-643.75 240.1,-641.65"/>
+</g>
+<g id="node6" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="278.62,-548.61 90.46,-548.61 90.46,-512.61 278.62,-512.61 278.62,-548.61"/>
+<text text-anchor="start" x="113.04" y="-531.21" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Hydro stage 2 (explicit)</text>
+<text text-anchor="start" x="100.54" y="-521.11" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Driver::Execute, driver/driver.cpp</text>
+</g>
+<g id="edge5" class="edge">
+<path fill="none" stroke="#4a6674" d="M211.63,-585.61C206.92,-576.22 201.5,-565.43 196.76,-555.97"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="198.62,-555.21 193.29,-550.05 194.24,-557.4 198.62,-555.21"/>
+<text text-anchor="middle" x="218.54" y="-563.36" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;no </text>
+</g>
+<g id="node10" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="369.12,-340.31 177.96,-340.31 177.96,-304.31 369.12,-304.31 369.12,-340.31"/>
+<text text-anchor="start" x="188.04" y="-322.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Back to the start of the step</text>
+<text text-anchor="start" x="190.04" y="-312.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Time2Restore, rad_vet_imex.cpp</text>
+</g>
+<g id="edge10" class="edge">
+<path fill="none" stroke="#4a6674" d="M283.98,-585.46C304.59,-573.07 322.54,-555.43 322.54,-531.61 322.54,-531.61 322.54,-531.61 322.54,-401.06 322.54,-380.4 310,-360.74 297.61,-346.36"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="299.86,-345.09 293.35,-341.54 296.22,-348.37 299.86,-345.09"/>
+<text text-anchor="middle" x="338.04" y="-465.76" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;yes </text>
+</g>
+<g id="node7" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="274.62,-487.61 64.46,-487.61 64.46,-451.61 274.62,-451.61 274.62,-487.61"/>
+<text text-anchor="start" x="74.54" y="-470.21" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Radiation stage 2, implicit, g dt</text>
+<text text-anchor="start" x="90.54" y="-460.11" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Time2Stage, rad_vet_imex.cpp</text>
+</g>
+<g id="edge6" class="edge">
+<path fill="none" stroke="#4a6674" d="M180.12,-512.23C178.79,-506.99 177.3,-501.14 175.87,-495.52"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="178.08,-495.25 173.98,-489.07 173.33,-496.46 178.08,-495.25"/>
+</g>
+<g id="node8" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="291.08,-391.89 291.08,-412.23 205.83,-426.61 85.26,-426.61 0,-412.23 0,-391.89 85.26,-377.51 205.83,-377.51 291.08,-391.89"/>
+<text text-anchor="start" x="100.04" y="-402.66" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Stage 2 failed?</text>
+<text text-anchor="start" x="60.54" y="-392.56" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">VerdictState, rad_vet_update.cpp</text>
+</g>
+<g id="edge7" class="edge">
+<path fill="none" stroke="#4a6674" d="M163.24,-451.39C161.32,-446.16 159.16,-440.25 157.01,-434.39"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="159.04,-433.8 154.33,-428.07 154.44,-435.48 159.04,-433.8"/>
+</g>
+<g id="node9" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="259.12,-292.31 31.96,-292.31 31.96,-256.31 259.12,-256.31 259.12,-292.31"/>
+<text text-anchor="start" x="42.04" y="-274.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Stages accepted: the step is done</text>
+<text text-anchor="start" x="64.04" y="-264.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Time2Accept, rad_vet_imex.cpp</text>
+</g>
+<g id="edge8" class="edge">
+<path fill="none" stroke="#4a6674" d="M145.54,-377.11C145.54,-355.15 145.54,-322.75 145.54,-300.42"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="147.99,-300.7 145.54,-293.7 143.09,-300.7 147.99,-300.7"/>
+<text text-anchor="middle" x="158.54" y="-355.06" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;no </text>
+</g>
+<g id="edge11" class="edge">
+<path fill="none" stroke="#4a6674" d="M184.99,-377.1C202.11,-366.7 221.99,-354.62 238.58,-344.55"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="239.28,-346.38 243.99,-340.65 236.74,-342.19 239.28,-346.38"/>
+<text text-anchor="middle" x="241.04" y="-355.06" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;yes </text>
+</g>
+<g id="node13" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="403.38,-87.58 403.38,-107.92 316.78,-122.31 194.31,-122.31 107.7,-107.92 107.7,-87.58 194.31,-73.2 316.78,-73.2 403.38,-87.58"/>
+<text text-anchor="start" x="173.54" y="-98.35" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Did a solve ask for a retry?</text>
+<text text-anchor="start" x="169.04" y="-88.25" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">DtRetry::Failed, driver/dt_retry.cpp</text>
+</g>
+<g id="edge9" class="edge">
+<path fill="none" stroke="#4a6674" d="M144.11,-256.05C142.85,-230.01 144.07,-180.2 167.54,-147.31 173.2,-139.38 180.56,-132.61 188.63,-126.86"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="189.46,-128.58 193.92,-122.65 186.74,-124.51 189.46,-128.58"/>
+</g>
+<g id="edge12" class="edge">
+<path fill="none" stroke="#4a6674" d="M274.83,-304.06C275.9,-289.58 277.46,-268.69 278.68,-252.36"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="281.17,-252.92 279.24,-245.76 276.28,-252.55 281.17,-252.92"/>
+</g>
+<g id="node12" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="377.12,-183.31 177.96,-183.31 177.96,-147.31 377.12,-147.31 377.12,-183.31"/>
+<text text-anchor="start" x="188.04" y="-165.91" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Radiation, backward Euler, dt</text>
+<text text-anchor="start" x="191.54" y="-155.81" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">BackwardEuler, rad_vet_imex.cpp</text>
+</g>
+<g id="edge13" class="edge">
+<path fill="none" stroke="#4a6674" d="M279.66,-207.92C279.4,-202.81 279.11,-197.1 278.83,-191.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="281.23,-191.63 278.43,-184.77 276.34,-191.88 281.23,-191.63"/>
+</g>
+<g id="edge14" class="edge">
+<path fill="none" stroke="#4a6674" d="M271.76,-147.08C270.01,-141.85 268.02,-135.94 266.06,-130.09"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="268.15,-129.62 263.6,-123.76 263.5,-131.18 268.15,-129.62"/>
+</g>
+<g id="node14" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="552.62,-36 362.46,-36 362.46,0 552.62,0 552.62,-36"/>
+<text text-anchor="start" x="372.54" y="-18.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Checkpoint back, smaller dt</text>
+<text text-anchor="start" x="372.54" y="-8.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">DtRetry::Retry, driver/dt_retry.cpp</text>
+</g>
+<g id="edge16" class="edge">
+<path fill="none" stroke="#4a6674" d="M317.52,-72.9C345.51,-62.12 378.22,-49.53 404.98,-39.23"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="405.71,-41.19 411.36,-36.39 403.95,-36.62 405.71,-41.19"/>
+<text text-anchor="middle" x="396.04" y="-50.75" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;yes </text>
+</g>
+<g id="node15" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="342.62,-36 154.46,-36 154.46,0 342.62,0 342.62,-36"/>
+<text text-anchor="start" x="171.04" y="-18.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Books, outputs, next step</text>
+<text text-anchor="start" x="164.54" y="-8.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">Driver::Execute, driver/driver.cpp</text>
+</g>
+<g id="edge18" class="edge">
+<path fill="none" stroke="#4a6674" d="M253.4,-73C252.58,-63.88 251.64,-53.45 250.81,-44.2"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="253.18,-44.19 250.11,-37.44 248.3,-44.63 253.18,-44.19"/>
+<text text-anchor="middle" x="264.54" y="-50.75" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;no </text>
+</g>
+<g id="edge17" class="edge">
+<path fill="none" stroke="#4a6674" d="M457.54,-36.29C457.54,-52.05 457.54,-75.96 457.54,-96.75 457.54,-739.92 457.54,-739.92 457.54,-739.92 457.54,-758.22 447.14,-775.08 435.22,-788.39"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="434.07,-786.09 431.04,-792.86 437.63,-789.46 434.07,-786.09"/>
+</g>
+</g>
+</svg>

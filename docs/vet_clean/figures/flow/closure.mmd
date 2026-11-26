@@ -1,0 +1,35 @@
+%% The closure and when rays are swept (clean_closure = extrap1, time2_tableau = sdirk2)
+flowchart TD
+  which{"Which solve?<br/>StageClosure, rad_vet_closure.cpp"}
+  none["No stored moments (first step): predict E, T<br/>PredictState, rad_vet_closure.cpp"]
+  s1["Stage 1: moments of the last step<br/>ClosureExtrap, rad_vet_closure.cpp"]
+  s1b["Second pass: rays of the first iterate<br/>ClosureIterate, rad_vet_closure.cpp"]
+  s2["Stage 2: line in time, no sweep<br/>ClosureExtrap, rad_vet_closure.cpp"]
+  beu["Backward Euler: stored moments, no sweep<br/>ClosureExtrap, rad_vet_closure.cpp"]
+  beu2["After the solve: rays of the new state<br/>RayMoments, rad_vet_closure.cpp"]
+  tr["Sweep the rays<br/>TraceRays, rad_vet_closure.cpp"]
+  mesh{"Mesh?<br/>TraceRays, rad_vet_closure.cpp"}
+  cart["Cartesian sweep, layer by layer<br/>ScCartBuild, rays/sc_cart_sweep.cpp"]
+  src["Extinction and source of every cell<br/>ScSource, rays/sc_build.cpp"]
+  sp["Spherical polar, shell by shell<br/>ScSweep, rays/sc_sph_sweep.cpp"]
+  cs["Cubed sphere, shell by shell<br/>ScCsSweep, rays/sc_cs_sweep.cpp"]
+  cell["Closure of a cell from its rays<br/>ClosureFromSc, ClosureFromRays, rad_vet_closure_rays.cpp"]
+  ring["If the sets rotate: mix the sets<br/>RingMoments, rad_vet_closure_ring.cpp"]
+  face["Ray sums on faces<br/>RayFaceSums, rad_vet_closure_faces.cpp"]
+  fill["Cells without rays, ghost zones<br/>ClosureFill, rad_vet_closure.cpp"]
+  use["Face coefficients of the solve<br/>FaceCoefficients, rad_vet_solver.cpp"]
+  keep["Moments kept for the next closure<br/>ClosureAfterSolve, rad_vet_closure.cpp"]
+  which -->|no stored moments| none --> tr
+  which -->|stage 1| s1 --> s1b --> tr
+  which -->|stage 2| s2 --> fill
+  which -->|backward Euler| beu --> beu2 --> tr
+  tr --> mesh
+  mesh -->|Cartesian| cart --> cell
+  mesh -->|curved| src
+  src --> sp --> cell
+  src --> cs --> cell
+  cell -->|curved| face --> ring
+  cell -->|Cartesian| ring
+  ring -->|for this solve| fill --> use
+  ring -->|after backward Euler| keep
+  fill -->|stage 1| keep
