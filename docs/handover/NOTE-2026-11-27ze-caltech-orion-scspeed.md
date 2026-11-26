@@ -454,3 +454,13 @@ written rst/bin: 0
       0.009578         49 cln_rhs
       0.009426         38 cln_velocity
 ```
+
+## Round 3 summary
+- Smoke passed on 1 and 4 GPUs. All 15 runs rc 0, 0 FATAL, 0 CLEAN WARNING, no rst/bin written.
+- s/cycle, Cartesian cart2 vs curved sp2, means of the A/B pairs:
+  - H1, 1 GPU, 128^3: 0.306 vs 0.286 (sp 0.93x). SC 0.89 s vs sp sweeps 0.44 s.
+  - H4, 4 GPUs, 2x2 lateral: 0.188 vs 0.116 (sp 0.62x). sp halo+walls 0.020 s, MPI wait 0.011 s.
+  - H4L, 4 GPUs, 256^3: 0.607 vs 0.594 (sp 0.98x). sp sweeps 1.27 s, of which halo+walls 0.18 s.
+- So on the production-wedge set (126 rays) the curved sweep is not slower than the Cartesian one at any layout.
+  - The 27zg sp runs (160 rays, reflecting theta walls) were slower. Their per-shell halo dominated on 4 GPUs.
+- Caveat: the first 60 s of H4_A2 overlapped a compile step that I started by mistake on the same node and cancelled; H4_A2 equals H4_A1 within 0.7 %.
