@@ -80,3 +80,56 @@ Traceback (most recent call last):
 KeyError: 'mb_x1v'
 srun: error: hpc-sm-02-17: task 0: Exited with exit code 1
 ```
+
+## 27zk addendum: thick emitter (chi 50), 64^3, 1 GPU on 02-17; sph_err.py = the updated version at 980d46909 (also used to re-score the 27zh step-4 runs)
+```
+T5a rc=0 wall=10 s bin athena_rel6_01deec542_suite args: -i /resnick/groups/carnegie_poc/jingze/scpr_1127/our_sph.athinput problem/blob_rho=3.125
+T5b rc=0 wall=13 s bin athena_rel6_01deec542_suite args: -i /resnick/groups/carnegie_poc/jingze/scpr_1127/our_sph_sp.athinput
+T5c rc=0 wall=10 s bin athena_pr798_c5ac58778 args: -i /resnick/groups/carnegie_poc/jingze/scpr_1127/pr_sph.athinput problem/sigma_a=50.0
+```
+- T5a: Terminating on cycle limit; FATAL 0, WARNING lines 0
+- T5b: Terminating on cycle limit; FATAL 0, WARNING lines 0
+- T5c: Terminating on cycle limit; FATAL 0, WARNING lines 0
+  - `SC sphere: checked 6272 interior cells (r < 6.000000e-01R), rel L2 err  J = 2.137375e-07  H = 1.856461e-07  K = 1.511100e-07  (J Linf 8.007802e-07; 2 sweeps, residual 0.000000e+00)`
+- sph_err.py output (step 4 re-scored at 64^3 and 32^3, then 5a, 5b, 5c):
+```
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 14, in <module>
+    J = np.asarray(f['mb_data'][var][0], dtype=float)
+                   ~~~~~~~~~~~~^^^^^
+KeyError: 'sc_rad_J'
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 15, in <module>
+    x = np.asarray(f['mb_x1v'][0]); y = np.asarray(f['mb_x2v'][0]); z = np.asarray(f['mb_x3v'][0])
+                   ~^^^^^^^^^^
+KeyError: 'mb_x1v'
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 14, in <module>
+    J = np.asarray(f['mb_data'][var][0], dtype=float)
+                   ~~~~~~~~~~~~^^^^^
+KeyError: 'sc_rad_J'
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 15, in <module>
+    x = np.asarray(f['mb_x1v'][0]); y = np.asarray(f['mb_x2v'][0]); z = np.asarray(f['mb_x3v'][0])
+                   ~^^^^^^^^^^
+KeyError: 'mb_x1v'
+--- 5a
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 15, in <module>
+    x = np.asarray(f['mb_x1v'][0]); y = np.asarray(f['mb_x2v'][0]); z = np.asarray(f['mb_x3v'][0])
+                   ~^^^^^^^^^^
+KeyError: 'mb_x1v'
+--- 5b
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 15, in <module>
+    x = np.asarray(f['mb_x1v'][0]); y = np.asarray(f['mb_x2v'][0]); z = np.asarray(f['mb_x3v'][0])
+                   ~^^^^^^^^^^
+KeyError: 'mb_x1v'
+--- 5c
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/scpr_1127/sph_err.py", line 14, in <module>
+    J = np.asarray(f['mb_data'][var][0], dtype=float)
+                   ~~~~~~~~~~~~^^^^^
+KeyError: 'sc_rad_J'
+srun: error: hpc-sm-02-17: task 0: Exited with exit code 1
+```
