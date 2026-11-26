@@ -57,3 +57,82 @@ V10 rc=0 wall=35 s end: Terminating on cycle limit FATAL 0 CW 0
   - GPU idle did not fall: 0.49 -> 0.58 s per cycle by my window. The nsys runs themselves differ in s/cycle (R4n 0.96, V4n 0.91), so the idle split is not robust at this resolution.
 - s/cycle: no measurable gain on the bsg production layout. The VET solve here is not bound by these host round trips.
 - No 8/16 arms: 27zm cannot restart the rst on more than its 4 MeshBlocks. The R4k addendum is running next, on 02-11 alone.
+
+## Addendum R4k: REL, 4 GPUs, bsg rst (cycle 29657) + 20 cycles, fenced Kokkos kernel timer (libkp_ktime.so), 02-11 alone
+- R4k rc=0 end: Terminating on cycle limit
+- kp.0 (rank 0) is the total over all 20 cycles, warm-up included; the tool cannot split by cycle. Per cycle = total / 20.
+| label | total s | launches | ms / cycle | launches / cycle |
+|---|---|---|---|---|
+| cln_fwc | 0.1883 | 411 | 9.42 | 20.6 |
+| cln_stencil | 0.1355 | 137 | 6.77 | 6.8 |
+| cln_pcsetup | 0.0375 | 137 | 1.87 | 6.8 |
+| cls_galerkin | 0.0204 | 274 | 1.02 | 13.7 |
+| cln_pcr2 | 0.7074 | 7770 | 35.37 | 388.5 |
+| cls_restrict | 0.3071 | 2590 | 15.35 | 129.5 |
+| cls_prolong | 0.0753 | 2590 | 3.76 | 129.5 |
+| cln_apply_st | 0.3791 | 1569 | 18.95 | 78.5 |
+| cln_apply_st_sh | 0.0739 | 1569 | 3.70 | 78.5 |
+| vet_lay_red2 | 0.1434 | 2984 | 7.17 | 149.2 |
+- kp total line: `# total 31.583933 s`; s/cycle under the fenced timer 0.9573 (cycles 6-20)
+- CLEAN lines per stage (it K (sum T) ... solves S), cycles 1-20:
+```
+CLEAN cycle 29657 t2s 2 it 1 (sum 21) ... solves 4
+CLEAN cycle 29657 t2s 3 it 7 (sum 16) ... solves 3
+CLEAN cycle 29658 t2s 2 it 1 (sum 20) ... solves 4
+CLEAN cycle 29658 t2s 3 it 2 (sum 14) ... solves 4
+CLEAN cycle 29659 t2s 2 it 1 (sum 21) ... solves 4
+CLEAN cycle 29659 t2s 3 it 2 (sum 15) ... solves 4
+CLEAN cycle 29660 t2s 2 it 2 (sum 22) ... solves 4
+CLEAN cycle 29660 t2s 3 it 5 (sum 6) ... solves 2
+CLEAN cycle 29661 t2s 2 it 2 (sum 23) ... solves 4
+CLEAN cycle 29661 t2s 3 it 5 (sum 6) ... solves 2
+CLEAN cycle 29662 t2s 2 it 1 (sum 21) ... solves 4
+CLEAN cycle 29662 t2s 3 it 6 (sum 14) ... solves 3
+CLEAN cycle 29663 t2s 2 it 2 (sum 22) ... solves 4
+CLEAN cycle 29663 t2s 3 it 9 (sum 18) ... solves 3
+CLEAN cycle 29664 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29664 t2s 3 it 7 (sum 8) ... solves 2
+CLEAN cycle 29665 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29665 t2s 3 it 4 (sum 5) ... solves 2
+CLEAN cycle 29666 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29666 t2s 3 it 7 (sum 12) ... solves 3
+CLEAN cycle 29667 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29667 t2s 3 it 2 (sum 18) ... solves 4
+CLEAN cycle 29668 t2s 2 it 1 (sum 20) ... solves 4
+CLEAN cycle 29668 t2s 3 it 5 (sum 6) ... solves 2
+CLEAN cycle 29669 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29669 t2s 3 it 8 (sum 14) ... solves 3
+CLEAN cycle 29670 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29670 t2s 3 it 2 (sum 16) ... solves 4
+CLEAN cycle 29671 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29671 t2s 3 it 7 (sum 8) ... solves 2
+CLEAN cycle 29672 t2s 2 it 1 (sum 23) ... solves 4
+CLEAN cycle 29672 t2s 3 it 5 (sum 6) ... solves 2
+CLEAN cycle 29673 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29673 t2s 3 it 6 (sum 15) ... solves 3
+CLEAN cycle 29674 t2s 2 it 1 (sum 22) ... solves 4
+CLEAN cycle 29674 t2s 3 it 8 (sum 16) ... solves 3
+CLEAN cycle 29675 t2s 2 it 1 (sum 21) ... solves 4
+CLEAN cycle 29675 t2s 3 it 5 (sum 13) ... solves 3
+CLEAN cycle 29676 t2s 2 it 1 (sum 21) ... solves 4
+CLEAN cycle 29676 t2s 3 it 8 (sum 18) ... solves 3
+```
+- Top 15 of kp.0:
+```
+# total 31.583933 s
+      1.427031      10303 <deep_copy>
+      1.102441        531 cln_rhsaf
+      1.067723       5000 vet_vgd_shell
+      0.707400       7770 cln_pcr2
+      0.596778        250 cln_drag
+      0.488045        396 Kokkos::ViewCopy-4D
+      0.471293        531 cln_fs0
+      0.412539        339 cln_facecoef
+      0.379074       1569 cln_apply_st
+      0.316514         20 cln_gd_fs
+      0.307091       2590 cls_restrict
+      0.292541        636 cln_cslat
+      0.260247        708 cln_fsch
+      0.255582        137 cln_velocity
+      0.254214       5080 vet_vgd_ring
+```
