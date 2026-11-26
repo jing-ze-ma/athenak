@@ -110,12 +110,15 @@ inline void SolveFor(const char *name, const int nmb1, const int ks, const int k
 }
 
 // CUDA blocks of 256 per SM (the register cap 65536/(256 mb), so mb 3 = 80, 2 = 128,
-// 1 = 255 registers) of the passes that spill at the default (ncu, H200: cln_gd_fs,
-// cln_drag, cln_rhsaf, cln_fs0; cln_facecoef runs par_for, mb 0).  Build-time
-// overrides for measuring per kernel; a cap changes only register allocation and
-// occupancy, not the arithmetic (-ffp-contract=off, --fmad=false): bitwise
+// 1 = 255 registers) of the passes that spilled at the default.  Caltech 27zz (bsg, 4
+// H200): at 2, cln_facecoef 21.0 -> 7.8 ms/cycle (776 -> 40 B stack) and cln_gd_fs 15.8
+// -> 11.1 (55 GB of local traffic per launch -> 0); cln_drag, cln_rhsaf and cln_fs0 are
+// slower at 2 (occupancy 37 -> 25 %) and 1: they keep kSolveForMb.  Build-time
+// overrides for measuring; a cap changes only register allocation and occupancy, not
+// the arithmetic (-ffp-contract=off, --fmad=false): bitwise (27zz: CLEAN lines and dumps
+// identical at 3, 2 and 1)
 #ifndef ATHENA_LB_GD_FS
-#define ATHENA_LB_GD_FS kSolveForMb
+#define ATHENA_LB_GD_FS 2
 #endif
 #ifndef ATHENA_LB_DRAG
 #define ATHENA_LB_DRAG kSolveForMb
@@ -127,7 +130,7 @@ inline void SolveFor(const char *name, const int nmb1, const int ks, const int k
 #define ATHENA_LB_FS0 kSolveForMb
 #endif
 #ifndef ATHENA_LB_FACECOEF
-#define ATHENA_LB_FACECOEF 0
+#define ATHENA_LB_FACECOEF 2
 #endif
 
 // SolveFor with k fastest on HIP (the row order of a ScRag slab), so adjacent lanes
