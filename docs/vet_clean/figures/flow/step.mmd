@@ -1,0 +1,27 @@
+%% One time step.  Second line of a box: function, file (checked by flow.py --check)
+flowchart TD
+  save["Save a checkpoint (dt_retry)<br/>DtRetry::Save, driver/dt_retry.cpp"]
+  act{"Valid slope from the last step?<br/>Time2Active, rad_vet_imex.cpp"}
+  h1["Hydro stage 1 (explicit)<br/>Driver::Execute, driver/driver.cpp"]
+  r1["Radiation stage 1, implicit, g dt<br/>Time2Stage, rad_vet_imex.cpp"]
+  f1{"Stage 1 failed?<br/>VerdictState, rad_vet_update.cpp"}
+  h2["Hydro stage 2 (explicit)<br/>Driver::Execute, driver/driver.cpp"]
+  r2["Radiation stage 2, implicit, g dt<br/>Time2Stage, rad_vet_imex.cpp"]
+  f2{"Stage 2 failed?<br/>VerdictState, rad_vet_update.cpp"}
+  acc["Stages accepted: the step is done<br/>Time2Accept, rad_vet_imex.cpp"]
+  back["Back to the start of the step<br/>Time2Restore, rad_vet_imex.cpp"]
+  hh["Hydro stages 1 and 2 (explicit)<br/>Driver::Execute, driver/driver.cpp"]
+  be["Radiation, backward Euler, dt<br/>BackwardEuler, rad_vet_imex.cpp"]
+  ret{"Did a solve ask for a retry?<br/>DtRetry::Failed, driver/dt_retry.cpp"}
+  cut["Checkpoint back, smaller dt<br/>DtRetry::Retry, driver/dt_retry.cpp"]
+  done["Books, outputs, next step<br/>Driver::Execute, driver/driver.cpp"]
+  save --> act
+  act -->|yes| h1 --> r1 --> f1
+  f1 -->|no| h2 --> r2 --> f2
+  f2 -->|no| acc --> ret
+  f1 -->|yes| back
+  f2 -->|yes| back
+  back --> hh --> be --> ret
+  act -->|no| hh
+  ret -->|yes| cut --> act
+  ret -->|no| done

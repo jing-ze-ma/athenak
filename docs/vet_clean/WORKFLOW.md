@@ -1,98 +1,96 @@
-# Workflow of `<rad_vet>`: what runs, in what order, and where to read it
+# Code layout
 
-Open **`src/rad_vet/rad_vet_tasks.cpp`** first: the task lists and the implicit stage solve
-(`StageSolve`) as a driver of named steps. The equations are in [SCHEME.md](SCHEME.md), the keys in
-[KEYS.md](KEYS.md). Paths below are relative to `src/rad_vet/`.
+How the radiation module `src/rad_vet/` is laid out: what runs, in what order, and which file holds
+it. To read the code, open `rad_vet_tasks.cpp` first. It holds the task list and the radiation solve
+as a list of named steps. Every source file starts with what it does, from where it is called and
+where it calls into. The method is described in [SCHEME.md](SCHEME.md), the input keys in
+[KEYS.md](KEYS.md).
 
-## 1. One time step (`Driver::Execute`, `driver/driver.cpp`; `rad_vet_imex.cpp`)
+In the charts a box names the step, the function and the file. Yellow boxes are decisions.
 
-```mermaid
-flowchart TD
-  A[dt_retry checkpoint] --> B[rotation step, auto-BE, slope correction]
-  B --> C{"Time2Active? (hesdirk2, valid K1)"}
-  C -- yes --> D[Time2Stash] --> E[hydro stage s = 1, 2]
-  E --> F["Time2Stage: Time2GasTime, Time2FormStage, implicit stage (dt_sub = g dt)"]
-  F --> G{failed?}
-  G -- "no, s = 1" --> E
-  G -- "no, s = 2" --> K[Time2Accept]
-  G -- yes --> R[Time2Restore: back to U^n] --> H
-  C -- no --> H[hydro stages 1, 2] --> I["BackwardEuler: implicit stage (dt_sub = dt), stores K1"]
-  I --> L{dtr_fail?}
-  K --> L
-  L -- yes --> M[checkpoint back, smaller dt] --> B
-  L -- no --> N[ledgers, outputs, restart]
-```
+## 1. One time step
 
-## 2. One implicit stage (the `vet_*` task lists, `rad_vet_tasks.cpp`)
+![One time step](figures/flow/step.svg)
 
-```mermaid
-flowchart TD
-  T0[InitRecv] --> T2["Opacity (rad_vet_opacity)"] --> S0
-  subgraph S["StageSolve"]
-    S0[SolveBegin] --> S1["StageClosure (rad_vet_closure)"] --> S2["OldVector, FaceCoefficients"]
-    S2 --> S3["PassSetup, FirstPass (rad_vet_newton)"] --> P1
-    P1["PassClosure: closure, opacity, donors of the iterate"] --> P2["PassRows: right-hand side, operator (rad_vet_rhs, _solver)"]
-    P2 --> P3["PassSolve: E (rad_vet_solver)"] --> P4["PassUpdate: gas T, face F, momentum, drag (rad_vet_newton, _flux)"]
-    P4 --> P5{PassSettled?}
-    P5 -- no --> P1
-    P5 -- yes --> V1["SolveEnd, VerdictSolve"] --> W["UpdateState = write-back (rad_vet_update)"]
-    W --> V2[VerdictState: floors, gas eint] --> C2["ClosureAfterSolve: ray moments of the new state"]
-  end
-  C2 --> T3["GasUpdate: floor caps, gas ghosts, primitives (rad_vet_gas)"] --> T4[ghosts of E, F] --> T5[ClearSend, ClearRecv]
-```
+| step | detail |
+|---|---|
+| checkpoint | Only with `dt_retry`. It keeps every array of the hydrodynamics and the radiation. |
+| valid slope | `Time2Active`: the two-stage scheme is on and the slope of the last step's solve is known. The first step has none. |
+| radiation stage | `Time2Stage`: `Time2FormStage` forms the starting point of the stage (slopes, and with `time2_face_fct` the limited face energy fluxes of `Time2FaceFct`), then `RunStage` runs the solve of section 2. |
+| failed stage | The solve did not converge, the energy density is negative, or the gas energy is below its floor (`VerdictState`). `Time2Restore` puts the start of the step back, and the hydrodynamics and one backward-Euler solve redo it. If a retry was asked for already, the redo is skipped. |
+| backward Euler | One implicit solve over the whole step (`BackwardEuler`); it also gives the slope for the next step. |
+| retry | A solve that fails after that asks for a smaller step (`DtRetry::Failed`, `DtRetry::Retry`). |
 
-The face flux solve (`FluxSolve`, `rad_vet_flux.cpp`): F^H and the dissipation -> line ends across
-MeshBlocks (`rad_vet_flux_schur.cpp`) -> x1-line solve -> shared faces and panel seams (`rad_vet_flux_seam.cpp`)
--> bound |F| <= c E and the steady balance (`rad_vet_flux_bounds.cpp`).
+## 2. One radiation solve
 
-## 3. The closure (`rad_vet_closure*.cpp`, `rays/`)
+![One radiation solve](figures/flow/solve.svg)
 
-```mermaid
-flowchart TD
-  A["BuildClosure | ClosureExtrap | ClosureIterate"] --> B["PredictState: E, T, opacity at t + dt"]
-  B --> C[TraceRays]
-  C -- Cartesian --> D["ScCartBuild (rays/sc_cart_sweep)"] --> E["ClosureFromRays"]
-  C -- "spherical polar, cubed sphere" --> F["ScSource (rays/sc_build, sc_source)"] --> G{rotating ring?}
-  G -- no --> H["ScSweep (rays/sc_sph_sweep) | ScCsSweep (rays/sc_cs_sweep)"] --> I["ClosureFromSc (closure_rays), face sums (closure_faces)"]
-  G -- yes --> J["RingMoments (closure_ring): sweep two sets, shift, mix"]
-  E --> K[ClosureFill] --> L[ghosts]
-  I --> K
-  J --> K
-  A -. "extrapolated: no sweep" .-> K
-```
+The steps from the closure to the ray moments are the function `StageSolve` in `rad_vet_tasks.cpp`. The
+other boxes are tasks of the same list (`AssembleRadVetTasks`).
 
-## 4. The linear solve for E (`rad_vet_solver.cpp`)
+| step | detail |
+|---|---|
+| old E and gas | The start of the stage, with the increments of the IMEX stages (`OldVector`). |
+| right-hand side and operator | `RightHandSide` in `rad_vet_rhs.cpp`, `PreconditionerSetup` in `rad_vet_solver.cpp`. |
+| solve for E | BiCGStab (`SolveBiCGStab`) with the operator `ApplyOperator` and the multigrid cycle `VCycle`, all in `rad_vet_solver.cpp`. |
+| face fluxes F | `FluxSolve`: one line system per x1 line. `FluxSchur` (`rad_vet_flux_schur.cpp`) makes the lines exact across blocks, `FluxCone` (`rad_vet_flux_bounds.cpp`) bounds F by c E, `FluxTie` and `FluxCsShared` (`rad_vet_flux_seam.cpp`) give a shared face one value. |
+| changes settled | Changes of E and of the gas velocity below the tolerance, or at their round-off level (`PassSettled`). |
+| write-back | E, the cell and face fluxes, the gas and the slopes. With `clean_wb_fct` the limiter `WbFct` (`rad_vet_fct.cpp`) limits the face energy fluxes so that E stays above its floor. The books of angular momentum and boundary energy are in `rad_vet_ledger.cpp`. |
+| floors accepted or not | `VerdictState`: a stage fails, or the step asks for a retry. |
+| after the solve | `GasUpdate`: caps on floor gas, ghost zones of the gas, primitives. |
 
-```mermaid
-flowchart TD
-  S["PreconditionerSetup: face weights, rows, lines, coarse levels"] --> R[r = B - A X]
-  R --> P[p] --> M1["y = M^-1 p: V-cycle of x1-line sweeps"] --> A1["v = A y: ghosts, rows, cross terms"] --> B1[alpha, s]
-  B1 --> M2["z = M^-1 s"] --> A2["q = A z"] --> C[omega, X, r] --> T{"converged (true residual)?"}
-  T -- no --> P
-  T -- breakdown --> R
-  T -- yes --> E[iteration count]
-```
+## 3. The closure and the rays
 
-## 5. Files
+![The closure and the rays](figures/flow/closure.svg)
+
+The chart is for the default `clean_closure` = extrap1 with `time2_tableau` = sdirk2. A step then sweeps the
+rays once.
+
+| when | sweeps |
+|---|---|
+| two-stage step | One, in the second pass of stage 1 (`ClosureIterate`). Stage 2 takes a line in time through the stage-1 moments of this step and the last one. |
+| backward-Euler step | One, after the solve (`RayMoments`). After a failed stage its sweep comes on top. |
+| first step | Two: before and after its solve. No moments are stored yet, so `BuildClosure` predicts the state first. |
+| steady start | Two per pass, before and after its solve (`SteadyStart` in `rad_vet_steady.cpp`). |
+
+With rotating direction sets (`clean_rot_ring`), `RingMoments` in `rad_vet_closure_ring.cpp` sweeps the two
+live sets and mixes their moments with those of the older sets. The direction sets and their rotation are
+in `rays/sc_directions.cpp`, the halo exchange of a sweep in `rays/sc_sph_halo.cpp` and `rays/sc_cs_halo.cpp`.
+
+## 4. Files
+
+Paths are relative to `src/rad_vet/`.
 
 | file | what |
 |---|---|
-| `rad_vet_tasks.cpp` | task lists, `StageSolve` |
-| `rad_vet_imex.cpp`, `rad_vet_fct.cpp` | IMEX stages; limited face energy fluxes |
-| `rad_vet_opacity.cpp`, `rad_vet_gas.cpp`, `rad_vet_newdt.cpp` | opacity; gas after the solve; time step |
-| `rad_vet_closure.cpp`, `_closure_rays`, `_closure_faces`, `_closure_ring` | closure: state and choice; cells; faces; rotating sets |
-| `rad_vet_oldvector.cpp`, `rad_vet_rhs.cpp`, `rad_vet_newton.cpp` | stage start; right-hand side; passes |
-| `rad_vet_solver.cpp` | operator, preconditioner, BiCGStab |
-| `rad_vet_flux.cpp`, `_flux_schur`, `_flux_bounds`, `_flux_seam` | face fluxes |
-| `rad_vet_update.cpp`, `rad_vet_ledger.cpp` | write-back; L_z and energy ledgers, reports |
-| `rad_vet_bvals.cpp`, `rad_vet_reduce.hpp` | ghost exchange, global sums |
-| `rad_vet.cpp`, `rad_vet_params*.cpp`, `rad_vet_init.cpp`, `rad_vet_geometry.cpp` | constructor; keys; arrays; geometry |
-| `rad_vet_steady.cpp`, `rad_vet_restart.cpp` | steady start; restart and dt_retry |
-| `rad_vet.hpp`, `rad_vet_defs.hpp` | the class; slots and small structs |
-| `rad_vet_args.hpp`, `_faces`, `_rows`, `_momentum`, `_flux`, `_moments` `.hpp` | device functions |
-| `rays/sc_cart_*` | short characteristics, Cartesian |
-| `rays/sc_sph_*` | short characteristics, spherical polar |
-| `rays/sc_cs_*` | short characteristics, cubed sphere |
-| `rays/sc_*` (others) | shared by both curved meshes: directions, tables, source, build, set-up, band ring |
+| `rad_vet_tasks.cpp` | Task list, the radiation solve as named steps |
+| `rad_vet_imex.cpp` | Stages of a step, backward-Euler step, restore after a failed stage |
+| `rad_vet_fct.cpp` | Limited face energy fluxes |
+| `rad_vet_opacity.cpp` | Opacity of the gas |
+| `rad_vet_closure.cpp` | Which closure, predicted state, call of the rays |
+| `rad_vet_closure_rays.cpp`, `rad_vet_closure_faces.cpp` | Closure of a cell; ray sums on faces |
+| `rad_vet_closure_ring.cpp` | Rotating direction sets |
+| `rad_vet_oldvector.cpp`, `rad_vet_rhs.cpp` | Start of a stage; right-hand side |
+| `rad_vet_newton.cpp` | The passes: first iterate, gas temperature, momentum, stop test |
+| `rad_vet_solver.cpp` | Operator, preconditioner, BiCGStab |
+| `rad_vet_flux.cpp`, `rad_vet_flux_schur.cpp`, `rad_vet_flux_bounds.cpp`, `rad_vet_flux_seam.cpp` | Face fluxes |
+| `rad_vet_update.cpp` | Write-back |
+| `rad_vet_gas.cpp` | Gas after the solve |
+| `rad_vet_ledger.cpp` | Books of angular momentum and boundary energy, reports |
+| `rad_vet_bvals.cpp`, `rad_vet_reduce.hpp` | Ghost zones, global sums |
+| `rad_vet_newdt.cpp` | Time step, signal speed for the hydrodynamics |
+| `rad_vet_steady.cpp`, `rad_vet_restart.cpp` | Steady start; restart records |
+| `rad_vet.cpp`, `rad_vet_params.cpp`, `rad_vet_params_matter.cpp`, `rad_vet_params_closure.cpp`, `rad_vet_params_implicit.cpp` | Constructor and keys |
+| `rad_vet_init.cpp`, `rad_vet_geometry.cpp` | Arrays; geometry |
+| `rad_vet.hpp`, `rad_vet_defs.hpp` | The class; array slots and small structs |
+| `rad_vet_args.hpp`, `rad_vet_faces.hpp`, `rad_vet_rows.hpp`, `rad_vet_momentum.hpp`, `rad_vet_flux.hpp`, `rad_vet_moments.hpp` | Device functions |
+| `rays/sc_cart_sweep.cpp`, `rays/sc_cart_sweep_mb.cpp`, `rays/sc_cart_setup.cpp`, `rays/sc_cart_rotavg.cpp` | Short characteristics, Cartesian |
+| `rays/sc_sph_sweep.cpp`, `rays/sc_sph_halo.cpp`, `rays/sc_sph_walls.cpp` | Short characteristics, spherical polar |
+| `rays/sc_cs_sweep.cpp`, `rays/sc_cs_halo.cpp`, `rays/sc_cs_setup.cpp` | Short characteristics, cubed sphere |
+| `rays/sc_source.cpp`, `rays/sc_build.cpp`, `rays/sc_setup.cpp`, `rays/sc_tables.cpp`, `rays/sc_directions.cpp`, `rays/sc_bandring.cpp` | Shared by both curved meshes |
 
-Every file starts with what it does, from which files it is called and into which it calls.
+Outside the module: `driver/driver.cpp` (the step), `driver/dt_retry.cpp` (checkpoint), `utils/imex_sdirk2.hpp`
+(tableaux), `utils/repro_sum.hpp` (layout-invariant sums), `bvals/physics/rad_vet_bcs.cpp` (boundary conditions).
+
+The charts are drawn from the Mermaid sources in `docs/vet_clean/figures/flow/` by `flow.py --render`. `flow.py
+--check` fails when a function, file or key named in a chart or on this page does not exist.

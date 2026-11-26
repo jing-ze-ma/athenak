@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="997" height="1228"
+ viewBox="0.00 0.00 747.76 920.81" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(10.8 910.01)">
+<polygon fill="white" stroke="none" points="-10.8,10.8 -10.8,-910.01 736.96,-910.01 736.96,10.8 -10.8,10.8"/>
+<g id="node1" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="498.95,-864.49 498.95,-884.83 411.45,-899.21 287.71,-899.21 200.21,-884.83 200.21,-864.49 287.71,-850.11 411.45,-850.11 498.95,-864.49"/>
+<text text-anchor="start" x="309.58" y="-875.26" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Which solve?</text>
+<text text-anchor="start" x="262.08" y="-865.16" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">StageClosure, rad_vet_closure.cpp</text>
+</g>
+<g id="node2" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="417.66,-764.91 133.5,-764.91 133.5,-728.91 417.66,-728.91 417.66,-764.91"/>
+<text text-anchor="start" x="143.58" y="-747.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">No stored moments (first step): predict E, T</text>
+<text text-anchor="start" x="191.08" y="-737.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">PredictState, rad_vet_closure.cpp</text>
+</g>
+<g id="edge1" class="edge">
+<path fill="none" stroke="#4a6674" d="M279.03,-851.33C274.21,-847.58 269.95,-843.21 266.58,-838.11 253.81,-818.74 258.73,-791.76 265.2,-772.36"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="267.76,-773.49 267.83,-766.08 263.15,-771.83 267.76,-773.49"/>
+<text text-anchor="middle" x="326.58" y="-827.66" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;no stored moments </text>
+</g>
+<g id="node3" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="231.16,-812.91 4,-812.91 4,-776.91 231.16,-776.91 231.16,-812.91"/>
+<text text-anchor="start" x="14.08" y="-795.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Stage 1: moments of the last step</text>
+<text text-anchor="start" x="28.08" y="-785.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureExtrap, rad_vet_closure.cpp</text>
+</g>
+<g id="edge3" class="edge">
+<path fill="none" stroke="#4a6674" d="M244.49,-856.79C224.22,-851.93 203.44,-845.8 184.58,-838.11 171.6,-832.81 158.33,-825.04 147.06,-817.6"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="148.84,-815.18 141.67,-813.28 146.1,-819.23 148.84,-815.18"/>
+<text text-anchor="middle" x="211.08" y="-827.66" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;stage 1 </text>
+</g>
+<g id="node5" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="725.66,-668.91 517.5,-668.91 517.5,-632.91 725.66,-632.91 725.66,-668.91"/>
+<text text-anchor="start" x="527.58" y="-651.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Stage 2: line in time, no sweep</text>
+<text text-anchor="start" x="532.08" y="-641.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureExtrap, rad_vet_closure.cpp</text>
+</g>
+<g id="edge6" class="edge">
+<path fill="none" stroke="#4a6674" d="M461.61,-857.86C516.06,-847.83 573.6,-832.93 591.58,-812.91 625.53,-775.11 626.7,-711.64 624.31,-676.75"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="626.69,-676.72 623.69,-669.94 621.8,-677.11 626.69,-676.72"/>
+<text text-anchor="middle" x="639.08" y="-791.06" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;stage 2 </text>
+</g>
+<g id="node6" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="581.16,-812.91 294,-812.91 294,-776.91 581.16,-776.91 581.16,-812.91"/>
+<text text-anchor="start" x="304.08" y="-795.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Backward Euler: stored moments, no sweep</text>
+<text text-anchor="start" x="348.08" y="-785.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureExtrap, rad_vet_closure.cpp</text>
+</g>
+<g id="edge8" class="edge">
+<path fill="none" stroke="#4a6674" d="M376.46,-849.91C387.72,-839.96 400.75,-828.45 411.88,-818.61"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="413.22,-820.81 416.84,-814.34 409.98,-817.14 413.22,-820.81"/>
+<text text-anchor="middle" x="453.58" y="-827.66" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;backward Euler </text>
+</g>
+<g id="node8" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="365.66,-620.91 185.5,-620.91 185.5,-584.91 365.66,-584.91 365.66,-620.91"/>
+<text text-anchor="start" x="228.58" y="-603.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Sweep the rays</text>
+<text text-anchor="start" x="195.58" y="-593.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">TraceRays, rad_vet_closure.cpp</text>
+</g>
+<g id="edge2" class="edge">
+<path fill="none" stroke="#4a6674" d="M275.58,-728.49C275.58,-703.55 275.58,-657.52 275.58,-628.94"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="278.03,-629.02 275.58,-622.02 273.13,-629.02 278.03,-629.02"/>
+</g>
+<g id="node4" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="241.16,-716.91 0,-716.91 0,-680.91 241.16,-680.91 241.16,-716.91"/>
+<text text-anchor="start" x="10.08" y="-699.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Second pass: rays of the first iterate</text>
+<text text-anchor="start" x="31.08" y="-689.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureIterate, rad_vet_closure.cpp</text>
+</g>
+<g id="edge4" class="edge">
+<path fill="none" stroke="#4a6674" d="M118.13,-776.66C118.59,-762.18 119.26,-741.29 119.78,-724.96"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="122.25,-725.43 120.02,-718.36 117.35,-725.27 122.25,-725.43"/>
+</g>
+<g id="edge5" class="edge">
+<path fill="none" stroke="#4a6674" d="M149.37,-680.45C175.04,-664.88 212.69,-642.05 240.18,-625.37"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="241.23,-627 245.94,-621.27 238.69,-622.81 241.23,-627"/>
+</g>
+<g id="node17" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="726.16,-109.2 517,-109.2 517,-73.2 726.16,-73.2 726.16,-109.2"/>
+<text text-anchor="start" x="527.08" y="-91.8" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Cells without rays, ghost zones</text>
+<text text-anchor="start" x="541.58" y="-81.7" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureFill, rad_vet_closure.cpp</text>
+</g>
+<g id="edge7" class="edge">
+<path fill="none" stroke="#4a6674" d="M621.58,-632.47C621.58,-616.87 621.58,-593.36 621.58,-572.91 621.58,-572.91 621.58,-572.91 621.58,-163.4 621.58,-148.15 621.58,-131.06 621.58,-117.44"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="624.03,-117.46 621.58,-110.46 619.13,-117.46 624.03,-117.46"/>
+</g>
+<g id="node7" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="557.16,-716.91 310,-716.91 310,-680.91 557.16,-680.91 557.16,-716.91"/>
+<text text-anchor="start" x="320.08" y="-699.51" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">After the solve: rays of the new state</text>
+<text text-anchor="start" x="347.08" y="-689.41" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">RayMoments, rad_vet_closure.cpp</text>
+</g>
+<g id="edge9" class="edge">
+<path fill="none" stroke="#4a6674" d="M436.85,-776.66C436.23,-762.18 435.34,-741.29 434.65,-724.96"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="437.07,-725.25 434.32,-718.36 432.17,-725.45 437.07,-725.25"/>
+</g>
+<g id="edge10" class="edge">
+<path fill="none" stroke="#4a6674" d="M404.23,-680.45C377.96,-664.81 339.36,-641.85 311.3,-625.16"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="313.04,-622.75 305.77,-621.27 310.53,-626.96 313.04,-622.75"/>
+</g>
+<g id="node9" class="node">
+<polygon fill="#fdf3df" stroke="#8a6a1f" points="413.47,-525.18 413.47,-545.52 332.7,-559.91 218.46,-559.91 137.69,-545.52 137.69,-525.18 218.46,-510.8 332.7,-510.8 413.47,-525.18"/>
+<text text-anchor="start" x="256.08" y="-535.95" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Mesh?</text>
+<text text-anchor="start" x="195.58" y="-525.85" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">TraceRays, rad_vet_closure.cpp</text>
+</g>
+<g id="edge11" class="edge">
+<path fill="none" stroke="#4a6674" d="M275.58,-584.68C275.58,-579.57 275.58,-573.8 275.58,-568.08"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="278.03,-568.36 275.58,-561.36 273.13,-568.36 278.03,-568.36"/>
+</g>
+<g id="node10" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="244.66,-425.6 32.5,-425.6 32.5,-389.6 244.66,-389.6 244.66,-425.6"/>
+<text text-anchor="start" x="42.58" y="-408.2" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Cartesian sweep, layer by layer</text>
+<text text-anchor="start" x="46.08" y="-398.1" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ScCartBuild, rays/sc_cart_sweep.cpp</text>
+</g>
+<g id="edge12" class="edge">
+<path fill="none" stroke="#4a6674" d="M211.26,-511.64C192.45,-502.34 173.28,-489.85 159.58,-473.6 150.15,-462.41 144.93,-446.91 142.05,-433.85"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="144.29,-433.5 140.55,-427.09 139.48,-434.43 144.29,-433.5"/>
+<text text-anchor="middle" x="221.08" y="-488.35" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;Cartesian </text>
+</g>
+<g id="node11" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="399.66,-473.6 169.5,-473.6 169.5,-437.6 399.66,-437.6 399.66,-473.6"/>
+<text text-anchor="start" x="179.58" y="-456.2" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Extinction and source of every cell</text>
+<text text-anchor="start" x="214.08" y="-446.1" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ScSource, rays/sc_build.cpp</text>
+</g>
+<g id="edge14" class="edge">
+<path fill="none" stroke="#4a6674" d="M278.33,-510.6C279.38,-501.48 280.59,-491.05 281.66,-481.8"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="284.19,-482.27 282.56,-475.04 279.32,-481.71 284.19,-482.27"/>
+<text text-anchor="middle" x="306.58" y="-488.35" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;curved </text>
+</g>
+<g id="node14" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="430.16,-316.6 107,-316.6 107,-280.6 430.16,-280.6 430.16,-316.6"/>
+<text text-anchor="start" x="179.58" y="-299.2" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Closure of a cell from its rays</text>
+<text text-anchor="start" x="117.08" y="-289.1" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureFromSc, ClosureFromRays, rad_vet_closure_rays.cpp</text>
+</g>
+<g id="edge13" class="edge">
+<path fill="none" stroke="#4a6674" d="M140.07,-389.33C142.18,-374.88 147.27,-354.61 159.58,-341.6 167.81,-332.9 178.05,-325.98 188.92,-320.48"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="189.87,-322.27 195.15,-317.06 187.77,-317.84 189.87,-322.27"/>
+</g>
+<g id="node12" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="367.66,-377.6 169.5,-377.6 169.5,-341.6 367.66,-341.6 367.66,-377.6"/>
+<text text-anchor="start" x="179.58" y="-360.2" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Spherical polar, shell by shell</text>
+<text text-anchor="start" x="183.08" y="-350.1" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ScSweep, rays/sc_sph_sweep.cpp</text>
+</g>
+<g id="edge15" class="edge">
+<path fill="none" stroke="#4a6674" d="M281.65,-437.36C279.18,-422.87 275.62,-401.98 272.84,-385.65"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="275.14,-385.54 271.55,-379.05 270.31,-386.36 275.14,-385.54"/>
+</g>
+<g id="node13" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="583.16,-377.6 388,-377.6 388,-341.6 583.16,-341.6 583.16,-377.6"/>
+<text text-anchor="start" x="400.08" y="-360.2" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Cubed sphere, shell by shell</text>
+<text text-anchor="start" x="398.08" y="-350.1" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ScCsSweep, rays/sc_cs_sweep.cpp</text>
+</g>
+<g id="edge17" class="edge">
+<path fill="none" stroke="#4a6674" d="M321.92,-437.14C355.76,-421.31 405.68,-397.97 441.48,-381.22"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="442.14,-383.15 447.44,-377.97 440.07,-378.71 442.14,-383.15"/>
+</g>
+<g id="edge16" class="edge">
+<path fill="none" stroke="#4a6674" d="M268.58,-341.22C268.58,-336.1 268.58,-330.4 268.58,-324.89"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="271.03,-325.06 268.58,-318.06 266.13,-325.06 271.03,-325.06"/>
+</g>
+<g id="edge18" class="edge">
+<path fill="none" stroke="#4a6674" d="M421.35,-341.14C395.87,-334.21 366.46,-326.21 340.29,-319.1"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="341.04,-316.49 333.64,-317.02 339.75,-321.22 341.04,-316.49"/>
+</g>
+<g id="node15" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="506.66,-182.4 284.5,-182.4 284.5,-146.4 506.66,-146.4 506.66,-182.4"/>
+<text text-anchor="start" x="303.58" y="-165" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">If the sets rotate: mix the sets</text>
+<text text-anchor="start" x="294.58" y="-154.9" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">RingMoments, rad_vet_closure_ring.cpp</text>
+</g>
+<g id="edge21" class="edge">
+<path fill="none" stroke="#4a6674" d="M249.79,-280.4C231.18,-261.27 207.83,-230.07 225.58,-207.4 233.15,-197.73 252.86,-189.99 276.3,-183.91"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="276.82,-186.06 283.03,-182 275.65,-181.3 276.82,-186.06"/>
+<text text-anchor="middle" x="258.08" y="-221.55" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;Cartesian </text>
+</g>
+<g id="node16" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="530.66,-243.4 300.5,-243.4 300.5,-207.4 530.66,-207.4 530.66,-243.4"/>
+<text text-anchor="start" x="358.58" y="-226" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Ray sums on faces</text>
+<text text-anchor="start" x="310.58" y="-215.9" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">RayFaceSums, rad_vet_closure_faces.cpp</text>
+</g>
+<g id="edge19" class="edge">
+<path fill="none" stroke="#4a6674" d="M304.54,-280.18C325.01,-270.27 350.78,-257.79 372.34,-247.34"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="373.25,-249.14 378.48,-243.88 371.11,-244.73 373.25,-249.14"/>
+<text text-anchor="middle" x="380.58" y="-258.15" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;curved </text>
+</g>
+<g id="edge22" class="edge">
+<path fill="none" stroke="#4a6674" d="M446.01,-145.99C468.99,-138.19 496.59,-129.01 521.58,-121.2 531.51,-118.1 542.02,-114.93 552.36,-111.87"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="552.82,-114 558.85,-109.67 551.44,-109.3 552.82,-114"/>
+<text text-anchor="middle" x="563.58" y="-123.95" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;for this solve </text>
+</g>
+<g id="node19" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="492.16,-36 263,-36 263,0 492.16,0 492.16,-36"/>
+<text text-anchor="start" x="273.08" y="-18.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Moments kept for the next closure</text>
+<text text-anchor="start" x="278.58" y="-8.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">ClosureAfterSolve, rad_vet_closure.cpp</text>
+</g>
+<g id="edge24" class="edge">
+<path fill="none" stroke="#4a6674" d="M389.19,-146.09C385.64,-135.58 381.54,-121.8 379.58,-109.2 376.19,-87.46 375.92,-62.41 376.36,-44.24"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="378.84,-44.49 376.61,-37.41 373.94,-44.33 378.84,-44.49"/>
+<text text-anchor="middle" x="443.08" y="-87.35" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;after backward Euler </text>
+</g>
+<g id="edge20" class="edge">
+<path fill="none" stroke="#4a6674" d="M409.69,-207.02C407.91,-201.78 405.93,-195.93 404.02,-190.31"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="406.07,-189.71 401.5,-183.86 401.43,-191.28 406.07,-189.71"/>
+</g>
+<g id="node18" class="node">
+<polygon fill="#eef4f7" stroke="#31586b" points="723.66,-36 519.5,-36 519.5,0 723.66,0 723.66,-36"/>
+<text text-anchor="start" x="533.58" y="-18.6" font-family="Helvetica,Arial,sans-serif" font-size="12.00" fill="#15232b">Face coefficients of the solve</text>
+<text text-anchor="start" x="529.58" y="-8.5" font-family="Helvetica,Arial,sans-serif" font-size="10.00" fill="#3d5866">FaceCoefficients, rad_vet_solver.cpp</text>
+</g>
+<g id="edge23" class="edge">
+<path fill="none" stroke="#4a6674" d="M621.58,-72.96C621.58,-64.22 621.58,-53.44 621.58,-43.82"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="624.03,-44.08 621.58,-37.08 619.13,-44.08 624.03,-44.08"/>
+</g>
+<g id="edge25" class="edge">
+<path fill="none" stroke="#4a6674" d="M561.89,-72.78C526.59,-62.48 481.78,-49.4 445.18,-38.73"/>
+<polygon fill="#4a6674" stroke="#4a6674" points="445.9,-36.09 438.5,-36.48 444.53,-40.8 445.9,-36.09"/>
+<text text-anchor="middle" x="547.08" y="-50.75" font-family="Helvetica,Arial,sans-serif" font-size="11.00" fill="#15232b"> &#160;stage 1 </text>
+</g>
+</g>
+</svg>

@@ -8,6 +8,14 @@ the decks and the exact criteria).
 
 ## 1. The method in brief
 
+One time step: the hydrodynamics is explicit, the radiation and its exchange with the gas are implicit in two
+stages. A step whose stage fails is done again with one implicit solve, and a step that still fails is taken
+again at a smaller size.
+
+![One time step](figures/flow/step.svg)
+
+The radiation solve, the closure and the files are drawn on [WORKFLOW.md](WORKFLOW.md) (code layout).
+
 ### Why this scheme
 
 - **Second order in time and space.** Measured orders of the finest pair: 1.8 in time, 1.9-2.3
