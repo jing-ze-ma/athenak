@@ -51,3 +51,10 @@ srun: error: hpc-sm-02-11: task 0: Exited with exit code 2
 
 ```
 - One error only. Nothing was run; the 27zp arms wait for a fixed tip.
+
+## Builds and gate (worktree wt_orion1121/ru2 at 8375031bb (27zs fix of 97d437d68); CUDA 12.9 + g++13, HOPPER90, -ffp-contract=off; node 02-09)
+- BUILD ru2 rc=0 wall=926 s TUs=280
+- BUILD_OK ru2 md5=1dcc12e9ae4f8a6c8d8d9558775da1a9 prov=8375031bb0b81f20aaa25cb160d21c5af55e587d
+- GATE PASS ru2: athena_ru2_8375031bb md5 1dcc12e9 node hpc-sm-02-09 pass1=3.720e-11 log date 11-26 00:00:23 end: Terminating on cycle limit
+- BUILD suite rc=0 wall=931 s
+- BUILD_OK suite md5=02dfb6940c9005dcb4326deba37adf9f prov=8375031bb0b81f20aaa25cb160d21c5af55e587d
