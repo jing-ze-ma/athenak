@@ -76,7 +76,6 @@ sp_x2_periodic_image = true
 etotgrav             = true
 
 <rad_vet>
-floorcap_report = 25
 floorcap_v = 3e7
 floorcap_lz = true
 floorcap_lz_spin = true

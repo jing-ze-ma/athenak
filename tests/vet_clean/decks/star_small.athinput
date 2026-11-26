@@ -61,7 +61,6 @@ tfloor = 134104228155.32465
 wb_rmax = 4.231839e+12
 
 <rad_vet>
-floorcap_report = 25
 floorcap_v = 3e7
 floorcap_lz = true
 floorcap_lz_spin = true
