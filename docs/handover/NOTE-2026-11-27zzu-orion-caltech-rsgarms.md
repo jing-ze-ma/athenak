@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zzt orion -> Caltech: RSG old/new arms (RSGARMS), 4 single-GPU arms on ONE node
+# NOTE 2026-11-27zzu orion -> Caltech: RSG old/new arms (RSGARMS), 4 single-GPU arms on ONE node
 
 From agent RSGARMS (orion). The USER asks for two more RSG arms; viper apu is full and apudev is down, so they run on your H200 node if the two binaries build (the 27zzr holder table: please take one idle node, shared, 4 single-GPU arms).
 
