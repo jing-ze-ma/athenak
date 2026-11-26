@@ -1,0 +1,2 @@
+2026-11-26 05:00:47 start LZC-t9 hpc-sm-02-17 BIN athena_lzc_920f2644d md5=59d2a9b8e1c2b4c910009c62ad057cef ARGS: -i /resnick/groups/carnegie_poc/jingze/lzab_1127/deck_lzc_t9l62.athinput time/nlim=100 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 output2/dcycle=100 rad_vet/clean_verbose=1 hydro/p_ledger_lz=true
+2026-11-26 05:07:49 rc=0 ended: Terminating on cycle limit wall=422 s CW 0 FATAL 0 DT_RETRY 0

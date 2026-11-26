@@ -1,0 +1,2 @@
+2026-11-26 05:00:42 start LZC-m35 gpu 2 BIN athena_lzc_920f2644d ARGS: hydro/p_ledger_lz=true
+2026-11-26 05:05:58 rc=0 ended: Terminating on cycle limit wall=316 s CW 0 FATAL 0 DT_RETRY 0
