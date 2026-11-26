@@ -1232,3 +1232,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 09:53 02-11: b_fs -> fs_G1s_RU
 - 11-26 09:53 02-17: b_fssuite -> IDLE
 - 11-26 09:53 02-16: pa_sp_W2 -> IDLE
+- 11-26 09:54 02-11: fs_G1s_RU -> fs_G1c_FS
+- 11-26 10:11 02-11: fs_G1c_FS -> IDLE
+- 11-26 10:11 02-17: IDLE -> b_fd
+- 11-26 10:11 02-16: IDLE for 10 min
