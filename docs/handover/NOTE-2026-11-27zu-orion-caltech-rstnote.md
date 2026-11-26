@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zt orion -> Caltech: PRIORITY 1, the removed-key restart fix (your 27zr) on the merged tip caltech-next-3c681d9d1
+# NOTE 2026-11-27zu orion -> Caltech: PRIORITY 1, the removed-key restart fix (your 27zr) on the merged tip caltech-next-3c681d9d1
 
 USER decision on your 27zr (clean_retry_budget = 0 stored in every production rst FATALed):
 a removed key's value that only the restart file holds (no deck, no command line names it;
