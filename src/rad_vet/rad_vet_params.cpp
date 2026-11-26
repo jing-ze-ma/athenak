@@ -581,11 +581,11 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // and L_z are exact; E pays the kinetic energy (the write-back's residual), which
     // a radiation-poor cell cannot (test floor_momentum's exch0 box blows up)
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","flux_cone_gas",false);
-    // flux_cone_line (default false; uniform mesh): the cut a face withholds from the gas
-    // less its mean along each mesh line of the directions whose faces carry P (as
-    // fwb_line), weighted by the faces' gas density: the line's gas takes its cut where
-    // its mass is (a telescoping face stress), so the cut moves no P; E pays the kinetic
-    // energy, which a radiation-poor line cannot (floor_momentum's exch box: a redo)
+    // flux_cone_line (default false; uniform mesh): the cut the faces withhold from the
+    // gas goes back to the gas of each mesh line of the directions whose faces carry P
+    // (as fwb_line), shared by the faces' gas density (a telescoping face stress), each
+    // cell's eint paying its kinetic energy (capped and counted where it cannot): the
+    // cut moves no P (WriteBack); floor_momentum's exch box still redoes steps with it
     const bool fcl = cln_fcone && !cln_fcgas &&
                      pin->GetOrAddBoolean("rad_vet", "flux_cone_line", false);
     if (fcl && pml->multilevel) {
