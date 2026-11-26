@@ -1214,3 +1214,5 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 05:59 02-11: IDLE for 10 min
 - 11-26 09:04 02-17: IDLE -> b_sf b_sfsuite
 - 11-26 09:15 02-17: b_sf b_sfsuite -> r_GATE_sf
+- 11-26 09:16 02-17: r_GATE_sf -> IDLE
+- 11-26 09:17 02-11: IDLE -> sf_S4_RU
