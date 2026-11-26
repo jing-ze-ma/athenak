@@ -22,6 +22,8 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_fluid.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
+#include "utils/p_ledger.hpp"
+#include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
 
 namespace radvet {
@@ -698,6 +700,27 @@ void RadiationVet::WriteBack() {
                   "write-back, gas momentum withheld sum dp V (x1 x2 x3) %.6e %.6e %.6e\n",
                   pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1], r[2], r[3]);
     }
+  }
+  if (p_ledger::on && feedback && !x.vzero && fref != VET_FREF_NONE) {
+    // (p_ledger: the reference force the gas does not take, h sum V rf; P components)
+    const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
+    repro::ReproVal<3> v;
+    Kokkos::parallel_reduce("cln_pfref", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, repro::ReproVal<3> &a) {
+      const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
+      const int i = is + idx%n1;
+      Real rf[3], q[3][3] = {{1.0, 0.0, 0.0}};
+      RefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
+      if (x.cub) CsFrame(x, m, k, j, i, q);
+      const Real w = h*CellVolume(x, m, k, j, i);
+      a.s[0].Add(w*(q[0][0]*rf[0] + q[0][1]*rf[1] + q[0][2]*rf[2]));
+      a.s[1].Add(w*rf[1]);
+      a.s[2].Add(w*rf[2]);
+    }, repro::ReproRed<3, Kokkos::HostSpace>(v));
+    repro::AllMerge(v.s, 3);
+    const Real a[3] = {v.s[0].Value(), v.s[1].Value(), v.s[2].Value()};
+    p_ledger::Withheld(2, a, PSlope(t2_solve), h, !t2_inprobe);
   }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = SumCells(lzw);

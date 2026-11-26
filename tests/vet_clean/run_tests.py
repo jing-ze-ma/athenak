@@ -1710,11 +1710,12 @@ def pledger(d):
 
 def t_p_ledger(c):
     """<hydro>/p_ledger, the momentum ledger (CLEAN PLEDGER, user.hst Pr_*): per accepted
-    step END = P(t + dt) - P(t) + hflx dt - (ntel + src + rad + flr + mrg + gap) dt over the
-    gross sum V |p| (gas + radiation; Cartesian P on the periodic 8^3 box of radwaves along
-    xyz, the radial P on the closed shells).  box_small (amplitude 1e-3: nothing cuts):
-    also |rad| dt / gross; box_violent (0.1): rad, the cone cut and fwb residual, recorded;
-    sp_ntel: what the sp flux divergence does not telescope; cs_ntel recorded (seams).
+    step END = P(t + dt) - P(t) + hflx dt - (the other books) dt over the gross sum V |p|
+    (gas + radiation; Cartesian P on the periodic 8^3 box of radwaves along xyz, the radial
+    P on the closed shells), and each book's |x| dt / gross.  The classes that are no
+    physical source, cut, fwb, flr, mrg, gap (and ntel off the cubed sphere's seams), are
+    round-off on every mesh; on the periodic box rad is too (no wall, no geometric term):
+    box_small (amplitude 1e-3) and box_violent (0.1, where the cone cut and fwb act).
     bitwise: the dumps and the old history columns of shell_sp with the ledger against the
     run without it (0: the ledger only reads)."""
     n = 8
@@ -1724,20 +1725,18 @@ def t_p_ledger(c):
            'time/nlim': 8, 'problem/radwave_dir': 'xyz', 'problem/radwave_eig': 'false',
            'hydro/p_ledger': 'true', 'output1/dcycle': 1000000, 'output2/dcycle': 1000000}
     out, w = {}, 0
-    rel = lambda L, k: [float(np.abs(r[k]*r['dt'][0]).max()/r['gross'][0]) for r in L]
-    for t, a in (('box_small', 1e-3), ('box_violent', 0.1)):
-        d = c.run('wave_cart.athinput', t, dict(box, **{'problem/radwave_amp': a}))
+    rel = lambda L, k: max(float(np.abs(r[k]*r['dt'][0]).max()/r['gross'][0]) for r in L)
+    runs = [(t, 'wave_cart.athinput', dict(box, **{'problem/radwave_amp': a}))
+            for t, a in (('box_small', 1e-3), ('box_violent', 0.1))]
+    runs += [(g, 'shell_%s.athinput' % g, {'time/nlim': n, 'hydro/p_ledger': 'true'})
+             for g in ('sp', 'cs')]
+    for t, deck, o in runs:
+        d = c.run(deck, t, o)
         L = pledger(d)
-        out[t + '_end'] = max(float(np.abs(r['END']).max()/r['gross'][0]) for r in L)
-        out[t + '_rad'] = max(rel(L, 'rad'))
+        out[t + '_end'] = rel(L, 'END')
+        for k in ('ntel', 'src', 'rad', 'cut', 'fwb', 'flr', 'mrg', 'gap'):
+            out['%s_%s' % (t, k)] = rel(L, k)
         out[t + '_ncyc'] = len(L)
-        w += vett.warnings(open(os.path.join(d, 'run.log')).read())
-    for g in ('sp', 'cs'):
-        d = c.run('shell_%s.athinput' % g, g, {'time/nlim': n, 'hydro/p_ledger': 'true'})
-        L = pledger(d)
-        out[g + '_end'] = max(float(np.abs(r['END']).max()/r['gross'][0]) for r in L)
-        for k in ('ntel', 'src', 'rad', 'flr', 'mrg', 'gap'):
-            out['%s_%s' % (g, k)] = max(rel(L, k))
         w += vett.warnings(open(os.path.join(d, 'run.log')).read())
     b = c.run('shell_sp.athinput', 'sp_off', {'time/nlim': n})
     a = os.path.join(c.dir, 'sp')

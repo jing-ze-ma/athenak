@@ -29,6 +29,8 @@ constexpr int VET_T2S_NONE = 0;     // plain backward Euler
 constexpr int VET_T2S_BESTORE = 1;  // backward Euler, K1 = (Y - rhs)/dt stored
 constexpr int VET_T2S_STAGE1 = 2;   // stage solve 1 (gamma dt), K2 stored
 constexpr int VET_T2S_STAGE2 = 3;   // stage solve 2 (gamma dt), K1 (FSAL) stored
+// p_ledger: the slope a write-back's sums take (stage 1: K2, else K1; -1 none)
+inline int PSlope(const int t2s) {return (t2s == VET_T2S_NONE) ? -1 : t2s == VET_T2S_STAGE1;}
 // channels of t2k1 / t2k2 / t2inc: E, gas momentum, total energy, face fluxes F0 x1..x3
 constexpr int VET_T2_E = 0;
 constexpr int VET_T2_M1 = 1;

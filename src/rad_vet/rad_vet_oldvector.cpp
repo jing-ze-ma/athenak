@@ -21,6 +21,7 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_fluid.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
+#include "utils/p_ledger.hpp"
 
 namespace radvet {
 
@@ -80,6 +81,8 @@ void RadiationVet::OldVector() {
   SumOverRanks(nn, 3);   // (counts: one reduction)
   // clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums (Time2FormStage)
   if (cln_lzbook && fluid && feedback && stage) LzBook(cln_lzc, true);
+  // p_ledger: the increment's gas momentum withheld (cone cut, fwb, reference force)
+  if (fluid && feedback && stage && !cln_vzero && !t2_inprobe) p_ledger::Start();
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {
     std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells "
                 "(gas or E; the solve fails and the step is redone)\n",

@@ -23,6 +23,7 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
 #include "rad_vet/rad_vet_flux.hpp"
+#include "utils/p_ledger.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
 
@@ -61,7 +62,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
   const bool rms = cln_rstold && !cln_rmdone && fk && e == CLW_X && dok;
   DvceArray1D<Real> rmc("cln_rmc", 1);
   const bool fwb = cln_fwb;
-  if (fwb && cln_fwbc.extent_int(0) != 3) Kokkos::realloc(cln_fwbc, 3);
+  if (fwb && cln_fwbc.extent_int(0) != 6) Kokkos::realloc(cln_fwbc, 6);
   if (fwb) Kokkos::deep_copy(cln_fwbc, 0.0);
   auto fwc = cln_fwbc;
   const bool wbc = e == CLW_X;
@@ -278,11 +279,17 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
             SlotAdd(sl, 0, m, k, j, i, 1.0);
             SlotAdd(sl, 1, m, k, j, i, fabs(p));
             if (d == 0) SlotAdd(sl, 2, m, k, j, i, p);
+            // (p_ledger: the gas's s V/c^2 withheld, its own cells' halves)
+            SlotAdd(sl, 3 + d, m, k, j, i, -0.5*s/(x.c*x.c)*
+                    ((((d == 0) ? i <= ie : ((d == 1) ? j <= je : k <= ke)) ?
+                      CellVolume(x, m, k, j, i) : 0.0) +
+                     (((d == 0) ? i > is : ((d == 1) ? j > js : k > ks)) ?
+                      CellVolume(x, m, k-ek, j-ej, i-ei) : 0.0)));
           });
           if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, wbc);
         }
       }
-      if (wbc) SlotSum(sl, fwc, 3);
+      if (wbc) SlotSum(sl, fwc, 6);
     }
     if (cln_fschur && q == x.nf) FluxSchur();
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
@@ -545,6 +552,11 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       std::printf("CLEAN %sFWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
                   "%.6e x1 faces sum dp %.6e\n", std::isfinite(p + p1) ? "" : "WARNING ",
                   pmy_pack->pmesh->ncycle, t2_solve, n, p, p1);
+    }
+    if (p_ledger::on && cln_feedback && !cln_vzero) {   // (the gas's s, unprojected)
+      const Real a[3] = {GlobalReduce(h(3), false), GlobalReduce(h(4), false),
+                         GlobalReduce(h(5), false)};
+      p_ledger::Withheld(1, a, PSlope(t2_solve), dt_sub, !t2_inprobe);
     }
   }
   if (rms) {   // clean_rst_mshare: once, at the old file's first solution
