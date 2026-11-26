@@ -174,8 +174,8 @@ void RadiationVet::AdvectiveCoefficients() {
     AdvectCoeff(xa, m, k, j, i, v, a);
     for (int n = 0; n < 3; ++n) w(m,CLW_A1+n,k,j,i) = a[n];
   });
-  // their ghosts are first read after the next exchange (the RHS's)
-  GhostDefer(cln_w, CLW_A1, 3);
+  // their ghosts are first read after the next exchange (the RHS's); depth 1
+  GhostDefer(cln_w, CLW_A1, 3, 1);
 }
 
 //----------------------------------------------------------------------------------------
@@ -278,7 +278,7 @@ void RadiationVet::FirstIterate() {
     }
   });
   // ghosts of E_k for the gas terms, with the next exchange
-  if (feedback) GhostDefer(cln_w, CLW_EK, 1);
+  if (feedback) GhostDefer(cln_w, CLW_EK, 1, 1);
 }
 
 //----------------------------------------------------------------------------------------
@@ -381,10 +381,10 @@ Real RadiationVet::NewtonUpdate() {
             is+nx1-1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       w(m,CLW_RE,k,j,i) = hc*op(m,VET_OP_P,k,j,i)*arad_*SQR(SQR(w(m,CLW_T,k,j,i)));
     });
-    GhostDefer(cln_w, CLW_RE, 1);
+    GhostDefer(cln_w, CLW_RE, 1, 1);
   }
   // staggered: the ghosts of the new E_k, for the velocity update and the next RHS
-  if (cln_feedback) GhostFill(cln_w, CLW_EK, 1);
+  if (cln_feedback) GhostFill(cln_w, CLW_EK, 1, 0, 1);
   return change;
 }
 
@@ -470,7 +470,7 @@ Real RadiationVet::VelocityUpdate() {
   }
   ReduceMax(dvmax, vmax, fvmax);
   if (fa) {
-    GhostDefer(cln_w, CLW_A1, 3);   // as AdvectiveCoefficients
+    GhostDefer(cln_w, CLW_A1, 3, 1);   // as AdvectiveCoefficients
   } else {
     FaceDrag(false, false, false);   // this dm's coefficients
     AdvectiveCoefficients();
