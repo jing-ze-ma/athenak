@@ -1323,7 +1323,14 @@ class RadiationVet {
   int ScRawKey(const int i, const bool inw, const int ws) const;
   DvceArray1D<int> ScRawRec(const int key);
   int64_t vgd_rg_stop = 0;            // store fill this sweep
-  DvceArray1D<Real> vgd_rg_store;     // saved inward band values (main, then twin)
+  // saved inward band values (main, then twin). HIP: in managed memory: on MI300A with
+  // several processes per APU, values written into this freshly grown device allocation
+  // were at times replaced later by older contents of that memory (docs/vet_clean/BUILD.md s.5)
+#if defined(KOKKOS_ENABLE_HIP)
+  Kokkos::View<Real *, LayoutWrapper, Kokkos::HIPManagedSpace> vgd_rg_store;
+#else
+  DvceArray1D<Real> vgd_rg_store;
+#endif
   Kokkos::View<int64_t**, DevMemSpace> vgd_rg_dsoff;   // (s, m)
   std::vector<ScRingOp> vgd_rg_pend;
   Real vgd_rg_nk = 0.0, vgd_rg_ndense = 0.0;

@@ -122,12 +122,16 @@ from the first step on, in the last digits or by much more. Two kinds were seen 
 the closed MHD shell of the test suite on spherical-polar):
 - the UCX `rocm_ipc` transport between the two ranks: about 1 in 30 to 70 runs;
 - a rarer kind, about 0.3 % of runs, seen only with `vet_gd_band_ring = true` (the default
-  with more than one rank on a 3-D spherical-polar band); 0 in about 2400 runs with it off.
+  with more than one rank on a 3-D spherical-polar band): values written into a freshly grown
+  device allocation of the ring's save store were later replaced by older contents of that
+  memory (blocks of zeros), although every access is stream ordered and fenced. Fixed: on HIP
+  builds the store lives in managed memory (0 of 3173 stress runs, against 11 of 1886 for the
+  same store in device memory, interleaved).
 
 Not seen with one rank per APU (0 of 388 short runs, 0 of 94 runs of 500 cycles), on NVIDIA
 H200 (0 of 3643) or on CPUs (0 of 2240). The previous release shows the first kind too. For runs
 that share an APU between ranks, `UCX_TLS=^ud,tcp,rocm_ipc` removes the main kind at about
-8.6 % more time per cycle. The cause of the rarer kind is not known yet.
+8.6 % more time per cycle.
 
 ## 6. Build time
 

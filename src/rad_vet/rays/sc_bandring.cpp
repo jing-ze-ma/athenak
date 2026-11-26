@@ -217,7 +217,7 @@ void RadiationVet::ScRingSweepBegin(const bool two) {
   need *= (two ? 2 : 1);
   if (static_cast<int64_t>(vgd_rg_store.extent(0)) < need) {
     Kokkos::fence();
-    vgd_rg_store = DvceArray1D<Real>();
+    vgd_rg_store = decltype(vgd_rg_store)();
     Kokkos::realloc(vgd_rg_store, need + need/16 + 1024);
   }
 }
