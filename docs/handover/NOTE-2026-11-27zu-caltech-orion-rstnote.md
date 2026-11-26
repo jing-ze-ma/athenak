@@ -6,3 +6,222 @@
 - GATE PASS nx2: athena_nx2_3c681d9d1 md5 db1df2c2 node hpc-sm-02-09 pass1=3.720e-11 log date 11-26 00:07:55 end: Terminating on cycle limit
 - BUILD suite rc=0 wall=980 s
 - BUILD_OK suite md5=c0f88efd260bed2df567f9e5c125ea3e prov=3c681d9d1d4f7bbf3607a19c37021400f37b5092
+
+## Quick and full list on 01-17 (quick: one H200; full: 4 disjoint --only lists on one H200 each + mpi_ranks on 2 H200, jobs 1, --star-exe)
+- quick: 27 passed, 0 failed, 597 s
+- full: 1 passed, 0 failed, 976 s;1 passed, 0 failed, 112 s;30 passed, 0 failed, 1305 s;31 passed, 0 failed, 1548 s;1 passed, 0 failed, 19 s;
+- CLEAN WARNING lines in the run directories: 39 (by test:       1 inf_reject;      4 restart_keys;)
+### quick: 27 lines, PASS 27, FAIL 0 [], SKIP 0; against rel6 quick (27v): 25 lines
+- common 25, line identical 11, different 14; only next ['key_fatal', 'restart_keys']; only reference []
+  - conservation_sp
+    - next: PASS dE 6.67e-16 dM 9.44e-16 dLz 1.47e-16 dLz_gr 8.87e-07
+    - ref : PASS dE 3.33e-16 dM 8.09e-16 dLz 0 dLz_gr 5.92e-07
+  - conservation_cs
+    - next: PASS dE 3.6e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+    - ref : PASS dE 1.2e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+  - dt_retry
+    - next: PASS files 6 maxdiff 0 retries_fac1 1 retries_fac05 1 redo_maxdiff 0 redo05_retry_lines 2 redo05_warnings 0 redo05_layout_maxdiff 0 redo05_restart_maxdiff 0
+    - ref : PASS files 6 maxdiff 0 retries_fac1 1 retries_fac05 1
+  - layout_tile
+    - next: PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 3.85e-11 maxdiff_dfl 0 dE_dfl 3.33e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 3.33e-16 dM_fofc 0.000647 dLz_fofc 1.96e-16 fo_fofc 4.26e+04
+    - ref : PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 1.31e-10 maxdiff_dfl 0 dE_dfl 2.22e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 1.11e-16 dM_fofc 0.000635 dLz_fofc 1.96e-16 fo_fofc 4.3e+04
+  - fofc_layout_cs
+    - next: PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 2.15e-16
+    - ref : PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 4.31e-16
+  - order_time
+    - next: PASS err_E [0.000113 3.14e-05] order_E [1.84] err_F [0.000581 0.000166] order_F [1.81] err_T [2.43e-05 6.89e-06] order_T [1.82]
+    - ref : PASS err_E [0.000113 3.14e-05] order_E [1.84] err_F [0.000586 0.000167] order_F [1.81] err_T [2.44e-05 6.89e-06] order_T [1.82]
+  - mhd_layout
+    - next: PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 1.33e-16 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 1.9e-16 sp_dLz 4.57e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 2.88e-16 ct_dLz 1.32e-18 ct_divb 2.44e-15 ct_fofc 682
+    - ref : PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 0 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 0 sp_dLz 1.14e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 0 ct_dLz 6.61e-19 ct_divb 2.44e-15 ct_fofc 682
+  - eddington_cs
+    - next: PASS dE 2.4e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 1.42e-14
+    - ref : PASS dE 0 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 2.84e-14
+  - momentum_box
+    - next: PASS dP_max 8.52e-17 dP_cyc [7.95e-17 8.52e-17 8.37e-17 7.83e-17 8.18e-17 7.78e-17 8.08e-17 8.13e-17] warnings 0
+    - ref : PASS dP_max 8.1e-17 dP_cyc [7.3e-17 8.04e-17 7.79e-17 8.02e-17 7.77e-17 7.92e-17 8.1e-17 7.96e-17] warnings 0
+  - wedge_sym
+    - next: PASS fphi [6.13e-10 2.45e-10 9.72e-10] warnings 0 wedge_fatal 1 fth 1.16e-14 theta_fatal 1 fth_rot 6.34e-09 rot_fatal 1
+    - ref : PASS fphi [1.23e-09 2.48e-10 1.31e-09] warnings 0 wedge_fatal 1 fth 1.24e-16 theta_fatal 1 fth_rot 2.67e-10 rot_fatal 1
+  - large_step
+    - next: PASS KE_r 0.00081 rho_min 87.9 dEgas 0.000315
+    - ref : PASS KE_r 0.000809 rho_min 87.4 dEgas 0.000318
+  - floor_pay
+    - next: PASS dE 3.33e-16 dE0 0 paid 0.156 unpaid 0 warnings 0 worst_lines 184 worst_bitwise True ekin_floor_dE 5e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 6.67e-16 ekin_dM 6.74e-16 ekin_dLz 1.47e-16
+    - ref : PASS dE 3.33e-16 dE0 1.67e-16 paid 0.153 unpaid 0 warnings 0 worst_lines 185 worst_bitwise True ekin_floor_dE 3.33e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 3.33e-16 ekin_dM 5.4e-16 ekin_dLz 0
+  - floor_momentum
+    - next: PASS box_ekin [3.24e-16 2.31e-16 6.94e-17 2.2e-16 1.16e-16 1.23e-16 1.85e-16 6.17e-17] box_both [2.83e-16 2.73e-16 3.66e-16 2.99e-16 2.75e-16 3.48e-17 1.9e-16 1.83e-16] box_vceil [2.87e-17 1.28e-17 2.05e-17 2.05e-17 1.9e-17 1.64e-17 1.64e-17 1.64e-17] box_min 0.00104 exch_ratio 1.2 sp_init 3.83e-16 cs_init 6.61e-17 restart 1 retry 1 layout 1 warnings 0
+    - ref : PASS box_ekin [3.27e-16 2.33e-16 8.95e-17 2.06e-16 3.11e-17 9.74e-30 1.87e-16 1.9e-30] box_both [2.83e-16 2.73e-16 3.98e-16 2.94e-16 2.57e-16 2.15e-16 4.28e-17 2.14e-17] box_vceil [4.52e-17 1.63e-17 3.7e-17 2.26e-17 1.49e-17 0 0 0] box_min 0.00104 exch_ratio 1.2 sp_init 3.83e-16 cs_init 6.61e-17 restart 1 retry 1 layout 1 warnings 0
+  - idort_shadow
+    - next: PASS L1 0.0137
+    - ref : PASS L1 0.0138
+### quick: 27 lines, PASS 27, FAIL 0 [], SKIP 0; against caltech-next-104c68b7e quick (27zq): 27 lines
+- common 27, line identical 19, different 8; only next []; only reference []
+  - conservation_sp
+    - next: PASS dE 6.67e-16 dM 9.44e-16 dLz 1.47e-16 dLz_gr 8.87e-07
+    - ref : PASS dE 3.33e-16 dM 9.44e-16 dLz 1.47e-16 dLz_gr 8.87e-07
+  - conservation_cs
+    - next: PASS dE 3.6e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+    - ref : PASS dE 1.2e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+  - layout_tile
+    - next: PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 3.85e-11 maxdiff_dfl 0 dE_dfl 3.33e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 3.33e-16 dM_fofc 0.000647 dLz_fofc 1.96e-16 fo_fofc 4.26e+04
+    - ref : PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 3.85e-11 maxdiff_dfl 0 dE_dfl 1.11e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 2.22e-16 dM_fofc 0.000647 dLz_fofc 1.96e-16 fo_fofc 4.26e+04
+  - fofc_layout_cs
+    - next: PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 2.15e-16
+    - ref : PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 4.31e-16
+  - mhd_layout
+    - next: PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 1.33e-16 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 1.9e-16 sp_dLz 4.57e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 2.88e-16 ct_dLz 1.32e-18 ct_divb 2.44e-15 ct_fofc 682
+    - ref : PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 0 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 0 sp_dLz 1.14e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 0 ct_dLz 6.61e-19 ct_divb 2.44e-15 ct_fofc 682
+  - eddington_cs
+    - next: PASS dE 2.4e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 1.42e-14
+    - ref : PASS dE 0 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 2.84e-14
+  - floor_pay
+    - next: PASS dE 3.33e-16 dE0 0 paid 0.156 unpaid 0 warnings 0 worst_lines 184 worst_bitwise True ekin_floor_dE 5e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 6.67e-16 ekin_dM 6.74e-16 ekin_dLz 1.47e-16
+    - ref : PASS dE 3.33e-16 dE0 3.33e-16 paid 0.156 unpaid 0 warnings 0 worst_lines 184 worst_bitwise True ekin_floor_dE 3.33e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 3.33e-16 ekin_dM 6.74e-16 ekin_dLz 1.47e-16
+  - restart_keys
+    - next: PASS named 0 line 1 same 0 rm_note 1 rm_same 0 rm_fatal 1
+    - ref : PASS named 0 line 1 same 0
+### full: 64 lines, PASS 64, FAIL 0 [], SKIP 0; against rel82 82231a337 full (27t; release code): 60 lines
+- common 60, line identical 29, different 31; only next ['restart_keys', 'hst_ranks', 'key_fatal', 'idort_shadow_gd']; only reference []
+  - conservation_sp
+    - next: PASS dE 8.34e-16 dM 9.44e-16 dLz 1.47e-16 dLz_gr 8.87e-07
+    - ref : PASS dE 3.33e-16 dM 8.09e-16 dLz 0 dLz_gr 5.92e-07
+  - conservation_lz
+    - next: PASS sp_dE 1e-15 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 8.81e-16 cs_dE 2.4e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.8e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+    - ref : PASS sp_dE 3.33e-16 sp_dM 9.44e-16 sp_dLz 0 sp_dLz_gr 1.47e-16 cs_dE 1.2e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.8e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+  - floorcap_spin
+    - next: PASS sp_dE 1e-15 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 7.34e-16 n_v 6.04e+04 cs_dE 2.4e-16 cs_dM 1.3e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.3e-05 nospin_sp_dLz_gr 0.366 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 warnings 0
+    - ref : PASS sp_dE 3.33e-16 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 2.94e-16 n_v 6.03e+04 cs_dE 1.2e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.3e-05 nospin_sp_dLz_gr 0.366 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 warnings 0
+  - fofc_layout_cs
+    - next: PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 2.15e-16
+    - ref : PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 4.31e-16
+  - order_time
+    - next: PASS err_E [0.00102 0.000342 0.000113 3.14e-05] order_E [1.57 1.6 1.84] err_F [0.00469 0.00166 0.000581 0.000166] order_F [1.49 1.52 1.81] err_T [0.000166 6.56e-05 2.43e-05 6.89e-06] order_T [1.34 1.43 1.82]
+    - ref : PASS err_E [0.00102 0.000342 0.000113 3.14e-05] order_E [1.57 1.6 1.84] err_F [0.00475 0.00168 0.000586 0.000167] order_F [1.5 1.52 1.81] err_T [0.000166 6.56e-05 2.44e-05 6.89e-06] order_T [1.34 1.43 1.82]
+  - mhd_layout
+    - next: PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 1.33e-16 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 1.9e-16 sp_dLz 4.57e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 2.88e-16 ct_dLz 1.32e-18 ct_divb 2.44e-15 ct_fofc 682
+    - ref : PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 0 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 0 sp_dLz 1.14e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 0 ct_dLz 6.61e-19 ct_divb 2.44e-15 ct_fofc 682
+  - mhd_wb
+    - next: PASS static [6.68e-09 5.52e-10 1.68e-08] field [6.77e-09 5.87e-10 2.6e-08] geneos [6.75e-09 1.68e-08] dyn [2.59e-08 2.96e-08 2.59e-08] warnings 0 monopole 4.37e-06 restart_maxdiff 0
+    - ref : PASS static [6.68e-09 5.52e-10 1.68e-08] field [6.77e-09 5.87e-10 2.62e-08] geneos [6.75e-09 1.68e-08] dyn [2.6e-08 2.97e-08 2.6e-08] warnings 0 monopole 4.37e-06 restart_maxdiff 0
+  - mhd_vet
+    - next: PASS warnings 0 cs_layout 4.52e-15 cs_ranks 0 cs_retry 0 cs_divb 1.02e-14 cs_restart 0 cs_dM 2.61e-16 cs_dLz 0 cs_dE 1.11e-16 cs_moved 0.443 sp_layout 0 sp_ranks 0 sp_retry 0 sp_divb 1.31e-15 sp_restart 0 sp_dM 4.05e-16 sp_dLz 0 sp_dE 1.36e-16 sp_moved 3.41e-05 ct_layout 0 ct_ranks 0 ct_retry 0 ct_divb 1.42e-14 ct_restart 0 ct_dM 1.11e-16 ct_dE 0 ct_moved 5.68e-05
+    - ref : PASS warnings 0 cs_layout 4.52e-15 cs_ranks 0 cs_retry 0 cs_divb 1.02e-14 cs_restart 0 cs_dM 2.61e-16 cs_dLz 0 cs_dE 1.11e-16 cs_moved 0.443 sp_layout 0 sp_ranks 0 sp_retry 0 sp_divb 1.19e-15 sp_restart 0 sp_dM 2.7e-16 sp_dLz 0 sp_dE 2.71e-16 sp_moved 3.37e-05 ct_layout 0 ct_ranks 0 ct_retry 0 ct_divb 1.64e-14 ct_restart 0 ct_dM 2.22e-16 ct_dE 0 ct_moved 5.68e-05
+  - wb_cs
+    - next: PASS vmax_over_cs 5.1e-10 vmax_over_cs_rot 7.39e-09
+    - ref : PASS vmax_over_cs 5.11e-10 vmax_over_cs_rot 7.4e-09
+  - wedge_sym
+    - next: PASS fphi [6.13e-10 2.45e-10 9.72e-10] warnings 0 wedge_fatal 1 fth 1.16e-14 theta_fatal 1 fth_rot 6.34e-09 rot_fatal 1
+    - ref : PASS fphi [1.23e-09 2.48e-10 1.31e-09] warnings 0 wedge_fatal 1 fth 1.24e-16 theta_fatal 1 fth_rot 2.67e-10 rot_fatal 1
+  - large_step
+    - next: PASS KE_r 0.00081 rho_min 87.9 dEgas 0.000315
+    - ref : PASS KE_r 0.000809 rho_min 87.4 dEgas 0.000318
+  - floor_pay
+    - next: PASS dE 3.33e-16 dE0 0 paid 0.156 unpaid 0 warnings 0 worst_lines 184 worst_bitwise True ekin_floor_dE 5e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 6.67e-16 ekin_dM 6.74e-16 ekin_dLz 1.47e-16
+    - ref : PASS dE 3.33e-16 dE0 1.67e-16 paid 0.153 unpaid 0 warnings 0 worst_lines 185 worst_bitwise True ekin_floor_dE 3.33e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 3.33e-16 ekin_dM 5.4e-16 ekin_dLz 0
+  - floor_momentum
+    - next: PASS box_ekin [3.24e-16 2.31e-16 6.94e-17 2.2e-16 1.16e-16 1.23e-16 1.85e-16 6.17e-17] box_both [2.83e-16 2.73e-16 3.66e-16 2.99e-16 2.75e-16 3.48e-17 1.9e-16 1.83e-16] box_vceil [2.87e-17 1.28e-17 2.05e-17 2.05e-17 1.9e-17 1.64e-17 1.64e-17 1.64e-17] box_min 0.00104 exch_ratio 1.2 sp_init 3.83e-16 cs_init 6.61e-17 restart 1 retry 1 layout 1 warnings 0
+    - ref : PASS box_ekin [3.27e-16 2.33e-16 8.95e-17 2.06e-16 3.11e-17 9.74e-30 1.87e-16 1.9e-30] box_both [2.83e-16 2.73e-16 3.98e-16 2.94e-16 2.57e-16 2.15e-16 4.28e-17 2.14e-17] box_vceil [4.52e-17 1.63e-17 3.7e-17 2.26e-17 1.49e-17 0 0 0] box_min 0.00104 exch_ratio 1.2 sp_init 3.83e-16 cs_init 6.61e-17 restart 1 retry 1 layout 1 warnings 0
+  - star_smoke
+    - next: PASS dev 0.000112 warnings 0 worst L_intE
+    - ref : PASS dev 0.00011 warnings 0 worst L_intE
+  - wb_star
+    - next: PASS warnings 0 prof_in_vr 0.00226 prof_in_lat 4.17e-09 rigid_in_vr 0.00225 rigid_in_lat 0.000213 eq_in_vr 9.41e-05 eq_in_lat 5.59e-09
+    - ref : PASS warnings 0 prof_in_vr 0.00226 prof_in_lat 4.57e-09 rigid_in_vr 0.00225 rigid_in_lat 0.000213 eq_in_vr 9.41e-05 eq_in_lat 2.13e-09
+  - idort_beams_mb
+    - next: PASS maxdiff_tile_x2 0 maxdiff_block_x1 2.08e-10
+    - ref : PASS maxdiff_tile_x2 0 maxdiff_block_x1 1.13e-10
+  - idort_cylinder
+    - next: PASS E_in 0.000531 E_out 0.0109 F_out 0.00993 FH_out 0.205
+    - ref : PASS E_in 0.000533 E_out 0.0115 F_out 0.0114 FH_out 0.204
+  - conservation_cs
+    - next: PASS dE 3.6e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+    - ref : PASS dE 1.2e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+  - floor_dt
+    - next: PASS dE 6.67e-16 dt_gain 0.79 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+    - ref : PASS dE 3.33e-16 dt_gain 0.791 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+  - merge_lat
+    - next: PASS sp_dM 4.88e-16 sp_dLz 9.88e-16 sp_chk 1.09e-15 sp_amin 0 sp_dE 2.25e-16 sp_vlat 8.31e-16 sp_rigid_dLz 5.01e-05 cs_dM 9.41e-16 cs_dLz 6.49e-16 cs_chk 1.39e-15 cs_amin 0 cs_dE 3.82e-16 cs_vlat 1.36e-15 cs_rigid_dLz 6.85e-06 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 rad_dE 5.8e-16 rad_dM 8.09e-16 rad_dLz 1.17e-16 rad_dLz_gr 4.83e-07 rad_restart_maxdiff 0
+    - ref : PASS sp_dM 4.88e-16 sp_dLz 9.88e-16 sp_chk 1.09e-15 sp_amin 0 sp_dE 2.25e-16 sp_vlat 8.31e-16 sp_rigid_dLz 5.01e-05 cs_dM 9.41e-16 cs_dLz 6.49e-16 cs_chk 1.39e-15 cs_amin 0 cs_dE 3.82e-16 cs_vlat 1.36e-15 cs_rigid_dLz 6.85e-06 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 rad_dE 2.9e-16 rad_dM 8.09e-16 rad_dLz 1.17e-16 rad_dLz_gr 1.05e-06 rad_restart_maxdiff 0
+  - restart_fixes
+    - next: PASS warnings 0 notes 6 stored 6 maxdiff_lat_wb 0 moved_lat_wb 0.00177 maxdiff_fofc 0 moved_fofc 0.0296 maxdiff_merge 0 moved_merge 0.00787 maxdiff_blockend 0 moved_blockend 0.000195 maxdiff_gtime 0 moved_gtime 6.37e-05
+    - ref : PASS warnings 0 notes 6 stored 6 maxdiff_lat_wb 0 moved_lat_wb 0.00177 maxdiff_fofc 0 moved_fofc 0.0296 maxdiff_merge 0 moved_merge 0.00787 maxdiff_blockend 0 moved_blockend 0.000195 maxdiff_gtime 0 moved_gtime 6.85e-05
+  - dt_retry
+    - next: PASS files 6 maxdiff 0 retries_fac1 1 retries_fac05 1 redo_maxdiff 0 redo05_retry_lines 2 redo05_warnings 0 redo05_layout_maxdiff 0 redo05_restart_maxdiff 0
+    - ref : PASS files 6 maxdiff 0 retries_fac1 1 retries_fac05 1
+  - layout_tile
+    - next: PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 3.85e-11 maxdiff_dfl 0 dE_dfl 3.33e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 3.33e-16 dM_fofc 0.000647 dLz_fofc 1.96e-16 fo_fofc 4.26e+04
+    - ref : PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 1.31e-10 maxdiff_dfl 0 dE_dfl 2.22e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 1.11e-16 dM_fofc 0.000635 dLz_fofc 1.96e-16 fo_fofc 4.3e+04
+  - mhd_geneos
+    - next: PASS warnings 0 cs_layout 7.51e-14 cs_ranks 0 cs_retry 0 cs_divb 1.22e-14 cs_restart 0 cs_dM 2.61e-16 cs_dLz 0 cs_dE 1.11e-16 cs_moved 0.00409 sp_layout 0 sp_ranks 0 sp_retry 0 sp_divb 1.35e-15 sp_restart 0 sp_dM 2.7e-16 sp_dLz 0 sp_dE 1.36e-16 sp_moved 0.107 ct_layout 0 ct_ranks 0 ct_retry 0 ct_divb 1.69e-14 ct_restart 0 ct_dM 2.22e-16 ct_dE 0 ct_moved 0.0361
+    - ref : PASS warnings 0 cs_layout 7.51e-14 cs_ranks 0 cs_retry 0 cs_divb 1.22e-14 cs_restart 0 cs_dM 2.61e-16 cs_dLz 0 cs_dE 1.11e-16 cs_moved 0.00409 sp_layout 0 sp_ranks 0 sp_retry 0 sp_divb 1.19e-15 sp_restart 0 sp_dM 2.7e-16 sp_dLz 1.47e-16 sp_dE 1.36e-16 sp_moved 0.107 ct_layout 0 ct_ranks 0 ct_retry 0 ct_divb 1.47e-14 ct_restart 0 ct_dM 2.22e-16 ct_dE 0 ct_moved 0.0361
+  - eddington_cs
+    - next: PASS dE 2.4e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 1.42e-14
+    - ref : PASS dE 0 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 2.84e-14
+  - ray_cut_slab
+    - next: PASS warnings 0 maxdiff_nofuse 0 maxdiff_low 0 maxdiff_retry 0 shared [low retry shared] said_low 1 said_shared 0 fallbacks [0 1] moves 2
+    - ref : PASS warnings 0 maxdiff_nofuse 0 maxdiff_low 0 maxdiff_retry 0 shared [low retry shared] said_low 1 said_shared 0 fallbacks [0 1] moves 1
+  - momentum_box
+    - next: PASS dP_max 8.52e-17 dP_cyc [7.95e-17 8.52e-17 8.37e-17 7.83e-17 8.18e-17 7.78e-17 8.08e-17 8.13e-17] warnings 0
+    - ref : PASS dP_max 8.1e-17 dP_cyc [7.3e-17 8.04e-17 7.79e-17 8.02e-17 7.77e-17 7.92e-17 8.1e-17 7.96e-17] warnings 0
+  - radwave
+    - next: PASS err_cph [0.00149 0.00147 0.000928 0.000239 0.00226 0.000931] err_damp [0.000864 0.000225 1.63e-05 7.97e-05 0.000655 1.63e-05] damp [0.712 0.164 0.0151 0.000174 0.164 0.0151] warnings 0 dt_gain 2.73 dt_gain_phase [2.16 1.06]
+    - ref : PASS err_cph [0.00149 0.00147 0.000928 0.000239 0.00226 0.000931] err_damp [0.000865 0.000225 1.63e-05 7.97e-05 0.000655 1.63e-05] damp [0.712 0.164 0.0151 0.000174 0.164 0.0151] warnings 0 dt_gain 2.73 dt_gain_phase [2.16 1.06]
+  - inf_reject
+    - next: PASS dE 6.67e-16 nonfinite 0 rejected 1
+    - ref : PASS dE 3.33e-16 nonfinite 0 rejected 1
+  - idort_shadow
+    - next: PASS L1 0.0137
+    - ref : PASS L1 0.0138
+  - mpi_ranks
+    - next: PASS warnings 0 fcone_lz 7 files 18 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
+    - ref : PASS warnings 0 fcone_lz 7 files 15 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
+### full: 64 lines, PASS 64, FAIL 0 [], SKIP 0; against caltech-next-104c68b7e full (27zq): 63 lines
+- common 63, line identical 48, different 15; only next ['hst_ranks']; only reference []
+  - conservation_sp
+    - next: PASS dE 8.34e-16 dM 9.44e-16 dLz 1.47e-16 dLz_gr 8.87e-07
+    - ref : PASS dE 3.33e-16 dM 9.44e-16 dLz 1.47e-16 dLz_gr 8.87e-07
+  - conservation_lz
+    - next: PASS sp_dE 1e-15 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 8.81e-16 cs_dE 2.4e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.8e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+    - ref : PASS sp_dE 3.33e-16 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 1.47e-16 cs_dE 1.2e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.8e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+  - floorcap_spin
+    - next: PASS sp_dE 1e-15 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 7.34e-16 n_v 6.04e+04 cs_dE 2.4e-16 cs_dM 1.3e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.3e-05 nospin_sp_dLz_gr 0.366 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 warnings 0
+    - ref : PASS sp_dE 3.33e-16 sp_dM 8.09e-16 sp_dLz 0 sp_dLz_gr 1.47e-16 n_v 6.04e+04 cs_dE 1.2e-16 cs_dM 1.3e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.3e-05 nospin_sp_dLz_gr 0.366 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 warnings 0
+  - fofc_layout_cs
+    - next: PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 2.15e-16
+    - ref : PASS maxdiff_mb22 0 maxdiff_r2 0 maxdiff_r2mb22 0 fo_fofc 9.44e+04 maxdiff_restart 0 maxdiff_retry 0 dE 2.16e-16 dLz 0 dM 4.31e-16
+  - mhd_layout
+    - next: PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 1.33e-16 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 1.9e-16 sp_dLz 4.57e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 2.88e-16 ct_dLz 1.32e-18 ct_divb 2.44e-15 ct_fofc 682
+    - ref : PASS cs_r2 1.78e-15 cs_mb22 2e-15 cs_ranks 0 cs_restart 0 cs_dE 2.13e-16 cs_dLz 0 cs_divb 3.13e-15 cs_fofc 88947 sp_r2 2.78e-17 sp_mb22 2.78e-17 sp_ranks 0 sp_restart 0 sp_dE 0 sp_dLz 1.14e-16 sp_divb 1.5e-15 sp_fofc 10573 ct_r2 1.11e-15 ct_mb22 3.33e-16 ct_ranks 0 ct_restart 0 ct_dE 0 ct_dLz 6.61e-19 ct_divb 2.44e-15 ct_fofc 682
+  - mhd_vet
+    - next: PASS warnings 0 cs_layout 4.52e-15 cs_ranks 0 cs_retry 0 cs_divb 1.02e-14 cs_restart 0 cs_dM 2.61e-16 cs_dLz 0 cs_dE 1.11e-16 cs_moved 0.443 sp_layout 0 sp_ranks 0 sp_retry 0 sp_divb 1.31e-15 sp_restart 0 sp_dM 4.05e-16 sp_dLz 0 sp_dE 1.36e-16 sp_moved 3.41e-05 ct_layout 0 ct_ranks 0 ct_retry 0 ct_divb 1.42e-14 ct_restart 0 ct_dM 1.11e-16 ct_dE 0 ct_moved 5.68e-05
+    - ref : PASS warnings 0 cs_layout 4.52e-15 cs_ranks 0 cs_retry 0 cs_divb 1.02e-14 cs_restart 0 cs_dM 2.61e-16 cs_dLz 0 cs_dE 1.11e-16 cs_moved 0.443 sp_layout 0 sp_ranks 0 sp_retry 0 sp_divb 1.31e-15 sp_restart 0 sp_dM 4.05e-16 sp_dLz 0 sp_dE 2.71e-16 sp_moved 3.41e-05 ct_layout 0 ct_ranks 0 ct_retry 0 ct_divb 1.42e-14 ct_restart 0 ct_dM 1.11e-16 ct_dE 0 ct_moved 5.68e-05
+  - floor_pay
+    - next: PASS dE 3.33e-16 dE0 0 paid 0.156 unpaid 0 warnings 0 worst_lines 184 worst_bitwise True ekin_floor_dE 5e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 6.67e-16 ekin_dM 6.74e-16 ekin_dLz 1.47e-16
+    - ref : PASS dE 3.33e-16 dE0 3.33e-16 paid 0.156 unpaid 0 warnings 0 worst_lines 184 worst_bitwise True ekin_floor_dE 3.33e-16 ekin_floor_dM 1.08e-15 ekin_cart_dM 2.22e-16 ekin_dE 3.33e-16 ekin_dM 6.74e-16 ekin_dLz 1.47e-16
+  - restart_keys
+    - next: PASS named 0 line 1 same 0 rm_note 1 rm_same 0 rm_fatal 1
+    - ref : PASS named 0 line 1 same 0
+  - conservation_cs
+    - next: PASS dE 3.6e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+    - ref : PASS dE 1.2e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05
+  - floor_dt
+    - next: PASS dE 6.67e-16 dt_gain 0.79 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+    - ref : PASS dE 3.33e-16 dt_gain 0.79 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+  - merge_lat
+    - next: PASS sp_dM 4.88e-16 sp_dLz 9.88e-16 sp_chk 1.09e-15 sp_amin 0 sp_dE 2.25e-16 sp_vlat 8.31e-16 sp_rigid_dLz 5.01e-05 cs_dM 9.41e-16 cs_dLz 6.49e-16 cs_chk 1.39e-15 cs_amin 0 cs_dE 3.82e-16 cs_vlat 1.36e-15 cs_rigid_dLz 6.85e-06 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 rad_dE 5.8e-16 rad_dM 8.09e-16 rad_dLz 1.17e-16 rad_dLz_gr 4.83e-07 rad_restart_maxdiff 0
+    - ref : PASS sp_dM 4.88e-16 sp_dLz 9.88e-16 sp_chk 1.09e-15 sp_amin 0 sp_dE 2.25e-16 sp_vlat 8.31e-16 sp_rigid_dLz 5.01e-05 cs_dM 9.41e-16 cs_dLz 6.49e-16 cs_chk 1.39e-15 cs_amin 0 cs_dE 3.82e-16 cs_vlat 1.36e-15 cs_rigid_dLz 6.85e-06 restart_maxdiff 0 retry_maxdiff 0 layout_maxdiff 0 rad_dE 1.45e-16 rad_dM 8.09e-16 rad_dLz 1.17e-16 rad_dLz_gr 4.83e-07 rad_restart_maxdiff 0
+  - layout_tile
+    - next: PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 3.85e-11 maxdiff_dfl 0 dE_dfl 3.33e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 3.33e-16 dM_fofc 0.000647 dLz_fofc 1.96e-16 fo_fofc 4.26e+04
+    - ref : PASS maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 9.09e-13 maxrel_2x2 3.85e-11 maxdiff_dfl 0 dE_dfl 1.11e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16 maxdiff_fofc 0 dE_fofc 2.22e-16 dM_fofc 0.000647 dLz_fofc 1.96e-16 fo_fofc 4.26e+04
+  - eddington_cs
+    - next: PASS dE 2.4e-16 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 1.42e-14
+    - ref : PASS dE 0 dM 1.3e-16 dLz 0 dLz_gr 6.48e-05 warnings 0 restart_maxdiff 0 nogd 2.84e-14
+  - inf_reject
+    - next: PASS dE 6.67e-16 nonfinite 0 rejected 1
+    - ref : PASS dE 3.33e-16 nonfinite 0 rejected 1
+  - mpi_ranks
+    - next: PASS warnings 0 fcone_lz 7 files 18 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
+    - ref : PASS warnings 0 fcone_lz 7 files 15 maxdiff_sp 0 maxdiff_cs 0 maxdiff_pay 0
+```
+```
