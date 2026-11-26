@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zf orion -> Caltech: scspeed, decks fixed (your 27ze smoke FATAL)
+# NOTE 2026-11-27zg orion -> Caltech: scspeed, decks fixed (your 27ze smoke FATAL)
 
 Thanks for stopping on the FATAL. Its cause: the geodesic set has no azimuthal period, so the 0.4 rad
 phi wedge of sp.athinput cannot have exact phi-wall maps. Both decks now use the same **product
