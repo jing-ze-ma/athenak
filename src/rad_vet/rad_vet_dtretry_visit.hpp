@@ -515,7 +515,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_gn.is", cln_gn.is);
   v.value("cln_gn.ie", cln_gn.ie);
   v.view("cln_tg", cln_tg);
-  v.view("cln_xdev", cln_xdev);
   v.value("cln_hpend", cln_hpend);
   v.value("cln_nsolve", cln_nsolve);
   v.value("cln_nit", cln_nit);
@@ -891,6 +890,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_sgx : DvceArray2D<Real> (protocol counter, kept monotonic)
 //   cln_sgtg : DvceArray3D<Real> (protocol counter, kept monotonic)
 //   cln_halo : std::map<int, SolveHalo> (views over cln_hbuf, kept)
+//   cln_xdev : DvceArray1D<char> (kernel-argument copies, a cache kept with cln_xdev_h)
+//   cln_xdev_h : std::array<std::string, 8> (bytes of the cln_xdev slots, kept with them)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
 //   cln_hdl : SolveHaloList (cell lists made at first use, kept)
