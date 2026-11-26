@@ -76,13 +76,14 @@ Real ScTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
 //! \brief typ 2 value: emit (ie0 carried in) or diffusion S + mu (-dS/dtau_r) at the
 //! inner face rf (bfc: face S = 1.5 S_a - 0.5 S_b); ra, rb = first two shell radii;
 //! mus >= 0: the face cosine mu (Cartesian slab), else from the impact parameter p2;
-//! bad: a beam's intensity added to the diffusion intensity
+//! bad: a beam's intensity added to the diffusion intensity; ifc: the face intensity
 template <typename A, typename FC>
 KOKKOS_INLINE_FUNCTION
 Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
                  const Real ie0, const bool bfc, const Real rf, const Real ra,
                  const Real rb, const Real p2, const Real ch0, const Real ds,
-                 const Real s0, const Real mus = -1.0, const Real bad = 0.0) {
+                 const Real s0, const Real mus = -1.0, const Real bad = 0.0,
+                 Real *ifc = nullptr) {
   const int i1 = i + 1;
   auto sbt = [&](const int kk, const int jj) {
     return fmax(1.5*exp(fC(1,kk,jj,i)) - 0.5*exp(fC(1,kk,jj,i1)), 1.0e-300);
@@ -91,6 +92,7 @@ Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
     Real ex, w0, wu;
     VetSegW(ch0*ds, ex, w0, wu);
     const Real qv = acc.Interp(sbt);
+    if (ifc != nullptr) {*ifc = ie0;}
     return ie0*ex + wu*qv + w0*s0;
   }
   const Real muf = (mus >= 0.0) ? mus : sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
@@ -102,6 +104,7 @@ Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
   Real ex, w0, wu;
   VetSegW(ch0*ds, ex, w0, wu);
   const Real bv = fmax(acc.Interp(ib), 0.0) + bad;
+  if (ifc != nullptr) {*ifc = bv;}
   const Real qv = acc.Interp(sbt);
   return bv*ex + wu*qv + w0*s0;
 }
@@ -129,7 +132,9 @@ Real ScUpwindI(const A &acc, const FI &fI, const bool *ok, const bool all) {
 //!  - jump (spe >= 2), turned ray below inner face rfi: piecewise constant per cell
 //!  - corner (vim 2, or 3 where edgef()): one segment per stencil cell, interpolated
 //!  - else split or plain linear-in-tau segment
-//! iuu / idd: shells one further upwind / downstream for the jump plateau tests.
+//! iuu / idd: shells one further upwind / downstream for the jump plateau tests;
+//! ifc: the intensity where the segment crosses the face to the upwind shell (not the
+//! turned-ray jump).
 template <typename A, typename FI, typename FC, typename FE>
 KOKKOS_INLINE_FUNCTION
 Real ScSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
@@ -138,7 +143,7 @@ Real ScSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
                  const Real ch0, const Real s0, const Real ds, const Real dso,
                  const bool spl, const int spe, const int typ, const int l,
                  const int lcut, const Real p2, const Real rfi, const Real zr,
-                 const int vim, const int iuu, const int idd) {
+                 const int vim, const int iuu, const int idd, Real *ifc = nullptr) {
   // jump: S one shell further upwind (iuu) / downstream (idd); -1 where none
   const bool hu2 = (spl && spe == 2 && typ == 1 && iuu != iu);
   const Real sdd = (spl && spe == 2 && typ == 1 && idd != i) ? exp(fC(1, k, j, idd))
@@ -156,35 +161,42 @@ Real ScSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
     const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
     return fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
   } else if (vim == 2 || (vim == 3 && edgef())) {
-    Real ws = 0.0, vs = 0.0;
+    Real ws = 0.0, vs = 0.0, fs = 0.0;
     for (int e = 0; e < acc.N(); ++e) {
       const Real we = acc.W(e);
       if (!(we > 0.0) || !(ok[e] || ivu < 0.0)) {continue;}
       const int kk = acc.K(e), jj = acc.J(e);
       const Real cq = exp(fC(0,kk,jj,iu)), sq = exp(fC(1,kk,jj,iu));
       const Real iq = (ivu < 0.0) ? sq : fI(kk, jj);
-      Real vq;
+      Real vq, fq = 0.0;
       if (spl) {
-        vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe, nullptr,
+        vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe,
+                         (ifc != nullptr) ? &fq : nullptr,
                          hu2 ? exp(fC(1,kk,jj,iuu)) : -1.0, sdd);
       } else {
         Real ex, w0, wu;
         VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
         vq = iq*ex + wu*sq + w0*s0;
+        if (ifc != nullptr) {fq = VetSegFaceI(iq, sq, s0, cq*(ds - dso), ch0*dso, 0);}
       }
       ws += we;
       vs += we*vq;
+      fs += we*fq;
     }
+    if (ifc != nullptr) {*ifc = fs/ws;}
     return fmax(vs/ws, 0.0);
   } else if (spl) {
     const Real suu = hu2 ? exp(acc.Interp([&](const int kk, const int jj) {
       return fC(1, kk, jj, iuu);
     })) : -1.0;
     return fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso), ch0*dso, spe,
-                            nullptr, suu, sdd), 0.0);
+                            ifc, suu, sdd), 0.0);
   } else {
     Real ex, w0, wu;
     VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
+    if (ifc != nullptr) {
+      *ifc = VetSegFaceI((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso), ch0*dso, 0);
+    }
     return fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
   }
 }

@@ -553,7 +553,8 @@ void RadiationVet::TraceRays() {
   } else {
     ClosureFromSc();
     // (cubed-sphere sc rays: also the face half ranges from cln_fvi, FaceHalf)
-    if (cln_consist || cln_cssc) RayFaceSums();
+    // (Cartesian slab: the face sums are made in the sweep)
+    if ((cln_consist && vgd_slab != 1) || cln_cssc) RayFaceSums();
     if (cln_cssc && !cln_rfh) FaceHalf(vgd_dir, 0, true, 0);
     if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }

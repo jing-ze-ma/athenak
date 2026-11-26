@@ -414,7 +414,8 @@ void RadiationVet::RingMoments() {
       if (!fuse) ScSweepX1();
       if (cln_scmem) ScTopCopy();
       ClosureFromSc();
-      if (cln_consist || cln_cssc) RayFaceSums();
+      // (Cartesian slab: the face sums are made in the sweep)
+      if ((cln_consist && vgd_slab != 1) || cln_cssc) RayFaceSums();
       if (cln_cssc && !cln_rfh && (p == nr || p == nk)) {
         FaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
         fh0 = false;

@@ -647,6 +647,11 @@ class RadiationVet {
   // from the entry rule, 2 from the periodic image (exit shells, ScX1Exit)
   int vgd_x1p = 0;
   void ScSweepX1();
+  // the slab's closure_consistency face sums, made in the sweep (as the Cartesian
+  // sweep's): the rays' scalars of two shells, (2 nmb, 5 n, nx3, nx2)
+  DvceArray4D<Real> vgd_rgs;
+  void ScSlabFaceZero();
+  void ScSlabFaceSum(const int i, const int l, const bool inw);
   Real ScX1Exit(const bool cmp, Real &amax);
   void ScX1Load();
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange
