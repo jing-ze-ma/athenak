@@ -440,6 +440,14 @@ tile mode); `shadow` (a clump lit by an isotropic bath: 0.6 % of the unshadowed 
 left in the geometric umbra behind it, bound 2 %; regions whose sight lines miss the clump
 unchanged to 2 %).
 
+Limitation (curved meshes): a ray's last step comes from the next shell inward, and a ray
+nearly tangent to that shell crosses 2-3 lateral cells on it; its intensity is built from
+the opacity and emission at the two ends only, so lateral structure one or two cells wide
+in between is missed. Next to a hot clump a cell wide, E is 9.6 % low on spherical polar and
+5.1 % low on the cubed sphere, fading within a few cells; Cartesian meshes have no such
+chords. Stellar envelopes vary smoothly sideways, and sampling the chord (+7.5 to +89 %
+per cycle) left E outside the photosphere unchanged, so the rays keep the two-point step.
+
 ### Radiation hydrodynamics: radiative shocks and stiff exchange
 
 The coupled scheme holds the Lowrie & Edwards (2008) non-equilibrium radiative shocks at their
