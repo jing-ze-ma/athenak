@@ -3868,7 +3868,7 @@ void StarGravity(Mesh *pm, const Real bdt) {
 //! face keeps OUTFLOW and is closed only where its mass flux is inflow or exactly 0 here.
 //! Before the update: the source terms and am_transport see that flux (L_z exact), as do
 //! the scalars.  dfloor_flux_limit runs later (Hydro::RKUpdate): a top face that it makes
-//! massless stays open to FOFC's diffusive L_z and E (booked in Lz_hflx / E_hflx).
+//! massless (th = 0) it closes by the same rule (DflFace: all but IM1 set to 0).
 
 void StarWallFlux(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;

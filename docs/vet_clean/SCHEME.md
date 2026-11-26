@@ -226,7 +226,9 @@ The radiation solve never changes the density, so mass conservation is that of t
 which is in flux form.
 With `<hydro>/dfloor_flux_limit` the outflow of a nearly empty cell is scaled back so that its
 density cannot fall below the floor, and both neighbours see the same scaled flux; the density
-floor of the primitive-variable recovery stays as a backstop (counted in the event log). The
+floor of the primitive-variable recovery stays as a backstop (counted in the event log). A face
+whose outflow is scaled to zero is closed like a wall: it keeps only its normal momentum
+(pressure) flux, so no momentum or energy diffuses through a face that carries no mass. The
 held gas then also moves only as fast as its scaled flux: the cell's momentum, except its L_z
 part, is scaled by the same factor at fixed total energy (the kinetic energy becomes heat).
 Without this, gravity and pressure would keep accelerating gas whose work (carried by the mass
