@@ -976,7 +976,6 @@ void RadiationVet::ScSlabSelect() {
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
   need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
-  need(ibc_x1min != VET_IBC_REFLECT && ibc_x1max != VET_IBC_REFLECT, " reflecting x1;");
   need(!(vsc_rot && ScRotOn()) || (cln_ring && vet_ring_n == 0),
        " rotating set without the ring, or a rotating vet_ring;");
   need(nb1 == 1, " several MeshBlocks along x1;");
@@ -1089,8 +1088,17 @@ Real RadiationVet::ScSlabKey(const int64_t blk) {
 //! of the exit planes over their largest value
 
 void RadiationVet::ScSweepX1() {
-  if (vgd_slab != 1 || !vet_x1per) {
+  // a mirrored top (vet_bc_reflect = mirror) enters from the pass before (ScTopMirror):
+  // exact in 2 passes, vet_x1_npass with a mirrored bottom too (a closed cavity)
+  const bool tmir = (vgd_slab == 1) && !vet_x1per && vet_bc_mirror_hi &&
+                    ibc_x1max == VET_IBC_REFLECT;
+  if (vgd_slab != 1 || !(vet_x1per || tmir)) {
     ScSweep();
+    return;
+  }
+  if (tmir) {
+    const bool bmir = vet_bc_mirror && ibc_x1min == VET_IBC_REFLECT;
+    for (int p = 0; p < (bmir ? vet_mirror_npass : 2); ++p) {ScSweep();}
     return;
   }
   const bool adapt = vet_x1ptol > 0.0 && vet_x1ent.extent_int(1) == vgd_n;

@@ -174,7 +174,8 @@
             // upwind point, its lateral cell and bilinear fractions (index space);
             // fractional upwind index at its global magnitude (sj_ = sk_ = 0 without
             // layout_invariant): stencil base and fractions are layout independent
-            Real xu = 0.0, yu = 0.0, zu = 0.0, ru = 1.0, thu = th;
+            // (slab: r_hat = x1_hat, read by the inner-face mirror)
+            Real xu = slb_ ? 1.0 : 0.0, yu = 0.0, zu = 0.0, ru = 1.0, thu = th;
             const int sj_ = lg_.Sj(m, js), sk_ = lg_.Sk(m, ks);
             Real fjg, fkg;
             if (slb_) {

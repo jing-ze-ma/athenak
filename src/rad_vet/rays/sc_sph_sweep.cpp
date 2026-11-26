@@ -91,7 +91,8 @@ void RadiationVet::ScSweep() {
   const bool thm = vgd_thmir || (vgd_thvac > 0) ||
                    (vgd_slab == 1 && (vet_x2open || vet_x3open));
   const bool bfc = vet_bc_face;   // vet_bc_diff = face
-  const bool imir = (ibc_x1min == VET_IBC_REFLECT) && lcut == 0;
+  const bool imir = (ibc_x1min == VET_IBC_REFLECT) && lcut == 0 &&
+                    (vgd_slab != 1 || vet_bc_mirror);
   constexpr bool spl = true;   // (the segment rule: split, emission and jump terms)
   constexpr int spe = 3;
   constexpr int vim = 3;   // (corner at a material edge, log elsewhere)
