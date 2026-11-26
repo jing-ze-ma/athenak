@@ -140,13 +140,20 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
   if (wbc) Kokkos::deep_copy(DevExeSpace(), sl, 0.0);
-  // (flux_cone_line: the withheld cut and the face's gas density, FluxBalanceProject)
+  // (flux_cone_line: the withheld cut and the face's gas density; the line's share of
+  // each face, cln_fcret, the write-back returns, WriteBack)
   DvceArray4D<Real> rs, rw;
   if (cln_fcpj[0] && wbc) {
     rs = ScratchView<DvceArray4D<Real>>("cln_fcrs", nmb1 + 1, u0.extent_int(2),
                                         u0.extent_int(3), u0.extent_int(4));
     rw = ScratchView<DvceArray4D<Real>>("cln_fcrw", nmb1 + 1, u0.extent_int(2),
                                         u0.extent_int(3), u0.extent_int(4));
+    for (int d = 0; d < 3; ++d) {
+      if (cln_fcpj[d] && cln_fcret[d].extent_int(0) != nmb1 + 1) {
+        Kokkos::realloc(cln_fcret[d], nmb1 + 1, u0.extent_int(2), u0.extent_int(3),
+                        u0.extent_int(4));
+      }
+    }
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
@@ -178,7 +185,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       if (spn && !bd && !fa(d) && !fg && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
       const bool wh = !bd && !fg && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
       if (wh && pj) rs(m,k,j,i) = -(f - fs)*it;
-      if (wh && !pj) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+      if (wh) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
@@ -192,11 +199,11 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       // (the momentum withheld from the gas along each face family, signed, its own
       // cells' halves: fcone_lz, p_ledger)
       const bool rin = (d == 0) ? (i <= ie) : ((d == 1) ? (j <= je) : (k <= ke));
-      if (wh && !pj) SlotAdd(sl, 2 + d, m, k, j, i, (f - fs)*it*0.5*((rin ? CellVolume(x, m,
+      if (wh) SlotAdd(sl, 2 + d, m, k, j, i, (f - fs)*it*0.5*((rin ? CellVolume(x, m,
                       k, j, i) : 0.0) + (lin ? CellVolume(x, m, k-dk, j-dj, i-di) :
                       0.0))/(x.c*x.c));
     });
-    if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, false);
+    if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, false, cln_fcret[d]);
   }
   if (wbc) SlotSum(sl, fcc, 5);
   if (e == CLW_X) {
@@ -208,7 +215,8 @@ void RadiationVet::FluxCone(const int e, const int kd) {
     }
     Real q[3];   // (every rank: the sums are collective)
     for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h(2+d), false);
-    if (cln_feedback && !cln_vzero) {
+    for (int d = 0; d < 3; ++d) cln_fcwh[d] = q[d];   // (line form: WriteBack books)
+    if (cln_feedback && !cln_vzero && !cln_fcpj[0]) {
       p_ledger::Withheld(0, q, PSlope(t2_solve), dt_sub, !t2_inprobe);
     }
     if (n > 0.0 && cln_fclz) {
@@ -289,7 +297,8 @@ void RadiationVet::RingMatesInit(const int d, RingMates &rm) {
 
 void RadiationVet::FluxBalanceProject(const int d, const int slot,
                                       const DvceArray4D<Real> &rs,
-                                      const DvceArray4D<Real> &rw, const bool cnt) {
+                                      const DvceArray4D<Real> &rw, const bool cnt,
+                                      const DvceArray4D<Real> &ret) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks, nmb = pmy_pack->nmb_thispack;
   Mesh *pm = pmy_pack->pmesh;
@@ -302,6 +311,7 @@ void RadiationVet::FluxBalanceProject(const int d, const int slot,
   SolveArgs x = MakeArgs();
   auto fc = x.fc[d];
   auto fwc = cln_fwbc;
+  const bool rt = ret.extent_int(0) > 0;
   const int tn = (d > 0 && repro::tile_n > 0) ? repro::tile_n : n, nc = n/tn;
   auto mu = ScratchView<DvceArray4D<Real>>("cln_fwmu" + std::to_string(d), nmb, nb, na,
                                            2*nc);
@@ -378,6 +388,10 @@ void RadiationVet::FluxBalanceProject(const int d, const int slot,
       int k, j, i, kr, jr, ir;
       face(t, a, b, k, j, i);
       face((wrap && t == n) ? 0 : t, a, b, kr, jr, ir);
+      if (rt) {   // (ret: the line's share -q rw only, slot untouched)
+        ret(m,k,j,i) = -q*rw(m,kr,jr,ir);
+        continue;
+      }
       const Real s = rs(m,kr,jr,ir) - q*rw(m,kr,jr,ir);
       fc(m,slot,k,j,i) += s/(x.h*x.c*x.c);
       if (!cnt || t == n) continue;   // counters: the printed s, the write-back's

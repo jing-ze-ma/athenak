@@ -753,7 +753,8 @@ class RadiationVet {
   void FluxCsShared();
   void FluxCone(const int e, const int kd);
   void FluxBalanceProject(const int d, const int slot, const DvceArray4D<Real> &rs,
-                          const DvceArray4D<Real> &rw, const bool cnt);
+                          const DvceArray4D<Real> &rw, const bool cnt,
+                          const DvceArray4D<Real> &ret = DvceArray4D<Real>());
   void FluxTie(const int e, const int kd, const bool pt = false);
   void CsFaceTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real FluxSweepChange();
@@ -863,6 +864,8 @@ class RadiationVet {
   bool cln_fcone = false;   // flux_cone
   bool cln_fcgas = false;    // flux_cone_gas
   bool cln_fcpj[3] = {false, false, false};   // flux_cone_line: the projected dirs
+  DvceArray4D<Real> cln_fcret[3];   // (flux_cone_line: each face's line share, -q rho_f)
+  Real cln_fcwh[3] = {0.0, 0.0, 0.0};   // (the write-back's cut withheld, P components)
   bool cln_fclz = false;    // flux_cone_lz
   bool cln_fcemx = false;   // flux_cone_emax
   bool cln_lzsp = false;    // lz_spin

@@ -280,9 +280,10 @@ to the gas at the face:
 - the realisability cut of the face flux (`flux_cone`, class `cut`): with
   `flux_cone_line = true` every mesh line of the directions whose faces carry P takes its
   faces' cut back, shared by the faces' gas density (a telescoping face stress along the
-  line), so the cut moves no P; E pays its kinetic energy, which a radiation-poor line
-  cannot always (the `floor_momentum` exch box, arad 1e-12, takes a redo), so it is off
-  by default (`flux_cone_gas = true`, the cut given at each face, fails that box
+  line), so the cut moves no P; each cell's gas internal energy pays the kinetic energy
+  of what it takes back, capped where it cannot (counted, `CLEAN FCLINE`, booked as
+  `cut`); the `floor_momentum` exch box (arad 1e-12) still redoes steps with it, so it is
+  off by default (`flux_cone_gas = true`, the cut given at each face, fails that box
   outright); a physical boundary face's cut is the radiation's boundary flux;
 - the residual of the well-balanced face rows (`clean_stag_fwb`): with `fwb_line`
   (default) its mean along every mesh line of the directions whose faces carry P (x1 on

@@ -407,6 +407,15 @@ void RadiationVet::WriteBack() {
   px = DevArgs(x, 0);   // the F solve took the slots; xh changed
   pxh = DevArgs(xh, 1);
   const bool lzb = cln_lzbook && feedback;
+  // (flux_cone_line: each cell takes its halves of its faces' line shares of the cut,
+  // the kinetic energy paid by its own eint, capped at half of eint above e_min; frc 0
+  // capped cells, 1 sum |dp| V not returned, 2..4 the returned P, FluxCone's cln_fcret)
+  const bool frl = cln_fcpj[0] && feedback && !x.vzero;
+  DvceArray1D<Real> frc;
+  if (frl) frc = DvceArray1D<Real>("cln_frc", 5);
+  DvceArray4D<Real> fr0 = cln_fcret[0], fr1 = cln_fcpj[1] ? cln_fcret[1] : fr0;
+  DvceArray4D<Real> fr2 = cln_fcpj[2] ? cln_fcret[2] : fr0;
+  const bool frj = cln_fcpj[1], frk = cln_fcpj[2];
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -483,7 +492,45 @@ void RadiationVet::WriteBack() {
       if (lzb) lzw(m,k,j,i) = dlz;   // clean_cs_lz_abs = 2: LzBook
       // the kinetic energy the gas gains (the E row's W at convergence); with wb_arad wr,
       // the reference work at the velocity after the kick, which E pays
-      Real wk = 0.0, wr = 0.0;
+      Real wk = 0.0, wr = 0.0, wkr = 0.0;
+      if (frl) {   // (flux_cone_line: the cell's share of the cut, its eint pays)
+        const Real d = uh(m,IDN,k,j,i), vc = CellVolume(x, m, k, j, i);
+        auto sh = [&](const DvceArray4D<Real> &r, const int dk, const int dj,
+                      const int di) {
+          return 0.25*(r(m,k,j,i)*(vc + CellVolume(x, m, k-dk, j-dj, i-di)) +
+                       r(m,k+dk,j+dj,i+di)*(vc + CellVolume(x, m, k+dk, j+dj, i+di)))/
+                 (vc*x.c*x.c);
+        };
+        Real dr[3] = {sh(fr0, 0, 0, 1), frj ? sh(fr1, 0, 1, 0) : 0.0,
+                      frk ? sh(fr2, 1, 0, 0) : 0.0};
+        const Real pr = dr[0];   // (sp, cs: radial; on the cubed sphere along r_hat)
+        if (x.cub) {
+          Real q[3][3];
+          CsFrame(x, m, k, j, i, q);
+          for (int n = 0; n < 3; ++n) dr[n] = pr*q[0][n];
+        }
+        Real a = 0.0, b = 0.0, ef = 0.0, p, chi_rho, chi_t, cv;
+        for (int n = 0; n < 3; ++n) {
+          a += 0.5*dr[n]*dr[n]/d;
+          b += (pg[n] + dm[n])*dr[n]/d;
+        }
+        if (eos.tfloor > 0.0) eos.ThermoAt(d, eos.tfloor, ef, p, chi_rho, chi_t, cv);
+        const Real ei = x.w(m,CLW_EI,k,j,i);
+        const Real av = 0.5*fmax(ei - fmax(ef, pgf*fmax(ei, 0.0)), 0.0);
+        const Real s = (a + b <= av) ? 1.0 : ((a > 0.0) ? fmin(fmax((-b + sqrt(fmax(b*b +
+                       4.0*a*av, 0.0)))/(2.0*a), 0.0), 1.0) : 0.0);
+        for (int n = 0; n < 3; ++n) dm[n] += s*dr[n];
+        wkr = s*(b + s*a);
+        if (!prb) {
+          if (s < 1.0) {
+            Kokkos::atomic_add(&frc(0), 1.0);
+            Kokkos::atomic_add(&frc(1), (1.0 - s)*sqrt(2.0*a*d)*vc);
+          }
+          const Real pc[3] = {pr, x.sph || x.cub ? 0.0 : dr[1], x.sph || x.cub ? 0.0 :
+                              dr[2]};
+          for (int n = 0; n < 3; ++n) Kokkos::atomic_add(&frc(2+n), s*pc[n]*vc);
+        }
+      }
       for (int n = 0; n < 3; ++n) {
         wk += (pg[n] + 0.5*dm[n])*dm[n]/uh(m,IDN,k,j,i);
         if (wsp && !x.vzero) wr += h*rf[n]*(pg[n] + dm[n])/uh(m,IDN,k,j,i);
@@ -532,7 +579,7 @@ void RadiationVet::WriteBack() {
         // c4 = h c kP G a), increasing in T, so unique; E = (E* - s + c4 T^4)/(1 + b) > 0
         // for E* - s > 0 and the gas takes E* - E; the face FCT's probe keeps the
         // iterate's T
-        const Real es = x.w(m,CLW_X,k,j,i) + den - wk - wp;
+        const Real es = x.w(m,CLW_X,k,j,i) + den - (wk - wkr) - wp;
         const Real sp = x.w(m,CLW_EP,k,j,i);
         const Real lb = x.h*x.c*x.op(m,VET_OP_E,k,j,i);
         if (lex && !prb) {
@@ -576,10 +623,11 @@ void RadiationVet::WriteBack() {
         }
         // the work the row took (and q X) but the gas's kinetic energy did not receive
         // goes to E whole, eint the heating only
-        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - wk - wp +
+        // (flux_cone_line: wkr, the returned cut's kinetic energy, is the eint's)
+        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - (wk - wkr) - wp +
                               x.w(m,CLW_PD,k,j,i)*x.w(m,CLW_X,k,j,i) : 0.0;
-        const Real rd = den - eg - wk - wp - dw + dw;
-        if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - wk - wp)/fmax(fabs(e) +
+        const Real rd = den - eg - (wk - wkr) - wp - dw + dw;
+        if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - (wk - wkr) - wp)/fmax(fabs(e) +
             fabs(x.w(m,CLW_EO,k,j,i)) + fabs(x.w(m,CLW_EI,k,j,i)), 1.0e-300);
         e += rd;
         if (fdn > 0) {dg[0] = eg; dg[1] = wk; dg[2] = wp; dg[3] = dw; dg[4] = rd;}
@@ -700,6 +748,18 @@ void RadiationVet::WriteBack() {
                   "write-back, gas momentum withheld sum dp V (x1 x2 x3) %.6e %.6e %.6e\n",
                   pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1], r[2], r[3]);
     }
+  }
+  if (frl) {   // flux_cone_line: the cut returned less what eint could not pay (counted)
+    auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), frc);
+    Real c[5];
+    for (int n = 0; n < 5; ++n) c[n] = GlobalReduce(hc(n), false);
+    if (global_variable::my_rank == 0 && c[0] > 0.0) {
+      std::printf("CLEAN FCLINE cycle %d t2s %d: %.0f cells capped (eint pays the returned "
+                  "cut), momentum not returned sum |dp| V %.6e (p_ledger cut)\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, c[0], c[1]);
+    }
+    const Real a[3] = {cln_fcwh[0] - c[2], cln_fcwh[1] - c[3], cln_fcwh[2] - c[4]};
+    p_ledger::Withheld(0, a, PSlope(t2_solve), h, !t2_inprobe);
   }
   if (p_ledger::on && feedback && !x.vzero && fref != VET_FREF_NONE) {
     // (p_ledger: the reference force the gas does not take, h sum V rf; P components)
