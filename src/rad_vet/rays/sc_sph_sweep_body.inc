@@ -7,13 +7,15 @@
 //! \brief shell kernel body of RadiationVet::ScSweep, included twice:
 //! VET_VGD_BODY_MIR 0 (default) and 1 (vet_gd_theta_wall = mirror), so the mirror read
 //! costs the default kernel nothing. Needs VET_VGD_BODY_NAME and VET_VGD_BODY_MIR.
-//! The last two lambda arguments are unused (bools or std::false_type).
+//! Returns true for an item deferred by dfr (bool or std::false_type): its stencil
+//! reaches the band, which an exchange still in flight fills (interior / edge split,
+//! RadiationVet::vgd_mid); the last argument is unused.
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA the arguments are plain bools
 #if defined(KOKKOS_ENABLE_CUDA) && defined(VET_VGD_BODY_GX0)
       auto VET_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
-                                            const bool, const bool) {
+                                            const bool dfr, const bool) -> bool {
 #else
 #if defined(KOKKOS_ENABLE_CUDA)
 #define VET_VGD_TT bool
@@ -22,7 +24,8 @@
 #endif
       auto VET_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
-                                            const VET_VGD_TT, const VET_VGD_TT) {
+                                            const VET_VGD_TT dfr,
+                                            const VET_VGD_TT) -> bool {
 #undef VET_VGD_TT
 #endif
         // several MeshBlocks in x1: first shell / top face of the innermost / outermost
@@ -38,7 +41,8 @@
         const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
         const Real sp = tg_(m,k-ks,j-js,2), cp = tg_(m,k-ks,j-js,3);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
-        if (inw == (mr >= 0.0)) {return;}
+        if (inw == (mr >= 0.0)) {return false;}
+        bool dfd = false;
         // the ray of direction d through cell (k, j, i) on source csx, intensities vix
         auto solve = [&](const DvceArray5D<Real> &csx, const ScIView &vix) -> Real {
           auto rd0 = [&](int kk, const int jj, const int ii, int dq) -> Real {
@@ -177,6 +181,11 @@
             if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             int j1 = j0 + 1, k1 = k0 + 1;
+            // interior launch: an item whose stencil reaches the band waits for it
+            if (dfr && (k0 < wb || k1 >= wb + nx3b || j0 < wb || j1 >= wb + nx2b)) {
+              dfd = true;
+              return 0.0;
+            }
             // stencil and field reads of the shared upwind core
             const ScSt4 st4{k0, k1, j0, j1, uj, uk};
             auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
@@ -331,5 +340,8 @@
           }
           return iv;
         };
-        vi_(m,d,k,j,i) = solve(cs_, vi_);
+        const Real v = solve(cs_, vi_);
+        if (dfd) {return true;}
+        vi_(m,d,k,j,i) = v;
+        return false;
       };
