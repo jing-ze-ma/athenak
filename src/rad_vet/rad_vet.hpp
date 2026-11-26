@@ -650,7 +650,8 @@ class RadiationVet {
   // sweep's): the rays' scalars of two shells, (2 nmb, 5 n, nx3, nx2)
   DvceArray4D<Real> vgd_rgs;
   void ScSlabFaceZero();
-  void ScSlabFaceSum(const int i, const int l, const bool inw);
+  void ScSlabFaceSum(const int i, const int l, const int lv, const bool inw);
+  void ScSlabFaceX1(const bool inw);
   Real ScX1Exit(const bool cmp, Real &amax);
   void ScX1Load();
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange

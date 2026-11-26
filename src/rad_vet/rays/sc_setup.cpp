@@ -386,8 +386,9 @@ void RadiationVet::ScInit() {
   Kokkos::realloc(vgd_dir, n, 4);
   // (one shell's n intensities, or the 6 face-sum columns of RayFaceSums: 4 sums, the
   // volume below and the volume of the column's levels)
-  Kokkos::realloc(vgd_x1b, nmb, std::max(n, 6)*indcs.nx3*indcs.nx2);
-  Kokkos::realloc(vgd_x1r, nmb, std::max(n, 6)*indcs.nx3*indcs.nx2);
+  // (also the slab's 12 face-sum slots, ScSlabFaceX1)
+  Kokkos::realloc(vgd_x1b, nmb, std::max(n, 12)*indcs.nx3*indcs.nx2);
+  Kokkos::realloc(vgd_x1r, nmb, std::max(n, 12)*indcs.nx3*indcs.nx2);
   // lateral band: the deepest reach of an upwind point in cells over every shell (cell
   // sizes r dtheta, r sin(theta) dphi); on the cubed sphere ScCsInit
   if (vgd_csg) {

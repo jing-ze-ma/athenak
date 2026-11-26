@@ -995,7 +995,7 @@ void RadiationVet::ScSlabSelect() {
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
   need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
-  need(nb1 == 1, " several MeshBlocks along x1;");
+  need(nb1 == 1 || !vet_x1per, " several MeshBlocks along an x1-periodic mesh;");
   need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
   vgd_slab = lack.empty() ? 1 : 0;
   // the Cartesian sweep has vacuum x2 (x3) faces on one MeshBlock only
@@ -1230,8 +1230,9 @@ void RadiationVet::ScSlabFaceZero() {
   }
   auto cs = cln_s;
   const int nc = cs.extent_int(1);
+  // (and the x1 ghosts, which collect the next level's sums, ScSlabFaceX1)
   par_for("vet_vgd_slab_fz", vgd_cur, 0, nmb - 1, indcs.ks, indcs.ke, indcs.js, indcs.je,
-          indcs.is, indcs.ie,
+          indcs.is - 1, indcs.ie + 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int q = 0; q < 4; ++q) {
       cs(m,CLN_F2+q,k,j,i) = 0.0;
@@ -1251,15 +1252,20 @@ void RadiationVet::ScSlabFaceZero() {
 //! vgd_rgs beside the shell kernel's x1 scalars (entry, crossing, exit).  (2) One thread
 //! per (cell, component): the sums in ray order (VetScSum's face groups), entry, exit
 //! and the outward rays' crossing to the cell, the inward rays' crossing and every
-//! foot-shift flux to the upwind cell
+//! foot-shift flux to the upwind cell.  Only the MeshBlocks of x1 level lv (the one
+//! being swept)
 
-void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
+void RadiationVet::ScSlabFaceSum(const int i, const int l, const int lv, const bool inw) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, ks = indcs.ks, js = indcs.js;
   const int nmb = pmy_pack->nmb_thispack, n = vgd_n, ib = l & 1, n1 = indcs.nx1;
   const int wb = vgd_w, nx2b = indcs.nx2, nx3b = indcs.nx3;
-  const int up = inw ? ((i < ie) ? i + 1 : (vet_x1per ? is : i))
-                     : ((i > is) ? i - 1 : (vet_x1per ? ie : i));
+  // the upwind cell of the shell's rays: the next shell, the periodic image, at the x1
+  // end of the mesh the cell itself (only zeros: entries), else the x1 ghost (several
+  // MeshBlocks along x1: handed to the next level after the pass, ScSlabFaceX1)
+  const bool per = vet_x1per;
+  const int upi = inw ? ((i < ie) ? i + 1 : (per ? is : -1))
+                      : ((i > is) ? i - 1 : (per ? ie : -1));
   // the rays of the sweep's typ 1 branch (no entry at an x1 end), their upwind shell,
   // chord and foot as the shell kernel's
   const int lcut = vgd_scut, x1p = vgd_x1p;
@@ -1281,6 +1287,7 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
   par_for("vet_vgd_slab_phi", vgd_cur, 0, nmb - 1, 0, n - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je,
   KOKKOS_LAMBDA(const int m, const int r, const int kc, const int jc) {
+    if ((x1f_(m) >> 3) != lv) {return;}   // (the x1 level being swept)
     const Real m1 = dir_(r,0), m2 = dir_(r,1), m3 = dir_(r,2);
     if ((m1 < 0.0) != inw) {return;}
     const int k = kc - ks + wb, j = jc - js + wb;   // (band index space)
@@ -1354,6 +1361,7 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
   par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 3, 6, indcs.ks, indcs.ke, indcs.js,
           indcs.je,
   KOKKOS_LAMBDA(const int m, const int grp, const int kc, const int jc) {
+    if ((x1f_(m) >> 3) != lv) {return;}
     VetScSum(grp, dir_, n, [&](const int r) {return (dir_(r,0) < 0.0) == inw;},
              [](const int) {return 0.0;}, [](const int) {return 0.0;},
              [&](const int q, const int r) {
@@ -1361,7 +1369,42 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
                             : ((q == 3) ? 1 : 2)));
                return rg_(ib*nmb + m,sq*n + r,kc-ks,jc-js);
              },
-             ScSlabFaceW{cs, m, kc, jc, i, up}, false, false, false, true);
+             ScSlabFaceW{cs, m, kc, jc, i, (upi >= 0) ? upi
+                         : ((x1f_(m) & (inw ? 2 : 1)) ? i : (inw ? (ie + 1) : (is - 1)))},
+             false, false, false, true);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScSlabFaceX1
+//! \brief several MeshBlocks along x1, after a slab pass: the face sums its rays put in
+//! the x1 ghost cells (their upwind cells in the next level) added to that level's
+//! boundary cells, after their own (the order of one MeshBlock's sweep)
+
+void RadiationVet::ScSlabFaceX1(const bool inw) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1, nx2 = indcs.nx2, nk = indcs.nx3*nx2;
+  const int ks = indcs.ks, js = indcs.js;
+  const int isrc = inw ? (indcs.ie + 1) : (indcs.is - 1);
+  const int idst = inw ? indcs.is : indcs.ie;
+  // the slots of the upwind cell's sums (VSS_FN): x2, x1 crossing, x3
+  const Kokkos::Array<int, 12> s_ = {CLN_F2, CLN_F2 + 1, CLN_F2 + 2, CLN_F2 + 3, CLN_FX,
+                                     CLN_FX + 1, CLN_FX + 2, CLN_FX + 3, CLN_F3,
+                                     CLN_F3 + 1, CLN_F3 + 2, CLN_F3 + 3};
+  auto cs = cln_s;
+  auto b_ = vgd_x1b;
+  auto r_ = vgd_x1r;
+  auto xf_ = vgd_x1f;
+  par_for("vet_vgd_slab_x1pack", vgd_cur, 0, nmb1, 0, 11, 0, nk - 1,
+  KOKKOS_LAMBDA(const int m, const int q, const int t) {
+    b_(m,q*nk + t) = cs(m,s_[q],ks + t/nx2,js + t % nx2,isrc);
+  });
+  ScX1Pass(inw);   // (inward: to the level above)
+  par_for("vet_vgd_slab_x1add", vgd_cur, 0, nmb1, 0, 11, 0, nk - 1,
+  KOKKOS_LAMBDA(const int m, const int q, const int t) {
+    // (a level with one before it: inward the levels below send up, outward down)
+    if (xf_(m) & (inw ? 1 : 2)) {return;}
+    cs(m,s_[q],ks + t/nx2,js + t % nx2,idst) += r_(m,q*nk + t);
   });
 }
 

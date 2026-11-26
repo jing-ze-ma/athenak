@@ -645,7 +645,7 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
       }
       // slab: the shell's face sums, after its interior and edge items (ScSlabFaceSum)
 #if VET_VGD_SWEEP_SLAB
-      if (sfs_) {ScSlabFaceSum(i, l, inw);}
+      if (sfs_) {ScSlabFaceSum(i, l, lv, inw);}
 #endif
       if (rga) {
         // the previous shell has been read (stream order): save its inward band
@@ -758,6 +758,10 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
       }
       ScRingFlush();
     }
+#if VET_VGD_SWEEP_SLAB
+    // several MeshBlocks along x1: the sums the pass put in the x1 ghosts
+    if (sfs_ && vgd_nb1 > 1) {ScSlabFaceX1(inw);}
+#endif
   }
   ScRingSweepEnd();
 }
