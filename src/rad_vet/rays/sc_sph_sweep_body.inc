@@ -212,7 +212,15 @@
             auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
               return csx(m,c,kk,jj,ii);
             };
-            auto fIu = [&](const int kk, const int jj) -> Real {return rd(kk,jj,iu);};
+            // active stencil cells straight from shell iu's slab (the element rd reads)
+            int uc3;
+            const int64_t ub = vix.Base(m, iu, uc3);
+            auto fIu = [&](const int kk, const int jj) -> Real {
+              if (kk >= wb && kk < wb + nx3b && jj >= wb && jj < wb + nx2b) {
+                return vix.d(ub + d + static_cast<int64_t>(vix.n)*(kk + uc3*jj));
+              }
+              return rd(kk,jj,iu);
+            };
             // branch n . r_hat of a stencil cell
             auto mrq = [&](const int kk, const int jj) -> Real {return mr_(m,kk,jj,d);};
             bool bdone = false;
