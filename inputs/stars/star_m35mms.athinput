@@ -72,8 +72,6 @@ etotgrav             = true
 <rad_vet>
 solver_mg_levels = 4
 floorcap_v = 3e7
-floorcap_lz = true
-floorcap_lz_spin = true
 floorcap_rho = 1e-14
 vet_gd_halo_ipc = false
 c_light = 2.99792458e10

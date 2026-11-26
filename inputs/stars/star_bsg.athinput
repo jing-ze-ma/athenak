@@ -79,8 +79,6 @@ etotgrav             = true
 
 <rad_vet>
 floorcap_v = 3e7
-floorcap_lz = true
-floorcap_lz_spin = true
 floorcap_rho = 1e-14
 c_light = 2.99792458e10
 arad = 2.3392742567e-47

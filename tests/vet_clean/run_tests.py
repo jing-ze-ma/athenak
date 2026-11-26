@@ -126,14 +126,17 @@ def t_conservation_lz(c):
     below the shell's speeds; the floor-gas cap of every cell, floorcap_lz, on both
     meshes, on spherical polar with fwb_ring): energy, mass and L_z drifts as conservation_sp, plus
     dLz_gr (gas + radiation, no ledger); restart (8 + 8 = 16 cycles) and a forced dt_retry
-    with factor 1 at cycle 4 with the same keys: bitwise."""
-    sp = dict(LZ_KEYS, **LZ_SP)
+    with factor 1 at cycle 4 with the same keys: bitwise.  floorcap_rho = 1e30 leaves no gas
+    to take a spin, so floorcap_lz_spin is named false."""
+    ns = {'rad_vet/floorcap_lz_spin': 'false'}
+    sp = dict(LZ_KEYS, **dict(LZ_SP, **ns))
     out = {'sp_' + k: v for k, v in
            am_budget(c.run('shell_sp.athinput', 'sp', dict(sp, **{'time/nlim': 40})),
                      'sp').items()}
     out.update({'cs_' + k: v for k, v in
                 am_budget(c.run('shell_cs.athinput', 'cs',
-                                dict(LZ_KEYS, **dict(LZ_FC, **{'time/nlim': 12}))),
+                                dict(LZ_KEYS, **dict(LZ_FC, **dict(ns, **{
+                                    'time/nlim': 12})))),
                           'cs').items()})
     out['restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 8, sp)['maxdiff']
     o = dict(sp, **{'time/nlim': 16, 'time/dt_retry': 'true'})

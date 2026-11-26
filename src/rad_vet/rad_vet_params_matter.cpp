@@ -240,15 +240,20 @@ void RadiationVet::ReadMatterKeys(ParameterInput *pin) {
     if (pin->DoesParameterExist("rad_vet","floorcap_v")) {
       fcap_v = pin->GetReal("rad_vet","floorcap_v");
     }
-    // floorcap_lz (default false): the velocity cap scales the momentum without
-    // L_z only (phi_hat: spherical polar e3, Cartesian (-y, x)/R, the cubed sphere
-    // GnomonicPhiHat; the part along it is kept, also where it alone exceeds
-    // floorcap_v), so that L_z is exact
-    fcap_lz = pin->GetOrAddBoolean("rad_vet","floorcap_lz",fcap_lz);
-    // floorcap_lz_spin (default false; needs floorcap_lz): the cap scales the whole
+    // default true (recorded); a restart file without the key keeps the old false
+    auto lzd = [&](const char *k) {
+      recipe::Old(pin, "rad_vet", k, "false");
+      return nw || pin->DoesParameterExist("rad_vet", k);
+    };
+    // floorcap_lz: the velocity cap scales the momentum without L_z only (phi_hat:
+    // spherical polar e3, Cartesian (-y, x)/R, the cubed sphere GnomonicPhiHat; the part
+    // along it is kept, also where it alone exceeds floorcap_v), so that L_z is exact
+    fcap_lz = pin->GetOrAddBoolean("rad_vet","floorcap_lz",lzd("floorcap_lz"));
+    // floorcap_lz_spin (default with floorcap_lz, needs it): the cap scales the whole
     // velocity, so |v| <= floorcap_v, and gives the L_z it removes to the gas at or
     // above floorcap_rho as one rigid rotation (FloorGasCap)
-    fcap_spin = pin->GetOrAddBoolean("rad_vet","floorcap_lz_spin",fcap_spin);
+    fcap_spin = pin->GetOrAddBoolean("rad_vet","floorcap_lz_spin",
+                                     lzd("floorcap_lz_spin") && fcap_lz);
     // floorcap_report N (read only when named, default 25): the counters every N cycles
     fcap_report = pin->DoesParameterExist("rad_vet","floorcap_report") ?
                   pin->GetInteger("rad_vet","floorcap_report") : 25;

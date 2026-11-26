@@ -176,8 +176,8 @@ void RadiationVet::FloorGasCap() {
     const Real lx = SumCells(lxx), li = SumCells(lxi);
     if (lx != 0.0 && !(li > 0.0)) {
       std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz_spin: the cap removed L_z "
-                << lx << " but no gas is at or above floorcap_rho to take it"
-                << std::endl;
+                << lx << " but no gas is at or above floorcap_rho to take it (name "
+                << "floorcap_lz_spin = false)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (lx != 0.0) dom = lx/li;
