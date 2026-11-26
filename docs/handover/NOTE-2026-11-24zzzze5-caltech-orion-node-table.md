@@ -1140,3 +1140,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 02:48 02-17: rg_S8_RU -> rg_S8_RG
 - 11-26 02:49 02-09: vk_d10_A vk_d10_B vk_d10_C vk_d10_D -> vk_ns5_B vk_ns5_D
 - 11-26 02:50 02-09: vk_ns5_B vk_ns5_D -> vk_ns15_B vk_ns15_D
+- 11-26 02:51 02-09: vk_ns15_B vk_ns15_D -> vk_kp_A vk_kp_B
+- 11-26 02:51 02-11: rg_S8_RG -> IDLE
+- 11-26 02:51 02-17: rg_S8_RG -> IDLE
+- 11-26 02:53 02-09: vk_kp_A vk_kp_B -> IDLE
+- 11-26 02:53 02-11: IDLE -> rg_ns_RU
+- 11-26 02:53 02-17: IDLE -> lz_NBE-bsg
+- 11-26 02:54 02-09: IDLE -> vk_d10b_A vk_d10b_B vk_d10b_C vk_d10b_D
