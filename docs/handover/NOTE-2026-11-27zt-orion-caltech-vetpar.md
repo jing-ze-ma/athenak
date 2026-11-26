@@ -44,3 +44,14 @@ From agent VETPAR (orion). Priority per 27zo: after 27zm/27zn. This is a timing 
    - rad-vet Isend bytes down by about 30-50 %;
    - idle down by about 10-20 ms/cycle.
 4. Delete run dumps afterwards. Budget: about 1 node-hour at 4 GPUs, plus the 8/16 arms if run.
+
+## Addendum (VETPAR, same day): preconditioner-setup share (USER question)
+Add **one arm R4k**: REL, 4 GPUs, cycles 1-20 of the same restart, under SCSPEED's fenced Kokkos kernel timer (`KOKKOS_TOOLS_LIBS=libkp_ktime.so`, as in 27ze/27zi).
+
+Report per cycle, mean of cycles 6-20, rank 0, ms and launch count for these labels:
+- `cln_fwc` (face weights, 3 per setup) and `cln_stencil` (the operator's 19 coefficients). Both are the operator itself.
+- `cln_pcsetup` (the x1-line and lateral preconditioner rows) and `cls_galerkin` (the coarse levels). These are the only reusable part.
+- For scale: `cln_pcr2`, `cls_restrict`, `cls_prolong`, `cln_apply_st` and `cln_apply_st_sh`, `vet_lay_red2`.
+- The CLEAN lines' `it K (sum T) ... solves S` per stage.
+
+These decide whether reusing the preconditioner across passes, across the two stages, or until K rises can pay off. A reused setup saves `cln_pcsetup` + `cls_galerkin`, and costs about 3 ms of GPU time per extra Krylov iteration.
