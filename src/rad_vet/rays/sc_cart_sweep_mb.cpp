@@ -20,6 +20,38 @@
 
 namespace radvet {
 
+namespace {
+
+// writer of the banded sweep's per-cell sums (rays/sc_cart_sum.hpp): up sums to layer
+// lu of this block (face sums fn to the cell below, or at the block's x1 end to the
+// spill), down sums to layer ld (fn to the cell above, or the spill); nothing where the
+// layer is not on this block
+struct VetScMBWriter {
+  DvceArray5D<Real> vc, sp;
+  int m, k, j, lu, ld, nx1, is, jc, kc;
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const int kind, const int u, const int n, const Real v) const {
+    const int lc = u ? ld : lu;
+    if (lc < 0 || lc >= nx1) return;
+    const int i = is + lc;
+    if (kind == VSS_FN) {
+      if (u ? (lc < nx1 - 1) : (lc > 0)) {
+        vc(m,VETRAY_F2+n,k,j,u ? (i + 1) : (i - 1)) += v;
+      } else {
+        sp(m,u,n,kc,jc) += v;
+      }
+      return;
+    }
+    const int c = (kind == VSS_J) ? (VETRAY_J + n)
+                : (kind == VSS_HP) ? (VETRAY_HP1 + n)
+                : (kind == VSS_KP) ? (VETRAY_KP + n)
+                : (kind == VSS_NL) ? VETRAY_NL : (VETRAY_F2 + n);
+    vc(m,c,k,j,i) += v;
+  }
+};
+
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScCartSweepMB
 //! \brief the short-characteristics sweep over several MeshBlocks, exact.
@@ -265,27 +297,8 @@ void RadiationVet::ScCartSweepMB() {
     // sums fn into the next cell upwind or, at the block's x1 end, the spill
     auto writer = KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const int lb = lx_.d_view(m);
-      const int lu = l - lb*nx1, ld = (nx1g - 1 - l) - lb*nx1;
-      const bool ua = (lu >= 0 && lu < nx1), da = (ld >= 0 && ld < nx1);
-      const int iu = is + lu, id = is + ld;
-      const int jc = j - js + w2, kc = k - ks + w3;
-      return [=](const int kind, const int u, const int n, const Real v) {
-        if (!(u ? da : ua)) return;
-        const int i = u ? id : iu;
-        if (kind == VSS_FN) {
-          if (u ? (ld < nx1 - 1) : (lu > 0)) {
-            vc_(m,VETRAY_F2+n,k,j,u ? (id + 1) : (iu - 1)) += v;
-          } else {
-            sp_(m,u,n,kc,jc) += v;
-          }
-          return;
-        }
-        const int c = (kind == VSS_J) ? (VETRAY_J + n)
-                    : (kind == VSS_HP) ? (VETRAY_HP1 + n)
-                    : (kind == VSS_KP) ? (VETRAY_KP + n)
-                    : (kind == VSS_NL) ? VETRAY_NL : (VETRAY_F2 + n);
-        vc_(m,c,k,j,i) += v;
-      };
+      return VetScMBWriter{vc_, sp_, m, k, j, l - lb*nx1, (nx1g - 1 - l) - lb*nx1, nx1,
+                           is, j - js + w2, k - ks + w3};
     };
     auto active = KOKKOS_LAMBDA(const int m, const int r) {
       const int lb = lx_.d_view(m);
