@@ -486,20 +486,22 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
 ### Reproducibility
 
 - **Same binary, same layout:** bitwise from run to run.
-- **MPI rank count:** bitwise for the state (dumps, restart files, `hydro.hst`). The columns of
-  a `user.hst` that a test problem adds from plain sums (gas, radiation and momentum totals)
-  differ by the order of the ranks' partial sums (1e-15 of the largest value; larger relative
-  values only where a total is near 0); they are written, not read back. With `<mesh>/layout_invariant = true` (default) every global
-  or shell sum goes through an exact binned accumulator, so it does not depend on the order
-  of its terms. Test: `mpi_ranks` (1 and 2 ranks).
-- **MeshBlock layout, tile mode** (`layout_invariant_mode = tile`, `layout_tile = N`): the
+- **MPI rank count:** bitwise (dumps, restart files, `hydro.hst`, `user.hst`). With
+  `<mesh>/layout_invariant = true` (default) every global, shell or history sum goes
+  through an exact binned accumulator, so it does not depend on the order of its terms.
+  Test: `mpi_ranks` (1 and 2 ranks), `hst_ranks` (1, 2, 4, 8 ranks on different whole-tile
+  layouts: every history and dump byte for byte).
+- **MeshBlock layout, tile mode** (`layout_invariant_mode = tile`, the default; `layout_tile
+  = N`, default the fresh start's square lateral MeshBlock, recorded): the
   sums and the multigrid act on fixed N x N lateral tiles. Layouts made of whole tiles are
   bitwise identical when there is one MeshBlock along x1 and, if the theta boundaries are ray
   walls (mirror or vacuum), one MeshBlock along x2, as in the production templates. Splitting
   across such walls gives a round-off difference (below 1e-13 of the largest
   value after 8 cycles, CPU).
-- **Block mode** (default): the result depends on the MeshBlock size at the solver
-  tolerance, because the preconditioner is MeshBlock-local.
+- **Different tiles** (e.g. two fresh starts on different lateral MeshBlocks without a
+  named `layout_tile`): the results differ at the solver tolerance, because the
+  preconditioner is tile-local. Name the same `layout_tile` to compare layouts. (`block`, the
+  former default, is a tile of the MeshBlock's size.)
 - **Floor-held gas** (density or temperature floor with FOFC): with vacuum theta walls the
   trajectory is not reproducible across layouts, since the rays there differ by round-off and
   the floor flag amplifies it (with and without the uniform `fofc_flag_exchange`; a 1e-12

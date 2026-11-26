@@ -81,7 +81,7 @@ athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt mesh/layout_til
 | `<hydro>/merge_lat_mom`, `merge_lat_blockend` | `radial`, `exchange` | commented out, a choice of physics: a stored `rigid` (RSG) or `flat` stays (NOTE) |
 | `<rad_vet>/vet_rotate_avg_ema`, `_change_form`, `clean_rot_ring` | `128`, `linear`, `live` | commented out: stars with rotating rays (HG, RSG, R136 continuations) |
 | `<problem>/mlt_src_time` | `stage` | files of the release ccab558ee store `start` (MLT stars) |
-| `<mesh>/layout_invariant_mode`, `layout_tile` | `tile`, the lateral size of the file's MeshBlocks | stored as block (layout_tile is commented out: set it) |
+| `<mesh>/layout_tile` | the lateral size of the file's MeshBlocks | not stored (block files): the MeshBlock is the tile; name it to keep the answer on a new layout (commented out) |
 | `<time>/restart_refill_ghosts` | `false` | some files store true |
 
 A file this code wrote stores every key it read: nothing needs naming (a file of the release
@@ -189,9 +189,9 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | key | meaning | default | production | read in |
 |---|---|---|---|---|
 | `mesh/layout_invariant` | Global and shell sums in exact, order-independent form: results independent of the MPI rank count. | true | all: `true` | `mesh/mesh.cpp` (constructor) |
-| `mesh/layout_invariant_mode` | `block`: sums per MeshBlock (independent of the rank count for fixed MeshBlocks); `exact`: every cell term exact (about +8 % cost); `tile`: fixed N x N lateral tiles as the summation and multigrid units, so results do not depend on the MeshBlock layout either (with ray walls in theta: one MeshBlock along x2). | `block` | `tile` (recommended) | `mesh/mesh.cpp` (constructor) |
+| `mesh/layout_invariant_mode` | `tile`: fixed N x N lateral tiles as the summation and multigrid units, so results depend neither on the rank count nor on the layout of whole-tile MeshBlocks (with ray walls in theta: one MeshBlock along x2); `exact`: every cell term exact (about +8 % cost). `block` (older files) is read as `tile`: the same sums. | `tile` | `tile` | `mesh/mesh.cpp` (constructor) |
 | `rad_vet/vet_gd_band_ring` | Lend the band intensities per shell from a few slabs: same results, less GPU memory (RUN.md section 6). | on where it applies | A100 sp wedges: `true` | `rad_vet/rad_vet_params_closure.cpp` (constructor) |
-| `mesh/layout_tile` | Tile size N for `tile` mode; required with it. Needs one MeshBlock along x1 and N dividing `<meshblock>` nx2 and nx3. | none | `128` | `mesh/mesh.cpp` (constructor) |
+| `mesh/layout_tile` | Tile size N for `tile` mode. N dividing `<meshblock>` nx2 and nx3 (FATAL otherwise); a tile smaller than the MeshBlock needs one MeshBlock along x1 (rad_vet). Recorded: a restart on another layout of whole tiles gives the same answer. Without it (restart of an older file, or a non-square lateral MeshBlock) the MeshBlock is the tile. | fresh start: the lateral MeshBlock size (square MeshBlocks) | `128` | `mesh/mesh.cpp` (constructor) |
 | `mesh/nghost` | Ghost cells; the face line solves across MeshBlocks need >= 3. | 3 on a fresh VET run | all: `3` | `mesh/mesh.cpp` (constructor) |
 | `meshblock/nx1`, `nx2`, `nx3` | MeshBlock size. On spherical polar and the cubed sphere nx1 must equal `<mesh>/nx1` (FATAL otherwise); tile mode needs it on every mesh. | = mesh | per deck | `mesh/mesh.cpp` (constructor) |
 

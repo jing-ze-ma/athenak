@@ -30,9 +30,9 @@ Facts that matter when you read them (`src/outputs/history.cpp`, `src/driver/dri
 - A restarted run appends to the same files and writes the header again. If the restart file
   is older than the last row, the time column jumps back. Skip that jump (the script in
   section 3 does).
-- With `<mesh>/layout_invariant = true` the sums are done in a fixed order: the rows do not
-  depend on the number of MPI ranks (block mode: for the same MeshBlocks; tile mode: for any
-  MeshBlock layout made of whole tiles).
+- With `<mesh>/layout_invariant = true` the sums of `hydro.hst` and `user.hst` are done in a
+  fixed order (per tile, the tiles' partials exact): the rows do not depend on the number of
+  MPI ranks or on the MeshBlock layout made of whole tiles.
 
 ### 1.1 `<basename>.hydro.hst`
 

@@ -42,6 +42,7 @@
 #include "mhd/mhd.hpp"
 #include "shearing_box/shearing_box.hpp"
 #include "pgen/pgen.hpp"
+#include "utils/repro_sum.hpp"
 
 #include <Kokkos_Random.hpp>
 
@@ -270,11 +271,10 @@ void MRIHistory(HistoryData *pdata, Mesh *pm) {
   int is = indcs.is; int nx1 = indcs.nx1;
   int js = indcs.js; int nx2 = indcs.nx2;
   int ks = indcs.ks; int nx3 = indcs.nx3;
-  const int nmkji = (pm->pmb_pack->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("HistSums",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("mri3d_hist", pm->pmb_pack->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     // compute n,k,j,i indices of thread
     int m = (idx)/nkji;
@@ -322,7 +322,7 @@ void MRIHistory(HistoryData *pdata, Mesh *pm) {
 
     // sum into parallel reduce
     mb_sum += hvars;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  }, sum_this_mb);
   Kokkos::fence();
 
   // store data into hdata array

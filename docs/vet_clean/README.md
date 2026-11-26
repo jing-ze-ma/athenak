@@ -21,8 +21,8 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 - order of accuracy: the finest pairs of the test ladders give 1.8 (time) and 1.9-2.3 (grid +
   time); also where the gas-radiation exchange is stiff (`time2_gtime_slope`);
 - bitwise restarts and dt retries;
-- bitwise across MPI rank counts (the state: dumps, restart files, `hydro.hst`; the sums of
-  `user.hst` are not), and across tile layouts in tile mode (one MeshBlock along x1 and x2);
+- bitwise across MPI rank counts (dumps, restart files, `hydro.hst`, `user.hst`), and across
+  layouts of whole tiles (one MeshBlock along x1, and along x2 with theta ray walls);
 - CPU and GPU agree to round-off (not bitwise);
 - no silent fallbacks: unsupported options are FATAL, handled events print `CLEAN WARNING`;
 - Cartesian, spherical-polar and cubed-sphere meshes with one implementation.

@@ -192,6 +192,7 @@
 #include "rad_vet/rad_vet_opacity.hpp"
 #include "pgen.hpp"
 #include "utils/recipe.hpp"
+#include "utils/repro_sum.hpp"
 
 // the envelope stage fills the potential and carries rho*Phi (it needs
 // <hydro>/etotgrav = true); the isothermal stage has no energy equation and is excluded
@@ -1272,7 +1273,7 @@ void RyPerHist(HistoryData *pdata, Mesh *pm) {
   const Real om = rp_.omega;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   array_sum::GlobalSum s;
-  Kokkos::parallel_reduce("ryper_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  repro::HistSums("ryper_hist", nmb, nkji, nx1,
   KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
     const int m = idx/nkji;
     const int k = (idx - m*nkji)/nji + ks;
@@ -1284,7 +1285,7 @@ void RyPerHist(HistoryData *pdata, Mesh *pm) {
     v.the_array[0] = dv*d;
     v.the_array[1] = dv*r*(u0(m,IM3,k,j,i) + om*r*d);
     sum += v;
-  }, Kokkos::Sum<array_sum::GlobalSum>(s));
+  }, s);
 
   const char *lab[14] = {"Mdom", "Jdom", "Min", "Mout", "Macc", "Jacc", "Jstr", "Jout",
                          "dMin", "dMout", "dMacc", "dJacc", "dJstr", "dJout"};

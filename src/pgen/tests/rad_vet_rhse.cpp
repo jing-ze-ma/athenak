@@ -55,6 +55,7 @@
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_fluid.hpp"
 #include "pgen/pgen.hpp"
+#include "utils/repro_sum.hpp"
 
 void RadVetAmHistory(HistoryData *pdata, Mesh *pm);   // rad_vet_tests2.cpp
 
@@ -557,22 +558,30 @@ void RhseHist(HistoryData *pdata, Mesh *pm) {
   auto &size = pmbp->pmb->mb_size;
   const bool sph = rh_sph;
   const Real gam = fl.eos.gamma, ic = 1.0/pmbp->pradvet->c_light;
+  // (the sums in a fixed order, repro::HistSums: rank-count and layout invariant)
   Real s[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
-  Kokkos::parallel_reduce("rhse_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                          pmbp->nmb_thispack*nkji),
-  KOKKOS_LAMBDA(const int q, Real &s0, Real &s1, Real &s2, Real &s3, Real &s4) {
+  array_sum::GlobalSum hs;
+  repro::HistSums("rhse_hist", pmbp->nmb_thispack, nkji, nx1,
+  KOKKOS_LAMBDA(const int q, array_sum::GlobalSum &a) {
     const int m = q/nkji, k = ks + (q%nkji)/nji, j = js + (q%nji)/nx1, i = is + q%nx1;
     const Real dv = sph ? vol(m,k,j,i) : size.d_view(m).dx1*size.d_view(m).dx2*
                                           size.d_view(m).dx3;
     const Real d = w0(m,IDN,k,j,i);
     const Real v2 = SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i)) + SQR(w0(m,IVZ,k,j,i));
-    s0 += dv*d*w0(m,IVX,k,j,i);
-    s1 += dv*0.5*d*v2;
+    a.the_array[0] += dv*d*w0(m,IVX,k,j,i);
+    a.the_array[1] += dv*0.5*d*v2;
+    a.the_array[3] += dv*ur(m,radvet::VET_E,k,j,i);
+    a.the_array[4] += dv*ic*ur(m,radvet::VET_F1,k,j,i);
+  }, hs);
+  Kokkos::parallel_reduce("rhse_vmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          pmbp->nmb_thispack*nkji),
+  KOKKOS_LAMBDA(const int q, Real &s2) {
+    const int m = q/nkji, k = ks + (q%nkji)/nji, j = js + (q%nji)/nx1, i = is + q%nx1;
+    const Real d = w0(m,IDN,k,j,i);
+    const Real v2 = SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i)) + SQR(w0(m,IVZ,k,j,i));
     s2 = fmax(s2, std::sqrt(v2*d/(gam*(gam - 1.0)*w0(m,IEN,k,j,i))));
-    s3 += dv*ur(m,radvet::VET_E,k,j,i);
-    s4 += dv*ic*ur(m,radvet::VET_F1,k,j,i);
-  }, Kokkos::Sum<Real>(s[0]), Kokkos::Sum<Real>(s[1]), Kokkos::Max<Real>(s[2]),
-  Kokkos::Sum<Real>(s[3]), Kokkos::Sum<Real>(s[4]));
+  }, Kokkos::Max<Real>(s[2]));
+  for (int n : {0, 1, 3, 4}) s[n] = hs.the_array[n];
 #if MPI_PARALLEL_ENABLED   // (the maximum on the master only: the history writer sums)
   MPI_Allreduce(MPI_IN_PLACE, &s[2], 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
   if (global_variable::my_rank != 0) s[2] = 0.0;

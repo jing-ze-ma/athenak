@@ -97,6 +97,7 @@
 #include "rad_vet/rad_vet_closure.hpp"
 #include "pgen/pgen.hpp"
 #include "utils/p_ledger.hpp"
+#include "utils/repro_sum.hpp"
 
 namespace {
 // shadow: the clump geometry and the background state, needed by the source term that
@@ -1701,11 +1702,10 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   const Real fo0 = (pam != nullptr) ? pam->frame_om[0] : 0.0;
   const Real fo1 = (pam != nullptr) ? pam->frame_om[1] : 0.0;
   const Real fo2 = (pam != nullptr) ? pam->frame_om[2] : 0.0;
-  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji = nx2*nx1;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("VetAmHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("VetAmHist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -1777,7 +1777,7 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
       hv.the_array[13] = d*(x[0]*ox[1] - x[1]*ox[0]);
     }
     mb_sum += hv;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  }, sum_this_mb);
   for (int n = 0; n < 14; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
   // ebnd_acc is global on every rank; the history output sums over ranks
   if (vet_am_ebnd) {

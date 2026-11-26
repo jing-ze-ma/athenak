@@ -56,6 +56,7 @@
 #include "outputs/outputs.hpp"
 #include "pgen.hpp"
 #include "utils/eint_from_cons.hpp"
+#include "utils/repro_sum.hpp"
 
 namespace {
 
@@ -487,10 +488,9 @@ void OdHistory(HistoryData *pdata, Mesh *pm) {
   auto e2f = pmbp->pmhd->presist->efld_resist.x2e;
   auto e3f = pmbp->pmhd->presist->efld_resist.x3e;
   auto aux = od->aux;
-  const int nmkji = pmbp->nmb_thispack*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   array_sum::GlobalSum sum;
-  Kokkos::parallel_reduce("od_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("od_hist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &s) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -576,7 +576,7 @@ void OdHistory(HistoryData *pdata, Mesh *pm) {
     h.the_array[11] = u0(m, IDN, k, j, i)*dv;
     for (int n=12; n<NREDUCTION_VARIABLES; ++n) h.the_array[n] = 0.0;
     s += h;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum));
+  }, sum);
   for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum.the_array[n];
 }
 
