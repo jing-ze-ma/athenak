@@ -58,3 +58,39 @@ Post per arm:
 6. Physics difference MIX against REL at the last cycle: max and mean |rel diff| of rho, T and |v|, over all cells and over rho > 10 dfloor, with the cell of each max.
 
 -- CONSERV (orion)
+
+## Addendum (EXACTP, 2026-11-26): radial momentum forms, binary caltech-starmix-1f3911ec9
+
+From CONSERV-EXACTP (orion). **Run this addendum's arms on the new binary in place of the MIX arms above if you have not started them; if MIX is already running, finish it and add these.** Idle test nodes only, never with production.
+
+### Binary
+- **MIX2** = branch **`caltech-starmix-1f3911ec9`** (pushed) = `caltech-starmix-bd1503bef` + 4 commits:
+  - p_ledger classes `cut` (cone cut the gas does not take) and `fwb` (unprojected fwb residual); the reference force the radiation withholds (force_reference) is booked to `src`. History columns per mesh: `Pr_tot Pr_hflx Pr_ntel Pr_src Pr_rad Pr_cut Pr_fwb Pr_flr Pr_mrg Pr_gap` (NHISTORY 48).
+  - `clean_stag_fcone_gas`: key back, **default false** (= release). `true` gives the gas the cut (momentum exact) but blew up the radiation-poor exchange box of test floor_momentum on Orion (dt collapse at cycle 1); with `clean_wb_mcap = true` it passes.
+  - `clean_stag_fwb_line = true` (new default): the fwb residual less its mean along each radial line (x1 on sp/cs), so fwb adds no radial momentum. **This one moves star results.**
+  - VETPAR stream-ordered zero fills (bitwise).
+- Orion CPU gate (job 243320): build OK (star_vet md5 a154d0ac), tiny_bsg_rel5 pass1 3.720e-11 PASS, quick 28/28. On vet-conserv-pled (same code on aa2646b92): quick 26/26, targeted 16/16 (p_ledger, wb_star, wb_sp, wb_cs, shell_force_cs, conservation_sp/cs, restart_sp/cs, layout_tile/cs, mpi_ranks, star_smoke, momentum_box, order_time, floor_momentum); tiny BSG 5+5 vs 10 restart bitwise (hst, hydro_w, vet, vet_face).
+- Build as REL: CUDA 12.9 + g++13, star_vet, never CUDA 12.2. Tiny gate first: pass1 must be 3.720e-11. Post md5 and prov.
+
+### Arms (4 single-GPU arms per H200 node, same node type and layout as the REL arms)
+| arm | star | start | N | extra keys |
+|---|---|---|---|---|
+| X2-bsg | bsg | fresh, MIX2 template | 300 | `<hydro> p_ledger = true` |
+| X2-m35 | m35mms | fresh, MIX2 template | 300 | same |
+| X2-t9 | t9l62 | fresh, MIX2 template | 300 | same |
+| X2G-bsg | bsg | fresh, MIX2 template | 300 | same + `<rad_vet> clean_stag_fcone_gas = true` (momentum-exact cut; does the star survive it?) |
+
+Then on the same node, one after another: XR2-bsg, XR2-m35, XR2-t9 = latest production rst, 100 cycles, production keys named, `p_ledger = true`.
+
+### RST (MIX2): production 2-step restart + bitwise
+As in the RST section above (bsg, m35mms, t9l62, M35ZAMS): (a) 2 cycles straight, (b) 1 + rst + 1. Final rst / hydro_w byte-identical yes/no, FATAL / CLEAN WARNING counts, the `CLEAN WARNING restart:` lines. A release rst does not store `clean_stag_fwb_line`: it runs with true (no warning).
+
+### Report (NOTE caltech-orion-starmix2; files to caltech_results/STARMIX2/<arm>/)
+Per arm: user.hst, hydro.hst, log first 400 / last 200 lines, `grep "CLEAN PLEDGER\|CLEAN FCONE\|CLEAN FWB\|CLEAN LZB"` as lines.txt, `grep -c "CLEAN WARNING"`.
+1. Cycles, wall, s/cycle (median of the last 100) against the REL arm on the same node type (fwb_line adds one line sum per solve).
+2. Every Pr class per cycle from `CLEAN PLEDGER` (rates x dt / gross): max and RMS of `cut`, `fwb`, `mrg`, `flr`, `gap`, `ntel`, and `END`. Expected: fwb 0, gap 0, ntel and END round-off, mrg round-off (merge_lat_mom = radial), cut small (0 in X2G), flr small.
+3. WB of the fresh start: max |v_r|/c_s and max |v_lat|/c_s at cycles 0, 1, 2, 5, 10 (r below the photosphere and all cells), X2 against R (the REL arm of 27zf/27zl).
+4. CLEAN WARNING / FATAL / DT_RETRY counts; X2G: does it run 300 cycles, any implicit_pos_floor creation or dt collapse.
+5. Physics difference X2 vs REL at the last cycle as item 6 above.
+
+-- CONSERV-EXACTP (orion)
