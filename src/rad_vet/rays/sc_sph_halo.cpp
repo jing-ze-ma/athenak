@@ -209,10 +209,10 @@ bool ScHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const
                 const Real t0, const Real dth, const Real p0, const Real dph,
                 const bool inw, const int mode, const bool wall, const int dep,
                 const Real rs, const Real rm, const Real rp, const bool hasm,
-                const bool hasp, const Real gam, const Real dmin) {
+                const bool hasp, const Real gam, const Real dmin, const bool slb) {
   const Real th = t0 + (gj + 0.5)*dth, ph = p0 + (gk + 0.5)*dph;
   return ScHaloKeepTP(nx, ny, nz, th, ph, inw, mode, wall, dep, rs, rm, rp, hasm, hasp,
-                      gam, dmin);
+                      gam, dmin, slb);
 }
 
 }  // namespace
@@ -224,6 +224,7 @@ bool ScHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const
 void RadiationVet::ScHcPrep(const int slot, const int i0, const bool inw0,
                             const int ws) {
 #if MPI_PARALLEL_ENABLED
+  const bool slb_ = (vgd_slab == 1);   // (the slab keeps the branch alone)
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -291,7 +292,8 @@ void RadiationVet::ScHcPrep(const int slot, const int i0, const bool inw0,
                         || (lr3 + rdk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fs_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) =
         ScHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
-                   (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+                   (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin,
+                   slb_) ? 1 : 0;
     }
     {
       // receive (my slot o): the source cell in the neighbour, global indices
@@ -305,7 +307,8 @@ void RadiationVet::ScHcPrep(const int slot, const int i0, const bool inw0,
                         || (lx3 + dk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fr_(static_cast<size_t>(ro_(ws,8*m + o))*nvi + t) =
         ScHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
-                   (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+                   (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin,
+                   slb_) ? 1 : 0;
     }
   });
   // (2) exclusive scans in place (flag -> position, total at n); flag = pos(q+1) -

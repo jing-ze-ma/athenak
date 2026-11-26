@@ -413,8 +413,9 @@ void RadiationVet::ScHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   auto dir_ = vgd_dir;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const ScLG lg_ = vgd_lg;
-  auto cx1v = pmy_pack->pcoord->x1v;
-  auto cx1f = pmy_pack->pcoord->xx1f;
+  auto cx1v = (vgd_slab == 1) ? vgd_sx1v : pmy_pack->pcoord->x1v;
+  auto cx1f = (vgd_slab == 1) ? vgd_sx1f : pmy_pack->pcoord->xx1f;
+  const int slbc_ = (vgd_slab == 1) ? ((indcs.nx3 > 1) ? 2 : 1) : 0;   // (ScCand)
   const bool wint = vgd_wint;
   auto w3_ = vgd_w3;           // mirror theta walls: read marks
   const DevExeSpace ex_ = vgd_cur;
@@ -557,7 +558,7 @@ void RadiationVet::ScHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           ScCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                 mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_, xr_,
+                 mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_, xr_, slbc_,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb,
               const int dr) {
             if (iu != i) {return;}
