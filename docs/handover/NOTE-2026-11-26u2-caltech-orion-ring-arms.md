@@ -189,3 +189,14 @@ map rms of v_r difference / rms of v_r (R0), after the shell mean; R = r/R_ph,IC
 | R4 | central fluxes off | within 0.5 % | | 14 | 6.0e-3 / 1.09 |
 | R5 | FOFC off | 5.20e4 / 5.78e4 / 6.44e4 | as R0 | 14 | 1.5e-3 / 0.63 |
 - None of the five changes the ring by more than the 25 % (e-fold) or 20 % (peak k) of the fixed reading; every key acts (R1, R3, R4, R5 shown; R2's band moves by 1 %), and in each arm the convection zone decorrelates from R0 while the ring at 0.74 R_ph,IC stays within 0.2-2.6 % of R0. So none of these terms makes the ring, and it is not driven from the zone above.
+
+## R6
+- 2026-11-25 16:15:05 rc=0 ended: Terminating on time limit wall=2234 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- keys: keys: hydro/rsolver=hlle common: time/tlim=4.5e5 output2/dt=2400 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30; 8253 rows, dt median 12.1262, min 0.5578, rows below 11.5: 5
+== R6: 42 dumps, t 3.5000e+05 to 4.5000e+05
+  r 0.72: band A rms 0e+00: 3.521e-02 (k 14, axis 0.86); 1e+04: 5.147e-03 (k 12, axis 0.83); 2e+04: 1.572e-03 (k 12, axis 0.71); 3e+04: 7.690e-04 (k 6, axis 0.55); 4e+04: 7.043e-04 (k 6, axis 0.61); 5e+04: 4.852e-04 (k 6, axis 0.43); 6e+04: 4.577e-04 (k 6, axis 0.58); 7e+04: 4.450e-04 (k 7, axis 0.52); 8e+04: 3.315e-04 (k 6, axis 0.53); 9e+04: 3.773e-04 (k 6, axis 0.60); 1e+05: 2.824e-04 (k 7, axis 0.54)
+    first 5e3 s: 3.521e-02 -> 1.103e-02; e-fold first 5e3 s -4.487e+03, 0-3e4 s -8.074e+03, 5e4-1e5 s -1.055e+05, whole 1e5 s -3.279e+04 s; last peak k 7, last axis share 0.54
+  r 0.74: band A rms 0e+00: 7.443e-02 (k 14, axis 0.82); 1e+04: 9.507e-03 (k 14, axis 0.87); 2e+04: 2.196e-03 (k 12, axis 0.76); 3e+04: 9.933e-04 (k 6, axis 0.68); 4e+04: 7.752e-04 (k 6, axis 0.58); 5e+04: 4.914e-04 (k 6, axis 0.57); 6e+04: 4.817e-04 (k 6, axis 0.54); 7e+04: 3.283e-04 (k 6, axis 0.52); 8e+04: 3.635e-04 (k 6, axis 0.57); 9e+04: 2.911e-04 (k 8, axis 0.52); 1e+05: 2.688e-04 (k 6, axis 0.59)
+    first 5e3 s: 7.443e-02 -> 2.332e-02; e-fold first 5e3 s -4.487e+03, 0-3e4 s -6.875e+03, 5e4-1e5 s -6.752e+04, whole 1e5 s -2.560e+04 s; last peak k 6, last axis share 0.59
+  r 0.76: band A rms 0e+00: 8.397e-02 (k 14, axis 0.92); 1e+04: 7.477e-03 (k 14, axis 0.82); 2e+04: 1.998e-03 (k 14, axis 0.88); 3e+04: 8.506e-04 (k 12, axis 0.76); 4e+04: 4.576e-04 (k 6, axis 0.71); 5e+04: 3.050e-04 (k 6, axis 0.60); 6e+04: 2.144e-04 (k 6, axis 0.52); 7e+04: 1.773e-04 (k 6, axis 0.52); 8e+04: 1.533e-04 (k 6, axis 0.47); 9e+04: 1.170e-04 (k 6, axis 0.51); 1e+05: 1.117e-04 (k 6, axis 0.44)
+    first 5e3 s: 8.397e-02 -> 2.202e-02; e-fold first 5e3 s -3.891e+03, 0-3e4 s -6.674e+03, 5e4-1e5 s -5.020e+04, whole 1e5 s -2.048e+04 s; last peak k 6, last axis share 0.44
