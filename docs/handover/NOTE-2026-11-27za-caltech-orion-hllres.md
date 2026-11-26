@@ -23,3 +23,37 @@
   - W2: dt 6.0727 s, 0.676 s/cycle (cycles 50-200), estimate 10.8 h to 3.5e5 s; CW 0 FATAL 0
   - W1R2: dt 6.0556 s, 0.330 s/cycle (cycles 50-450), estimate 5.3 h to 3.5e5 s; CW 0 FATAL 0
   - W2's dt halves (6.07 s): the lateral cell sets it; W1R2's dt 6.06 s (radial). W1R2 is below 12 h, so its tlim stays 3.5e5 s. W2 at about 11 h ends inside its holder (7333035, to 11-26 23:16).
+
+## Readings at the W1 / W05 end (W2 and W1R2 still running)
+- Run health:
+  - W05: rc 0, wall 5750 s, CW 0, FATAL 0, DT_RETRY 0; dt 12.13 s.
+  - W1: rc 0, wall 8662 s, CW 0, FATAL 0, DT_RETRY 0; dt 12.13 s; 0.30 s/cycle late in the run.
+  - W1E (fresh HLLE counterpart of W1) started at 00:10 on 02-03.
+- Full tables (items 1-5, every 1e4 s, A/B windows) and item 6 are in docs/handover/caltech_results/HLLRES/w1w05/. Figures F1-F4 (idort_style) are there too: W05 and W1 against prod_c1 and M35C.
+
+| at 0.74 R_ph,IC | W05 (64, 10 deg) | M35C (128, 20 deg) | W1 (128, 10 deg) | prod_c1 (256, 20 deg) |
+|---|---|---|---|---|
+| lateral cell vs production | 2x | 2x | 1x | 1x |
+| peak k20 at 1.8e5 / 2.6e5 / 3.46e5 s | 14 / 14 / 14 | 15 / 14 / 14 | 26 / 26 / 26 | 26 / 25 / 23 |
+| cells per wavelength at 3.46e5 | 9.1 | 9.1 | 9.8 | 11.1 |
+| band rms at 3.46e5 [km/s] (peak-centred band) | 8.4e-2 | 8.4e-2 | 1.6e-2 | 2.0e-2 |
+| e-fold 1-2e5 / 2-2.6e5 / 2.6-3.5e5 s [1e4 s] | 2.11 / 3.80 / 6.43 | 2.22 / 3.49 / 5.31 | 2.54 / 2.53 / 5.60 | 2.44 / 2.55 / 5.40 |
+| ln-residual rms of the fits | 0.26-0.38 | 0.07-0.09 | 0.07-0.13 | 0.05-0.08 |
+| band axis share (counting share) | 0.98-0.99 (0.28) | 0.64-0.87 (0.13) | 0.90-0.97 (0.14) | 0.55-0.65 (0.08) |
+| radial: peak r, FWHM at 3.46e5 | 0.754, 0.023 R (23 cells) | 0.747, 0.054 R (54 cells) | 0.735, 0.047 R (47 cells) | 0.747, 0.047 R (48 cells) |
+| node spacing of the strongest coefficient at 3.46e5 [R_ph] | (1 node) | 0.031 | 0.015 / 0.019 / 0.021 | 0.015 / 0.018 / 0.021 |
+| hst 2-3.5e5 s: KE_int / KEr_int [1e39 erg/sr], L_top/L_in | 11.7 / 5.19, 0.9996 | - | 12.6 / 5.57, 1.0015 | 11.8 / 5.16, 1.0003 |
+
+- **W1 vs prod_c1 (the wedge-change control)** passes both of your bounds:
+  - growth e-fold within 4 % in every window (bound 25 %);
+  - peak k20 26 against 23-26 (bound 20 %: within 13 % at 3.46e5 s, equal at 1.8e5 s);
+  - FWHM 47 vs 48 cells; node spacing equal to 0.001 R;
+  - amplitude 0.8x at 3.46e5 s;
+  - the axis share is higher (0.97 vs 0.65), from the 10 deg periodic box (its counting share is 0.14 vs 0.08).
+  - So the narrow-wedge ladder is usable.
+- **Lateral (W05 vs W1, so far):** halving the lateral resolution halves the peak k20 (26 -> 14), the same 9-10 cells per wavelength. That is the lateral grid-artefact signature of your fixed reading. W05 reproduces M35C (14, 9.1 cpw, same amplitude) on a different wedge.
+  - The growth rate barely moves (e-fold 2.1 vs 2.5e4 s early). The amplitude at equal t is 5x larger on the coarse grid.
+  - The verdict waits for W2 (does the peak move to k20 ~50?).
+- **Radial:** W05's band is half as wide in R as W1's (23 vs 47 cells at the same radial grid) and has one node. So the radial structure also follows the lateral scale. W1R2 (radial halving) will say whether FWHM is fixed in cells or in R.
+- **Item 5 (frequency):** unreliable. The strongest coefficient changes mode between dumps, so only 9 (W1) and 7 (prod) same-mode dumps after 2e5 s remain, with gaps. Phase residuals are 1.4-1.6 rad; |omega|/N ~0.5-0.7 with large error. W05 gives 1.81e-4 rad/s = 1.13 N (68 dumps, residual 0.7 rad). The 1800 s cadence aliases above 1.75e-3 rad/s.
+- F4: the v_r maps at 0.74 show the checkerboard of axis-aligned modes, one with the W1 cell and one with twice the cell for W05. Colour ranges +-0.072 (W05) and +-0.042 km/s (W1).

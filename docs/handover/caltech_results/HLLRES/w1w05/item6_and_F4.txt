@@ -1,0 +1,5 @@
+F4 colour ranges (+-, km/s, 99.5 percentile of |v_r - mean| per panel): W05 t 3.456e+05: 0.0721, W1 t 3.456e+05: 0.0419
+item 6: hst means over 2.0-3.5e5 s per unit solid angle (KE_int, KEr_int [erg/sr]; L_top/L_in ratio)
+- W05: KE_int 1.172e+40, KEr_int 5.187e+39 erg/sr, L_top/L_in 0.9996 (rows 12375, t 2.000e+05-3.500e+05)
+- W1: KE_int 1.264e+40, KEr_int 5.573e+39 erg/sr, L_top/L_in 1.0015 (rows 12386, t 2.000e+05-3.500e+05)
+- prod: KE_int 1.176e+40, KEr_int 5.160e+39 erg/sr, L_top/L_in 1.0003 (rows 12601, t 2.000e+05-3.500e+05)
