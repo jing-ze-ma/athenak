@@ -136,7 +136,7 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/clean_pred_xch", "+true"}, {"rad_vet/clean_predict", "=true"},
     // closure: constants
     {"rad_vet/clean_fill_passes", "=8"}, {"rad_vet/clean_fill_cs_remap", "=false"},
-    {"rad_vet/clean_ring_jmin", "=true"}, {"rad_vet/clean_ray_cut_r", "=0.01"},
+    {"rad_vet/clean_ring_jmin", "=true"},
     {"rad_vet/clean_ray_cut_margin", "=10"}, {"rad_vet/clean_ray_cut_taumin", "=0"},
     {"rad_vet/polar_ring_avg", "=false"}, {"rad_vet/clean_w_face_min", "=false"},
     // face coefficients and bracket: constants

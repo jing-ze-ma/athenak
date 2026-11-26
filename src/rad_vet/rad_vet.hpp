@@ -843,6 +843,7 @@ class RadiationVet {
   // tau_top >= clean_ray_cut_taumin; rises only after clean_ray_cut_wait builds
   bool cln_rcut_on = false;
   int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
+  Real cln_rcut_r = 0.003;
   ParameterInput *pin_rcut_ = nullptr;
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
                                 // predictor and the budget's time error also in BE steps

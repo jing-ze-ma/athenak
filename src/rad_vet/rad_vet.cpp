@@ -29,6 +29,7 @@
 #include "bvals/bvals.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
+#include "utils/recipe.hpp"
 
 namespace radvet {
 
@@ -143,6 +144,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   if (cln_rcut_on) {
     cln_rcut_wait = pin->GetOrAddInteger("rad_vet","clean_ray_cut_wait",10);
+    recipe::Fix(pin, "rad_vet", "clean_ray_cut_r", "0.003", "0.01");
+    recipe::OldStored(pin, "rad_vet", "clean_ray_cut_r", "0.01", "0.003");
+    cln_rcut_r = pin->GetOrAddReal("rad_vet","clean_ray_cut_r",0.003);
     // the cut and its count in a restart file (RayCut)
     cln_rcut = pin->GetOrAddInteger("rad_vet","clean_ray_cut_now",-1);
     cln_rcut_n = pin->GetOrAddInteger("rad_vet","clean_ray_cut_count",0);
