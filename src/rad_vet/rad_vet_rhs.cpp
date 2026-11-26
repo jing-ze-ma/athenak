@@ -152,7 +152,7 @@ void RadiationVet::RightHandSide(const bool beta, const bool lat) {
   // one launch per direction, its face code for a compile-time direction (DirCase)
   for (int dir = 0; dir < nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    SolveFor<4>("cln_rhsaf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<4, ATHENA_LB_RHSAF>("cln_rhsaf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
       DirCase(dir, [&](auto d) {

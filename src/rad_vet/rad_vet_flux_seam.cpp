@@ -295,7 +295,8 @@ void RadiationVet::FaceDrag(const bool first, const bool vel, const bool lat) {
   const bool lag = !first || (force_ref != VET_FREF_NONE);
   const int nf = x.nf;   // one launch for the faces of all directions
   const SolveArgs *px = DevArgs(x, 0), *pxh = DevArgs(xh, 1);
-  SolveFor("cln_drag", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  SolveFor<0, ATHENA_LB_DRAG>("cln_drag", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is,
+                              ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
     for (int dir = 0; dir < nf; ++dir) {

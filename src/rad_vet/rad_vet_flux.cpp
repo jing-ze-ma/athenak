@@ -99,7 +99,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
     if (ph == 0) {
       // F^H of every face (CLF_N) and the cell terms of every cell (FluxLine)
       const SolveArgs *px = DevArgs(x, 0), *pxh = DevArgs(xh, 1);
-      SolveFor<4>("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      SolveFor<4, ATHENA_LB_FS0>("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
         DirCase(dir, [&](auto d) {

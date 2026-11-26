@@ -478,7 +478,7 @@ void RadiationVet::RayFaceSums() {
                        rf_on ? ie - is + 2 : 1);
   Kokkos::deep_copy(DevExeSpace(), rf, 0.0);
   if (fs) {
-    SolveForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie,
+    SolveForK<ATHENA_LB_GD_FS>("cln_gd_fs", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const SolveArgs &x = *px;
       const bool rb = (i == is);
