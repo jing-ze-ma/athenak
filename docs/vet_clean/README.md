@@ -35,6 +35,7 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 | [RUN.md](RUN.md) | a first run, the production star decks, restarts, dt retries |
 | [KEYS.md](KEYS.md) | the input keys a user sets; the restart rule |
 | [OUTPUTS.md](OUTPUTS.md) | history columns, checking energy conservation, `CLEAN WARNING` messages, the end-of-run summary |
+| [PERFORMANCE.md](PERFORMANCE.md) | wall times of the star runs, comparison with Athena++ on CPUs, where the time goes |
 | [tests/vet_clean](../../tests/vet_clean/README.md) | the test suite |
 
 Quick start (details: [QUICKSTART.md](QUICKSTART.md)):
