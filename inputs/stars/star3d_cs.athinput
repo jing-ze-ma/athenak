@@ -55,6 +55,9 @@ f_stretch_r_head_nin = 591
 f_stretch_r_head_ij = 110
 cs_seam_blockend = extend
 layout_tile = 16
+# the values the start-up decides (a restart with -i takes them from the deck)
+nghost                = 3
+layout_invariant_mode = tile
 
 <meshblock>
 nx1 = 548
@@ -65,6 +68,9 @@ nx3 = 16
 nlim = 1200
 tlim = 1.0e30
 ndiag = 10
+# the values the start-up decides (a restart with -i takes them from the deck)
+dt_retry_grow  = 1.1
+dt_retry_ngood = 20
 
 <units>
 length_cgs = 1.0
@@ -94,6 +100,10 @@ vceil = 3.0e8
 fofc_report = 512
 fofc_report_dt = 3.6e3
 wb_rmax = 6.3933004762e+13
+# the values the start-up decides (a restart with -i takes them from the deck)
+wellbalance_dynamic = true
+wb_x1               = true
+etotgrav            = true
 
 <rad_vet>
 clean_init_tol = 2.0e-7
@@ -110,6 +120,15 @@ time2_vet_col = extrap2
 implicit_flux_x1min = 1.754459175000e+13
 clean_rot_ring = live
 clean_pc_sweep = rb
+# the values the start-up decides (a restart with -i takes them from the deck)
+force_reference   = wb_arad
+clean_init        = steady
+implicit_bc_x1min = flux
+clean_maxit       = 200
+opacity           = table
+vet_scatter       = true
+closure           = sc
+time_scheme       = hesdirk2
 
 <problem>
 star_ic_eint_from_t = true
@@ -167,6 +186,10 @@ star_ic_rad_tol = 1e-08
 star_ic_rad_hse_tol = 1e-06
 star_ic_rad_thin = 0
 mlt_relax_time = 1.5e4
+# the values the start-up decides (a restart with -i takes them from the deck)
+star_sponge_form      = lawson
+star_ic_rad_atm_maxit = 1000
+star_ic_rad_atm_relax = 0.5
 
 <coord>
 <output1>

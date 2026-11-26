@@ -35,6 +35,9 @@ f_stretch_r_p_xa = 0.1875
 f_stretch_r_p_xb = 0.6875
 f_stretch_r_p_w = 1.0e-12
 layout_tile = 16
+# the values the start-up decides (a restart with -i takes them from the deck)
+nghost                = 3
+layout_invariant_mode = tile
 
 <meshblock>
 nx1 = 256
@@ -45,6 +48,9 @@ nx3 = 16
 nlim = 4000
 tlim = 8.4672e5                   # 9.8 d
 ndiag = 10
+# the values the start-up decides (a restart with -i takes them from the deck)
+dt_retry_grow  = 1.1
+dt_retry_ngood = 20
 
 <units>
 length_cgs = 1.0
@@ -63,6 +69,11 @@ pfloor = 8.9014e-3
 vceil = 3.0e8
 tfloor = 134104228155.32465
 wb_rmax = 4.231839e+12
+# the values the start-up decides (a restart with -i takes them from the deck)
+wellbalance_dynamic  = true
+wb_x1                = true
+sp_x2_periodic_image = true
+etotgrav             = true
 
 <rad_vet>
 floorcap_report = 25
@@ -76,6 +87,19 @@ temp_unit_kelvin = 7.4568864364e-9
 e_floor = 1.0e-4
 implicit_flux_x1min = 2.2942145641e+13
 clean_pc_sweep = rb
+# the values the start-up decides (a restart with -i takes them from the deck)
+force_reference       = wb_arad
+clean_init            = steady
+implicit_bc_x1min     = flux
+clean_maxit           = 200
+opacity               = table
+vet_scatter           = true
+closure               = sc
+vet_gd_gl_nphi        = 18
+vet_gd_wall_interp    = true
+vet_gd_wall_sym       = true
+vet_gd_theta_seam_sym = true
+time_scheme           = hesdirk2
 
 <problem>
 star_seed_band = old
@@ -97,6 +121,8 @@ star_nfine = 262144
 star_ic_cols = 5
 star_bc_outer = copy
 star_bc_outer_r2 = true
+# the values the start-up decides (a restart with -i takes them from the deck)
+star_sponge_form = lawson
 
 <output1>
 file_type = hst

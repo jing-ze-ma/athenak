@@ -1,5 +1,6 @@
 # Production star deck template: 35 Msun main-sequence star envelope.
-# Only what differs from the code defaults is named (the scheme is the default); tile
+# Only what differs from the code defaults is named (the scheme is the default), and the
+# values the start-up decides (a restart with -i then takes none from the file); tile
 # layout mode (layout_tile = the lateral MeshBlock size; change both together).
 # Before running: replace TABLES/ in the star_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
@@ -30,6 +31,9 @@ use_spherical_polar = true
 use_grid_stretch_r = true
 f_stretch_r = -0.455726942889053
 layout_tile = 128
+# the values the start-up decides (a restart with -i takes them from the deck)
+nghost                = 3
+layout_invariant_mode = tile
 
 <meshblock>
 nx1 = 336
@@ -40,6 +44,9 @@ nx3 = 128
 nlim = -1
 tlim = 8.64e5
 ndiag = 50
+# the values the start-up decides (a restart with -i takes them from the deck)
+dt_retry_grow  = 1.1
+dt_retry_ngood = 20
 
 <units>
 length_cgs = 1.0
@@ -56,6 +63,11 @@ vceil = 3.0e8
 floor_audit = 1
 tfloor = 133780565496.86447
 wb_rmax = 1.097072e+12
+# the values the start-up decides (a restart with -i takes them from the deck)
+wellbalance_dynamic  = true
+wb_x1                = true
+sp_x2_periodic_image = true
+etotgrav             = true
 
 <rad_vet>
 clean_stag_mg_levels = 4
@@ -72,6 +84,19 @@ e_floor = 1.0e-4
 implicit_flux_x1min = 1.8587122274e+14
 clean_verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
 clean_pc_sweep = rb
+# the values the start-up decides (a restart with -i takes them from the deck)
+force_reference       = wb_arad
+clean_init            = steady
+implicit_bc_x1min     = flux
+clean_maxit           = 200
+opacity               = table
+vet_scatter           = true
+closure               = sc
+vet_gd_gl_nphi        = 18
+vet_gd_wall_interp    = true
+vet_gd_wall_sym       = true
+vet_gd_theta_seam_sym = true
+time_scheme           = hesdirk2
 
 <problem>
 star_ic_rad = file
@@ -86,6 +111,8 @@ star_nfine = 262144
 star_ic_cols = 5
 star_grid_dump = true
 star_bc_outer = copy
+# the values the start-up decides (a restart with -i takes them from the deck)
+star_sponge_form = lawson
 
 <output1>
 file_type = hst
