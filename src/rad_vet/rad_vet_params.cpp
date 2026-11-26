@@ -112,7 +112,7 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/clean_rays", "=sc"}, {"rad_vet/clean_halo_direct", "=true"},
     {"rad_vet/clean_cs_lz_abs", "=2"}, {"rad_vet/clean_stag_csvec_radial", "=true"},
     {"rad_vet/clean_stag_flim", "=false"}, {"rad_vet/clean_pass_damp", "=0"},
-    {"rad_vet/clean_conv_est_f", "=false"}, {"rad_vet/clean_retry_budget", "=false"},
+    {"rad_vet/clean_conv_est_f", "=false"}, {"rad_vet/clean_retry_budget", "=true"},
     {"rad_vet/vet_gd_twin", "=false"},
     // study keys: removed
     {"rad_vet/clean_stag_colflux", "=false"}, {"rad_vet/clean_stag_fcone_gas", "=false"},

@@ -234,7 +234,7 @@ another value: FATAL with the key to name).
 | `clean_maxpic` = `12` | `clean_nl_norm` = `global` | `clean_pass_damp` = `0` |
 | `clean_pred_stage` = `false` | `clean_pred_xch` = `true` | `clean_predict` = `true` |
 | `clean_ray_cut_margin` = `10` | `clean_ray_cut_taumin` = `0` | `clean_rays` = `sc` |
-| `clean_retry_budget` = `false` | `clean_ring_jmin` = `true` | `clean_rot_ring_fill_rst` = `true` |
+| `clean_retry_budget` = `true` | `clean_ring_jmin` = `true` | `clean_rot_ring_fill_rst` = `true` |
 | `clean_rst_mshare` = `true` | `clean_source_convex` = `true` | `clean_stag_central` = `true` |
 | `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` | `clean_stag_eicarry` = `true` |
 | `clean_stag_fcone_gas` = `false` | `clean_stag_flim` = `false` | `clean_stag_fs_line` = `pcr` |

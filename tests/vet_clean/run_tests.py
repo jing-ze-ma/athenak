@@ -397,7 +397,11 @@ def t_restart_cs(c):
 
 
 def t_dt_retry(c):
-    """a forced dt_retry with factor 1 repeats the step exactly; factor 0.5 runs on."""
+    """a forced dt_retry with factor 1 repeats the step exactly; factor 0.5 runs on.  The
+    forced retry redone as a failed step (dt_retry_force_redo): the redo keeps the
+    tolerance of any step, so factor 1 is again the straight run (redo_maxdiff); factor
+    0.5 converges (CLEAN RETRY lines, no CLEAN WARNING), 1 vs 1 x 2 MeshBlocks in tile
+    mode and a restart just after the redo bitwise."""
     o = {'time/nlim': 16, 'time/dt_retry': 'true'}
     a = c.run('shell_sp.athinput', 'straight', o)
     b = c.run('shell_sp.athinput', 'retry1', dict(o, **{'time/dt_retry_force_cycle': 4,
@@ -406,7 +410,24 @@ def t_dt_retry(c):
                                                          'time/dt_retry_force_fac': 0.5}))
     nf, mx, _ = vett.compare_dirs(a, b)
     nret = [open(os.path.join(x, 'run.log')).read().count('DT_RETRY cycle=') for x in (b, g)]
-    return dict(files=nf, maxdiff=mx, retries_fac1=nret[0], retries_fac05=nret[1])
+    out = dict(files=nf, maxdiff=mx, retries_fac1=nret[0], retries_fac05=nret[1])
+    fr = {'time/dt_retry_force_cycle': 4, 'time/dt_retry_force_redo': 'true'}
+    r = c.run('shell_sp.athinput', 'redo1', dict(o, **dict(fr, **{'time/dt_retry_force_fac':
+                                                                   1.0})))
+    out['redo_maxdiff'] = vett.compare_dirs(a, r)[1]
+    fr['time/dt_retry_force_fac'] = 0.5
+    lo = dict(o, **dict(fr, **{'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16,
+                               'mesh/nx3': 16, 'meshblock/nx2': 16, 'meshblock/nx3': 16,
+                               'rad_vet/vet_gd_theta_wall': 'mirror'}))
+    r = c.run('shell_sp.athinput', 'redo05', lo)
+    t = open(os.path.join(r, 'run.log')).read()
+    out.update(redo05_retry_lines=t.count('CLEAN RETRY'), redo05_warnings=vett.warnings(t))
+    b = c.run('shell_sp.athinput', 'redo05_mb1x2', dict(lo, **{'meshblock/nx3': 8}))
+    out['redo05_layout_maxdiff'] = vett.compare_dirs(r, b)[1]
+    c.dir = os.path.join(c.dir, 'redo_rst')
+    out['redo05_restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 5,
+                                                 dict(o, **fr))['maxdiff']
+    return out
 
 
 # ---------------------------------------------------------------------------------------
