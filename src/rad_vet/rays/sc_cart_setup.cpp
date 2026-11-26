@@ -15,6 +15,7 @@
 #include <math.h>
 
 #include <algorithm>
+#include <iterator>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -40,6 +41,8 @@
 #endif
 
 namespace radvet {
+
+extern Real g_vgd_tab_alpha;   // rays/sc_tables.cpp
 
 namespace {
 
@@ -980,7 +983,8 @@ void RadiationVet::ScSlabSelect() {
   need(!vet_x2open && !vet_x3open, " vacuum x2/x3 faces;");
   need(ibm_nr == 0 && !impl_beam_fs, " boundary beams / implicit_flux_beam = fs;");
   need(ibc_x1min != VET_IBC_REFLECT && ibc_x1max != VET_IBC_REFLECT, " reflecting x1;");
-  need(!vsc_rot && !ScRotOn() && !vra_on && !cln_ring, " rotating set;");
+  need(!(vsc_rot && ScRotOn()) || (cln_ring && vet_ring_n == 0),
+       " rotating set without the ring, or a rotating vet_ring;");
   need(nb1 == 1, " several MeshBlocks along x1;");
   need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
   vgd_slab = lack.empty() ? 1 : 0;
@@ -1046,6 +1050,32 @@ void RadiationVet::ScSlabArgs(SolveArgs &x) const {
   for (int d = 0; d < 3; ++d) {x.area[d] = vgd_sar[d];}
   x.x1v = vgd_sx1v;
   x.x1f = vgd_sx1f;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationVet::ScSlabKey
+//! \brief the slab's set of rotation block blk: key = its turn beta about x1 (VetRotBeta)
+//! in [0, 2 pi), the set kept for ScRotate; sets no table or ring holds are dropped
+
+Real RadiationVet::ScSlabKey(const int64_t blk) {
+  const Real beta = (vsc_rot && ScRotOn()) ? VetRotBeta(blk) : 0.0;
+  const Real tp = 2.0*M_PI, key = beta - tp*std::floor(beta/tp);
+  if (vgd_slabset.count(key) == 0) {
+    if (vgd_slabset.size() > 32) {
+      for (auto it = vgd_slabset.begin(); it != vgd_slabset.end();) {
+        const Real k = it->first;
+        const bool held = k == vgd_alpha || k == vgd_xf_alt || k == g_vgd_tab_alpha ||
+            std::find(cln_fvkey.begin(), cln_fvkey.end(), k) != cln_fvkey.end();
+        it = held ? std::next(it) : vgd_slabset.erase(it);
+      }
+    }
+    VetRotSet(beta);
+    auto ah = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vet_ang);
+    std::vector<double> d(4*vet_nray);
+    for (int q = 0; q < 4*vet_nray; ++q) {d[q] = ah(q/4, q%4);}
+    vgd_slabset[key] = d;
+  }
+  return key;
 }
 
 }  // namespace radvet

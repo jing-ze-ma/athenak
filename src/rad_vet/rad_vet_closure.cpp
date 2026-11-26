@@ -521,12 +521,12 @@ void RadiationVet::TraceRays() {
   // (the closure's time; a step of at least one rotation block takes its start's sets)
   const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
                   ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
-  if (!vgd_on && cln_ring) {   // (the rotating vet_sc set: RingMoments sweeps it)
+  if (!vgd_on && vgd_slab < 0) ScSlabSelect();
+  if (!vgd_on && vgd_slab == 0 && cln_ring) {   // (the rotating vet_sc set: RingMoments)
     RingSets(tc, pmy_pack->pmesh->ncycle);
     RingMoments();
     return;
   }
-  if (!vgd_on && vgd_slab < 0) ScSlabSelect();
   if (!vgd_on && vgd_slab == 0) {
     ScCartBuild();
     ClosureFromRays();

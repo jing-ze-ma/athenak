@@ -606,6 +606,13 @@ Real RadiationVet::RotAlignDt(const Real time, const Real dt) {
 //! rotated about z, or with vet_gd_rotate_axis = 3d by R_b (ScRot3)
 
 std::vector<double> RadiationVet::ScRotate(const Real alpha) const {
+  if (vgd_slab == 1) {   // Cartesian slab: the vet_sc set turned about x1 (ScSlabKey)
+    const auto it = vgd_slabset.find(alpha);
+    if (it == vgd_slabset.end()) {
+      ScFatal("Cartesian slab: no set of key " + std::to_string(alpha));
+    }
+    return it->second;
+  }
   const int n = vgd_n;
   std::vector<double> d(vgd_base);
   if (vgd_rot3) {

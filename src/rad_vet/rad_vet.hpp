@@ -639,6 +639,9 @@ class RadiationVet {
   DvceArray4D<Real> vgd_svol, vgd_sar[3];
   void ScSlabGeom();
   void ScSlabArgs(SolveArgs &x) const;
+  // its sets by key: the turn beta of the vet_sc set about x1, in [0, 2 pi) (ScRotate)
+  std::map<Real, std::vector<double>> vgd_slabset;
+  Real ScSlabKey(const int64_t blk);
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange
   void ScCartSweepMB();
   //! VET: free the multi-block state

@@ -405,10 +405,16 @@ void RadiationVet::ScInit() {
     // Cartesian slab: lateral cells per unit x1 chord, max over the set (constant feet)
     const bool slb = (vgd_slab == 1);
     double tsl = 0.0;
+    // (a set turning about x1: the bound of every turn, |n_perp| over the finer side)
+    const bool srot = slb && vsc_rot && ScRotOn();
+    const double dxm = std::min(vgd_lg.Dx2H(mbs, 0),
+                                pm->three_d ? vgd_lg.Dx3H(mbs, 0) : 1.0e300);
     for (size_t q = 0; slb && q < vgd_base.size()/4; ++q) {
       const double *u = &vgd_base[4*q];
-      tsl = std::max(tsl, std::max(std::fabs(u[1])/vgd_lg.Dx2H(mbs, 0), pm->three_d ?
-                     std::fabs(u[2])/vgd_lg.Dx3H(mbs, 0) : 0.0)/std::fabs(u[0]));
+      const double t = srot ? std::sqrt(u[1]*u[1] + u[2]*u[2])/dxm
+                            : std::max(std::fabs(u[1])/vgd_lg.Dx2H(mbs, 0), pm->three_d ?
+                                       std::fabs(u[2])/vgd_lg.Dx3H(mbs, 0) : 0.0);
+      tsl = std::max(tsl, t/std::fabs(u[0]));
     }
     // pass 1: the raw band, where pass 0's exact lists would clamp
     for (int pass = 0; pass < 2; ++pass) {
@@ -571,7 +577,7 @@ void RadiationVet::ScInit() {
   if (ScRotOn()) {
     vgd_tex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
   }
-  ScTables(RotAngle(pm->ncycle));
+  ScTables((vgd_slab == 1) ? ScSlabKey(RotBlock(pm->ncycle)) : RotAngle(pm->ncycle));
 }
 
 namespace {
