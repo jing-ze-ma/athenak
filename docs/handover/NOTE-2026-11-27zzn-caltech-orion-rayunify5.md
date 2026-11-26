@@ -191,3 +191,14 @@
       0.029601        534 vet_lay_red2
       0.021624        144 cln_fs0
 ```
+
+## Peak GPU memory, G1 cart2 (128^3, 1 GPU)
+- Measured by nvidia-smi every 0.1 s inside the run's own step; whole GPU, including the CUDA context. The sampler of the table above ran as a separate step and saw no device, so its column is empty.
+  - FS 13029 MiB, FD 22953 MiB, FD0 22953 MiB.
+  - So FD / FD0 hold about 9.9 GB more than FS, which matches the expected scratch of about 10.6 GB.
+
+## Reading
+- **FD (fold on) regresses badly on cart2.** vet_vgd_shell takes 6.13 s on 1 GPU (FS 0.279 + slab_phi 0.275 + slab_fs 0.176 = 0.73 s); elapsed 8.03 vs 2.14 s. On 4 GPUs shell_int 1.08 + edge 0.28 s (FS 0.38 s in total).
+- FD0 (fold off) is close to FS: on 1 GPU shell 0.433 + slab_phi 0.346 + slab_fs 0.210 = 0.99 s (FS 0.73); on 4 GPUs 0.36 s (FS 0.38).
+  - slab_fs now launches once per pass (14 launches instead of 1792): 0.21 s on 1 GPU, 0.05 s on 4.
+- sp2: identical in all three (0.418 s on 1 GPU; 0.146-0.148 s on 4 GPUs).
