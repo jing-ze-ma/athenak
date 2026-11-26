@@ -115,19 +115,19 @@ inline void SolveFor(const char *name, const int nmb1, const int ks, const int k
 // overrides for measuring per kernel; a cap changes only register allocation and
 // occupancy, not the arithmetic (-ffp-contract=off, --fmad=false): bitwise
 #ifndef ATHENA_LB_GD_FS
-#define ATHENA_LB_GD_FS kSolveForMb
+#define ATHENA_LB_GD_FS 1
 #endif
 #ifndef ATHENA_LB_DRAG
-#define ATHENA_LB_DRAG kSolveForMb
+#define ATHENA_LB_DRAG 1
 #endif
 #ifndef ATHENA_LB_RHSAF
-#define ATHENA_LB_RHSAF kSolveForMb
+#define ATHENA_LB_RHSAF 1
 #endif
 #ifndef ATHENA_LB_FS0
-#define ATHENA_LB_FS0 kSolveForMb
+#define ATHENA_LB_FS0 1
 #endif
 #ifndef ATHENA_LB_FACECOEF
-#define ATHENA_LB_FACECOEF 0
+#define ATHENA_LB_FACECOEF 1
 #endif
 
 // SolveFor with k fastest on HIP (the row order of a ScRag slab), so adjacent lanes
