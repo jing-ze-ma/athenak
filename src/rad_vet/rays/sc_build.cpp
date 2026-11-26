@@ -97,7 +97,7 @@ void RadiationVet::ScSweepPost() {
   vgd_cur = DevExeSpace();
   vgd_scut = vray_icut;
   tm.reset();
-  ScSweep();
+  ScSweepX1();   // (ScSweep; x1 periodic slab: its passes)
   Kokkos::fence();
   vgd_tswp += tm.seconds();
   ScPost();

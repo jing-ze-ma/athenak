@@ -979,7 +979,7 @@ void RadiationVet::ScSlabSelect() {
   }
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
-  need(!vet_x1per && ibc_x1min != VET_IBC_PERIODIC, " x1 periodic;");
+  need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
   need(!vet_x2open && !vet_x3open, " vacuum x2/x3 faces;");
   need(ibm_nr == 0 && !impl_beam_fs, " boundary beams / implicit_flux_beam = fs;");
   need(ibc_x1min != VET_IBC_REFLECT && ibc_x1max != VET_IBC_REFLECT, " reflecting x1;");
@@ -1076,6 +1076,114 @@ Real RadiationVet::ScSlabKey(const int64_t blk) {
     vgd_slabset[key] = d;
   }
   return key;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScSweepX1
+//! \brief the slab's sweep of one set; x1 periodic: up to vet_x1_npass passes, the first
+//! from vet_x1_periodic_inflow (source: the face S; boundary: the ends' intensities) or,
+//! adaptive after the first build, from the last build's exit planes (vet_x1ent, kept in
+//! restart files), each later one from the periodic image of the pass before; adaptive
+//! (vet_x1_ptol): stop when d_p/(1 - d_p/d_{p-1}) < vet_x1_ptol, d_p the largest change
+//! of the exit planes over their largest value
+
+void RadiationVet::ScSweepX1() {
+  if (vgd_slab != 1 || !vet_x1per) {
+    ScSweep();
+    return;
+  }
+  const bool adapt = vet_x1ptol > 0.0 && vet_x1ent.extent_int(1) == vgd_n;
+  // (the ring's sets start from the plane the set before left: only the start)
+  const bool warm = adapt && vet_x1_warm;
+  if (warm) {ScX1Load();}
+  Real dprev = -1.0;
+  int np = 0;
+  bool conv = false;
+  for (int p = 0; p < vet_x1npass && !conv; ++p) {
+    vgd_x1p = (p > 0 || warm) ? 2 : 1;
+    ScSweep();
+    ++np;
+    if (!adapt) {continue;}
+    Real amax = 0.0;
+    const Real dmax = ScX1Exit(p > 0, amax);
+    if (p == 0) {continue;}
+    const Real d = (amax > 0.0) ? dmax/amax : 0.0;
+    const Real q = (dprev > 0.0) ? fmin(d/dprev, 0.999) : 0.999;
+    conv = (d == 0.0) || (d/(1.0 - q) < vet_x1ptol);
+    dprev = d;
+  }
+  vgd_x1p = 0;
+  if (adapt) {
+    vet_x1_nbuild += 1.0;
+    vet_x1_warm = true;
+    vet_x1_npsum += static_cast<Real>(np);
+    vet_x1_npmax = std::max(vet_x1_npmax, np);
+    if (!conv) {
+      if (vet_x1_ncap == 0.0 && global_variable::my_rank == 0) {
+        std::cout << "<rad_vet> WARNING slab periodic x1 sweep: vet_x1_npass="
+                  << vet_x1npass << " reached before vet_x1_ptol=" << vet_x1ptol
+                  << " (first time; counted in the final report)" << std::endl;
+      }
+      vet_x1_ncap += 1.0;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationVet::ScX1Exit
+//! \brief the exit planes of the pass just swept (inward directions at the first shell,
+//! outward at the last) into vet_x1ent; returns max |change| (cmp) and amax = max value
+//! (all ranks)
+
+Real RadiationVet::ScX1Exit(const bool cmp, Real &amax) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, ks = indcs.ks, js = indcs.js, w = vgd_w;
+  const int nk = indcs.nx3, nj = indcs.nx2, n = vgd_n;
+  const int ntot = pmy_pack->nmb_thispack*n*nk*nj;
+  auto vi_ = vgd_i;
+  auto dir_ = vgd_dir;
+  auto ent_ = vet_x1ent;
+  Real dmax = 0.0;
+  amax = 0.0;
+  Kokkos::parallel_reduce("vet_vgd_x1exit", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+  KOKKOS_LAMBDA(const int t, Real &dl, Real &al) {
+    const int j = t % nj, k = (t/nj) % nk, d = (t/(nj*nk)) % n, m = t/(nj*nk*n);
+    const Real v = vi_(m,d,k+w,j+w,(dir_(d,0) < 0.0) ? is : ie);
+    if (cmp) {dl = fmax(dl, fabs(v - ent_(m,d,k+ks,j+js)));}
+    al = fmax(al, v);
+    ent_(m,d,k+ks,j+js) = v;
+  }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(amax));
+#if MPI_PARALLEL_ENABLED
+  Real a[2] = {dmax, amax};
+  MPI_Allreduce(MPI_IN_PLACE, a, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  dmax = a[0];
+  amax = a[1];
+#endif
+  return dmax;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScX1Load
+//! \brief the last build's exit planes (vet_x1ent) into the exit shells and their
+//! lateral bands: the first pass's periodic image
+
+void RadiationVet::ScX1Load() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, ks = indcs.ks, js = indcs.js, w = vgd_w;
+  const int n = vgd_n;
+  auto vi_ = vgd_i;
+  auto dir_ = vgd_dir;
+  auto ent_ = vet_x1ent;
+  par_for("vet_vgd_x1load", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, n - 1, 0,
+          indcs.nx3 - 1, 0, indcs.nx2 - 1,
+  KOKKOS_LAMBDA(const int m, const int d, const int k, const int j) {
+    vi_(m,d,k+w,j+w,(dir_(d,0) < 0.0) ? is : ie) = ent_(m,d,k+ks,j+js);
+  });
+  for (int p = 0; p < 2; ++p) {
+    vgd_hinw = (p == 0);
+    ScHalo(vgd_i, n, (p == 0) ? is : ie, (p == 0) ? is : ie, vgd_w, true);
+  }
+  Kokkos::fence();
 }
 
 }  // namespace radvet

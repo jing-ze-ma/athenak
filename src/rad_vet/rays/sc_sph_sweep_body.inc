@@ -120,15 +120,21 @@
           const Real ch0 = exp(csx(m,0,k,j,i));
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
-          if (inw && l == n1 - 1 && (x1f_(m) & 2)) {
+          // slab x1 periodic: the first pass enters with the face S (psrc), the later
+          // ones from the periodic image of the other end (img)
+          const bool psrc = (x1p_ == 1) && x1si_;
+          const bool img = (x1p_ == 2) && (inw ? (l == n1 - 1) : (l == lcb));
+          if (inw && l == n1 - 1 && (x1f_(m) & 2) && !img) {
             // top face: extrapolated S (vacuum), or the bath / mirrored (ScTopMirror)
             // inflow attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = slb_ ? (rtop - r)/fabs(mr)
                                  : (sqrt(fmax(rtop*rtop - p2, 0.0)) - zr);
             const bool rfl = (x1f_(m) & 4);
-            iv = ScTopInflow(ch0, ds, s0, exp(csx(m,1,k,j,i-1)), tbh || rfl,
-                             rfl ? vix(m,d,k,j,i+1) : itop);
+            const Real sbl = exp(csx(m,1,k,j,i-1));
+            iv = ScTopInflow(ch0, ds, s0, sbl, tbh || rfl || psrc,
+                             rfl ? vix(m,d,k,j,i+1)
+                                 : (psrc ? fmax(1.5*s0 - 0.5*sbl, 1.0e-300) : itop));
           } else if (!slb_ && !inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
@@ -144,6 +150,14 @@
               ds = fabs(((typ == 2) ? cx1f(m,i) : cx1v(m,iu)) - r)/amr;
               dso = (typ == 2) ? 0.5*ds
                                : fmin(fabs(cx1f(m,inw ? (i + 1) : i) - r)/amr, ds);
+              if (img) {
+                // the image of the other end's cell centre, one period away
+                typ = 1;
+                iu = inw ? is : ie;
+                dso = fabs(cx1f(m,inw ? (ie + 1) : is) - r)/amr;
+                ds = dso + (inw ? (cx1v(m,is) - cx1f(m,is))
+                                : (cx1f(m,ie+1) - cx1v(m,ie)))/amr;
+              }
             } else {
               ScRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
             }
@@ -295,9 +309,12 @@
 #endif
             if (bdone) {
               // segment from the theta wall
-            } else if (typ == 2 && emi) {
-              // vet_gd_inner = emit: boundary emission at the inner-face point
-              iv = ScInnerFace(st4, fC, i, true, iemit, bfc, cx1f(m,i), cx1v(m,i),
+            } else if (typ == 2 && (emi || psrc)) {
+              // vet_gd_inner = emit: boundary emission at the inner-face point; x1
+              // periodic first pass: the face S
+              const Real ie0 = psrc ? fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i+1)), 0.0)
+                                    : iemit;
+              iv = ScInnerFace(st4, fC, i, true, ie0, bfc, cx1f(m,i), cx1v(m,i),
                                cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2 && imir) {
               // reflecting inner face: first-shell inward intensity in the nearest
