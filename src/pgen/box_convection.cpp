@@ -313,7 +313,7 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
-#include "rad_vet/vet_fluid.hpp"
+#include "rad_vet/rad_vet_fluid.hpp"
 #include "driver/driver.hpp"
 #include "utils/wb_background.hpp"
 #include "diffusion/conduction.hpp"

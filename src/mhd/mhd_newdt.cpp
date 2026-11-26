@@ -24,7 +24,7 @@
 #include "diffusion/resistivity.hpp"
 #include "srcterms/srcterms.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/rad_vet_clean.hpp"
+#include "rad_vet/rad_vet_momentum.hpp"
 
 namespace mhd {
 

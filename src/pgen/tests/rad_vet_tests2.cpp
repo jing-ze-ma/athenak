@@ -93,7 +93,7 @@
 #include "mhd/mhd.hpp"
 #include "globals.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/vet_fluid.hpp"
+#include "rad_vet/rad_vet_fluid.hpp"
 #include "rad_vet/rad_vet_closure.hpp"
 #include "pgen/pgen.hpp"
 

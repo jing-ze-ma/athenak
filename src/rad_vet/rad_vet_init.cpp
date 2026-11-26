@@ -4,379 +4,409 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_init.cpp
-//! \brief implicit-transport set-up (ImplicitInit), run-end report, face-flux restart
-//! slabs, and the device memory arena shared by vet_gd and the clean work vectors.
+//! \brief arrays of the solve, the device memory arena shared with the rays, and
+//! CleanArgs, what the kernels read.
+//!
+//!  called from: rad_vet_closure.cpp, rad_vet_closure_faces.cpp,
+//!    rad_vet_closure_rays.cpp, rad_vet_closure_ring.cpp, rad_vet_fct.cpp,
+//!    rad_vet_flux.cpp, rad_vet_flux_bounds.cpp, rad_vet_flux_schur.cpp,
+//!    rad_vet_flux_seam.cpp, rad_vet_gas.cpp, rad_vet_ledger.cpp, rad_vet_newton.cpp,
+//!    rad_vet_oldvector.cpp, rad_vet_params_implicit.cpp, rad_vet_rhs.cpp,
+//!    rad_vet_solver.cpp, rad_vet_steady.cpp, rad_vet_tasks.cpp, rad_vet_update.cpp,
+//!    rays/sc_setup.cpp, driver/dt_retry.cpp, hydro/hydro_tasks.cpp
+//!  calls into: rad_vet_geometry.cpp
 
 #include <algorithm>
-#include <cmath>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/bvals.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro/hydro.hpp"
-#include "utils/recipe.hpp"
-#include "utils/scratch_view.hpp"
 #include "rad_vet/rad_vet.hpp"
-#include "rad_vet/rad_vet_parfor.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
-#include "rad_vet/rad_vet_clean.hpp"
-
-#if MPI_PARALLEL_ENABLED
-#include <mpi.h>
-#endif
+#include "rad_vet/rad_vet_fluid.hpp"
+#include "rad_vet/rad_vet_args.hpp"
 
 namespace radvet {
 
-namespace {
-//----------------------------------------------------------------------------------------
-//! \fn ImplBCFromString
-//! \brief x1 boundary type of the implicit solve from its key; auto: from the mesh flag
-
-int ImplBCFromString(const std::string &s, const BoundaryFlag mbc) {
-  if (s.compare("auto") == 0) {
-    if (mbc == BoundaryFlag::periodic) return VET_IBC_PERIODIC;
-    if (mbc == BoundaryFlag::reflect) return VET_IBC_REFLECT;
-    return VET_IBC_MARSHAK;
-  }
-  if (s.compare("marshak") == 0) return VET_IBC_MARSHAK;
-  if (s.compare("flux") == 0) return VET_IBC_FLUX;
-  if (s.compare("reflect") == 0) return VET_IBC_REFLECT;
-  if (s.compare("periodic") == 0) return VET_IBC_PERIODIC;
-  if (s.compare("efix") == 0) return VET_IBC_EFIX;
-  if (s.compare("outflow") == 0) return VET_IBC_OUTFLOW;
-  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-    << std::endl << "<rad_vet>/implicit_bc_x1min|max = '" << s << "' is not a valid "
-    << "choice (auto | marshak | flux | reflect | periodic | efix | outflow (scheme = "
-    << "clean))" << std::endl;
-  std::exit(EXIT_FAILURE);
-  return VET_IBC_MARSHAK;
-}
+extern bool g_vra_adv;   // vet_rotate_advance (rays/sc_directions.cpp)
 
 //----------------------------------------------------------------------------------------
-//! \fn ImplFatal
-//! \brief fatal-error exit with a message
+//! \fn void RadiationVet::CleanInit
+//! \brief allocates the arrays of the clean solve and checks that the setup is supported
 
-void ImplFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
-} // namespace
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitInit
-//! \brief reads and checks the implicit-transport keys, allocates the face and work
-//! arrays.  Called at the end of the constructor.
-
-void RadiationVet::ImplicitInit(ParameterInput *pin) {
-  // time_scheme (read by Time2Init): hesdirk2 on a fresh run where accepted (no polar
-  // boundary, integrator rk2), else be
-  {auto *pmh = pmy_pack->pmesh;
-  const std::string integ = pin->DoesParameterExist("time","integrator") ?
-                            pin->GetString("time","integrator") : "rk2";
-  const bool h2ok = !pmh->use_polar_boundary &&
-                    (integ.compare("rk2") == 0);
-  recipe::Old(pin, "rad_vet", "time_scheme", "be");
-  (void) pin->GetOrAddString("rad_vet","time_scheme",
-                             (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
-  // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted;
-  // time2_be_only: the same under time_scheme = hesdirk2
-  const std::string tsn = pin->GetString("rad_vet","time_scheme");
-  if (tsn.compare("be") == 0) {
-    t2_beonly = h2ok;
-  } else if (tsn.compare("hesdirk2") == 0 &&
-             pin->DoesParameterExist("rad_vet","time2_be_only")) {
-    t2_beonly = pin->GetBoolean("rad_vet","time2_be_only");
-  }}
-  trans_on = false;
-  trans_x3 = false;
-  impl_cfl = pin->GetOrAddReal("rad_vet","implicit_cfl",-1.0);
-  impl_onep = 0;
-  for (int t = 0; t < 3; ++t) {
-    onep_qa[t] = -1.0;
-    onep_qb[t] = -1.0;
-    onep_cnt[t] = 0.0;
-    onep_off[t] = 0.0;
-    onep_actr[t] = 0.0;
-    onep_prb[t] = 0.0;
-  }
-  impl_onep_auto = false;
-  tmr_c0 = pin->DoesParameterExist("rad_vet","implicit_timers") ?
-           pin->GetInteger("rad_vet","implicit_timers") : 0;   // read only when named
-  // implicit_resid_fatal: stage residual that stops the run (0 = off)
-  if (pin->DoesParameterExist("rad_vet","implicit_resid_fatal")) {
-    impl_res_fatal = pin->GetReal("rad_vet","implicit_resid_fatal");
-    if (!(impl_res_fatal >= 0.0)) {
-      ImplFatal("<rad_vet>/implicit_resid_fatal must be >= 0");
-    }
-  } else if (recipe::NewDefaults(pin)) {
-    impl_res_fatal = pin->GetOrAddReal("rad_vet","implicit_resid_fatal",1.0e-2);
-    recipe::Log("<rad_vet>/implicit_resid_fatal = 1e-2 (default)");
-  } else if (global_variable::restart_run) {
-    recipe::Log("<rad_vet>/implicit_resid_fatal = 0 (off: restart input has no key, the "
-                "old default kept; set it to switch)");
-  }
-  // implicit_pos_floor (default true)
-  impl_pos_floor = pin->GetOrAddBoolean("rad_vet","implicit_pos_floor",
-      recipe::Fix(pin, "rad_vet", "implicit_pos_floor", "true", "false"));
-  Kokkos::realloc(pos_cnt_d, VET_POS_N);
-  Kokkos::deep_copy(pos_cnt_d, 0.0);
-  marshak_q = pin->GetOrAddReal("rad_vet","marshak_q",0.5);
-  {  // implicit_hold: inert unless a pgen marks hold_m
-    impl_hold = pin->GetOrAddBoolean("rad_vet","implicit_hold",true);
-    if (impl_hold) {
-      auto &idh = pmy_pack->pmesh->mb_indcs;
-      const int nh1 = idh.nx1 + 2*idh.ng;
-      const int nh2 = (idh.nx2 > 1) ? (idh.nx2 + 2*idh.ng) : 1;
-      const int nh3 = (idh.nx3 > 1) ? (idh.nx3 + 2*idh.ng) : 1;
-      const int nmh = std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank);
-      Kokkos::realloc(hold_m, nmh, nh3, nh2, nh1);
-      Kokkos::deep_copy(hold_m, 0.0);
-    }
-  }
-  // the old scheme's predictor order: the channels of its restart files
-  if (global_variable::restart_run) {
-    impl_pord = pin->DoesParameterExist("rad_vet","implicit_predictor_order") ?
-                pin->GetInteger("rad_vet","implicit_predictor_order") : 1;
-  } else {
-    recipe::Rule(pin, "rad_vet", "implicit_predictor_order", "2");
-  }
-
-  auto &mbcs = pmy_pack->pmesh->mesh_bcs;
-  ibc_x1min = ImplBCFromString(
-      pin->GetOrAddString("rad_vet","implicit_bc_x1min","auto"),
-      mbcs[static_cast<int>(BoundaryFace::inner_x1)]);
-  ibc_x1max = ImplBCFromString(
-      pin->GetOrAddString("rad_vet","implicit_bc_x1max","auto"),
-      mbcs[static_cast<int>(BoundaryFace::outer_x1)]);
-  // transverse boundaries (read only when named; auto: periodic or reflect)
-  {
-    auto tbc = [&](const char *key, const BoundaryFace f) -> int {
-      const bool per = (mbcs[static_cast<int>(f)] == BoundaryFlag::periodic);
-      std::string v = "auto";
-      if (pin->DoesParameterExist("rad_vet", key)) {v = pin->GetString("rad_vet", key);}
-      if (v.compare("auto") == 0) {return per ? VET_IBC_PERIODIC : VET_IBC_REFLECT;}
-      int r = -1;
-      if (v.compare("reflect") == 0) {r = VET_IBC_REFLECT;}
-      if (v.compare("marshak") == 0) {r = VET_IBC_MARSHAK;}
-      // zero-gradient outgoing flux, x2 faces only
-      if (v.compare("outflow") == 0 && (f == BoundaryFace::inner_x2 ||
-                                        f == BoundaryFace::outer_x2)) {
-        r = VET_IBC_OUTFLOW;
-      }
-      if (v.compare("flux") == 0 && (f == BoundaryFace::inner_x2 ||
-                                     f == BoundaryFace::outer_x2)) {r = VET_IBC_X2FLUX;}
-      if (r < 0 || per) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_vet>/" << key << " = '" << v << "': auto | reflect | "
-          << "marshak (| outflow | flux on x2), the last ones on a NON-periodic mesh face"
-          << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      return r;
-    };
-    ibc_x2min = tbc("implicit_bc_x2min", BoundaryFace::inner_x2);
-    ibc_x2max = tbc("implicit_bc_x2max", BoundaryFace::outer_x2);
-    ibc_x3min = tbc("implicit_bc_x3min", BoundaryFace::inner_x3);
-    ibc_x3max = tbc("implicit_bc_x3max", BoundaryFace::outer_x3);
-  }
-  iflux_x1min = pin->GetOrAddReal("rad_vet","implicit_flux_x1min",0.0);
-  iflux_x1max = pin->GetOrAddReal("rad_vet","implicit_flux_x1max",0.0);
-  iebath_x1min = pin->GetOrAddReal("rad_vet","implicit_ebath_x1min",0.0);
-  iebath_x1max = pin->GetOrAddReal("rad_vet","implicit_ebath_x1max",0.0);
-  if ((ibc_x1min == VET_IBC_PERIODIC) != (ibc_x1max == VET_IBC_PERIODIC)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet> implicit x1 boundaries: periodic must be set on BOTH "
-      << "ends or neither" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-
+void RadiationVet::CleanInit() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  trans_on = pmy_pack->pmesh->multi_d;
-  trans_x3 = pmy_pack->pmesh->three_d;
-  if (!trans_on && global_variable::my_rank == 0) {
-    std::cout << "<rad_vet>: transport=implicit on a 1-D mesh is the x1 column solve"
-              << std::endl;
+  int n1 = indcs.nx1 + 2*indcs.ng;
+  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  int nmb = pmy_pack->nmb_thispack;
+  // clean_closure = iterate: not the closure a restart file holds (Time2RstSet)
+  if (!cln_cip) {
+    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh),
+                    n3, n2, n1);
   }
-  if (pmy_pack->pmesh->multilevel) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/transport = implicit does not support SMR/AMR"
-      << std::endl;
-    std::exit(EXIT_FAILURE);
+  if (cln_phic.extent_int(0) != nmb) {
+    Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);
   }
-
-  nstage = 1;
-  bool other_sets_dt = (pin->DoesBlockExist("hydro") || pin->DoesBlockExist("mhd") ||
-                        pin->DoesBlockExist("z4c") || pin->DoesBlockExist("particles"));
-  sets_mesh_dt = (impl_cfl > 0.0) || (!other_sets_dt);
-
-  int nmb = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
-  int ncells1 = indcs.nx1 + 2*(indcs.ng);
-  int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
-  int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(f0x1, nmb, ncells3, ncells2, ncells1+1);
-  Kokkos::deep_copy(f0x1, 0.0);
-  // cubed sphere: the spin slope follows <hydro|mhd>/am_vector
-  for (const char *b : {"hydro", "mhd"}) {
-    am_vec = am_vec || (cs_geom && pin->DoesParameterExist(b, "am_vector") &&
-                        pin->GetBoolean(b, "am_vector"));
+  Kokkos::realloc(cln_v, nmb, 3, n3, n2, n1);
+  // staggered on the cubed sphere: cell terms and faces of CleanStagFSolve
+  if (pmy_pack->pmesh->use_cubed_sphere) Kokkos::realloc(cln_vf, nmb, 18, n3, n2, n1);
+  // mem_arena: the shared slots follow cln_w.o (CleanWoBind), unless the closure is built
+  // inside the solve (clean_closure = iterate | extrap*)
+  cln_w.s = DvceArray5D<Real>();
+  if (!marena_on || cln_closit || cln_extrap > 0) {
+    Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
   }
-  MemArenaInit(pin, nmb, VET_NIW, ncells3, ncells2, ncells1);
-  Kokkos::deep_copy(iw, 0.0);
-  if (trans_on) {
-    Kokkos::realloc(f0x2, nmb, ncells3, ncells2+1, ncells1);
-    Kokkos::deep_copy(f0x2, 0.0);
-    if (trans_x3) {
-      Kokkos::realloc(f0x3, nmb, ncells3+1, ncells2, ncells1);
-      Kokkos::deep_copy(f0x3, 0.0);
+  // mem_arena: cln_w.o is made at the first solve, over the intensities (CleanWoBind)
+  cln_wo_nc = CLW_NX - CLW_NS;
+  cln_w.o = DvceArray5D<Real>();
+  if (!marena_on) Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
+  cln_w.ns = CLW_NS;
+  // opacities at the iterate's T where they depend on it (tables, powerlaw T exponent)
+  cln_opt = !opac_zero && (opacity_type == VET_OPAC_TABLE ||
+            (opacity_type != VET_OPAC_CONST && opac_b != 0.0));
+  // staggered bracket's lagged flux DG: one more slot (CleanStagBracket)
+  cln_fdg = cln_consist ? CLF_NF : -1;
+  cln_xqs = CLF_NF + (cln_fdg >= 0);   // clean_stag_xdonor's q
+  const int nfx = CLF_NF + (cln_fdg >= 0) + 3;
+  Kokkos::deep_copy(cln_w.s, 0.0);
+  Kokkos::deep_copy(cln_w.o, 0.0);
+  for (CleanF *f : {&cln_fc1, &cln_fc2, &cln_fc3}) {
+    Kokkos::realloc(f->s, nmb, CLF_NS, n3, n2, n1);
+    Kokkos::realloc(f->o, nmb, nfx - CLF_NS, n3, n2, n1);
+    Kokkos::deep_copy(f->s, 0.0);
+    Kokkos::deep_copy(f->o, 0.0);
+  }
+  for (int d = 0; d < 3 && cln_rstd.extent_int(0) == nmb && cln_fsolve; ++d) {
+    auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);   // from a restart
+    auto AL = Kokkos::ALL;
+    Kokkos::deep_copy(Kokkos::subview(fc.s, AL, CLF_N + 3, AL, AL, AL),
+                      Kokkos::subview(cln_rstd, AL, d, AL, AL, AL));
+    Kokkos::deep_copy(Kokkos::subview(fc.s, AL, CLF_KD, AL, AL, AL),
+                      Kokkos::subview(cln_rstd, AL, 3 + d, AL, AL, AL));
+  }
+  if ((force_ref == VET_FREF_CLEAN || force_ref == VET_FREF_WB_MD) &&
+      cln_fref.extent_int(0) != nmb) {   // unless a restart has read it
+    Kokkos::realloc(cln_fref, nmb, (force_ref == VET_FREF_WB_MD) ? 9 : 3 + cln_lzt, n3,
+                    n2,
+                    n1);
+  }
+  Kokkos::realloc(cln_st, nmb, CLN_ST, indcs.nx3, indcs.nx2, indcs.nx1);
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    Kokkos::realloc(cln_csy, nmb, CLN_CSY, indcs.nx3, indcs.nx2, indcs.nx1);
+  }
+  if (cln_ysum) Kokkos::realloc(cln_yl, nmb, 9, n3, n2, n1);
+  // multigrid levels of the preconditioner: halve x2 and x3 where the tile's are even
+  // (>= 4), clean_stag_mg_levels coarse levels at most (x1 is never halved)
+  std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
+  if (cln_mgt[0] == 0) cln_mgt = nc;   // layout_tile: the tiles' cells
+  std::array<int, 3> tc = cln_mgt;
+  while (static_cast<int>(cln_mgn.size()) < cln_mgnl) {
+    bool coarser = false;
+    for (int d = 1; d < 3; ++d) {
+      if (tc[d] >= 4 && tc[d] % 2 == 0) {
+        nc[d] /= 2;
+        tc[d] /= 2;
+        coarser = true;
+      }
+    }
+    if (!coarser) break;
+    cln_mgn.push_back(nc);
+    cln_mg.emplace_back("cln_mg", nmb, CLS_N, nc[2], nc[1], nc[0]);
+  }
+  if (cln_extrap > 0) {
+    // a restart may have read t^n and the end of the last step
+    const int ns = cln_s.extent_int(1), c3 = indcs.nx3, c2 = indcs.nx2, c1 = indcs.nx1;
+    if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, ns, c3, c2, c1);
+    if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, ns, c3, c2, c1);
+    if (!CleanExtrapSx()) Kokkos::realloc(cln_mp, nmb, ns, c3, c2, c1);
+    if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, ns, c3, c2, c1);
+  }
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->multilevel || chat != c_light) {
+    CleanFatal("<rad_vet>/scheme = clean currently needs a uniform mesh and chat = c");
+  }
+  // boundaries: open (bath, beam; outflow without a bath), reflect, periodic and an
+  // imposed x1 flux.  The imposed flux is the face's whole energy flux, taken with no E
+  // weights (CleanFaceWeights, CleanFaceSource), kept as the face F by the F solve; the
+  // inner half cell absorbs its momentum (CleanMomentumChange), as at open faces.
+  const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+  for (int s = 0; s < 6; ++s) {
+    const bool flux = bc[s] == VET_IBC_FLUX || (bc[s] == VET_IBC_X2FLUX && ifx2_on);
+    if (!(bc[s] == VET_IBC_MARSHAK || bc[s] == VET_IBC_OUTFLOW || bc[s] == VET_IBC_REFLECT
+          ||
+          bc[s] == VET_IBC_PERIODIC || (flux && s < 2))) {
+      CleanFatal("<rad_vet>/implicit_bc_* with scheme = clean: auto | marshak | outflow "
+                 "| "
+                 "reflect | periodic, flux (x1); not efix");
     }
   }
+  if (iebath_hi_col_on) {
+    CleanFatal("scheme = clean has no per-column outer bath");
+  }
+  if ((force_ref == VET_FREF_WB_ARAD || force_ref == VET_FREF_WB_MD) && !fref_wsplit) {
+    CleanFatal("<rad_vet>/force_reference = wb_arad(_md) with scheme = clean needs the "
+               "reference work given by the problem generator (force_reference_work = "
+               "split)");
+  }
+  if (force_ref == VET_FREF_WB_MD && !cln_steady && !cln_fref_set) {
+    CleanFatal("<rad_vet>/force_reference = wb_arad_md needs clean_init = steady (its "
+               "reference is the steady start's force)");
+  }
+  if ((vgd_on || (vsc_rot && cln_ring)) && VgdRotOn()) {
+    // rotating rays (CleanFvSets): the closure is the J-weighted mean of the sets, made
+    // continuous across blocks by the cross-fade, no slope correction.
+    // vet_rotate_avg_ema: only with clean_rot_ring = live (CleanRingEma)
+    if ((vra_ema && cln_ring != 1) ||
+        (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
+        (vgd_rot3 && !pm->three_d)) {
+      CleanFatal("<rad_vet>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = "
+                 "K "
+                 "(J-weighted; _ema only with clean_rot_ring = live), vet_gd_rotate_xfade with vet_gd_rotate_dt, and on a "
+                 "2-D axisymmetric mesh the z axis");
+    }
+  }
+  const bool ring_ok = (vgd_on || vsc_rot) && vra_on && g_vra_adv &&
+                       (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
+                       vra_k <= VET_RA_NF;
+  if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
+    CleanFatal("<rad_vet>/clean_rot_ring needs vet_gd or vet_sc rays rotating in time: "
+               "vet_rotate_avg = K and vet_gd_rotate_dt");
+  }
+  // sc rays sweep one set at a time: a mean or cross-fade of sets needs the ring
+  if (vgd_on && VgdRotOn() && (vra_on || vgd_xf) && !cln_ring) {
+    CleanFatal("<rad_vet>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
+               "needs clean_rot_ring");
+  }
+  if (pm->use_cubed_sphere) {
+    // rays: vet_gd's (clean_rays = sc: its band, VetGdCsSweep) or the analytic sphere
+    // (eddington: infinite radius); an even panel resolution keeps cell centres off the z
+    // axis (CleanCsFrame)
+    if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
+        pm->mesh_indcs.nx2 % 2 != 0) {
+      CleanFatal("<rad_vet>/scheme = clean on the cubed sphere needs "
+                 "clean_closure = sphere | eddington (no clean_consistency) or the "
+                 "rays (closure = sc) and an even <mesh>/nx2");
+    }
+    if (!vgd_on) {
+      if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
+      cln_sphere = true;
+    }
+    CleanCsGeometry();
+    cln_init = true;
+    return;
+  }
+  if (pm->use_spherical_polar) {
+    // rays: vet_gd's fixed direction set swept from the first shell, or the analytic
+    // sphere (clean_closure = sphere | eddington)
+    if (!(cln_sphere || vgd_on || cln_edd) ||
+        (cln_consist && !vgd_on)) {
+      CleanFatal("<rad_vet>/scheme = clean on spherical polar needs clean_closure = "
+                 "sphere | eddington (no clean_consistency) or the "
+                 "rays (closure = sc)");
+    }
+    // theta walls: vet_gd_theta_wall or the mesh's (rad_vet.cpp); the sweep starts at the
+    // first shell or the ray cut (vray_icut).  No clean solve reads the half-range ratios
+    // vgd_hr, so implicit_flux_beam = halfrange has no effect.
+    impl_beam_hr = false;
+    cln_init = true;
+    return;
+  }
+  if (cln_sphere || !vet_sc || !vet_full) {
+    CleanFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs "
+               "vet_tensor = full (clean_closure = sphere is for spherical polar)");
+  }
+  // the formal solution provides the half-range sums and C1
+  impl_beam_hr = true;
+  thsw_c1 = true;
+  cln_init = true;
+}
 
-  if (global_variable::my_rank == 0) {
-    std::cout << "<rad_vet>: transport=implicit"
-              << (trans_x3 ? " (3-D)" : (trans_on ? " (2-D)" : " (1-D)"))
-              << " implicit_cfl=" << impl_cfl << " marshak_q=" << marshak_q
+//----------------------------------------------------------------------------------------
+//! \fn CleanArgs RadiationVet::CleanMakeArgs
+//! \brief collects the arrays and constants the device functions need
+
+CleanArgs RadiationVet::CleanMakeArgs() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  CleanArgs x;
+  x.cs = cln_s;
+  x.w = cln_w;
+  x.fc[0] = cln_fc1;
+  x.fc[1] = cln_fc2;
+  x.fc[2] = cln_fc3;
+  x.beam = ibm_f;
+  x.bstress = ibm_s;
+  x.h = dt_sub;
+  x.c = c_light;
+  for (int d = 0; d < 3; ++d) x.idx[d] = 1.0/MeshBlock0Dx(d);
+  const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+  // an outflow face is the open one without an entering bath
+  for (int s = 0; s < 6; ++s) {
+    x.bc[s] = (bc[s] == VET_IBC_X2FLUX) ? VET_IBC_FLUX :
+              ((bc[s] == VET_IBC_OUTFLOW) ? VET_IBC_MARSHAK : bc[s]);
+  }
+  x.iflux[0] = iflux_x1min;
+  x.iflux[1] = iflux_x1max;
+  x.ifx2[0] = ifx2_lo;
+  x.ifx2[1] = ifx2_hi;
+  x.mbc = pmy_pack->pmb->mb_bcs.d_view;
+  for (int n = 0; n < 6; ++n) x.ebath[n] = 0.0;
+  x.ebath[0] = iebath_x1min;
+  x.ebath[1] = iebath_x1max;
+  for (int s = 0; s < 2; ++s) x.ebath[s] *= (bc[s] != VET_IBC_OUTFLOW);
+  x.use_beam = (ibm_n > 0);
+  x.feedback = cln_feedback;
+  x.vzero = cln_vzero;
+  x.hi = false;
+  x.mcl = false;
+  x.fa = false;
+  x.fwc = false;
+  x.fs = false;
+  x.fd = cln_fsolve && cln_fkin;
+  x.gf = cln_gflux;
+  x.fre = cln_freal;
+  x.fdg = cln_fdg;
+  x.xq = cln_xd_on ? cln_xqs : -1;
+  x.drag = cln_feedback;
+  x.upw = cln_upw;
+  x.sar = !cln_gflux;
+  x.op = opac;
+  x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
+  x.is = indcs.is;
+  x.ie = indcs.ie;
+  x.js = indcs.js;
+  x.je = indcs.je;
+  x.ks = indcs.ks;
+  x.ke = indcs.ke;
+  x.multi_d = pmy_pack->pmesh->multi_d;
+  x.three_d = pmy_pack->pmesh->three_d;
+  x.sph = pmy_pack->pmesh->use_spherical_polar;
+  auto &ms = pmy_pack->pmesh->mesh_size;
+  x.cseam = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
+            ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
+  x.cub = pmy_pack->pmesh->use_cubed_sphere;
+  x.ys = !x.cub && cln_ysum;
+  x.lwb = x.cub && cln_latwb;
+  x.yl = cln_yl;
+  if (x.sph) {
+    auto *pc = pmy_pack->pcoord;
+    x.vol = pc->volume;
+    x.area[0] = pc->area.x1f;
+    x.area[1] = pc->area.x2f;
+    x.area[2] = pc->area.x3f;
+    x.dxf[0] = pc->dxface.x1f;
+    x.dxf[1] = pc->dxface.x2f;
+    x.dxf[2] = pc->dxface.x3f;
+    x.x1v = pc->x1v;
+    x.x1f = pc->xx1f;
+    x.x2v = pc->x2v;
+    x.x2f = pc->xx2f;
+    const int nmb = pmy_pack->nmb_thispack, n2 = pc->x2v.extent_int(1);
+    if (x.sph && (cln_tg.extent_int(0) != nmb || cln_tg.extent_int(2) != n2 + 1)) {
+      Kokkos::realloc(cln_tg, nmb, 4, n2 + 1);   // (once: the trig of theta, per j)
+      auto tg = cln_tg;
+      auto x2v = pc->x2v, x2f = pc->xx2f;
+      par_for("cln_tg", DevExeSpace(), 0, nmb - 1, 0, n2,
+      KOKKOS_LAMBDA(const int m, const int j) {
+        if (j < n2) {
+          tg(m,0,j) = tan(x2v(m,j));
+          tg(m,2,j) = sin(x2v(m,j));
+        }
+        tg(m,1,j) = tan(x2f(m,j));
+        tg(m,3,j) = sin(x2f(m,j));
+      });
+    }
+    x.tg = cln_tg;
+    if (vgd_wst) {
+      if (cln_sgv.extent_int(0) != nmb) {CleanSeamImage();}
+      x.vol = cln_sgv;
+      x.area[0] = cln_sga0;
+      x.area[1] = cln_sga1;
+      x.dxf[1] = cln_sgd1;
+      x.dxf[2] = cln_sgd2;
+      x.x2v = cln_sgx;
+      x.tg = cln_sgtg;
+    }
+  }
+  if (x.cub) {
+    x.vol = pmy_pack->pcoord->volume;
+    x.ae0 = pmy_pack->pcoord->area.x1f;
+    for (int d = 0; d < 3; ++d) {
+      x.area[d] = cln_ga[d];
+      x.dxf[d] = cln_gd[d];
+    }
+    x.g = cln_gn;
+    x.x1v = pmy_pack->pcoord->x1v;
+    x.x1f = pmy_pack->pcoord->xx1f;
+  }
+  if (!x.sph && !x.cub && cln_lzsp) {   // (clean_lz_spin, Cartesian: z x r of cells)
+    const int nmb = pmy_pack->nmb_thispack, ng = indcs.ng;
+    const int n1 = indcs.nx1 + 2*ng, n2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
+    if (cln_cx[0].extent_int(0) != nmb) {
+      Kokkos::realloc(cln_cx[0], nmb, n1);
+      Kokkos::realloc(cln_cx[1], nmb, n2);
+      auto cx = cln_cx[0], cy = cln_cx[1];
+      auto size = pmy_pack->pmb->mb_size.d_view;
+      const int is = indcs.is, js = indcs.js, nx1 = indcs.nx1, nx2 = indcs.nx2;
+      par_for("cln_cx", DevExeSpace(), 0, nmb - 1, 0, std::max(n1, n2) - 1,
+      KOKKOS_LAMBDA(const int m, const int i) {
+        if (i < n1) cx(m,i) = CellCenterX(i - is, nx1, size(m).x1min, size(m).x1max);
+        if (i < n2) cy(m,i) = CellCenterX(i - js, nx2, size(m).x2min, size(m).x2max);
+      });
+    }
+    x.x1v = cln_cx[0];
+    x.x2v = cln_cx[1];
+  }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  x.etg = fl.on && fl.use_etotgrav;
+  x.mhd = fl.on && fl_mhd;
+  x.phi = fl.phicc0;
+  x.emag = emag0;
+  return x;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn const void *RadiationVet::CleanDevCopy
+//! \brief device copy (slot s < 8, n <= 8 KB) of an argument struct for non-inlined
+//! device calls: read in place, not copied to every thread's stack as a capture is
+
+const void *RadiationVet::CleanDevCopy(const void *p, const size_t n, const int s) {
+  // (host builds too: the copy outlives the struct)
+  constexpr size_t slot = 8192;
+  if (n > slot || s < 0 || s >= 8) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "CleanDevCopy: " << n << " bytes in slot " << s
               << std::endl;
-    std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
-              << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
-              << " flux_max=" << iflux_x1max << std::endl;
+    std::exit(EXIT_FAILURE);
   }
-  if (vet_sc) {VetInit(pin);}
-  ImplBeamInit(pin);
-  Time2Init(pin);
-  if (time_scheme == VET_TIME_BE) {
-    Kokkos::realloc(u1, u1.extent(0), VET_NVAR, 1, 1, 1);
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::TmrMark
-//! \brief implicit_timers: fence, charge the time since the last mark to category c
-//! (c < 0: only set the mark)
-
-void RadiationVet::TmrMark(int c) {
-  if (!tmr_on) return;
-  Kokkos::fence();
-  const double t = tmr_t.seconds();
-  if (c >= 0) {tmr_acc[c] += t - tmr_last;}
-  tmr_last = t;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::EventTotals
-//! \brief limiter totals for the event log, summed over ranks (collective).
-//! Slots: 0..6 unused (0); 7 opac-Newton face terms dropped; 8 E floor raises;
-//! 9 floor energy created (x volume); 10 of which solve undershoot; 11-12 closure clips
-
-void RadiationVet::EventTotals(Real *v) {
-  for (int q = 0; q < 13; ++q) {v[q] = 0.0;}
-  if (opn_nskip_d.extent_int(0) > 0) {
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opn_nskip_d);
-    v[7] = h(0);
-  }
-  if (pos_cnt_d.extent_int(0) >= VET_POS_N) {
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
-    v[8] = h(VET_POS_FLR);
-    v[9] = h(VET_POS_FLR_UN);
-    v[10] = h(VET_POS_FLRS);
-  }
-  if (acl_cnt_d.extent_int(0) == 2) {
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acl_cnt_d);
-    v[11] = h(0);
-    v[12] = h(1);
-  }
-#if MPI_PARALLEL_ENABLED
-  Real g[6];
-  MPI_Allreduce(&v[7], g, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  for (int q = 0; q < 6; ++q) {v[7+q] = g[q];}
+  if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
+  Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
+      h(static_cast<const char *>(p), n);
+  auto d = Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n));
+#if defined(KOKKOS_ENABLE_CUDA)
+  // (CUDA: in stream order, no fence; a small pageable copy is staged at the call)
+  Kokkos::deep_copy(DevExeSpace(), d, h);
+#else
+  Kokkos::deep_copy(d, h);
 #endif
+  return cln_xdev.data() + s*slot;
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitReport
-//! \brief end-of-run report: timers and positivity bookings
-
-void RadiationVet::ImplicitReport() {
-  // positivity counters and hydro floor energy (collective: same pos keys on all ranks)
-  Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
-  {
-    auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
-    for (int q = 0; q < VET_POS_N; ++q) {pos_cnt[q] = hpc(q);}
-#if MPI_PARALLEL_ENABLED
-    Real g[VET_POS_N];
-    MPI_Allreduce(pos_cnt, g, VET_POS_N, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < VET_POS_N; ++q) {pos_cnt[q] = g[q];}
-    Real gd = 0.0;
-    MPI_Allreduce(&pos_un_drop, &gd, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    pos_un_drop = gd;
-    MPI_Allreduce(MPI_IN_PLACE, &hfl, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-  }
-  if (global_variable::my_rank != 0) return;
-  if (tmr_c0 > 0) {
-    // seconds per category (see TmrMark)
-    std::cout << "<rad_vet> timers from cycle " << tmr_c0 << ": stages=" << tmr_cnt[7]
-              << std::endl;
-    const char *nm[11] = {"closure", "opacity", "solve_pre", "tensor", "pred",
-                          "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
-                          "vet_bvals"};
-    std::cout << "<rad_vet> timers(s):";
-    for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
-    std::cout << std::endl;
-  }
-  std::cout << "<rad_vet> vet-positivity: gas cell-solves=" << pos_cnt[VET_POS_GAS]
-            << " energy moved rad->gas=" << pos_cnt[VET_POS_GAS_DE]
-            << " | E floor raises cell-solves=" << pos_cnt[VET_POS_FLR]
-            << " energy from gas=" << pos_cnt[VET_POS_FLR_DE]
-            << " energy created=" << pos_cnt[VET_POS_FLR_UN] << " (code units x volume)"
-            << " [in discarded attempts, rolled back: " << pos_un_drop << "]"
-            << " taken from the column's radiation (implicit_pos_floor_cons)="
-            << pos_cnt[VET_POS_FLR_MV]
-            << " | hydro EOS floors energy created=" << hfl << std::endl;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn RadiationVet::FaxRstPack / FaxRstUnpack
-//! \brief time2_face_fct: t2pf1 to / from cell-sized restart slabs (with ghosts), one
-//! per direction; files with two slabs per direction: the first one is read
-
-void RadiationVet::FaxRstPack(DvceArray5D<Real> out, int nmb) {
-  const int n3 = out.extent_int(2), n2 = out.extent_int(3), n1 = out.extent_int(4);
-  const int nd = FaxRstNslab();
-  auto pf = t2pf1;
-  par_for("pf_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int d = 0; d < nd; ++d) out(m,d,k,j,i) = pf(m,d,k,j,i);
-  });
-}
-
-bool RadiationVet::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
-  const int n3 = in.extent_int(2), n2 = in.extent_int(3), n1 = in.extent_int(4);
-  // file without them: the first stage takes the stage-start face F
-  const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
-  if (t2_pfst && t2pf1.extent_int(0) >= nmb && (nsl == nd || nsl == 2*nd)) {
-    auto pf = t2pf1;
-    const int st = (nsl == nd) ? 1 : 2;
-    par_for("pf_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int d = 0; d < nd; ++d) pf(m,d,k,j,i) = in(m,st*d,k,j,i);
-    });
-    t2pf1_ok = true;
-    return true;
-  }
-  if (t2_pfst && global_variable::my_rank == 0) {
-    std::cout << "NOTE <rad_vet> restart: no time2_face_fct face fluxes in the file; the "
-              << "first stage takes the stage-start face F" << std::endl;
-  }
-  return false;
+const CleanArgs *RadiationVet::CleanDevArgs(const CleanArgs &x, const int s) {
+  return CleanDev(x, s);
 }
 
 //========================================================================================
@@ -634,4 +664,4 @@ void RadiationVet::CleanWoBind() {
   MemArenaBind();
 }
 
-} // namespace radvet
+}  // namespace radvet
