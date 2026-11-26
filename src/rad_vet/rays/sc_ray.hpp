@@ -75,13 +75,14 @@ Real ScTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
 //! \fn ScInnerFace
 //! \brief typ 2 value: emit (ie0 carried in) or diffusion S + mu (-dS/dtau_r) at the
 //! inner face rf (bfc: face S = 1.5 S_a - 0.5 S_b); ra, rb = first two shell radii;
-//! mus >= 0: the face cosine mu (Cartesian slab), else from the impact parameter p2
+//! mus >= 0: the face cosine mu (Cartesian slab), else from the impact parameter p2;
+//! bad: a beam's intensity added to the diffusion intensity
 template <typename A, typename FC>
 KOKKOS_INLINE_FUNCTION
 Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
                  const Real ie0, const bool bfc, const Real rf, const Real ra,
                  const Real rb, const Real p2, const Real ch0, const Real ds,
-                 const Real s0, const Real mus = -1.0) {
+                 const Real s0, const Real mus = -1.0, const Real bad = 0.0) {
   const int i1 = i + 1;
   auto sbt = [&](const int kk, const int jj) {
     return fmax(1.5*exp(fC(1,kk,jj,i)) - 0.5*exp(fC(1,kk,jj,i1)), 1.0e-300);
@@ -100,7 +101,7 @@ Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
   };
   Real ex, w0, wu;
   VetSegW(ch0*ds, ex, w0, wu);
-  const Real bv = fmax(acc.Interp(ib), 0.0);
+  const Real bv = fmax(acc.Interp(ib), 0.0) + bad;
   const Real qv = acc.Interp(sbt);
   return bv*ex + wu*qv + w0*s0;
 }

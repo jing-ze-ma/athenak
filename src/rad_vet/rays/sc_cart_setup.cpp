@@ -976,7 +976,6 @@ void RadiationVet::ScSlabSelect() {
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
   need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
-  need(ibm_nr == 0, " boundary beams;");
   need(ibc_x1min != VET_IBC_REFLECT && ibc_x1max != VET_IBC_REFLECT, " reflecting x1;");
   need(!(vsc_rot && ScRotOn()) || (cln_ring && vet_ring_n == 0),
        " rotating set without the ring, or a rotating vet_ring;");

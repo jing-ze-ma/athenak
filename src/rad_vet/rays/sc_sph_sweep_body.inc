@@ -125,6 +125,15 @@
           // ones from the periodic image of the other end (img)
           const bool psrc = (x1p_ == 1) && x1si_;
           const bool img = (x1p_ == 2) && (inw ? (l == n1 - 1) : (l == lcb));
+          // slab: the boundary beams entering the inner face in direction d (own cell)
+          auto bmv = [&]() -> Real {
+            Real b = 0.0;
+            for (int q = 0; q < bmn_; ++q) {
+              const int kb = (bmi_.extent_int(2) > 1) ? k - ks : 0;
+              if (d == bmr_[q]) {b += bmi_(m,q,kb,j - js);}
+            }
+            return b;
+          };
           if (inw && l == n1 - 1 && (x1f_(m) & 2) && !img) {
             // top face: extrapolated S (vacuum), or the bath / mirrored (ScTopMirror)
             // inflow attenuated
@@ -322,7 +331,7 @@
               // periodic first pass: the face S
               const Real ie0 = psrc ? fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i+1)), 0.0)
                                     : iemit;
-              iv = ScInnerFace(st4, fC, i, true, ie0, bfc, cx1f(m,i), cx1v(m,i),
+              iv = ScInnerFace(st4, fC, i, true, ie0 + bmv(), bfc, cx1f(m,i), cx1v(m,i),
                                cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2 && imir) {
               // reflecting inner face: first-shell inward intensity in the nearest
@@ -353,7 +362,8 @@
               // diffusion intensity S + mu (-dS/dtau_r) at the inner face; vet_bc_diff =
               // face: face S = 1.5 S_a - 0.5 S_b (cell S is O(dtau_cell) low)
               iv = ScInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
-                               cx1v(m,i+1), p2, ch0, ds, s0, slb_ ? fabs(mr) : -1.0);
+                               cx1v(m,i+1), p2, ch0, ds, s0, slb_ ? fabs(mr) : -1.0,
+                               bmv());
             } else {
               // one intensity per (cell, direction), of the pass n_d . r_hat selects;
               // stencil cells of the other pass are dropped, weights renormalised
