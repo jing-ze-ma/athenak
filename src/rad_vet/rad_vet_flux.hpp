@@ -161,10 +161,10 @@ bool FluxRow(const SolveArgs &x, const FluxLine &ln, const FC &fc, const int dir
 //----------------------------------------------------------------------------------------
 //! \fn Real FluxRay
 //! \brief clean_stag_fwb: the rays' own lab-frame momentum of face (kf,jf,iff): their
-//! flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), plus the
-//! upwind advective a E.  Where the donor holds no rays (CLN_J = 0) the thin share's own
-//! energy flux c (h+ E_L + h- E_R): a function of E on every face, never the last F, so
-//! that the well-balanced rows of a line hold no lagged neighbour
+//! flux factor (clamped to |g/J| <= 1) times the donor's E (work vector e), no advective
+//! a E, as the energy flux's thin share.  Where the donor holds no rays (CLN_J = 0) the
+//! thin share's own energy flux c (h+ E_L + h- E_R): a function of E on every face, never
+//! the last F, so that the well-balanced rows of a line hold no lagged neighbour
 
 KOKKOS_INLINE_FUNCTION
 Real FluxRay(const SolveArgs &x, const int e, const int dir, const int m,
@@ -174,13 +174,8 @@ Real FluxRay(const SolveArgs &x, const int e, const int dir, const int m,
   auto ec = [&](const int l) {return fmax(x.w(m,e,kf-l*ek,jf-l*ej,iff-l*ei), 0.0);};
   const int u = (g > 0.0) ? 1 : 0;
   const Real jd = x.cs(m,CLN_J,kf-u*ek,jf-u*ej,iff-u*ei);
-  const Real a = 0.5*(FaceNormalPart(x, CLW_A1, dir, m, kf, jf, iff, kf-ek, jf-ej,
-                                     iff-ei) +
-                      FaceNormalPart(x, CLW_A1, dir, m, kf, jf, iff, kf, jf, iff));
-  const Real f = (jd > 0.0) ? x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) :
-                 x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) +
-                      x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0));
-  return f + a*ec(a > 0.0);
+  return (jd > 0.0) ? x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) :
+         x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) + x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0));
 }
 
 //----------------------------------------------------------------------------------------
