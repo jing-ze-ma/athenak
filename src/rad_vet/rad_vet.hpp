@@ -1730,6 +1730,8 @@ class RadiationVet {
   void ScTabPoll();
   void ScBuild();
   void ScSweep();
+  void ScSweepSp();     // (sc_sph_sweep_shell.inc: spherical polar)
+  void ScSweepSlab();   // (the Cartesian slab, ScSlabSelect)
   // shell body closure in device memory, called through a pointer (ScClosureToDevice)
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)

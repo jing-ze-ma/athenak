@@ -9,7 +9,8 @@
 //! costs the default kernel nothing. Needs VET_VGD_BODY_NAME and VET_VGD_BODY_MIR.
 //! Returns true for an item deferred by dfr (bool or std::false_type): its stencil
 //! reaches the band, which an exchange still in flight fills (interior / edge split,
-//! RadiationVet::vgd_mid); the last argument is unused.
+//! RadiationVet::vgd_mid); the last argument is unused.  With VET_VGD_SWEEP_SLAB
+//! (sc_sph_sweep_shell.inc) the Cartesian slab's geometry, x1 ends and face scalars.
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA the arguments are plain bools
 #if defined(KOKKOS_ENABLE_CUDA) && defined(VET_VGD_BODY_GX0)
@@ -31,6 +32,9 @@
         // several MeshBlocks in x1: first shell / top face of the innermost / outermost
         const int lcb = (x1f_(m) & 1) ? lcut : -1;
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+#if VET_VGD_SWEEP_SLAB
+        const Real mr = nx;   // slab: r_hat = x1_hat
+#else
         // face midpoints (uniform in index space); stretched theta / full sphere: node
         const Real th = sth_ ? thn_(m,j)
                              : lg_.Th(mbsize, m, j, js);
@@ -41,12 +45,15 @@
         const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
         const Real sp = tg_(m,k-ks,j-js,2), cp = tg_(m,k-ks,j-js,3);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
+#endif
         if (inw == (mr >= 0.0)) {return false;}
         bool dfd = false;
+#if VET_VGD_SWEEP_SLAB
+        // closure_consistency (sfs_): the ray's x1 face-sum scalars (entry, crossing,
+        // exit; the x2 / x3 ones in ScSlabFaceSum), as the Cartesian sweep's
+        Real gq[3] = {0.0, 0.0, 0.0};
+#endif
         // the ray of direction d through cell (k, j, i) on source csx, intensities vix
-        // slab, closure_consistency (sfs_): the ray's face-sum scalars (entry, x2 and x3
-        // foot-shift flux, x1 face crossing, exit), as the Cartesian sweep's
-        Real gq[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
         auto solve = [&](const DvceArray5D<Real> &csx, const ScIView &vix) -> Real {
           auto rd0 = [&](int kk, const int jj, const int ii, int dq) -> Real {
             // axisymmetric (nx3 = 1): a phi band column is the own column with the
@@ -88,7 +95,8 @@
             // theta_wall = mirror (flag 2): a theta ghost reads its mirror row (no extra
             // capture: the closure stays below the launch limit)
 #if VET_VGD_BODY_MIR
-            if (slb_ && wl_(m,kk,jj) >= 8) {return 0.0;}   // slab: beyond a vacuum face
+            // slab: beyond a vacuum face
+            if (VET_VGD_SWEEP_SLAB && wl_(m,kk,jj) >= 8) {return 0.0;}
             if ((jj < wb || jj >= wb + nx2b) && wl_(m,kk,jj) >= 2) {
               const bool hi = (jj >= wb + nx2b);
               // vacuum (flag 3): zero; extrap (4): the edge row's (zero gradient)
@@ -124,11 +132,12 @@
           const Real ch0 = exp(csx(m,0,k,j,i));
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
-          // slab x1 periodic: the first pass enters with the face S (psrc), the later
-          // ones from the periodic image of the other end (img)
+#if VET_VGD_SWEEP_SLAB
+          // x1 periodic: the first pass enters with the face S (psrc), the later ones
+          // from the periodic image of the other end (img)
           const bool psrc = (x1p_ == 1) && x1si_;
           const bool img = (x1p_ == 2) && (inw ? (l == n1 - 1) : (l == lcb));
-          // slab: the boundary beams entering the inner face in direction d (own cell)
+          // the boundary beams entering the inner face in direction d (own cell)
           auto bmv = [&]() -> Real {
             Real b = 0.0;
             for (int q = 0; q < bmn_; ++q) {
@@ -137,26 +146,35 @@
             }
             return b;
           };
+#else
+          constexpr bool psrc = false, img = false;
+#endif
           if (inw && l == n1 - 1 && (x1f_(m) & 2) && !img) {
             // top face: extrapolated S (vacuum), or the bath / mirrored (ScTopMirror)
             // inflow attenuated
             const Real rtop = cx1f(m,ie+1);
-            const Real ds = slb_ ? (rtop - r)/fabs(mr)
-                                 : (sqrt(fmax(rtop*rtop - p2, 0.0)) - zr);
+#if VET_VGD_SWEEP_SLAB
+            const Real ds = (rtop - r)/fabs(mr);
+#else
+            const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
+#endif
             const bool rfl = (x1f_(m) & 4);
             const Real sbl = exp(csx(m,1,k,j,i-1));
             const Real tin = rfl ? vix(m,d,k,j,i+1)
                                  : (psrc ? fmax(1.5*s0 - 0.5*sbl, 1.0e-300) : itop);
             iv = ScTopInflow(ch0, ds, s0, sbl, tbh || rfl || psrc, tin);
+#if VET_VGD_SWEEP_SLAB
             // (a mirrored face carries no entry, as the Cartesian sweep)
             if (sfs_ && !rfl) {gq[0] = dir_(d,3)*nx*((tbh || psrc) ? tin : 0.0);}
-          } else if (!slb_ && !inw && zr < 1.0e-12*r) {
+#endif
+          } else if (!VET_VGD_SWEEP_SLAB && !inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
             // upwind shell, chord, own-cell part; typ 1 upwind, 2 inner face, 3 own shell
             int typ, iu;
             Real ds, dso;
-            if (slb_) {
+#if VET_VGD_SWEEP_SLAB
+            {
               // slab: the upwind cell-centre plane, or the inner face from the first
               // shell; chords dx1/|n_1|
               typ = (!inw && l == lcb) ? 2 : 1;
@@ -173,21 +191,23 @@
                 ds = dso + (inw ? (cx1v(m,is) - cx1f(m,is))
                                 : (cx1f(m,ie+1) - cx1v(m,ie)))/amr;
               }
-            } else {
-              ScRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
             }
+#else
+            ScRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
+#endif
             // upwind point, its lateral cell and bilinear fractions (index space);
             // fractional upwind index at its global magnitude (sj_ = sk_ = 0 without
             // layout_invariant): stencil base and fractions are layout independent
-            // (slab: r_hat = x1_hat, read by the inner-face mirror)
-            Real xu = slb_ ? 1.0 : 0.0, yu = 0.0, zu = 0.0, ru = 1.0, thu = th;
             const int sj_ = lg_.Sj(m, js), sk_ = lg_.Sk(m, ks);
-            Real fjg, fkg;
-            if (slb_) {
-              // slab: a constant offset per direction (2-D: none in x3)
-              fjg = (j + sj_) - ds*ny/lg_.Dx2(mbsize, m);
-              fkg = (k + sk_) - ((nx3b > 1) ? ds*nz/lg_.Dx3(mbsize, m) : 0.0);
-            } else {
+#if VET_VGD_SWEEP_SLAB
+            // slab: a constant offset per direction (2-D: none in x3); r_hat = x1_hat
+            // (the inner-face mirror)
+            const Real xu = 1.0, yu = 0.0, zu = 0.0, ru = 1.0;
+            const Real fjg = (j + sj_) - ds*ny/lg_.Dx2(mbsize, m);
+            const Real fkg = (k + sk_) - ((nx3b > 1) ? ds*nz/lg_.Dx3(mbsize, m) : 0.0);
+#else
+            Real xu, yu, zu, ru, thu, fjg, fkg;
+            {
               xu = r*st*cp - ds*nx;
               yu = r*st*sp - ds*ny;
               zu = r*ct - ds*nz;
@@ -201,6 +221,7 @@
                          : (j + sj_) + (thu - th)/lg_.Dx2(mbsize, m);
               fkg = (k + sk_) + dph/lg_.Dx3(mbsize, m);
             }
+#endif
             const Real fj = fjg - sj_, fk = fkg - sk_;
             int j0 = static_cast<int>(floor(fjg)) - sj_;
             int k0 = static_cast<int>(floor(fkg)) - sk_;
@@ -230,7 +251,7 @@
             if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
             if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
-            int j1 = j0 + 1, k1 = (slb_ && nx3b == 1) ? k0 : (k0 + 1);
+            int j1 = j0 + 1, k1 = (VET_VGD_SWEEP_SLAB && nx3b == 1) ? k0 : (k0 + 1);
             // interior launch: an item whose stencil reaches the band waits for it
             if (dfr && (k0 - xr_ < wb || k1 + xr_ >= wb + nx3b || j0 - xr_ < wb ||
                         j1 + xr_ >= wb + nx2b)) {
@@ -243,7 +264,7 @@
 #if VET_VGD_BODY_MIR
               // slab, beyond a vacuum x2 (x3) face (flag 8 + 1 (x2) + 2 (x3)): the edge
               // cell's chi and S
-              const int wf = slb_ ? wl_(m,kk,jj) : 0;
+              const int wf = VET_VGD_SWEEP_SLAB ? wl_(m,kk,jj) : 0;
               if (wf >= 8 && (wf & 1)) {jj = (jj < wb) ? wb : (wb + nx2b - 1);}
               if (wf >= 8 && (wf & 2)) {kk = (kk < wb) ? wb : (wb + nx3b - 1);}
 #endif
@@ -261,7 +282,7 @@
             // branch n . r_hat of a stencil cell
             auto mrq = [&](const int kk, const int jj) -> Real {return mr_(m,kk,jj,d);};
             bool bdone = false;
-#if VET_VGD_BODY_MIR
+#if VET_VGD_BODY_MIR && !VET_VGD_SWEEP_SLAB
             // theta_wall = vacuum, upwind point beyond the wall (flag 3): the ray
             // starts at its exact crossing of the cone theta = theta_wall with I = 0;
             // chi, S from the row next to the wall (linear in phi index and r)
@@ -335,6 +356,7 @@
             } else if (typ == 2 && (emi || psrc)) {
               // vet_gd_inner = emit: boundary emission at the inner-face point; x1
               // periodic first pass: the face S
+#if VET_VGD_SWEEP_SLAB
               const Real ie0 = psrc ? fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i+1)), 0.0)
                                     : iemit;
               Real fc = 0.0;
@@ -342,6 +364,10 @@
                                cx1v(m,i+1), p2, ch0, ds, s0, -1.0, 0.0,
                                sfs_ ? &fc : nullptr);
               gq[0] = dir_(d,3)*nx*fc;
+#else
+              iv = ScInnerFace(st4, fC, i, true, iemit, bfc, cx1f(m,i), cx1v(m,i),
+                               cx1v(m,i+1), p2, ch0, ds, s0);
+#endif
             } else if (typ == 2 && imir) {
               // reflecting inner face: first-shell inward intensity in the nearest
               // specular direction (inward stencil cells) times the flux ratio
@@ -370,11 +396,16 @@
             } else if (typ == 2) {
               // diffusion intensity S + mu (-dS/dtau_r) at the inner face; vet_bc_diff =
               // face: face S = 1.5 S_a - 0.5 S_b (cell S is O(dtau_cell) low)
+#if VET_VGD_SWEEP_SLAB
               Real fc = 0.0;
               iv = ScInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
-                               cx1v(m,i+1), p2, ch0, ds, s0, slb_ ? fabs(mr) : -1.0,
-                               bmv(), sfs_ ? &fc : nullptr);
+                               cx1v(m,i+1), p2, ch0, ds, s0, fabs(mr), bmv(),
+                               sfs_ ? &fc : nullptr);
               gq[0] = dir_(d,3)*nx*fc;
+#else
+              iv = ScInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
+                               cx1v(m,i+1), p2, ch0, ds, s0);
+#endif
             } else {
               // one intensity per (cell, direction), of the pass n_d . r_hat selects;
               // stencil cells of the other pass are dropped, weights renormalised
@@ -391,7 +422,7 @@
                 const Real mo = mr_(m,k,j,d);
                 const int djm = (j1 - j > j - j0) ? (j1 - j) : (j - j0);
                 const int dkm = (k1 - k > k - k0) ? (k1 - k) : (k - k0);
-                const Real bd = slb_ ? 0.0 : (fabs(djm*lg_.Dx2(mbsize, m)) +
+                const Real bd = VET_VGD_SWEEP_SLAB ? 0.0 : (fabs(djm*lg_.Dx2(mbsize, m)) +
                                               fabs(dkm*lg_.Dx3(mbsize, m)))*(1.0 + 1.0e-9)
                                              + 1.0e-12;
                 sure = fabs(mo) > bd;
@@ -427,56 +458,37 @@
               const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
               const int id2 = 2*i - iu;
               const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
+#if VET_VGD_SWEEP_SLAB
               Real fc = 0.0;
               iv = ScSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
                                s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
                                idd, sfs_ ? &fc : nullptr);
-              if (sfs_) {
-                // x1: the intensity where the segment crosses the face; x2 (x3): the
-                // upwind shell's intensity the foot shift sh carries across the low
-                // face, the x3 (x2) part halved (S2 and S3 commute)
-                const Real wd = dir_(d,3), amr = fabs(mr), dxl = ds*amr;
-                gq[3] = wd*nx*fmax(fc, 0.0);
-                const bool thr = (nx3b > 1);
-                const Real sh2 = fj - j, sh3 = thr ? (fk - k) : 0.0;
-                const int o2 = static_cast<int>(floor(sh2));
-                const int o3 = static_cast<int>(floor(sh3));
-                const Real a2 = sh2 - o2, a3 = sh3 - o3;
-                auto ipq = [&](const int dk, const int dj) {
-                  return rd(k + dk, j + dj, iu);
-                };
-                auto g2f = [&](const int q) {
-                  return thr ? 0.5*(ipq(0,q) + (1.0 - a3)*ipq(o3,q) + a3*ipq(o3+1,q))
-                             : ipq(0,q);
-                };
-                auto g3f = [&](const int q) {
-                  return 0.5*(ipq(q,0) + (1.0 - a2)*ipq(q,o2) + a2*ipq(q,o2+1));
-                };
-                for (int c = 0; c < (thr ? 2 : 1); ++c) {
-                  const Real sh = (c == 0) ? sh2 : sh3, s = fabs(sh), fl = floor(s);
-                  const int nn = static_cast<int>(fl), sg = (sh < 0.0) ? 1 : -1;
-                  auto g = [&](const int q) {return (c == 0) ? g2f(q) : g3f(q);};
-                  Real p = (s - fl)*g((sg > 0) ? (-1 - nn) : nn);
-                  for (int q = 0; q < nn; ++q) {p += g((sg > 0) ? (-1 - q) : q);}
-                  gq[1 + c] = wd*amr*((c == 0) ? lg_.Dx2(mbsize, m)
-                                               : lg_.Dx3(mbsize, m))/dxl*sg*p;
-                }
-              }
+              // x1: the intensity where the segment crosses the face
+              gq[1] = dir_(d,3)*nx*fmax(fc, 0.0);
+#else
+              iv = ScSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
+                               s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
+                               idd);
+#endif
             }
           }
+#if VET_VGD_SWEEP_SLAB
           // exit through an x1 boundary face (not periodic): the half cell at chi_0, S_0
           if (sfs_ && !x1pr_ && (inw ? ((x1f_(m) & 1) && l == lcb)
                                      : ((x1f_(m) & 2) && l == n1 - 1))) {
             const Real ex = exp(-ch0*fabs(cx1f(m,inw ? i : (i + 1)) - r)/fabs(mr));
-            gq[4] = dir_(d,3)*nx*(iv*ex + (1.0 - ex)*s0);
+            gq[2] = dir_(d,3)*nx*(iv*ex + (1.0 - ex)*s0);
           }
+#endif
           return iv;
         };
         const Real v = solve(cs_, vi_);
         if (dfd) {return true;}
         vi_(m,d,k,j,i) = v;
-        for (int q = 0; q < 5 && sfs_; ++q) {
+#if VET_VGD_SWEEP_SLAB
+        for (int q = 0; q < 3 && sfs_; ++q) {
           rgs_((l & 1)*nmbt_ + m,q*n + d,k-ks,j-js) = gq[q];
         }
+#endif
         return false;
       };
