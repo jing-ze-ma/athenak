@@ -570,7 +570,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
                 << "solve" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // flux_cone_lz (read only when named, default off): fcone takes a cell's
+    // flux_cone_lz (default on, not on Cartesian meshes): fcone takes a cell's
     // excess from its faces without L_z lever arm first (LzFamily: spherical polar
     // x1, x2; cubed sphere x1; Cartesian x3), cut and counted as now; a face with an arm
     // is scaled only where those faces alone exceed c E, and its cut is the gas's at the
@@ -597,8 +597,8 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       cln_fcpj[d] = fcl && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ? 2 :
                     1))));
     }
-    cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","flux_cone_lz") &&
-               pin->GetBoolean("rad_vet","flux_cone_lz");
+    cln_fclz = cln_fcone && pin->GetOrAddBoolean("rad_vet","flux_cone_lz", curv &&
+                                fix("flux_cone_lz", "true", "false"));
     // flux_cone_emax (read only when named; needs flux_cone): every inner
     // face's F within c max(E_L, E_R), also an opaque face's: no face F streams more than
     // its brighter cell holds, so the gas's face terms stay below the cap h chi_f E
@@ -641,17 +641,18 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
                 << "and clean_layout = staggered" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // lz_spin (read only when named; needs flux_cone_lz, on the cubed sphere
-    // lz_telescope): the L_z of the momentum that fcone's cut of the faces with an
-    // arm and update_mcap's cap withhold is the gas's as one rigid rotation dOmega =
-    // X/I, I = sum rho V R^2 (WriteBack), not the face's gas: L_z exact, no kick
-    if (pin->DoesParameterExist("rad_vet","lz_spin")) {
-      cln_lzsp = pin->GetBoolean("rad_vet","lz_spin");
-      if (cln_lzsp && (!cln_fclz || (pmy_pack->pmesh->use_cubed_sphere && !cln_lzt))) {
-        std::cout << "### FATAL ERROR: <rad_vet>/lz_spin needs flux_cone_lz "
-                  << "(the cubed sphere: and lz_telescope)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
+    // lz_spin (default on with flux_cone_lz, not on Cartesian meshes; needs
+    // flux_cone_lz, on the cubed sphere lz_telescope): the L_z of the momentum
+    // that fcone's cut of the faces with an arm and update_mcap's cap withhold is the
+    // gas's as one rigid rotation dOmega = X/I, I = sum rho V R^2 (WriteBack), not the
+    // face's gas: L_z exact, no kick
+    const bool lzs_ok = cln_fclz && (!pmy_pack->pmesh->use_cubed_sphere || cln_lzt);
+    cln_lzsp = pin->GetOrAddBoolean("rad_vet","lz_spin", curv && lzs_ok &&
+                                    fix("lz_spin", "true", "false"));
+    if (cln_lzsp && !lzs_ok) {
+      std::cout << "### FATAL ERROR: <rad_vet>/lz_spin needs flux_cone_lz "
+                << "(the cubed sphere: and lz_telescope)" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     if (cln_lzbook) {
       const bool cs = (cln_lza == 2);

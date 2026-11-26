@@ -183,7 +183,7 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 |---|---|
 | energy (gas + radiation) | exact; floors are paid from the radiation |
 | mass | exact |
-| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger), exact there too with `flux_cone_lz` + `lz_spin` |
+| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact, the face-flux cone cut's L_z goes to the gas (`flux_cone_lz` + `lz_spin`, default on curved meshes); Cartesian: not a scheme property (both keys off) |
 | linear momentum | the radial budget (spherical polar, cubed sphere) and Cartesian P (Cartesian meshes): every change is a face flux or a named physical source (gravity, the geometric pressure term, the radiation's boundary stress and hoop term, the reference force the hydro's well-balanced background gives) except the cone cut (exact with `flux_cone_line`, not the default), the primitive recovery's floors, the floor-gas cap and `merge_lat_mom = rigid`; booked per step by class with `hydro/p_ledger`; Cartesian P is not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to below 1e-8 of the sound speed |
@@ -252,12 +252,12 @@ exactly what the step changes, `Lz_tot` is constant by construction; the scheme'
 error is the growth of the ledger, i.e. the drift of gas + radiation alone (`dLz_gr` in the
 test output).
 
-- Spherical polar, production keys: the face-flux realisability cut (`flux_cone`)
-  removes momentum the gas does not take, and its $L_z$ goes into the ledger. On the test shell
-  this happens on the first cycles of a fresh start and amounts to about 6e-7 of the gas
-  $L_z$; the ledger is constant afterwards.
-  With `flux_cone_lz` and `lz_spin` (test `conservation_lz`) the gas takes the
-  cut's $L_z$, which is then exact without a ledger (1e-15); not the production setting.
+- Spherical polar: the face-flux realisability cut (`flux_cone`) takes a cell's excess from
+  the faces without an $L_z$ arm first, and the gas takes the $L_z$ of the arm faces' cut as
+  one rigid rotation (`flux_cone_lz`, `lz_spin`, default on curved meshes): gas + radiation
+  $L_z$ is exact without a ledger (test shell: `dLz_gr` 1e-15). With both keys false (the
+  release before) the cut's $L_z$ went into the ledger, 6e-7 of the gas $L_z$ on the test
+  shell, on the first cycles of a fresh start.
 - Cubed sphere: the ledger stays at round-off (1e-17), so gas + radiation $L_z$ is conserved
   without one. Here the radiation's $L_z$ is that of the face momenta; the larger `dLz_gr`
   the test prints (6e-5) uses the cell-centred flux vector and is a diagnostic mismatch, not
