@@ -63,7 +63,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
   DvceArray1D<Real> rmc("cln_rmc", 1);
   const bool fwb = cln_fwb;
   if (fwb && cln_fwbc.extent_int(0) != 6) Kokkos::realloc(cln_fwbc, 6);
-  if (fwb) Kokkos::deep_copy(cln_fwbc, 0.0);
+  if (fwb) Kokkos::deep_copy(DevExeSpace(), cln_fwbc, 0.0);
   auto fwc = cln_fwbc;
   const bool wbc = e == CLW_X;
   const int kd = (t2_solve == VET_T2S_NONE) ? 0 :
@@ -218,7 +218,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
                                             u0.extent_int(3), u0.extent_int(4));
       }
       auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
-      if (wbc) Kokkos::deep_copy(sl, 0.0);
+      if (wbc) Kokkos::deep_copy(DevExeSpace(), sl, 0.0);
       // the F slots of the lines (FluxLine) hold F_ray, then the solve's start again
       for (int pass = 0; pass < 2; ++pass) {
         for (int d = 0; d < x.nf; ++d) {
@@ -249,8 +249,8 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
           auto fd = x.fc[d];
           const bool pj = (cln_fwbring && d == 2) || cln_fwbpj[d];
           if (pj) {
-            Kokkos::deep_copy(rs, 0.0);
-            Kokkos::deep_copy(rw, 0.0);
+            Kokkos::deep_copy(DevExeSpace(), rs, 0.0);
+            Kokkos::deep_copy(DevExeSpace(), rw, 0.0);
           }
           SolveFor("cln_fwb", nmb1, ks, ke+ek, js, je+ej, is, ie+ei,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
