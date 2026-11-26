@@ -1472,6 +1472,67 @@ def t_cmdline_keys(c):
     return out
 
 
+def t_key_fatal(c):
+    """keys the code would ignore stop the run: <hydro>/reconstruct other than plm on
+    spherical polar (every sweep takes the grid PLM), the same under <mhd> and with
+    wb_dirs = all, ix2_bc = polar without use_polar_boundary, the key off spherical polar,
+    wb_rho without wellbalance_dynamic, <mhd>/fofc_rsolver = hlle without fofc,
+    polar_emf_diss without a polar boundary, dt_retry_views = all on the cubed sphere.
+    The accepted value runs (same:
+    reconstruct = plm named vs not named, hst and dumps)."""
+    o = {'time/nlim': 2}
+    out = dict(same=vett.compare_dirs(c.run('shell_sp.athinput', 'plain', o), c.run(
+        'shell_sp.athinput', 'plm', dict(o, **{'hydro/reconstruct': 'plm'})))[1])
+    for t, deck, k, msg in (
+            ('sp_ppm4', 'shell_sp', {'hydro/reconstruct': 'ppm4'}, 'spherical-polar'),
+            ('mhd_wenoz', 'mhd_noise', dict(MHD_SP, **{'mhd/reconstruct': 'wenoz'}),
+             'spherical-polar'),
+            ('polar', 'shell_sp', {'mesh/ix2_bc': 'polar'}, 'use_polar_boundary'),
+            ('polar_cart', 'wave_cart', {'mesh/use_polar_boundary': 'true'},
+             'use_polar_boundary'),
+            ('wb_all_ppm4', 'mhd_rhse_ct', {
+                'mhd/wellbalance_static': 'false', 'mhd/wellbalance_static_reconst':
+                'false', 'mhd/wellbalance_dynamic': 'true', 'mhd/wb_x1': 'true',
+                'mhd/wb_dirs': 'all', 'mhd/wb_option': 'isothermal',
+                'mhd/reconstruct': 'ppm4'}, 'wb_dirs = all'),
+            ('wb_rho', 'shell_sp', {'hydro/wb_rho': 'true'}, 'wellbalance_dynamic'),
+            ('fofc_hlle', 'mhd_noise', {'mhd/fofc': 'false', 'mhd/fofc_rsolver': 'hlle'},
+             'fofc_rsolver'),
+            ('emf_diss', 'mhd_noise', {'mhd/polar_emf_diss': 'true'}, 'polar_emf_diss'),
+            ('views_cs', 'shell_cs', {'time/dt_retry': 'true',
+                                      'time/dt_retry_views': 'all'}, 'dt_retry_views')):
+        out[t] = 0
+        try:
+            c.run(deck + '.athinput', t, dict(o, **k))
+        except RuntimeError:
+            log = open(os.path.join(c.dir, t, 'run.log')).read()
+            out[t] = int('FATAL' in log and msg in log)
+    return out
+
+
+def t_restart_keys(c):
+    """a restart with a -i deck that does not name a key the file stores with a value
+    other than the code default (rad_vet/clean_tol = 5e-11, default 1e-10): one CLEAN
+    WARNING line with key, stored value and default (line); the deck naming it: no line
+    (named); the run is that of the restart without a deck (same: dumps and hst)."""
+    o = {'time/nlim': 4, 'rad_vet/clean_tol': 5e-11, 'output9/file_type': 'rst',
+         'output9/dcycle': 4}
+    rst = os.path.abspath(sorted(vett.glob_rst(c.run('shell_sp.athinput', 'w', o)))[-1])
+    go = {'time/nlim': 8, 'output9/dcycle': 100000}
+    out = {}
+    for t, k in (('plain', {}), ('named', {'rad_vet/clean_tol': 5e-11})):
+        p = os.path.join(c.dir, t + '.athinput')
+        vett.make_deck(os.path.join(DECKS, 'shell_sp.athinput'), p, k)
+        d = c.run('shell_sp.athinput', t, go, restart=rst, args=['-i', p])
+        out[t] = open(os.path.join(d, 'run.log')).read().count(
+            'CLEAN WARNING restart: rad_vet/clean_tol = 5e-11 from the restart file '
+            '(code default 1e-10')
+    out['line'] = out.pop('plain')
+    out['same'] = vett.compare_dirs(c.run('shell_sp.athinput', 'nodeck', go, restart=rst),
+                                    os.path.join(c.dir, 'plain'), last_only=True)[1]
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # linear momentum: a report, not a pass / fail criterion
 
@@ -2012,6 +2073,8 @@ TESTS = [  # name, function, in --quick
     ('ceiling_metric', t_ceiling_metric, True),
     ('inf_reject', t_inf_reject, False),
     ('cmdline_keys', t_cmdline_keys, True),
+    ('key_fatal', t_key_fatal, True),
+    ('restart_keys', t_restart_keys, True),
     ('star_smoke', t_star_smoke, False),
     ('star_cs_ring', t_star_cs_ring, False),
     ('wb_star', t_wb_star, False),

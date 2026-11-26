@@ -467,6 +467,13 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // all: the retried step differs from the first at a ray-set change on the cubed
+  // sphere (6e-2), so it is refused there
+  if (all_views_ && pm->use_cubed_sphere) {
+    std::cout << "### FATAL ERROR: <time>/dt_retry_views = all is not supported on the "
+              << "cubed sphere: use minimal or clean" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (pin->DoesParameterExist("time", "dt_retry_views_add")) {
     std::stringstream ss(pin->GetString("time", "dt_retry_views_add"));
     std::string w;
