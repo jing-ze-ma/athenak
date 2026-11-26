@@ -391,6 +391,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   for (int q = 0; q < 5; ++q) {
     v.value(("cln_lzr" + std::to_string(q)).c_str(), cln_lzr[q]);
   }
+  v.value("cln_lzrf", cln_lzrf);
+  v.value("cln_lzra", cln_lzra);
   v.value("cln_gpic", cln_gpic);
   v.value("cln_ngnsw", cln_ngnsw);
   v.value("cln_fdg", cln_fdg);

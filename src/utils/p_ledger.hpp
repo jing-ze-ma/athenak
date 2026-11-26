@@ -38,9 +38,9 @@
 //! <hydro>/p_ledger_lz (read only when named; 3-D spherical polar with <rad_vet>): also
 //! L_z = gas + radiation (LzTotal less the L_z ledger) in slot 1, the same classes (hflx:
 //! am_bflx's torque of the x1 faces; cut, fwb and the reference force stay in rad), and
-//! the L_z ledger's growth lzb and its part rbt, the radiation's torque through the
-//! physical x1 faces (LzBook), so rad + lzb is the write-back's L_z error less the
-//! ledger; CLEAN LZLEDGER, user.hst LzL_* in place of Pr_*.
+//! the L_z ledger's growth lzb and rbt, the radiation's torque through the physical x1
+//! faces (LzBook, a flux outside the ledger: Lz_rflx), so rad + lzb + rbt is the
+//! write-back's L_z neither holds; CLEAN LZLEDGER, user.hst LzL_* in place of Pr_*.
 
 #include <cmath>
 #include <cstdio>

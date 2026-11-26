@@ -881,10 +881,13 @@ class RadiationVet {
   // K2 (cln_lzs2), stage-start increment (cln_lzc) and stage-1 part pending (cln_lzp).
   // 3-D spherical polar: the L_z that crossed the radial boundaries.
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
-  // <hydro>/p_ledger_lz: of the ledger the radiation's torque through the physical x1
-  // faces (FaceStress rb), booked alike: l, K1, K2, increment, pending
+  // 3-D spherical polar: the radiation's torque through the physical x1 faces (FaceStress
+  // rb), a boundary flux, not the ledger's: booked alike (l, K1, K2, increment, pending),
+  // the last step's over its dt (Lz_rflx; cln_lzra its sum, cln_lzrc its cycle)
   bool cln_lzro = false;
   Real cln_lzr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  Real cln_lzrf = 0.0, cln_lzra = 0.0;
+  int cln_lzrc = -1;
   ParameterInput *cln_lzpin = nullptr;
   void LzBook(const Real s, const bool start, const Real sr = 0.0);
   // gas + radiation + ledger L_z (part 1: gas of ug or u0 alone, 2: radiation alone)

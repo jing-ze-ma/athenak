@@ -419,7 +419,7 @@ void RadiationVet::WriteBack() {
   DvceArray4D<Real> lzw, lzq;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
-  const bool lzr = lzb && cln_lzro;   // (p_ledger_lz: lzw's x1-face torque, cln_lzr)
+  const bool lzr = lzb && cln_lzro;   // (the x1-face torque out of lzw, cln_lzr)
   if (lzr) lzq = ScratchView<DvceArray4D<Real>>("cln_lzq", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
   // (prb, clean_wb_fct's probe: no side effects, each cell's E without its face
@@ -793,7 +793,8 @@ void RadiationVet::WriteBack() {
     p_ledger::Withheld(2, a, PSlope(t2_solve), h, !t2_inprobe);
   }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
-    const Real s = SumCells(lzw), sr = lzr ? SumCells(lzq) : 0.0;
+    // (the radiation's torque through the physical x1 faces sr a flux: Lz_rflx)
+    const Real sr = lzr ? SumCells(lzq) : 0.0, s = SumCells(lzw) - sr;
     if (slopes) (t2_solve == VET_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
     if (slopes) cln_lzr[(t2_solve == VET_T2S_STAGE1) ? 2 : 1] = sr/h;
     LzBook(s, t2_solve == VET_T2S_STAGE2, sr);

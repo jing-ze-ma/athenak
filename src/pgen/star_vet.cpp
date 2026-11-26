@@ -4256,8 +4256,10 @@ void StarBC(Mesh *pm) {
 //! StarWallFlux), Min_top the inflow that was removed.
 //! M_hflx, E_hflx, Lz_hflx: the hydro's mass, energy (IEN) and L_z leaving through the
 //! physical x1 faces over the step, as rates (am_bflx, hydro_am.hpp: the RK-weighted
-//! fluxes); Lz_tot: the L_z of gas + radiation (LzTotal, incl. the L_z ledger), so
-//! that d M_tot/dt = -M_hflx and d Lz_tot/dt = -Lz_hflx close in the history.
+//! fluxes); Lz_rflx: the radiation's torque through them over the step (its stress
+//! torque at the x3 faces, LzBook's rbt); Lz_tot: the L_z of gas + radiation (LzTotal,
+//! incl. the L_z ledger), so that d M_tot/dt = -M_hflx and d Lz_tot/dt = -(Lz_hflx +
+//! Lz_rflx) close in the history.
 
 void StarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -4272,15 +4274,15 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   // L_midC, L_intC: the comoving part Phi - (4/3) v E of the same flux (v, E the face
   // means; thick D = 1/3), what old's L_mid / L_int sum (old f0x1 = F - a E). L_bot is
   // that comoving flux too (old's L_bot, face is+1; the face F adds the wall's 4/3 v E)
-  pdata->nhist = nb + 10;
-  const char *lab[32] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  pdata->nhist = nb + 11;
+  const char *lab[33] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
                          "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
                          "v1sq_wall", "Picard", "w_mlt", "L_MLT", "P_esrc", "P_sponge",
-                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_tot", "L_midE", "L_intE",
+                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_rflx", "Lz_tot", "L_midE", "L_intE",
                          "L_midC", "L_intC"};
   for (int n=0; n<nb; ++n) pdata->label[n] = lab[n];
-  for (int n=0; n<10; ++n) pdata->label[nb+n] = lab[22+n];
+  for (int n=0; n<11; ++n) pdata->label[nb+n] = lab[22+n];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -4399,10 +4401,10 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   pdata->hdata[nb] = sum_this.the_array[22];
   pdata->hdata[nb+1] = sum_this.the_array[23];
   // M_hflx, E_hflx, Lz_hflx: the step's am_bflx over its dt (0 without the module)
-  pdata->hdata[nb+6] = sum_this.the_array[24];
-  pdata->hdata[nb+7] = sum_this.the_array[25];
-  pdata->hdata[nb+8] = sum_this.the_array[26];
-  pdata->hdata[nb+9] = sum_this.the_array[27];
+  pdata->hdata[nb+7] = sum_this.the_array[24];
+  pdata->hdata[nb+8] = sum_this.the_array[25];
+  pdata->hdata[nb+9] = sum_this.the_array[26];
+  pdata->hdata[nb+10] = sum_this.the_array[27];
   for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = 0.0;
   hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
   if (pam != nullptr && pam->am_bflx.extent_int(0) > 0 && pam->am_bdt > 0.0) {
@@ -4421,7 +4423,8 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   }
   // (a global value: rank 0 contributes)
   const Real lzt = pvet->LzTotal();
-  pdata->hdata[nb+5] = (global_variable::my_rank == 0) ? lzt : 0.0;
+  pdata->hdata[nb+5] = (global_variable::my_rank == 0) ? pvet->cln_lzrf : 0.0;
+  pdata->hdata[nb+6] = (global_variable::my_rank == 0) ? lzt : 0.0;
   if (star_mlt_) {
     // host values, summed over ranks by the history output: rank 0 contributes
     const bool r0 = (global_variable::my_rank == 0);

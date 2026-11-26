@@ -103,11 +103,12 @@ Definitions used in the table:
 | 24 | M_hflx | hydro mass leaving through the physical x1 faces (inner + outer, outward positive) over the step, divided by dt. These are the RK-weighted fluxes the update used (`AmBndFlux`, `src/hydro/hydro_am.cpp:637`), so they close the mass budget exactly. Needs the angular-momentum module (`<hydro>/am_transport`, on in the decks); 0 without it. | g/s |
 | 25 | E_hflx | the same for the hydro conserved energy U_E | erg/s |
 | 26 | Lz_hflx | the same for the gas L_z | g cm^2/s^2 |
-| 27 | Lz_tot | L_z of gas + radiation, including the radiation's L_z ledger (`LzTotal`); summed exactly, so dLz_tot + Lz_hflx dt of a row (the rate of the step it ends) holds to the state's round-off, a small part of eps = 1e-16 times the gross sum V R \|p_phi\| per step: where the net is far below the gross sum, compare with eps x gross, not with eps x Lz_tot | g cm^2/s |
-| 28 | L_midE | sum Phi A at the L_mid face: the energy flux that moved E there | erg/s |
-| 29 | L_intE | sum Phi A at the L_int face | erg/s |
-| 30 | L_midC | L_midE minus the advective part: sum (Phi - (4/3) v E) A at the L_mid face, with v and E the means of the two cells beside the face. This is the comoving radiative flux. | erg/s |
-| 31 | L_intC | the same at the L_int face | erg/s |
+| 27 | Lz_rflx | the radiation's L_z leaving through the physical x1 faces over the step, as a rate: the azimuthal faces' transverse stress torque (D_{r phi} E) at those faces, stage-weighted as the update (LzBook's rbt); a boundary flux, not ledger | g cm^2/s^2 |
+| 28 | Lz_tot | L_z of gas + radiation, including the radiation's L_z ledger (`LzTotal`); summed exactly, so dLz_tot + (Lz_hflx + Lz_rflx) dt of a row (the rate of the step it ends) holds to the state's round-off, a small part of eps = 1e-16 times the gross sum V R \|p_phi\| per step: where the net is far below the gross sum, compare with eps x gross, not with eps x Lz_tot | g cm^2/s |
+| 29 | L_midE | sum Phi A at the L_mid face: the energy flux that moved E there | erg/s |
+| 30 | L_intE | sum Phi A at the L_int face | erg/s |
+| 31 | L_midC | L_midE minus the advective part: sum (Phi - (4/3) v E) A at the L_mid face, with v and E the means of the two cells beside the face. This is the comoving radiative flux. | erg/s |
+| 32 | L_intC | the same at the L_int face | erg/s |
 
 Notes:
 
@@ -140,10 +141,11 @@ Notes:
   cm^2/s; the step's rates (g cm^2/s^2) of the same
   classes (`LzL_hflx`: the gas's torque through the physical x1 faces, `Lz_hflx`; cut, fwb
   and the reference force stay in `LzL_rad`); `LzL_lzb`, the L_z ledger's growth (`CLEAN
-  LZB`), and `LzL_rbt`, its part that is the radiation's torque through the physical x1
-  faces (the off-diagonal stress D_{r phi} E of the x3 faces' torque form). So `LzL_rad` +
-  `LzL_lzb` is the write-back's L_z the ledger does not hold, and `LzL_lzb - LzL_rbt` the
-  ledger's other items (cone cut, update_mcap cap, reference torque, lz_spin's return).
+  LZB`: cone cut, update_mcap cap, reference torque, lz_spin's return, what does not
+  telescope), and `LzL_rbt`, the radiation's torque through the physical x1 faces (the
+  off-diagonal stress D_{r phi} E of the x3 faces' torque form; `Lz_rflx` x dt), booked
+  outside the ledger. So `LzL_rad` + `LzL_lzb` + `LzL_rbt` is the write-back's L_z that
+  neither holds (round-off).
   `CLEAN LZLEDGER` prints the same per step with `END`.
 
 ## 2. Event log `<basename>.log`
@@ -285,7 +287,7 @@ round-off levels of that test (to see which passes a solve needs and why).
 | `CLEAN FCONE cycle N t2s S faces K momentum cut sum \|dF\| V/c^2 X` | `flux_cone` scaled K faces back to \|F\| <= cE; X is the momentum removed. | Should stay small compared with the radiation momentum. |
 | `CLEAN WBFCT cycle N t2s S rounds R left K kept X` | The limiter rounds of the write-back; `left` = cells still limited after the last round. | `left` > 0 means the limiter could not fully protect E > e_floor in those cells. |
 | `CLEAN MCAP cycle N t2s S: K face momentum terms at the cap h chi_f E in the last pass` | Face momentum exchange terms at their cap. | Diagnostic. |
-| `CLEAN LZB cycle N t2s S ledger X` | 3-D spherical polar: the radiation's L_z ledger (stored in the restart file). | Use with `Lz_tot` in the history. |
+| `CLEAN LZB cycle N t2s S ledger X` | 3-D spherical polar: the radiation's L_z ledger (stored in the restart file), without the torque through the physical x1 faces, which is a flux (`Lz_rflx`). | Use with `Lz_tot` in the history. |
 | `CLEAN FLOORMOM cycle N: ekin K dp X Y Z \|dp\| X Y Z vceil ... other ...` | The momentum the step's primitive recoveries removed, with their end-of-step weights: `ekin` (`floor_from_ekin`), `vceil`, `other` (density floor, or with a raised E); K cell-conversions, then the signed and absolute sums x volume of (r, theta, phi), Cartesian (x, y, z). Exact sums (any layout / rank count). `initial`: the first conversion; the run end prints the job's totals (not stored in the restart file: the lines of the jobs add up). | Compare with the total momentum; large values mean the floors drive the flow. |
 | `CLEAN PLEDGER cycle N dt T hflx .. ntel .. src .. rad .. cut .. fwb .. flr .. mrg .. gap .. P .. END .. gross G` | `hydro/p_ledger`: the step's momentum books by class as rates (one value per component: r on spherical polar / cubed sphere, x y z on Cartesian), P = gas + radiation momentum after the step, END = dP + hflx dt - (the other classes) dt, G = sum V \|p\| (gas + radiation). | END / G is round-off (1e-16); `ntel`, `fwb`, `mrg` and `gap` should be round-off too. |
 | `CLEAN KPOS`, `CLEAN KREAL`, `CLEAN XPAT` | Only with those (non-production) keys. | - |

@@ -251,6 +251,13 @@ file. The history column `Lz_tot` is gas + radiation + ledger. Because the ledge
 exactly what the step changes, `Lz_tot` is constant by construction; the scheme's $L_z$
 error is the growth of the ledger, i.e. the drift of gas + radiation alone (`dLz_gr` in the
 test output).
+The radiation's stress torque through the physical x1 faces is no error but a boundary flux,
+as the gas's `Lz_hflx`: on 3-D spherical polar the azimuthal faces' transverse stress
+(D_{r phi} E, D_{theta phi} E in torque form) telescopes to the x1 faces, and what crosses
+them is booked outside the ledger with its stage weights (star_vet `Lz_rflx`, `<rad_vet>/
+lz_ledger_rbt` in the restart file), so that d `Lz_tot`/dt = -(`Lz_hflx` + `Lz_rflx`). On
+the stars it was 99.8 % of the old ledger (tiny BSG, `hydro/p_ledger_lz` class `rbt`): at the
+open top the one-sided stress takes the outermost cells' D_{r phi} of the ray closure.
 
 - Spherical polar: the face-flux realisability cut (`flux_cone`) takes a cell's excess from
   the faces without an $L_z$ arm first, and the gas takes the $L_z$ of the arm faces' cut as

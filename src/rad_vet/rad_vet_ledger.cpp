@@ -70,8 +70,9 @@ void RadiationVet::ReportCounters() {
 //! until stage 2 is accepted (s = 0; a backward-Euler redo drops them, Time2Restore).
 //! Total and K1's sum in <rad_vet> (restart).  3-D spherical polar: s is the L_z that
 //! crossed the boundaries (CellMomentumChange's dlz), <rad_vet>/lz_ledger.
-//! p_ledger_lz: sr, the part of s that is the radiation's torque through the physical
-//! x1 faces, booked alike (cln_lzr; with its K1 in <rad_vet>/lz_ledger_rbt).
+//! sr: the radiation's torque through the physical x1 faces (3-D spherical polar), a
+//! boundary flux booked alike outside the ledger (cln_lzr, Lz_rflx; its total, K1 and
+//! rate in <rad_vet>/lz_ledger_rbt).
 
 void RadiationVet::LzBook(const Real s, const bool start, const Real sr) {
   if (t2_inprobe) return;   // a helper solve, put back (Time2RotCorrect)
@@ -88,14 +89,18 @@ void RadiationVet::LzBook(const Real s, const bool start, const Real sr) {
   }
   const bool s2 = (t2_solve == VET_T2S_STAGE2);
   cln_lzl += s2 ? cln_lzp : cln_lzp + s;
-  cln_lzr[0] += s2 ? cln_lzr[4] : cln_lzr[4] + sr;
+  const Real d = s2 ? cln_lzr[4] : cln_lzr[4] + sr;
+  cln_lzr[0] += d;
+  cln_lzra = ((pmy_pack->pmesh->ncycle == cln_lzrc) ? cln_lzra : 0.0) + d;
+  cln_lzrc = pmy_pack->pmesh->ncycle;
+  cln_lzrf = cln_lzra/pmy_pack->pmesh->dt;
   cln_lzp = cln_lzr[4] = 0.0;
   const bool cs = (cln_lza == 2);
   cln_lzpin->SetReal("rad_vet", VetLzKey(cln_lzpin, cs, false), cln_lzl);
   cln_lzpin->SetReal("rad_vet", VetLzKey(cln_lzpin, cs, true), cln_lzs1);
   if (cln_lzro) {
-    char t[64];
-    std::snprintf(t, sizeof(t), "%.17e %.17e", cln_lzr[0], cln_lzr[1]);
+    char t[96];
+    std::snprintf(t, sizeof(t), "%.17e %.17e %.17e", cln_lzr[0], cln_lzr[1], cln_lzrf);
     cln_lzpin->SetString("rad_vet", "lz_ledger_rbt", t);
   }
   if (global_variable::my_rank == 0 && cln_verbose > 0 && !cln_insteady) {
