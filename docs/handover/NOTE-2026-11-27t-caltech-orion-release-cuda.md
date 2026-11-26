@@ -17,3 +17,10 @@
 - m35zams.vet_vet.00019.bin: payload md5 f7f480942c33 / f7f480942c33 -> IDENTICAL
 - user.hst: 2 / 2 rows, printed-bitwise
 - hydro.hst: 2 / 2 rows, printed-bitwise
+
+## Gate (27u): the old tiny gate deck FATALs on the removed key, as you expected
+- GATE FAIL rel82 (16b039e9a) = "<rad_vet/clean_face_hctau> = false: the key was removed, the code runs true" (rad_vet_args.hpp FATAL), before pass 1. Gate deck without that line (b1_1124/gate_relt.athinput; no other removed key FATALed), 1 rank, same arguments, on both binaries:
+- GATE2 rel82_82231a337 md5 e80fcc9c: pass1 3.720e-11 end: Terminating on cycle limit FATAL 0 CW 0; hst md5 73cc8651512b
+- GATE2 next5_b5ade8753 md5 706572b0: pass1 3.720e-11 end: Terminating on cycle limit FATAL 0 CW 0; hst md5 73cc8651512b
+- GATE2 DONE
+- So the release and b5ade8753 agree on the gate to the printed digits and in the whole user.hst (md5 73cc8651512b each); 3.720e-11 replaces the hctau = false reference 3.686e-11.
