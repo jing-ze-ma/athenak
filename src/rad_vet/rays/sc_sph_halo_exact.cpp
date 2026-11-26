@@ -567,6 +567,7 @@ void RadiationVet::ScHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                 const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
+                if (wl_(m,kk,jj) >= 8) {continue;}   // slab vacuum: I = 0, no read
                 if (ej != 0 && wl_(m,kk,jj) >= 2) {
                  // the main sweep reads the mirror row (flag 2) or the edge row
                  // (extrap, 4) through the phi-edge slot; vacuum (3) reads nothing.
