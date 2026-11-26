@@ -1243,3 +1243,5 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 10:32 02-11: fd_G4c_FS pa_smi -> fd_G4s_FD pa_smi
 - 11-26 10:33 02-11: fd_G4s_FD pa_smi -> fd_G4s_FD0 pa_smi
 - 11-26 10:35 02-11: fd_G4s_FD0 pa_smi -> fd_mem_FD0
+- 11-26 10:51 02-11: fd_mem_FD0 -> IDLE
+- 11-26 10:51 02-17: IDLE -> b_nx4 b_nx4suite
