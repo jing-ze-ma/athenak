@@ -122,3 +122,5 @@
     - ref : PASS E_in 0.000533 E_out 0.0115 F_out 0.0114 FH_out 0.204
 ```
 ```
+
+- Summary: 104c68b7e quick 27/27 PASS and full 63/63 PASS on H200, 0 FAIL. The differing lines are round-off/truncation level in the expected movers (ray cut, FEDGE, fcone/conservation, foot) plus the new arms (dt_retry redo, key_fatal, restart_keys). This tip is superseded by caltech-next-3c681d9d1 (your 27zu), whose build, gate and lists follow.
