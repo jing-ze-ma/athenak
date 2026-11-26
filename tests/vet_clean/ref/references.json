@@ -1010,5 +1010,25 @@
   "equal": {
    "warnings": 0
   }
+ },
+ "p_ledger": {
+  "_about": "<hydro>/p_ledger: per step |END| / gross sum V |p| (gas + radiation) on the periodic box (Cartesian P) and the shells (radial P); box_small_rad: the radiation update's |dP| / gross where nothing cuts; sp_ntel: the sp flux divergence's non-telescoping part; box_violent_rad, cs_* recorded; bitwise: the ledger run's dumps and old history columns against the run without it",
+  "max": {
+   "box_small_end": 1e-13,
+   "box_violent_end": 1e-13,
+   "sp_end": 1e-13,
+   "cs_end": 1e-13,
+   "box_small_rad": 1e-13,
+   "sp_ntel": 1e-13,
+   "sp_gap": 1e-13,
+   "cs_gap": 1e-13
+  },
+  "equal": {
+   "box_small_ncyc": 8,
+   "box_violent_ncyc": 8,
+   "hst_cols": 1,
+   "bitwise": 0.0,
+   "warnings": 0
+  }
  }
 }

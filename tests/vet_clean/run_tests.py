@@ -1692,6 +1692,67 @@ def t_momentum_box(c):
     return dict(dP_max=max(dp), dP_cyc=dp, warnings=w)
 
 
+def pledger(d):
+    """the CLEAN PLEDGER lines of run dir d: [{class: array, 'dt': dt}] by cycle"""
+    out = []
+    for t in re.findall(r'CLEAN PLEDGER cycle \d+ (.*)', open(os.path.join(d, 'run.log')).read()):
+        w = t.split()
+        r, k = {}, None
+        for x in w:
+            if re.match(r'[a-zA-Z]', x):
+                k = x
+                r[k] = []
+            else:
+                r[k].append(float(x))
+        out.append({k: np.array(v) for k, v in r.items()})
+    return out
+
+
+def t_p_ledger(c):
+    """<hydro>/p_ledger, the momentum ledger (CLEAN PLEDGER, user.hst Pr_*): per accepted
+    step END = P(t + dt) - P(t) + hflx dt - (ntel + src + rad + flr + mrg + gap) dt over the
+    gross sum V |p| (gas + radiation; Cartesian P on the periodic 8^3 box of radwaves along
+    xyz, the radial P on the closed shells).  box_small (amplitude 1e-3: nothing cuts):
+    also |rad| dt / gross; box_violent (0.1): rad, the cone cut and fwb residual, recorded;
+    sp_ntel: what the sp flux divergence does not telescope; cs_ntel recorded (seams).
+    bitwise: the dumps and the old history columns of shell_sp with the ledger against the
+    run without it (0: the ledger only reads)."""
+    n = 8
+    box = {'mesh/nghost': 3, 'mesh/nx1': n, 'mesh/nx2': n, 'mesh/nx3': n,
+           'meshblock/nx1': n, 'meshblock/nx2': n, 'meshblock/nx3': n, 'mesh/x3max': 1.0,
+           'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8, 'time/tlim': 1e30,
+           'time/nlim': 8, 'problem/radwave_dir': 'xyz', 'problem/radwave_eig': 'false',
+           'hydro/p_ledger': 'true', 'output1/dcycle': 1000000, 'output2/dcycle': 1000000}
+    out, w = {}, 0
+    rel = lambda L, k: [float(np.abs(r[k]*r['dt'][0]).max()/r['gross'][0]) for r in L]
+    for t, a in (('box_small', 1e-3), ('box_violent', 0.1)):
+        d = c.run('wave_cart.athinput', t, dict(box, **{'problem/radwave_amp': a}))
+        L = pledger(d)
+        out[t + '_end'] = max(float(np.abs(r['END']).max()/r['gross'][0]) for r in L)
+        out[t + '_rad'] = max(rel(L, 'rad'))
+        out[t + '_ncyc'] = len(L)
+        w += vett.warnings(open(os.path.join(d, 'run.log')).read())
+    for g in ('sp', 'cs'):
+        d = c.run('shell_%s.athinput' % g, g, {'time/nlim': n, 'hydro/p_ledger': 'true'})
+        L = pledger(d)
+        out[g + '_end'] = max(float(np.abs(r['END']).max()/r['gross'][0]) for r in L)
+        for k in ('ntel', 'src', 'rad', 'flr', 'mrg', 'gap'):
+            out['%s_%s' % (g, k)] = max(rel(L, k))
+        w += vett.warnings(open(os.path.join(d, 'run.log')).read())
+    b = c.run('shell_sp.athinput', 'sp_off', {'time/nlim': n})
+    a = os.path.join(c.dir, 'sp')
+    mx = 0.0
+    for fa, fb in zip(vett.bins(a), vett.bins(b)):
+        A, B = vett.read_bin(fa), vett.read_bin(fb)
+        mx = max([mx] + [float(np.abs(A[k] - B[k]).max()) for k in A['_names']])
+    (la, ha), (lb, hb) = vett.read_hst(vett.hsts(a)[-1]), vett.read_hst(vett.hsts(b)[-1])
+    mx = max(mx, float(np.abs(ha[:, :len(lb)] - hb).max()) if la[:len(lb)] == lb else np.inf)
+    out['hst_cols'] = int('Pr_tot' in la and 'Pr_gap' in la)
+    out['bitwise'] = mx
+    out['warnings'] = w
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # IDORT literature tests (Ma et al. 2025; Jiang 2021): beams, shadow, emitting cylinder and
 # radiative shocks against exact or semi-analytic solutions
@@ -2189,6 +2250,7 @@ TESTS = [  # name, function, in --quick
     ('ray_clamp', t_ray_clamp, True),
     ('ray_cut_slab', t_ray_cut_slab, False),
     ('momentum_box', t_momentum_box, True),
+    ('p_ledger', t_p_ledger, True),
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
     ('large_step', t_large_step, True),

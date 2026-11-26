@@ -103,6 +103,7 @@
 #include "utils/eint_from_cons.hpp"
 #include "utils/imex_sdirk2.hpp"
 #include "utils/repro_sum.hpp"
+#include "utils/p_ledger.hpp"
 #include "utils/recipe.hpp"
 
 // <hydro>/fofc defaults to TRUE for this problem generator (every
@@ -4436,6 +4437,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
     star_pic_n0_ = pvet->impl_nstep;
     star_pic_s0_ = pvet->impl_itsum;
   }
+  p_ledger::Hist(pdata, pm);   // <hydro>/p_ledger: the momentum ledger's columns
 }
 
 //----------------------------------------------------------------------------------------

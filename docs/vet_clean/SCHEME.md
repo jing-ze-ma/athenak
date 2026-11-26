@@ -183,7 +183,7 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 | energy (gas + radiation) | exact; floors are paid from the radiation |
 | mass | exact |
 | angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger), exact there too with `flux_cone_lz` + `lz_spin` |
-| linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
+| linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it; booked per step by class with `hydro/p_ledger` (Cartesian P on Cartesian meshes, the radial budget on spherical polar / cubed sphere); gravity is a source; Cartesian P is not a discrete invariant on spherical-polar / cubed-sphere meshes |
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to below 1e-8 of the sound speed |
 | order | successive orders of the finest pair: 1.8 (time ladder of deck D), 1.9-2.3 (grid + time ladder of a linear wave); 2 also where the gas-radiation exchange is stiff (`order_stiff`) |
@@ -280,8 +280,25 @@ physical sources. Three things change gas + radiation momentum without being giv
 - the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
 
 Their sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line; what the primitive
-recovery takes per step, signed, by cause: `CLEAN FLOORMOM`, test `floor_momentum`), but there
-is no ledger of the total. In a periodic Cartesian box at small amplitude, where none of
+recovery takes per step, signed, by cause: `CLEAN FLOORMOM`, test `floor_momentum`). The total
+is booked by `hydro/p_ledger` (`CLEAN PLEDGER`, the `user.hst` columns `Pr_*`): the exact sum of
+gas + radiation momentum (Cartesian P on a Cartesian mesh; the radial P_r, gas m_r plus the
+x1 face momenta, on spherical polar and cubed sphere) is taken at the operator boundaries of
+each stage and its change booked to the operator class that made it: the hydro fluxes through
+the physical faces (`hflx`), the part of the flux divergence that does not telescope (`ntel`),
+the coordinate, gravity and user sources (`src`), the radiation update with its write-back
+(`rad`: the radiation's boundary stress and geometric terms, which are physical, together with
+the cone cut, the fwb residual and the withheld reference force), the floors and the
+floor-gas cap (`flr`), the average of the merged lateral cells (`mrg`, `merge_lat`) and the
+rest (`gap`). The books close the step's change of P to round-off by construction; the
+exactness statements are `ntel` = 0 (measured 1e-16 on the sp and cs shells: the hydro flux
+divergence of m_r telescopes, the cubed-sphere seams included) and `gap` = 0, and in the
+periodic box `rad` = 0 where nothing cuts (3e-17 of the gross sum per step at amplitude 1e-3;
+2.5e-2 at 0.1, the cut and the fwb residual). Test `p_ledger`. On the star decks the radial
+budget's `src` holds gravity and the geometric pressure term, and `rad` the radiation force
+plus the radiation's own boundary stress and hoop term; the full Cartesian momentum of a star
+with a fixed central gravity is not conserved (the point mass is not evolved) and is not
+tracked. In a periodic Cartesian box at small amplitude, where none of
 them acts, momentum is conserved to round-off (1e-16); in a violent stress test the well-balancing
 residual changes it by about 6e-7 and the production cut by up to a few 1e-3 per cycle. On
 spherical-polar and cubed-sphere meshes Cartesian momentum is not a discrete invariant (the

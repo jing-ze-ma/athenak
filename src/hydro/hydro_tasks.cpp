@@ -599,6 +599,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "usrc_rest");
   if (use_dfl) DflMomentum();   // (after every momentum source of the stage)
+  eint_ledger::Mark(pmy_pack->pmesh, "dfl");
 
   return TaskStatus::complete;
 }
@@ -665,6 +666,7 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
 TaskStatus Hydro::MergeLatTask(Driver *pdrive, int stage) {
   if (pmlat == nullptr || !pmlat->on) return TaskStatus::complete;
   pmlat->Average(u0, nhydro, nhydro + nscalars, 0, phicc0, use_etotgrav);
+  eint_ledger::Mark(pmy_pack->pmesh, "mrglat");
   return TaskStatus::complete;
 }
 
