@@ -84,3 +84,9 @@ d10b_A rc=0 bsg3d.hydro_w.00115.bin bsg3d.hydro_w.00116.bin
   - GPU idle on the timeline falls 0.29 -> 0.14 s per cycle (cycles 6-15, nsys 15-cycle run minus 5-cycle run).
   - But D's s/cycle is not lower here: +2 % against B within the 6 % spread. With 4 arms per node the host side is shared, which may hide it; a 4-GPU D vs B pair on a node of its own would settle it.
 - Files: docs/handover/caltech_results/VETPICK/kp0_A.txt, kp0_B.txt.
+
+## Follow-up: B vs D at 4 GPUs (production layout), 02-09 alone, order B D B D
+- B1 (B): s/cycle 0.8442 (cycles 6-20), FATAL 0
+- B2 (D): s/cycle 0.8679 (cycles 6-20), FATAL 0
+- B3 (B): s/cycle 0.9075 (cycles 6-20), FATAL 0
+- B4 (D): s/cycle 0.8553 (cycles 6-20), FATAL 0
