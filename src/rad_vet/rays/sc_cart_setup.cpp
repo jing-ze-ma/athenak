@@ -1227,8 +1227,8 @@ void RadiationVet::ScX1Load() {
 void RadiationVet::ScSlabFaceZero() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack, n = vgd_n;
-  if (vgd_rgs.extent_int(0) != 2*nmb || vgd_rgs.extent_int(1) != 3*n) {
-    Kokkos::realloc(vgd_rgs, 2*nmb, 3*n, indcs.nx3, indcs.nx2);
+  if (vgd_rgs.extent_int(0) != 2*nmb || vgd_rgs.extent_int(1) != 5*n) {
+    Kokkos::realloc(vgd_rgs, 2*nmb, 5*n, indcs.nx3, indcs.nx2);
   }
   auto cs = cln_s;
   const int nc = cs.extent_int(1);
@@ -1246,13 +1246,14 @@ void RadiationVet::ScSlabFaceZero() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScSlabFaceSum
-//! \brief the face sums of slab shell i (pass inw), per cell in ray order (the
-//! grouping differs from VetScSum's face groups, each slot gets its sums in the same
-//! order).  Group 0, x2 (x3): the upwind shell's intensity a ray's constant foot shift
+//! \brief the face sums of slab shell i (pass inw).  (1) One thread per (block, ray,
+//! cell): the x2 (x3) scalar, the upwind shell's intensity the ray's constant foot shift
 //! sh carries across the low face, the x3 (x2) part halved (S2 and S3 commute; no PLM
-//! term), read from the shell iu the sweep read (the periodic image at an x1 end).
-//! Group 1, x1: entry and exit and the outward rays' crossing to the cell, the inward
-//! rays' crossing to the upwind cell, from the shell kernel's scalars (vgd_rgs)
+//! term), read from the shell iu the sweep read (the periodic image at an x1 end), into
+//! vgd_rgs beside the shell kernel's x1 scalars (entry, crossing, exit).  (2) One thread
+//! per (cell, component): the sums in ray order (VetScSum's face groups), entry, exit
+//! and the outward rays' crossing to the cell, the inward rays' crossing and every
+//! foot-shift flux to the upwind cell
 
 void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1278,9 +1279,12 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
   auto wl_ = vgd_wall;
   auto mp_ = vgd_map;
   auto cs = cln_s;
-  par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 0, 1, indcs.ks, indcs.ke, indcs.js,
-          indcs.je,
-  KOKKOS_LAMBDA(const int m, const int grp, const int kc, const int jc) {
+  // (1) the rays' x2 / x3 scalars, slots 3 and 4 of vgd_rgs
+  par_for("vet_vgd_slab_phi", vgd_cur, 0, nmb - 1, 0, n - 1, indcs.ks, indcs.ke,
+          indcs.js, indcs.je,
+  KOKKOS_LAMBDA(const int m, const int r, const int kc, const int jc) {
+    const Real m1 = dir_(r,0), m2 = dir_(r,1), m3 = dir_(r,2);
+    if ((m1 < 0.0) != inw) {return;}
     const int k = kc - ks + wb, j = jc - js + wb;   // (band index space)
     const int lcb = (x1f_(m) & 1) ? lcut : -1;
     const bool img = (x1p == 2) && (inw ? (l == n1 - 1) : (l == lcb));
@@ -1311,68 +1315,55 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
       const int de = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dd) : dd;
       return vi_(nl,de,kn,jn,iu);
     };
-    Real f2[2][16] = {}, fn[2][16] = {};
-    for (int r = 0; r < n; ++r) {
-      const Real m1 = dir_(r,0), m2 = dir_(r,1), m3 = dir_(r,2);
-      if ((m1 < 0.0) != inw) {continue;}
-      const int u = (m1 > 0.0) ? 0 : 1;
-      auto add4 = [&](Real *fx, const Real q) {
-        fx[0] += q;
-        fx[1] += q*m1;
-        fx[2] += q*m2;
-        fx[3] += q*m3;
+    Real g12[2] = {0.0, 0.0};
+    if (!ent) {
+      const Real wd = dir_(r,3), amr = fabs(m1);
+      const Real ds = img ? (fabs(cx1f(m,inw ? (ie + 1) : is) - r0)/amr +
+                             (inw ? (cx1v(m,is) - cx1f(m,is))
+                                  : (cx1f(m,ie+1) - cx1v(m,ie)))/amr)
+                          : fabs(cx1v(m,iu) - r0)/amr;
+      const Real fjg = (j + sj_) - ds*m2/lg_.Dx2(mbsize, m);
+      const Real fkg = (k + sk_) - ((nx3b > 1) ? ds*m3/lg_.Dx3(mbsize, m) : 0.0);
+      const Real fj = fjg - sj_, fk = fkg - sk_, dxl = ds*amr;
+      const bool thr = (nx3b > 1);
+      const Real sh2 = fj - j, sh3 = thr ? (fk - k) : 0.0;
+      const int o2 = static_cast<int>(floor(sh2));
+      const int o3 = static_cast<int>(floor(sh3));
+      const Real a2 = sh2 - o2, a3 = sh3 - o3;
+      auto ipq = [&](const int dk, const int dj) {return rd(k + dk, j + dj, r);};
+      auto g2f = [&](const int q) {
+        return thr ? 0.5*(ipq(0,q) + (1.0 - a3)*ipq(o3,q) + a3*ipq(o3+1,q))
+                   : ipq(0,q);
       };
-      if (grp == 1) {
-        add4(f2[u] + 4, rg_(ib*nmb + m,r,kc-ks,jc-js));
-        add4((m1 > 0.0) ? (f2[0] + 8) : (fn[1] + 8), rg_(ib*nmb + m,n + r,kc-ks,jc-js));
-        add4(f2[u] + 4, rg_(ib*nmb + m,2*n + r,kc-ks,jc-js));
-        continue;
+      auto g3f = [&](const int q) {
+        return 0.5*(ipq(q,0) + (1.0 - a2)*ipq(q,o2) + a2*ipq(q,o2+1));
+      };
+      for (int c = 0; c < (thr ? 2 : 1); ++c) {
+        const Real sh = (c == 0) ? sh2 : sh3, s = fabs(sh), fl = floor(s);
+        const int nn = static_cast<int>(fl), sg = (sh < 0.0) ? 1 : -1;
+        auto g = [&](const int q) {return (c == 0) ? g2f(q) : g3f(q);};
+        Real p = (s - fl)*g((sg > 0) ? (-1 - nn) : nn);
+        for (int q = 0; q < nn; ++q) {p += g((sg > 0) ? (-1 - q) : q);}
+        g12[c] = wd*amr*((c == 0) ? lg_.Dx2(mbsize, m)
+                                  : lg_.Dx3(mbsize, m))/dxl*sg*p;
       }
-      Real g12[2] = {0.0, 0.0};
-      if (!ent) {
-        const Real wd = dir_(r,3), amr = fabs(m1);
-        const Real ds = img ? (fabs(cx1f(m,inw ? (ie + 1) : is) - r0)/amr +
-                               (inw ? (cx1v(m,is) - cx1f(m,is))
-                                    : (cx1f(m,ie+1) - cx1v(m,ie)))/amr)
-                            : fabs(cx1v(m,iu) - r0)/amr;
-        const Real fjg = (j + sj_) - ds*m2/lg_.Dx2(mbsize, m);
-        const Real fkg = (k + sk_) - ((nx3b > 1) ? ds*m3/lg_.Dx3(mbsize, m) : 0.0);
-        const Real fj = fjg - sj_, fk = fkg - sk_, dxl = ds*amr;
-        const bool thr = (nx3b > 1);
-        const Real sh2 = fj - j, sh3 = thr ? (fk - k) : 0.0;
-        const int o2 = static_cast<int>(floor(sh2));
-        const int o3 = static_cast<int>(floor(sh3));
-        const Real a2 = sh2 - o2, a3 = sh3 - o3;
-        auto ipq = [&](const int dk, const int dj) {return rd(k + dk, j + dj, r);};
-        auto g2f = [&](const int q) {
-          return thr ? 0.5*(ipq(0,q) + (1.0 - a3)*ipq(o3,q) + a3*ipq(o3+1,q))
-                     : ipq(0,q);
-        };
-        auto g3f = [&](const int q) {
-          return 0.5*(ipq(q,0) + (1.0 - a2)*ipq(q,o2) + a2*ipq(q,o2+1));
-        };
-        for (int c = 0; c < (thr ? 2 : 1); ++c) {
-          const Real sh = (c == 0) ? sh2 : sh3, s = fabs(sh), fl = floor(s);
-          const int nn = static_cast<int>(fl), sg = (sh < 0.0) ? 1 : -1;
-          auto g = [&](const int q) {return (c == 0) ? g2f(q) : g3f(q);};
-          Real p = (s - fl)*g((sg > 0) ? (-1 - nn) : nn);
-          for (int q = 0; q < nn; ++q) {p += g((sg > 0) ? (-1 - q) : q);}
-          g12[c] = wd*amr*((c == 0) ? lg_.Dx2(mbsize, m)
-                                    : lg_.Dx3(mbsize, m))/dxl*sg*p;
-        }
-      }
-      add4(fn[u], g12[0]);
-      add4(fn[u] + 12, g12[1]);
     }
-    const ScSlabFaceW w{cs, m, kc, jc, i, up};
-    for (int t = 0; t < 8; ++t) {
-      // group 0: slots 0..3 (x2), 12..15 (x3); group 1: 4..11 (x1 boundary, crossing)
-      const int nq = (grp == 0) ? ((t < 4) ? t : (t + 8)) : (t + 4);
-      w(VSS_F2, 0, nq, f2[0][nq]);
-      w(VSS_F2, 1, nq, f2[1][nq]);
-      w(VSS_FN, 0, nq, fn[0][nq]);
-      w(VSS_FN, 1, nq, fn[1][nq]);
-    }
+    rg_(ib*nmb + m,3*n + r,kc-ks,jc-js) = g12[0];
+    rg_(ib*nmb + m,4*n + r,kc-ks,jc-js) = g12[1];
+  });
+  // (2) the sums per (cell, component), groups 3..6 of VetScSum; its scalars q = 0..4
+  // (entry, x2, x3, crossing, exit) at the slots 0, 3, 4, 1, 2 of vgd_rgs
+  par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 3, 6, indcs.ks, indcs.ke, indcs.js,
+          indcs.je,
+  KOKKOS_LAMBDA(const int m, const int grp, const int kc, const int jc) {
+    VetScSum(grp, dir_, n, [&](const int r) {return (dir_(r,0) < 0.0) == inw;},
+             [](const int) {return 0.0;}, [](const int) {return 0.0;},
+             [&](const int q, const int r) {
+               const int sq = (q == 0) ? 0 : ((q == 1) ? 3 : ((q == 2) ? 4
+                            : ((q == 3) ? 1 : 2)));
+               return rg_(ib*nmb + m,sq*n + r,kc-ks,jc-js);
+             },
+             ScSlabFaceW{cs, m, kc, jc, i, up}, false, false, false, true);
   });
 }
 
