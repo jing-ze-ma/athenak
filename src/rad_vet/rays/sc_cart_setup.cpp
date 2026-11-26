@@ -985,13 +985,14 @@ void RadiationVet::ScSlabSelect() {
   need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
   vgd_slab = lack.empty() ? 1 : 0;
   if (vgd_slab) {
-    // the curved sweep's defaults that hold on a slab: the dense per-shell halo (the
-    // compact and exact lists test the sp geometry), the top bath of vet_bc_bath
-    vgd_hcomp = 0;
-    vgd_hx_on = false;
-    vgd_ipc_on = false;
-    vgd_ring_par = false;
+    // the top bath of vet_bc_bath; the halo (compact masks, exact lists, IPC, band
+    // ring) with sp's defaults, on the slab's read boxes (ScCand) and branch
+    // (ScHaloKeepTP)
     vgd_tbath = vet_bc_bath;
+    vgd_hcomp = 2;
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
+    vgd_ipc_on = true;
+#endif
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> closure = sc on a Cartesian mesh: "

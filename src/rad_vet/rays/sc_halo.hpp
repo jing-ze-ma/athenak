@@ -192,8 +192,28 @@ void ScCand(const int m, const int k, const int j, const int d, const int i, con
             const TB &mbsize, const ScLG &lg_, const TX &cx1v, const TF &cx1f,
             const bool sth,
             const bool pol, const TT &tn, const int c2w, const bool imir, const int xr,
-            const FN &f) {
+            const int slb, const FN &f) {
   if (inw && l == n1 - 1) {return;}          // the top shell reads no intensity
+  // Cartesian slab (slb 1: 2-D, 2: 3-D): x1 plays r, the foot is a constant offset per
+  // direction (as the shell kernel); the first shell's outward rays read the inner face
+  if (slb > 0) {
+    if (!inw && l == lcut) {return;}
+    const int iu = inw ? (i + 1) : (i - 1);
+    const Real ds = fabs(cx1v(m,iu) - cx1v(m,i))/fabs(dir_(d,0));
+    const Real fj = ScLG::Fs(j, lg_.Sj(m, js), -ds*dir_(d,1)/lg_.Dx2(mbsize, m));
+    const Real dk = (slb > 1) ? -ds*dir_(d,2)/lg_.Dx3(mbsize, m) : 0.0;
+    const Real fk = ScLG::Fs(k, lg_.Sk(m, ks), dk);
+    const Real e = 1.0e-8;
+    int ja = static_cast<int>(floor(fj - e)), jb = static_cast<int>(floor(fj + e)) + 1;
+    int ka = (slb > 1) ? static_cast<int>(floor(fk - e)) : k;   // (2-D: k1 = k0)
+    int kb = (slb > 1) ? (static_cast<int>(floor(fk + e)) + 1) : k;
+    ja = (ja - xr < jlo) ? jlo : (ja - xr);
+    jb = (jb + xr > jhi + 1) ? (jhi + 1) : (jb + xr);
+    ka = (ka - xr < klo) ? klo : (ka - xr);
+    kb = (kb + xr > khi + 1) ? (khi + 1) : (kb + xr);
+    f(iu, ka, kb, ja, jb, d);
+    return;
+  }
   const Real twopi = 2.0*M_PI;
   const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
   const Real th = sth ? tn(m,j)
@@ -362,7 +382,11 @@ static KOKKOS_INLINE_FUNCTION
 bool ScHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
                   const Real ph, const bool inw, const int mode, const bool wall,
                   const int dep, const Real rs, const Real rm, const Real rp,
-                  const bool hasm, const bool hasp, const Real gam, const Real dmin) {
+                  const bool hasm, const bool hasp, const Real gam, const Real dmin,
+                  const bool slb = false) {
+  if (slb) {   // Cartesian slab: n . r_hat = n_1 everywhere; the branch alone
+    return (fabs(nx) < 1.0e-12) || (inw == (nx < 0.0));
+  }
   const Real st = sin(th);
   const Real mu = nx*st*cos(ph) + ny*st*sin(ph) + nz*cos(th);
   if (fabs(mu) < 1.0e-12) {return true;}

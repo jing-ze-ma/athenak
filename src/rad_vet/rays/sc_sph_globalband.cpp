@@ -389,6 +389,7 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
     }
   }
 #if MPI_PARALLEL_ENABLED
+  const bool slb_ = (vgd_slab == 1);   // (the slab keeps the branch alone)
   if (!vgd_hmpi) {return false;}
   const int np = static_cast<int>(vgd_csprk.size());
   const int ns = vgd_csnsnd, nr = vgd_csnrcv;
@@ -446,7 +447,7 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
           const Real gam = 2.0*fmax(dt_(J), dph);
           const bool all = (cp_(J) != 0) || (tw != 0);
           f = ScHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode, all, dep,
-                           rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+                           rs, rm, rp, hasm, hasp, gam, dmin, slb_) ? 1 : 0;
         }
         if (sd == 0) {fs_(static_cast<size_t>(e)*nv + v) = f;}
         else {fr_(static_cast<size_t>(e)*nv + v) = f;}
@@ -465,7 +466,8 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
         const int m = R_(e,0), kk = R_(e,1), jj = R_(e,2), J = JR_(e,0);
         const Real gam = 2.0*fmax(dt_(J), dph);
         if (!ScHaloKeepTP(dir_(q,0), dir_(q,1), dir_(q,2), th_(J), phc_(m,kk), inw, mode,
-                          cp_(J) != 0, DR_(e), rs, rm, rp, hasm, hasp, gam, dmin)) {
+                          cp_(J) != 0, DR_(e), rs, rm, rp, hasm, hasp, gam, dmin,
+                          slb_)) {
           return;
         }
         for (int t = 0; t < (wint ? 3 : 1); ++t) {
