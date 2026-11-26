@@ -333,7 +333,7 @@ Scheme options (in brackets the templates' values):
 - `closure_w_c0` (0.3), `closure_w_c1` (0.6): thresholds of the weight of the kinetic share.
 - `gas_opac_passes` (3): passes with opacities at the iterate's temperature.
 - `implicit_pos_floor` (true): the E floor, paid from the cell's gas and its radial column. A non-finite E (a diverged iterate) is never raised: the write-back rejects the solve.
-- `time2_gtime_slope`, `time2_gtime_pos` (true); `vet_rotate_avg_ema_change_form` (`linear`; HG: `step`); `vet_source_noesrc`.
+- `time2_gtime_slope`, `time2_gtime_pos` (true); `vet_rotate_avg_ema_change_form` (`linear`; HG: `step`); `vet_source_noesrc` (false on every mesh; Cartesian runs took true before).
 - `vet_bc_inner`, `vet_bc_diff`, `vet_bc_bath`, `vet_gd_wall_interp`, `vet_gd_allow_clamp`, `closure_ray_min`, `ray_cut_wait`, `ring_fuse`: ray-sweep details.
 - `ray_cut_r` (0.003): the ray cut's trigger, a column's lowest cell with |grad S|/(chi S) >= this (SCHEME.md, where the rays start; the closure error below the cut is of the order of its square). 0.01 before 2026-11-26: a restart file that holds 0.01 keeps it, with a NOTE (name `ray_cut_r=0.003` to switch); one without the key takes 0.003, with a NOTE.
 

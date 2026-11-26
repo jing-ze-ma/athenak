@@ -238,6 +238,10 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     }
     pin->SetString("rad_vet","closure","sc");
   }
+  // vet_source_noesrc (default false on every mesh): the rays' source without the
+  // explicit source term in backward-Euler solves (VsrcNoes; rays/sc_source.cpp,
+  // rays/sc_cart_sweep.cpp)
+  vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",false);
   if (!sph_geom) {
     // a Cartesian mesh (rays/sc_cart_sweep.cpp)
     vet_sc = true;
@@ -256,15 +260,9 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     if (ScRotOn()) {
       recipe::Rule(pin, "rad_vet", "vet_gd_rotate_xfade", vgd_xf ? "true" : "false");
     }
-    // vet_source_noesrc (rays/sc_cart_sweep.cpp)
-    vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",
-                                     fix("vet_source_noesrc", "true", "false"));
   } else {
     // spherical polar, cubed sphere (rays/sc_source.cpp, rays/sc_sph_sweep.cpp)
     vgd_on = VetCurvedRays(pin);
-    if (pin->DoesParameterExist("rad_vet","vet_source_noesrc")) {
-      vsrc_noes = pin->GetBoolean("rad_vet","vet_source_noesrc");
-    }
     // vet_bc_diff = face | cell: inner diffusion intensity of the formal solutions at the
     // face (S + mu(-dS/dtau) with S of the face, 1.5 S_a - 0.5 S_b) or from the first
     // cell
