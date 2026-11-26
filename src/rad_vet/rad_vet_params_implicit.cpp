@@ -297,9 +297,8 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     const Real g = kT2G;
     t2_tab = 0;
     {
-      // default: sdirk2 (mhd: not wired, hesdirk2)
-      const bool sd = pmy_pack->pmhd == nullptr &&
-          recipe::Fix(pin, "rad_vet", "time2_tableau", "sdirk2", "hesdirk2");
+      // default: sdirk2 (<hydro> and <mhd>)
+      const bool sd = recipe::Fix(pin, "rad_vet", "time2_tableau", "sdirk2", "hesdirk2");
       std::string tb = pin->GetOrAddString("rad_vet", "time2_tableau",
                                            sd ? "sdirk2" : "hesdirk2");
       if (tb.compare("hesdirk2") == 0) {
@@ -311,7 +310,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_vet>/time2_tableau = '" << tb
-                  << "' is not a choice (hesdirk2 | trbdf2)" << std::endl;
+                  << "' is not a choice (sdirk2 | hesdirk2 | trbdf2)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -352,12 +351,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
         std::cout << "<rad_vet> time2_gtime_pos = " << (t2_gtp ? "true" : "false")
                   << (np ? "" : " (default)") << std::endl;
       }
-    }
-    if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {  // no mhd path
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/time2_tableau = sdirk2 is not wired for mhd"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
     }
     if (t2_tab == 1) {
       if (global_variable::my_rank == 0) {

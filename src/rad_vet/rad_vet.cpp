@@ -100,13 +100,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     Kokkos::realloc(arad_ref, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(arad_ref, 0.0);
   }
-  // MHD: |B|^2/2 of the current (b0) and U^n (b1) fields, every cell incl. ghosts
+  // MHD: |B|^2/2 of the field, every cell incl. ghosts
   if (fl_mhd) {
     Kokkos::realloc(emag0, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(emag1, nmb, ncells3, ncells2, ncells1);
   } else {
     Kokkos::realloc(emag0, 1, 1, 1, 1);
-    Kokkos::realloc(emag1, 1, 1, 1, 1);
   }
   Kokkos::realloc(cnt, VET_NCNT);
   for (int n=0; n<VET_NCNT; ++n) {cnt.h_view(n) = 0.0;}

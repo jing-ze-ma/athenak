@@ -52,7 +52,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("fl_mhd", fl_mhd);
   v.value("emag_hold", emag_hold);
   v.view("emag0", emag0);
-  v.view("emag1", emag1);
   v.value("fcap_rho", fcap_rho);
   v.value("fcap_v", fcap_v);
   v.value("fcap_report", fcap_report);

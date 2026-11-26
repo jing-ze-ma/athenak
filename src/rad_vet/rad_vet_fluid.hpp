@@ -83,14 +83,28 @@ struct FluidRef {
 };
 
 //----------------------------------------------------------------------------------------
+//! \struct FaceMix
+//! \brief one component of the face field b + w (a - b); w = 1: a (bitwise).  sdirk2's
+//! stage-1 field B^n + g (B* - B^n) (RadiationVet::EmagBuild)
+
+struct FaceMix {
+  DvceArray4D<Real> a, b;
+  Real w;
+  KOKKOS_INLINE_FUNCTION
+  Real operator()(const int m, const int k, const int j, const int i) const {
+    return (w == 1.0) ? a(m,k,j,i) : b(m,k,j,i) + w*(a(m,k,j,i) - b(m,k,j,i));
+  }
+};
+
+//----------------------------------------------------------------------------------------
 //! \fn Real VetEmagCell
 //! \brief |B|^2/2 of the cell field, averaged from faces exactly as the MHD ConsToPrim
 //! does (sph: x_v-weighted; cs: CellCenteredRadialFld in x1; else plain means).
-//! A hydro caller may pass any 4-D View as never-read face arrays.
+//! A hydro caller may pass any 4-D View as never-read face arrays; F is a View or FaceMix.
 
+template <class F>
 KOKKOS_INLINE_FUNCTION
-Real VetEmagCell(const DvceArray4D<Real> &b1f, const DvceArray4D<Real> &b2f,
-                const DvceArray4D<Real> &b3f, const bool sph, const bool csr,
+Real VetEmagCell(const F &b1f, const F &b2f, const F &b3f, const bool sph, const bool csr,
                 const DvceArray2D<Real> &x1v, const DvceArray2D<Real> &x1f,
                 const DvceArray2D<Real> &x2v, const DvceArray2D<Real> &x2f,
                 const DvceArray2D<Real> &x3v, const DvceArray2D<Real> &x3f,

@@ -31,10 +31,11 @@ namespace radvet {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::EmagBuild
-//! \brief |B|^2/2 per cell (incl. ghosts) of b0 -> emag0, or of b1 (un = true) -> emag1,
-//! with the MHD C2P's face average. No-op for hydro.
+//! \brief |B|^2/2 per cell (incl. ghosts) of the field b1 + w (b0 - b1) -> emag0, with the
+//! MHD C2P's face average: w = 1 the current field b0, w = g sdirk2's stage-1 field
+//! (Time2GasTime). No-op for hydro.
 
-void RadiationVet::EmagBuild(bool un) {
+void RadiationVet::EmagBuild(Real w) {
   mhd::MHD *pm = pmy_pack->pmhd;
   if (pm == nullptr) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -42,10 +43,9 @@ void RadiationVet::EmagBuild(bool un) {
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*(indcs.ng)) : 1;
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*(indcs.ng)) : 1;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto b1f = un ? pm->b1.x1f : pm->b0.x1f;
-  auto b2f = un ? pm->b1.x2f : pm->b0.x2f;
-  auto b3f = un ? pm->b1.x3f : pm->b0.x3f;
-  auto em = un ? emag1 : emag0;
+  const FaceMix b1f{pm->b0.x1f, pm->b1.x1f, w}, b2f{pm->b0.x2f, pm->b1.x2f, w};
+  const FaceMix b3f{pm->b0.x3f, pm->b1.x3f, w};
+  auto em = emag0;
   const bool sph = pmy_pack->pmesh->use_spherical_polar;
   const bool csr = pmy_pack->pmesh->use_cubed_sphere;
   auto &x1v = pmy_pack->pcoord->x1v;
@@ -87,7 +87,7 @@ void RadiationVet::EmagBuild(bool un) {
 
 TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
   // first gas reader of both VET chains: refresh |B|^2/2 of the stage's field
-  if (fl_mhd && !emag_hold) EmagBuild(false);
+  if (fl_mhd && !emag_hold) EmagBuild(1.0);
   if (opac_zero) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
   if (opacity_type == VET_OPAC_TABLE && otab.nT <= 0) {
