@@ -711,7 +711,6 @@ class RadiationVet {
   Real NewtonUpdate();
   Real VelocityUpdate();
   void CopyIterate();
-  int CountNegative();
   int CountUnrealizable();
   void FaceBracket();
   void FluxSolve(const int e, const bool tie = true, const bool lat = true);

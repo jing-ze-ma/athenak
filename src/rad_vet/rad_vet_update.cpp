@@ -834,8 +834,10 @@ void RadiationVet::WriteBack() {
         (low && x.w(m,CLW_EI,k,j,i) < 0.0) ||
         u0_(m,VET_E,k,j,i) < 0.0 || !fin) n += 1.0;
   }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nh));
-  cln_neint = static_cast<int>(GlobalReduce(nb, false));
-  nh = GlobalReduce(nh, false);
+  Real nbh[2] = {nb, nh};
+  SumOverRanks(nbh, 2);   // (counts: one reduction)
+  cln_neint = static_cast<int>(nbh[0]);
+  nh = nbh[1];
   if (nh > 0.0 && global_variable::my_rank == 0) {
     std::printf("CLEAN WARNING cycle %d t2s %d: %.0f cells left with gas eint below the "
                 "EOS floor (implicit_pos_gas off: the hydro's floor raises them, energy "

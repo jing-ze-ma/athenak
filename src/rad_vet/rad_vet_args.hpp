@@ -64,6 +64,17 @@ inline void MaxOverRanks(Real *v, const int n) {
 #endif
 }
 
+//! \fn void SumOverRanks
+//! \brief sum of v[0..n-1] over all ranks in one reduction (for counts: exact in any
+//! order)
+inline void SumOverRanks(Real *v, const int n) {
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, v, n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#else
+  (void)v; (void)n;
+#endif
+}
+
 // SolveFor: a 4-D clean pass.  CUDA: launch bounds of kCudaMb blocks of 256 per SM (a
 // register cap), par_for's index arithmetic (bitwise).  HIP: kHipMb blocks if > 0
 // (4: 128 VGPRs), else par_for.  Host: par_for
