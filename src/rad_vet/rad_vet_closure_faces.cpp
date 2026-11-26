@@ -172,6 +172,7 @@ void RadiationVet::RayFaceSums() {
   auto cs = cln_s;
   const bool f1 = cln_s.extent_int(1) > CLN_F1;   // (the cell layout's CLN_F1)
   SolveArgs x = MakeArgs();
+  ScSlabArgs(x);
   // (args in device memory: light launches)
   cln_gdx = DevArgs(x, 3);
   const SolveArgs *px = cln_gdx;
@@ -424,9 +425,9 @@ void RadiationVet::RayFaceSums() {
   }
   if (!fs) GhostFill(cln_s, CLN_F2, 4);
   if (!fs) GhostFill(cln_s, CLN_F3, 4);
-  // rr (spherical polar): r faces carry the rays' own upwind fluxes, not the balance
-  // march, which loses the diffusion flux of thick cells in V chi (S - J)
-  const bool rr = x.sph;
+  // rr (spherical polar, Cartesian slab): r faces carry the rays' own upwind fluxes, not
+  // the balance march, which loses the diffusion flux of thick cells in V chi (S - J)
+  const bool rr = x.sph || (vgd_slab == 1);
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
     const SolveArgs &x = *px;

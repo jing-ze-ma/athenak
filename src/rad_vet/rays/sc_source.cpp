@@ -59,8 +59,8 @@ void RadiationVet::VetRayInit() {
   // the SC upwind interpolation is bilinear in lateral INDEX space: exact only for
   // uniform lateral spacing (radial stretch is fine).  Refuse a theta stretch, the
   // Athena++ ratio keys, and any non-uniform built xx2f / xx3f (cs panel coordinates
-  // are uniform by construction).
-  {
+  // and a Cartesian slab are uniform by construction).
+  if (vgd_slab != 1) {
     if (!vray_rat_keys.empty()) {
       VrayFatal("needs a laterally UNIFORM mesh; this input sets" + vray_rat_keys +
                 " (Athena++ ratio keys: AthenaK does not read them, its theta/phi grid "

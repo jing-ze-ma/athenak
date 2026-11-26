@@ -74,13 +74,14 @@ Real ScTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
 //----------------------------------------------------------------------------------------
 //! \fn ScInnerFace
 //! \brief typ 2 value: emit (ie0 carried in) or diffusion S + mu (-dS/dtau_r) at the
-//! inner face rf (bfc: face S = 1.5 S_a - 0.5 S_b); ra, rb = first two shell radii
+//! inner face rf (bfc: face S = 1.5 S_a - 0.5 S_b); ra, rb = first two shell radii;
+//! mus >= 0: the face cosine mu (Cartesian slab), else from the impact parameter p2
 template <typename A, typename FC>
 KOKKOS_INLINE_FUNCTION
 Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
                  const Real ie0, const bool bfc, const Real rf, const Real ra,
                  const Real rb, const Real p2, const Real ch0, const Real ds,
-                 const Real s0) {
+                 const Real s0, const Real mus = -1.0) {
   const int i1 = i + 1;
   auto sbt = [&](const int kk, const int jj) {
     return fmax(1.5*exp(fC(1,kk,jj,i)) - 0.5*exp(fC(1,kk,jj,i1)), 1.0e-300);
@@ -91,7 +92,7 @@ Real ScInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
     const Real qv = acc.Interp(sbt);
     return ie0*ex + wu*qv + w0*s0;
   }
-  const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
+  const Real muf = (mus >= 0.0) ? mus : sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
   auto ib = [&](const int kk, const int jj) {
     const Real sa = exp(fC(1,kk,jj,i)), sb = exp(fC(1,kk,jj,i1));
     const Real g0 = -(sb - sa)/(rb - ra)/exp(fC(0,kk,jj,i));

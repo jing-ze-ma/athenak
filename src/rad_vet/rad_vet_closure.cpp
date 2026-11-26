@@ -526,7 +526,8 @@ void RadiationVet::TraceRays() {
     RingMoments();
     return;
   }
-  if (!vgd_on) {
+  if (!vgd_on && vgd_slab < 0) ScSlabSelect();
+  if (!vgd_on && vgd_slab == 0) {
     ScCartBuild();
     ClosureFromRays();
     return;
