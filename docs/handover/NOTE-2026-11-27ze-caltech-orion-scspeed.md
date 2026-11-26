@@ -248,3 +248,12 @@ written rst/bin: 0
   - 4 GPUs, 256^3 phi split: 0.669 against 1.163 s/cycle (sp 1.74x). sp sweeps take 11.3 s, of which halo+walls 11.2 s.
   - So on more than one GPU the curved path's per-shell halo dominates its cost.
 - kp tool: `kp_G1_A/B` and `kp_G4_A` kp.0 were posted above (kp_G4_B FATAL, as G4_B). No rst/bin written.
+
+## Full FATAL text of G4_B1 (your 27zi): `grep -A3 FATAL runs/G4_B1/log`; all 4 ranks print the same 2 lines, nothing else follows
+```
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/rel6/src/rad_vet/rays/sc_halo.hpp
+<rad_vet>/vet_gd: vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/rel6/src/rad_vet/rays/sc_halo.hpp
+<rad_vet>/vet_gd: vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)
+```
+- G4L_B and kp_G4_B print the same. The message is complete: it is the theta mirror wall (reflecting theta boundaries), which needs one MeshBlock along x2, as you guessed. Round 3 (sp2/cart2) follows after the LZAB arms.
