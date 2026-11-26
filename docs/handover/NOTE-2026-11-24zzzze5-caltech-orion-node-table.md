@@ -884,3 +884,12 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 23:35 02-09: b_nxsuite b_nxt lz_RR-m35 rk_m35mms -> b_nxsuite b_nxt rk_m35mms
 - 11-25 23:36 02-11: b_ru b_rusuite -> scl_F1
 - 11-25 23:36 02-17: lz_LZD-bsg -> lz_X-bsg
+- 11-25 23:37 02-11: scl_F1 -> scl_F4
+- 11-25 23:38 01-17: IDLE for 10 min
+- 11-25 23:38 02-11: scl_F4 -> scl_G1
+- 11-25 23:39 02-09: b_nxsuite b_nxt rk_m35mms -> b_nxsuite b_nxt rk_m35zams
+- 11-25 23:39 02-11: scl_G1 -> scl_G4
+- 11-25 23:40 01-17: IDLE -> nx_quick
+- 11-25 23:40 02-09: b_nxsuite b_nxt rk_m35zams -> rk_m35zams
+- 11-25 23:40 02-11: scl_G4 -> scl_F1
+- 11-25 23:40 02-17: lz_X-bsg -> lz_MIXNL-bsg
