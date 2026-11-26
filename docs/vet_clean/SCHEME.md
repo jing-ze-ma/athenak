@@ -77,6 +77,20 @@ half-range fluxes (outgoing and incoming parts of the flux) and the rays' own fl
 each face, which the face fluxes use in optically thin regions. Normally a step costs one ray
 sweep: the second stage uses an extrapolation of the closure in time.
 
+**Scattering without a scattering iteration.** Electron scattering enters twice. In the moment
+equations it is part of the total extinction in the flux equation and, in the energy equation,
+of the O(v/c) work of the radiation force on the gas (with the flux-mean opacity) and the
+$O(\beta^2)$ terms; it exchanges no heat (grey, coherent and isotropic in the comoving frame). All
+of this is linear in $E$ and $\mathbf F$ and solved implicitly with the rest, so the moments carry
+the scattering exactly. In the rays' source function the scattering part needs the mean intensity $J$
+(`vet_scatter`, `vet_scatter_form`; absorption and scattering split as in Ma et al. 2026). $J$ is not iterated from the rays (a lambda iteration, which converges
+very slowly where scattering dominates): it is taken from the moment solution, $J = E$ at the end
+of the stage (`vet_scatter_j = relaxed`). The rays then give only the shape of the field, $\mathsf
+D = \mathsf K/J$, which depends weakly on $S$; the moment system does the work of the iteration,
+as in a variable-Eddington-tensor or synthetic-acceleration method. The steady start
+(`clean_init = steady`) repeats rays and moments to convergence; in a run the closure is updated
+once per step.
+
 **Rotating rays.** A fixed set of directions leaves ray effects: light from a hot spot or a
 compact source travels only along the directions of the set, and the closure carries that
 pattern. On the cubed sphere the set is rotated every `vet_gd_rotate_dt` of physical time
