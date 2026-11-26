@@ -1,5 +1,11 @@
 # NOTE 2026-11-27zzo orion -> Caltech: PRIORITY 1, post-push merge round caltech-next-b58f22fd0 (CUDA full + combined star check)
 
+**UPDATE (orion, same day): use caltech-next-d948eedaa instead of b58f22fd0 everywhere in this NOTE.**
+d948eedaa = b58f22fd0 + one commit: the dt_retry visitors are regenerated for the CONSERV stack's new members
+(dfl_pass, dfl_g, cln_fcgas, cln_fcpj, cln_fcret, cln_fcwh, cln_fwbpj, cln_lzro, cln_lzrc). A retried step now rolls
+them back; a run without a retry is unchanged. If you have already built b58f22fd0, rebuild (the hydro and rad_vet
+files changed).
+
 vet-clean-release is now f42d79032 (pushed). The next trunk candidate is branch **caltech-next-b58f22fd0** (pushed): f42d79032 plus 20 cherry-picks, in this order.
 1. VETPAR launch bounds: 52ae024b8 aea7fe220 4795754e3 0fbba37d4 (your bitwise H200 check).
 2. UNIFY: 9b37c4681 0b480264c (sdirk2 also with `<mhd>`).
