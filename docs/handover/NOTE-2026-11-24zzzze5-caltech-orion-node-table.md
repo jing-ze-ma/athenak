@@ -943,3 +943,15 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 00:18 02-17: IDLE -> ru_H8Lc_RU1
 - 11-26 00:19 02-11: ru_H8Lc_RU1 -> ru_H8Ls_REL2
 - 11-26 00:19 02-17: ru_H8Lc_RU1 -> ru_H8Ls_REL2
+- 11-26 00:20 01-17: n2_quick -> n2_full0 n2_full1 n2_full2 n2_full3
+- 11-26 00:20 02-11: ru_H8Ls_REL2 -> vp_R4a
+- 11-26 00:20 02-17: ru_H8Ls_REL2 -> sp_G1_P2b
+- 11-26 00:21 01-17: n2_full0 n2_full1 n2_full2 n2_full3 -> n2_full0 n2_full2 n2_full3
+- 11-26 00:21 02-09: lz_XR-t9 -> lz_RST-MIX-bsg-a
+- 11-26 00:21 02-11: vp_R4a -> vp_V4a
+- 11-26 00:21 02-17: sp_G1_P2b -> sp_A32_our
+- 11-26 00:22 02-09: lz_RST-MIX-bsg-a -> lz_RST-MIX-bsg-b1
+- 11-26 00:22 02-11: vp_V4a -> vp_V4b
+- 11-26 00:22 02-17: sp_A32_our -> IDLE
+- 11-26 00:23 02-09: lz_RST-MIX-bsg-b1 -> lz_RST-MIX-bsg-b2
+- 11-26 00:23 02-11: vp_V4b -> vp_R4n
