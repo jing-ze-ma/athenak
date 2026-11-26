@@ -1,0 +1,48 @@
+# SCSPEED: spherical-polar shell r 2..3, theta pi/2 +- 0.2 (reflecting walls), phi 0..0.4
+# (periodic), near-cubic cells at r = 2.5; same gas/opacity as cart (cell dtau = 0.25);
+# vet_gd_geo = 4 (162 rays), fixed set.
+<job>
+basename = sp
+<mesh>
+nx1 = 64
+x1min = 2.0
+x1max = 3.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 64
+x2min = 1.3707963267948966
+x2max = 1.7707963267948966
+ix2_bc = reflect
+ox2_bc = reflect
+nx3 = 64
+x3min = 0.0
+x3max = 0.4
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+<meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 64
+<time>
+nlim = 6
+tlim = 1e30
+dt_fixed = 1.0e-3
+ndiag = 1
+<hydro>
+eos = ideal
+gamma = 1.666666666666667
+<rad_vet>
+c_light = 100.0
+arad = 1.0
+e_floor = 1.0e-30
+kappa_p = 16.0
+vet_gd_geo = 4
+vet_gd_rotate_dt = 0
+clean_verbose = 1
+<problem>
+pgen_name = rad_vet_beam
+vet_test = equil
+gas_rho = 1.0
+gas_eint = 1.5
+e_rad = 1.0

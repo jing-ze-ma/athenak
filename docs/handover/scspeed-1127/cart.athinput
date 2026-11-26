@@ -1,0 +1,47 @@
+# SCSPEED: Cartesian 3-D box, uniform absorbing gas (vet_test = equil), vacuum x1 ends,
+# periodic x2/x3; vet_sc_set = gd (geodesic 4, 162 rays), fixed set. Cell dtau = 0.25.
+<job>
+basename = cart
+<mesh>
+nx1 = 64
+x1min = 0.0
+x1max = 1.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 64
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 64
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+<meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 64
+<time>
+nlim = 6
+tlim = 1e30
+dt_fixed = 1.0e-3
+ndiag = 1
+<hydro>
+eos = ideal
+gamma = 1.666666666666667
+<rad_vet>
+c_light = 100.0
+arad = 1.0
+e_floor = 1.0e-30
+kappa_p = 16.0
+vet_sc_set = gd
+vet_gd_geo = 4
+vet_gd_rotate_dt = 0
+clean_verbose = 1
+<problem>
+pgen_name = rad_vet_beam
+vet_test = equil
+gas_rho = 1.0
+gas_eint = 1.5
+e_rad = 1.0
