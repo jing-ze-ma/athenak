@@ -941,6 +941,7 @@ class RadiationVet {
   bool cln_faces_set = false;   // starting face fluxes set
   bool cln_rstold = false;      // restart from a file without the clean state
   bool cln_havec = false;       // a closure has been built
+  bool cln_sout = false;        // cln_s holds a closure of this run (vet_vet output)
   bool cln_cip = false;         // a closure is in place (closure_form = iterate: the
                                 // last iterate's, restart state)
   // opac holds predicted opacities during the formal solution
