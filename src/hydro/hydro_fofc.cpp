@@ -789,12 +789,16 @@ namespace {
 //! factor t < 1 is scaled by t, and the momentum (mr: the donor's m/rho, covariant on the
 //! cubed sphere), energy (h: (e + p + m.v/2)/rho, + the face potential under etotgrav)
 //! and scalars (sr) that mass carries leave with it; the pressure part of the flux is
-//! left alone (well-balanced)
+//! left alone (well-balanced).  A face the limiter makes massless (t = 0) is CLOSED as
+//! StarWallFlux closes a wall: the rest of its flux but the normal momentum (dr: IM1/2/3
+//! of an x1/2/3 face), i.e. FOFC's LLF / HLLC dissipative part, is set to 0, and on the
+//! cubed sphere the normal covariant flux loses the cos (cc) x tangential part (IM3 / IM2
+//! of an x2 / x3 face) it holds.  Both sides of the face hold the same t: exact.
 KOKKOS_INLINE_FUNCTION
 void DflFace(const DvceArray5D<Real> &f, const int m, const int k, const int j,
              const int i, const Real t, const Real m1, const Real m2, const Real m3,
              const Real h, const DvceArray5D<Real> &w, const int nvar, const int kd,
-             const int jd, const int id) {
+             const int jd, const int id, const int dr, const Real cc) {
   const Real df = (1.0 - t)*f(m,IDN,k,j,i);
   f(m,IDN,k,j,i) -= df;
   f(m,IM1,k,j,i) -= df*m1;
@@ -802,6 +806,11 @@ void DflFace(const DvceArray5D<Real> &f, const int m, const int k, const int j,
   f(m,IM3,k,j,i) -= df*m3;
   f(m,IEN,k,j,i) -= df*h;
   for (int n = IEN + 1; n < nvar; ++n) f(m,n,k,j,i) -= df*w(m,n,kd,jd,id);
+  if (t > 0.0) return;
+  f(m,dr,k,j,i) -= cc*f(m,(dr == 2) ? IM3 : IM2,k,j,i);
+  for (int n = 0; n < nvar; ++n) {
+    if (n != dr) f(m,n,k,j,i) = 0.0;
+  }
 }
 //! the donor's specific values: 0 th, 1-3 m/rho, 4 (e + p + m.v/2)/rho
 KOKKOS_INLINE_FUNCTION
@@ -829,9 +838,11 @@ void Hydro::DfloorFluxInit() {
   const int n1 = indcs.nx1 + 2*ng, n2 = md ? indcs.nx2 + 2*ng : 1;
   const int n3 = td ? indcs.nx3 + 2*ng : 1;
   if (dfl_th.extent_int(0) == nmb) return;
-  if (pm->multilevel || nhydro != 5) {
+  // (a closed face (th = 0) zeroes its whole energy / tangential flux: no diffusive part)
+  if (pm->multilevel || nhydro != 5 || pcond != nullptr || pvisc != nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << "<hydro>/"
-              << "dfloor_flux_limit: uniform mesh, adiabatic hydro only" << std::endl;
+              << "dfloor_flux_limit: uniform mesh, adiabatic hydro without conduction "
+              << "or viscosity only" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   Kokkos::realloc(dfl_th, nmb, 1, n3, n2, n1);
@@ -923,6 +934,8 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
   const bool gen = peos->eos_data.IsGeneral(), eg = use_etotgrav;
   const Real gm1 = peos->eos_data.gamma - 1.0;
   auto p1 = phi0.x1f, p2 = phi0.x2f, p3 = phi0.x3f;
+  auto cxi = cs ? pmy_pack->pcoord->cos_face_xi : DvceArray3D<Real>("dfl_c", 1, 1, 1);
+  auto cet = cs ? pmy_pack->pcoord->cos_face_eta : cxi;
   DvceArray5D<Real> r2 = f2, r3 = f3;   // (the seam record's faces on the cubed sphere)
   DvceArray1D<int> sm;
   if (cs) {
@@ -953,7 +966,7 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
   // donor (the ghost side) comes from the record
   auto face = [=] KOKKOS_FUNCTION (const DvceArray5D<Real> &f, const DvceArray5D<Real> &r,
                                    const int dr, const int m, const int k, const int j,
-                                   const int i, const Real phif) {
+                                   const int i, const Real phif, const Real cc) {
     const bool up = (f(m,IDN,k,j,i) > 0.0);   // the donor is the lower cell
     const int kd = (dr == 3 && up) ? k - 1 : k, jd = (dr == 2 && up) ? j - 1 : j;
     const int id = (dr == 1 && up) ? i - 1 : i;
@@ -966,22 +979,23 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
       v[q] = srec ? r(m,q,k,j,i) : DflSpec(q, u0_, w0_, wd, th, gen, gm1, m, kd, jd, id);
     }
     if (!(v[0] < 1.0)) return;
-    DflFace(f, m, k, j, i, v[0], v[1], v[2], v[3], v[4] + phif, w0_, nvar, kd, jd, id);
+    DflFace(f, m, k, j, i, v[0], v[1], v[2], v[3], v[4] + phif, w0_, nvar, kd, jd, id, dr,
+            cc);
   };
   par_for("dfl_f1", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie + 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    face(f1, f1, 1, m, k, j, i, eg ? p1(m,k,j,i) : 0.0);
+    face(f1, f1, 1, m, k, j, i, eg ? p1(m,k,j,i) : 0.0, 0.0);
   });
   if (md) {
     par_for("dfl_f2", DevExeSpace(), 0, nmb - 1, ks, ke, js, je + 1, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      face(f2, r2, 2, m, k, j, i, eg ? p2(m,k,j,i) : 0.0);
+      face(f2, r2, 2, m, k, j, i, eg ? p2(m,k,j,i) : 0.0, cs ? cxi(m,k,j) : 0.0);
     });
   }
   if (td) {
     par_for("dfl_f3", DevExeSpace(), 0, nmb - 1, ks, ke + 1, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      face(f3, r3, 3, m, k, j, i, eg ? p3(m,k,j,i) : 0.0);
+      face(f3, r3, 3, m, k, j, i, eg ? p3(m,k,j,i) : 0.0, cs ? cet(m,k,j) : 0.0);
     });
   }
 }
