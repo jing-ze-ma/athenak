@@ -74,6 +74,7 @@ is a FAIL with the path of its `run.log`.
 | `ceiling_metric` | `shell_sp`, `shell_cs` | the rotating shells (`gas_rot = 0.3`, `gas_vr = 0.2`, r 1-3), `hydro/eos = general`, `floor_from_ekin = true`, `vceil = 0.5` (below \|v\| in 1408 / 2928 cells) against the same run without the ceiling, cell by cell at t = 0 (cs: the velocity rebuilt from the contravariant v^a on the unit tangents, \|V\| the metric norm): v_phi kept (L_z), \|V\| = max(vceil, \|v_phi\|) where capped, else unchanged, v_theta 0, the radial part scaled in [0, 1]. A ceiling on Σ v_a² of mixed components or a split along the covariant phi component fails it on cs (dvphi 0.31). The cell-level C++ test `unit/ceiling_cell.cpp` (build line in its header) checks the same, the tfloor payment and the heat = metric KE change, at corner and ghost-extended points of all six panels, on sp, Cartesian and cs | dvphi, dcap, vtheta <= 1e-13; scale_ok |
 | `floor_momentum` | `wave_cart` (8^3), `shell_sp`, `shell_cs` | the momentum ledger of the inversions' floors (`CLEAN FLOORMOM`): periodic box of sound waves (amplitude 0.2, negligible radiation) with `floor_from_ekin`, with `vceil` and with both, and with the energy exchange (`exch_ratio`), per cycle \|P(n+1) - P(n) - ledger\| / Σ\|p_gas\|; the t = 0 inversion of the rotating expanding shells against the dumps' p_r; restart, forced dt_retry, 1 vs 2 MeshBlocks | box and shells <= 1e-12; momentum removed in the box >= 1e-6; the same lines; no `CLEAN WARNING` |
 | `momentum_box` | `wave_cart` (8^3, periodic 3-D) | total linear momentum, gas (`hydro_u`) + radiation (face momenta of `vet_face` / c^2), every cycle for 8 cycles; radiation wave along the xyz diagonal, amplitude 1e-3, `radwave_eig = false`, `nghost = 3`, tile 8: `dP_cyc` = largest component of \|P - P_0\| / Σ\|p_gas\| per cycle, `dP_max` its maximum (quick and full, ~10 s) | **a report, not a criterion**: passes when the run completes, the numbers are finite and there is no `CLEAN WARNING` |
+| `p_ledger` | `wave_cart` (8^3, periodic 3-D), `shell_sp`, `shell_cs` | `hydro/p_ledger` (`CLEAN PLEDGER`): per step \|END\| / Σ V\|p\| of the Cartesian (box) and radial (shells) momentum ledger; the radiation update's \|dP\| in the box at amplitude 1e-3; the sp flux divergence's non-telescoping part; the shell_sp dumps and old history columns with and without the ledger | END, box_small_rad, sp_ntel, sp/cs gap <= 1e-13; 8 cycles; `Pr_*` columns present; bitwise 0; no `CLEAN WARNING` |
 
 ### IDORT literature tests
 
@@ -192,9 +193,9 @@ Notes on the results of this release:
   time-error tolerance, so the mirror symmetry holds only to that tolerance; the turning-set arm
   of `wedge_sym` therefore names them false, so it tests the mirror pairing under a `--keys` run.
 - **Linear momentum.** The scheme does not conserve linear momentum (gas + radiation) in
-  general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone`), the well-balancing residual (`clean_stag_fwb`) and the
+  general (`p_ledger` books it by operator class): the face-flux cone cut (`clean_stag_fcone`), the well-balancing residual (`clean_stag_fwb`) and the
   floor velocity rules (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling) change it
-  and are not booked. Where none of them acts the momentum exchange is exact; at amplitude
+  outside the flux form. Where none of them acts the momentum exchange is exact; at amplitude
   1e-3 in `momentum_box` none acts and dP is round-off (below 1e-16).
   In a non-linear box (amplitude 0.1) the cut changes P by up to ~4e-3 of Σ|p_gas| per
   cycle. `momentum_box` therefore reports dP (printed, and kept with `--record`) and does

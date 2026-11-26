@@ -134,6 +134,8 @@ namespace hydro {
 TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
   eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // (no-op unless on)
   if (use_dfl) {DfloorFluxLimit(pdriver, stage);}   // (on the final fluxes)
+  p_ledger::Stage(pmy_pack, pdriver->gam0[stage-1], pdriver->gam1[stage-1],
+                  pdriver->beta[stage-1]*pmy_pack->pmesh->dt, stage, uflx, u1);
   fluid::RKUpdateCore(pmy_pack, pdriver, stage, nhydro + nscalars, uflx, u0, u1);
   return TaskStatus::complete;
 }

@@ -96,6 +96,7 @@
 #include "rad_vet/rad_vet_fluid.hpp"
 #include "rad_vet/rad_vet_closure.hpp"
 #include "pgen/pgen.hpp"
+#include "utils/p_ledger.hpp"
 
 namespace {
 // shadow: the clump geometry and the background state, needed by the source term that
@@ -1789,4 +1790,5 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   pdata->label[nl] = "Lz_tot";
   pdata->hdata[nl] = (global_variable::my_rank == 0) ? lzt : 0.0;
   pdata->nhist = nl + 1;
+  p_ledger::Hist(pdata, pm);   // <hydro>/p_ledger: the momentum ledger's columns
 }
