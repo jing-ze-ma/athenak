@@ -86,13 +86,13 @@ class RadiationVet {
   bool VsrcNoes() const;
 
   // the fluid is <hydro> or <mhd> (FluidRef). Under MHD the gas internal energy subtracts
-  // emag0 = |B|^2/2 of the current field (b0) or emag1 of the U^n field (b1), EmagBuild;
-  // hydro: unread dummies
+  // emag0 = |B|^2/2 of the current field (b0), or of sdirk2's stage-1 field (EmagBuild);
+  // hydro: an unread dummy
   bool fl_on = false;           // a fluid exists (<hydro> or <mhd>)
   bool fl_mhd = false;          // it is <mhd>
-  bool emag_hold = false;       // Opacity must not rebuild emag0 (the U^n swap)
-  DvceArray4D<Real> emag0, emag1;
-  void EmagBuild(bool un);      // un = false: emag0 from b0; true: emag1 from b1
+  bool emag_hold = false;       // Opacity must not rebuild emag0 (sdirk2's stage-1 field)
+  DvceArray4D<Real> emag0;
+  void EmagBuild(Real w);       // emag0 of the field b1 + w (b0 - b1); w = 1: b0
   // after a host write of the fluid's u0: restrict, exchange, BCs, prolongate, ConToPrim.
   // MHD exchanges u only through pbval_u (MHD::InitRecv would wait on B forever).
   void FluidRefresh(Driver *pdrive, bool lat = true);

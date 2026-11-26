@@ -79,16 +79,19 @@ bool RadiationVet::Time2Active() {
 //! create no energy and nothing is paid.
 //! time2_gtime_pos = false: the old flux state U* + f d,
 //! formed at which = 2 on the gas before the caps, its floors kept in u0.
+//! <mhd>: the solve takes B from S as it takes the momentum, B^n + g (B* - B^n), through
+//! its |B|^2/2 (emag0, held from which = 1 to 2); d of B is 0, so the gas U* + d and the
+//! flux state have B*, and the CT update of the hydro's stage 2 takes its EMFs from the
+//! flux state as the gas fluxes (Heun weights).  b0 is not touched.
 
 //----------------------------------------------------------------------------------------
 
 void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
-  hydro::Hydro *ph = pmy_pack->phydro;
-  if (t2_tab != 2 || !coupling || ph == nullptr || (which > 1 && t2_gt != which - 1))
-    return;
+  if (t2_tab != 2 || !coupling || !fl_on || (which > 1 && t2_gt != which - 1)) return;
   t2_gt = (which == 3) ? 0 : which;
-  auto u0_ = ph->u0;
-  auto u1_ = ph->u1;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto u0_ = fl.u0;
+  auto u1_ = fl.u1;
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int nmb = u0_.extent_int(0), nv = u0_.extent_int(1);
   const int n3 = u0_.extent_int(2), n2 = u0_.extent_int(3), n1 = u0_.extent_int(4);
@@ -102,11 +105,16 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   // flux-state factor on d: 1/g + O(k dt), -> 1 where the exchange is stiff, k = ch rho
   // kappa_E + 4 cl rho kappa_P a T^3/(rho c_v)
   auto op_ = opac;
-  auto eos = ph->peos->eos_data;
-  auto phc = ph->phicc0;
+  auto eos = fl.eos;
+  auto phc = fl.phicc0;
+  auto em_ = emag0;
   auto ccl = pmy_pack->pcoord->cos_cell;
-  const bool etg = ph->use_etotgrav, csk = cs_geom;
+  const bool etg = fl.use_etotgrav, csk = cs_geom, mh = fl.mhd;
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
+  if (which == 1 && mh) {
+    EmagBuild(g);   // the solve's field: S's
+    emag_hold = true;
+  }
   const bool gs = t2_gts, ps = t2_gtp;
   auto k1_ = t2k1;
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
@@ -116,7 +124,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
       const Real dd = u0_(m,IDN,k,j,i);
       const Real eg = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
                       u0_(m,IM3,k,j,i), csk ? ccl(m,k,j) : 0.0)/dd -
-                      (etg ? dd*phc(m,k,j,i) : 0.0);
+                      (etg ? dd*phc(m,k,j,i) : 0.0) - (mh ? em_(m,k,j,i) : 0.0);
       const Real tk = (eg > 0.0) ? eos.Temperature(dd, eg) : 0.0;
       const Real z = dt*(ch*op_(m,VET_OP_E,k,j,i) + ((eg > 0.0) ?
                      4.0*cl*op_(m,VET_OP_P,k,j,i)*ar*SQR(SQR(tk))/eg : 0.0));
@@ -134,7 +142,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
                        (CsKeMom(q[0], q[1], q[2], cc) - CsKeMom(p[0], p[1], p[2], cc))/r;
         const Real es = u1_(m,IEN,k,j,i) + g*(hs_(m,IEN,k,j,i) - u1_(m,IEN,k,j,i)) -
                         CsKeMom(s[0], s[1], s[2], cc)/dd -
-                        (etg ? dd*phc(m,k,j,i) : 0.0);
+                        (etg ? dd*phc(m,k,j,i) : 0.0) - (mh ? em_(m,k,j,i) : 0.0);
         const Real b = eg - es;
         xs = (a*b > 0.0) ? (1.0/g - 1.0)*((fabs(a) < fabs(b)) ? a : b) : 0.0;
         e = 0.0;
@@ -145,7 +153,8 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
       const Real k0 = CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i), u0_(m,IM3,k,j,i), c)/r;
       const Real k1 = CsKeMom(u0_(m,IM1,k,j,i) + hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
                               hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + hs_(m,IM3,k,j,i), c)/r;
-      const Real eb = u0_(m,IEN,k,j,i) - k0 - (etg ? r*phc(m,k,j,i) : 0.0);
+      const Real eb = u0_(m,IEN,k,j,i) - k0 - (etg ? r*phc(m,k,j,i) : 0.0) -
+                      (mh ? em_(m,k,j,i) : 0.0);
       xs = hs_(m,IEN,k,j,i);
       hs_(m,IEN,k,j,i) = k1 - k0 + ((eb > 0.0) ? ((xs < 0.0) ? xs*eb/(eb - xs) : xs) :
                                     0.0);
@@ -178,12 +187,19 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
       hs_(m,IEN,k,j,i) += ps ? ke(0.0) - ke(s) : ke(1.0) - ke(s);
     }
   });
+  if (which == 2 && mh) {
+    emag_hold = false;
+    EmagBuild(1.0);   // B* (U* + d)
+  }
   if (which != 3) return;
-  const bool dpay = ph->dual.pay;
-  if (ps) {ph->dual.pay = ph->dual.book = false;}
+  fluid::DualEnergy &du = mh ? fl.pm->dual : fl.ph->dual;
+  MeshBoundaryValuesCC *pbu = mh ? fl.pm->pbval_u : fl.ph->pbval_u;
+  auto cu0 = mh ? fl.pm->coarse_u0 : fl.ph->coarse_u0;
+  const bool dpay = du.pay;
+  if (ps) {du.pay = du.book = false;}
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
-  ph->dual.pay = dpay;
-  ph->dual.book = true;
+  du.pay = dpay;
+  du.book = true;
   // u0 back to U* + d, in the ghosts the neighbour's (exchanged; the flux state at the
   // physical boundaries): a ghost is then its neighbour's cell bitwise, so the stage-2
   // dfloor_flux_limit takes the same donor state on both sides of a MeshBlock face (the
@@ -193,11 +209,11 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
     if (k >= kl && k <= ku && j >= jl && j <= ju && i >= il && i <= iu) return;
     for (int n = 0; n < nv; ++n) {hs_(m,n,k,j,i) = ps ? u0_(m,n,k,j,i) : 0.0;}
   });
-  (void) ph->pbval_u->InitRecv(nv);
-  (void) ph->pbval_u->PackAndSendCC(hs_, ph->coarse_u0);
-  (void) ph->pbval_u->ClearSend();
-  (void) ph->pbval_u->ClearRecv();
-  (void) ph->pbval_u->RecvAndUnpackCC(hs_, ph->coarse_u0);
+  (void) pbu->InitRecv(nv);
+  (void) pbu->PackAndSendCC(hs_, cu0);
+  (void) pbu->ClearSend();
+  (void) pbu->ClearRecv();
+  (void) pbu->RecvAndUnpackCC(hs_, cu0);
   par_for("vet_t2_gtime3", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int n = 0; n < nv; ++n) {
@@ -345,6 +361,7 @@ void RadiationVet::RayHistory(const bool save) {
 
 void RadiationVet::Time2Restore(Driver *pdrive) {
   t2_gt = 0;   // (Time2GasTime)
+  emag_hold = false;
   Kokkos::deep_copy(DevExeSpace(), u0, u1);
   Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
   if (trans_on) {
@@ -362,7 +379,7 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
       Kokkos::deep_copy(DevExeSpace(), pm->b0.x3f, pm->b1.x3f);
     }
     FluidRefresh(pdrive);
-    if (fl.mhd) EmagBuild(false);
+    if (fl.mhd) EmagBuild(1.0);
   }
   // am_vector: the spin reservoir back to U^n (am_spin1)
   if (am_vec) {
@@ -472,7 +489,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
-    if (fl.mhd) EmagBuild(false);   // b0 untouched; same faces
+    if (fl.mhd) EmagBuild(1.0);   // b0 untouched; same faces
   }
   t2_solve = VET_T2S_NONE;
   t2_fail = false;

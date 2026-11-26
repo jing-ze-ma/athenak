@@ -874,10 +874,9 @@ MHDWAVE = (  # mode, P_rad/P_gas, x (as RADWAVE), direction, cells, other keys
     ('fast', 1.0, 100.0, 'xyz', (16, 32)), ('slow', 1.0, 100.0, 'xyz', (16, 32)))
 
 
-def mhd_wave(c, tag, mode, prat, x, di, n, eta=0.0, ead=0.0, over=None):
-    """one radiation-MHD wave, one period: (d c_ph/c_ph, d damping / omega, exact damping
-    per radian, warnings); the mode's amplitude = the left eigenvector . the k Fourier
-    amplitudes of the dumps."""
+def mhd_wave_keys(mode, prat, x, di, n, eta=0.0, ead=0.0):
+    """the keys of one radiation-MHD wave over one period, its frequency, left
+    eigenvector, k unit vector and the two transverse unit vectors"""
     cl, amp = 1.0e3, 1.0e-3
     kap = x*cl*64/vett.radmhd_root(prat, 1.0, cl, 'alfven')[3]
     w, ar, eig, b0, left = vett.radmhd_root(prat, kap, cl, mode, eta=eta, ead=ead)
@@ -902,6 +901,15 @@ def mhd_wave(c, tag, mode, prat, x, di, n, eta=0.0, ead=0.0, over=None):
         o.update({'mhd/ambipolar': 'constant', 'mhd/eta_ad': ead})
     o.update({'rad_vet/kappa_' + q: kap for q in 'pef'})
     o.update({'problem/' + q: v for q, v in eig.items()})
+    return o, w, left, kv, t, s
+
+
+def mhd_wave(c, tag, mode, prat, x, di, n, eta=0.0, ead=0.0, over=None):
+    """one radiation-MHD wave, one period: (d c_ph/c_ph, d damping / omega, exact damping
+    per radian, warnings); the mode's amplitude = the left eigenvector . the k Fourier
+    amplitudes of the dumps."""
+    amp = 1.0e-3
+    o, w, left, kv, t, s = mhd_wave_keys(mode, prat, x, di, n, eta, ead)
     d = c.run('mhd_wave.athinput', tag, dict(o, **(over or {})))
     ts, a = [], []
     xs = vett.cell_centres(d)
@@ -952,6 +960,32 @@ def t_mhd_radwave(c):
     out['nonideal_cph'] = [abs(z[0]) for z in ni]
     out['nonideal_damp'] = [abs(z[1]) for z in ni]
     out['geneos'] = [abs(ge[0]), abs(ge[1])]
+    return out
+
+
+def t_order_mhd(c):
+    """the fast magnetosonic wave of mhd_radwave (P_rad/P_gas 1, along x1, 32 cells, one
+    period, strict solves), time step T/64 ... T/512: x = 1, x = 100 (the stiff exchange)
+    and x = 1 with Ohmic and ambipolar diffusion (explicit in the stages); successive
+    orders of E, v_x and the transverse field."""
+    out = {}
+    for tag, x, eta, ead in (('', 1.0, 0.0, 0.0), ('_stiff', 100.0, 0.0, 0.0),
+                             ('_ni', 1.0, 0.02, 0.005)):
+        o = mhd_wave_keys('fast', 1.0, x, 'x1', 32, eta, ead)[0]
+        tl = o['time/tlim']
+        o.update({'time/cfl_number': 10.0, 'output1/dt': tl, 'output2/dt': tl,
+                  'rad_vet/newton_conv': 'strict',
+                  'rad_vet/solver_tol': 1e-14, 'rad_vet/newton_tol': 1e-13})
+        S = {'E': [], 'v': [], 'B': []}
+        for m in (64, 128, 256, 512):
+            d = c.run('mhd_wave.athinput', 'T%d%s' % (m, tag),
+                      dict(o, **{'time/dt_fixed': tl/m}))
+            u = vett.last_bin(d, 'mhd_w_bcc')
+            S['E'].append(vett.last_bin(d, 'vet')['vet_e'])
+            S['v'].append(u['velx'])
+            S['B'].append(u['bcc2'])
+        for k, v in S.items():
+            out['err_' + k + tag], out['order_' + k + tag] = succ_orders(v)
     return out
 
 
@@ -2132,6 +2166,7 @@ TESTS = [  # name, function, in --quick
     ('order_time', t_order_time, True),
     ('order_stiff', t_order_stiff, False),
     ('order_space', t_order_space, False),
+    ('order_mhd', t_order_mhd, False),
     ('nlte_eps1e-1', t_nlte_eps1e_1, True),
     ('nlte_eps1e-4', t_nlte_eps1e_4, False),
     ('thermal_eq', t_thermal_eq, False),
