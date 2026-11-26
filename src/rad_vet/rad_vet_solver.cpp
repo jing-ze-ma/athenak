@@ -630,7 +630,7 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
       tm.team_barrier();
       return true;
     };
-    Kokkos::parallel_for("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
+    AthFor("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
       ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
       int m, k, j;
       if (!ld(tm, sw, m, k, j)) return;
