@@ -218,3 +218,33 @@ written rst/bin: 0
       0.007540         37 cln_velocity
       0.007119         11 cln_wbprb
 ```
+
+## scspeed summary and an extra layout (02-17, same binary)
+- The sp arms of G4, G4x and G4L FATAL at start-up by design, so the note's lateral split cannot run on sp:
+  - G4 / G4L (2 x 2 lateral blocks): `vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)`.
+  - G4x (2 blocks along x1): `on a spherical-polar mesh supports only ... one MeshBlock along x1`.
+  - The Cartesian arms of all three ran.
+- Extra arms, not in the note (cheap, run so the 4-GPU comparison exists): **G4p** = 128^3 split into 4 blocks along phi only (meshblock 128 x 128 x 32), order A B A B; **G4Lp** = 256^3 with meshblock 256 x 256 x 64, A then B. Everything else as in the note.
+- s/cycle over cycles 2-6 and the timer lines (rank 0):
+| run | s/cycle | Cartesian vet_sc | sp vet_gd fenced | sp halo | FATAL/CW |
+|---|---|---|---|---|---|
+| G1_A1 | 0.3358 | SC 1.076 s (0.1538 per call) |  |  | 0/0 |
+| G1_B1 | 0.5027 |  | sweeps 1.908 s, source 0.0089, halo+walls 1.81e-04, MPI wait 0.00e+00 | exchanges 0 | 0/0 |
+| G1_A2 | 0.3362 | SC 1.076 s (0.1537 per call) |  |  | 0/0 |
+| G1_B2 | 0.5028 |  | sweeps 1.907 s, source 0.0088, halo+walls 1.68e-04, MPI wait 0.00e+00 | exchanges 0 | 0/0 |
+| G4_A1 | 0.2156 | SC 0.990 s (0.1414 per call) |  |  | 0/0 |
+| G4_A2 | 0.2128 | SC 0.977 s (0.1396 per call) |  |  | 0/0 |
+| G4x_A | 0.1633 | SC 0.638 s (0.0912 per call) |  |  | 0/0 |
+| G4L_A | 0.6517 | SC 2.053 s (0.2933 per call) |  |  | 0/0 |
+| G4p_A1 | 0.2184 | SC 0.989 s (0.1413 per call) |  |  | 0/0 |
+| G4p_B1 | 0.2436 |  | sweeps 2.697 s, source 0.2119, halo+walls 2.67e+00, MPI wait 3.12e-01 | exchanges 1 | 0/0 |
+| G4p_A2 | 0.2184 | SC 0.989 s (0.1412 per call) |  |  | 0/0 |
+| G4p_B2 | 0.2432 |  | sweeps 2.681 s, source 0.1655, halo+walls 2.66e+00, MPI wait 3.13e-01 | exchanges 1 | 0/0 |
+| G4Lp_A | 0.6693 | SC 2.083 s (0.2975 per call) |  |  | 0/0 |
+| G4Lp_B | 1.1626 |  | sweeps 11.281 s, source 0.2040, halo+walls 1.12e+01, MPI wait 7.55e-01 | exchanges 3 | 0/0 |
+- Reading:
+  - 1 GPU, 128^3: the Cartesian sweep is faster per cycle, 0.336 against 0.503 s/cycle (sp 1.50x). The timers agree: SC 1.08 s against sp sweeps 1.91 s over the run (1.77x).
+  - 4 GPUs, phi split: 0.218 against 0.243 s/cycle (sp 1.12x). The sp sweep time is almost all per-shell halo+walls (2.66 of 2.68 s); MPI wait is only 0.31 s.
+  - 4 GPUs, 256^3 phi split: 0.669 against 1.163 s/cycle (sp 1.74x). sp sweeps take 11.3 s, of which halo+walls 11.2 s.
+  - So on more than one GPU the curved path's per-shell halo dominates its cost.
+- kp tool: `kp_G1_A/B` and `kp_G4_A` kp.0 were posted above (kp_G4_B FATAL, as G4_B). No rst/bin written.
