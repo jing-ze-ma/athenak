@@ -115,3 +115,33 @@
 | ncu_REL_vet_vgd_shell | 98 | 1024  | 4.5e+06 B | 22.385922 / 25.000000 | 276.768000 us |
 | ncu_RU_vet_vgd_shell_int | 114 | 1024  | 6.44e+06 B | 22.607760 / 25.000000 | 238.432000 us |
 - RU has no kernel labelled vet_vgd_shell (only _int / _edge), so its ncu launch of that label profiled nothing. RU's shell_int: 114 registers (REL shell 98), same occupancy 22.6 %, 238 us against 277 us.
+
+## 27zzb addendum: RU with -DVET_VGD_CUDA_LB=2 / =1 (S4, 02-11 alone)
+- BUILD lb1 rc=0 wall=628 s
+- BUILD_OK lb1 md5=2b730e742b0c9013c9a82919108f89d4 (-DVET_VGD_CUDA_LB=1)
+- BUILD lb2 rc=0 wall=640 s
+- BUILD_OK lb2 md5=a9f96f5889d531c726a228e4ed57775d (-DVET_VGD_CUDA_LB=2)
+- Builds: the ru3 tree, separate build dirs build_lb2 / build_lb1, CMAKE_CXX_FLAGS='-ffp-contract=off -DVET_VGD_CUDA_LB=k', star_vet.
+| arm | GPUs | s/cycle (61-120) | zone-cycles/s | rays: source / sweeps (halo+walls, MPI wait) s/cycle | builds/cycle | cut shell | VET solve: clean stage steps s/cycle | Krylov it/cycle | stage - rays | total - stage (hydro + rest) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| S4_RU | 4 | 1.2573 | 1.334e+07 | 0.0203 / 0.0664 (0.0010, 0.0170) | 1.1 | 135 | 0.7341 | 41.7 | 0.6474 | 0.5232 |
+| S4_LB2 | 4 | 1.1530 | 1.455e+07 | 0.0049 / 0.0660 (0.0010, 0.0018) | 1.1 | 135 | 0.6400 | 41.7 | 0.5691 | 0.5130 |
+| S4_LB1 | 4 | 1.1584 | 1.448e+07 | 0.0050 / 0.0660 (0.0010, 0.0018) | 1.1 | 135 | 0.6395 | 41.7 | 0.5685 | 0.5189 |
+| S4_RUb | 4 | 1.1956 | 1.403e+07 | 0.0048 / 0.0660 (0.0010, 0.0018) | 1.1 | 135 | 0.6400 | 41.7 | 0.5691 | 0.5556 |
+| S4_LB2b | 4 | 1.1673 | 1.437e+07 | 0.0051 / 0.0658 (0.0010, 0.0018) | 1.1 | 135 | 0.6402 | 41.7 | 0.5692 | 0.5271 |
+| S4_RUc | 4 | 1.2092 | 1.387e+07 | 0.0063 / 0.0660 (0.0011, 0.0018) | 1.1 | 135 | 0.6412 | 41.7 | 0.5689 | 0.5680 |
+- Order of the runs:
+  - S4_RU at 01:50 (27zza);
+  - S4_LB2, S4_LB1 at 02:20-02:30;
+  - then back to back S4_RUb, S4_LB2b, S4_RUc at 02:31-02:39.
+- The node changed in between: the VET solve's stage-step time is 0.734 s/cycle in the 01:50 run and 0.640 in every later run, with the same Krylov counts. So only the back-to-back triple compares: RU 1.196 / 1.209, LB2 1.167 s/cycle. LB2 is -3 %, at the edge of the run-to-run spread, and the fenced sweep is the same (0.066 s/cycle).
+- **CLEAN lines identical to RU: yes** (LB2, LB1, and the RU repeats; 242/242).
+- ncu, one launch, S4 rank 0:
+| kernel | regs/thread | stack | local ld+st | achieved / theoretical occupancy % | duration |
+|---|---|---|---|---|---|
+| ncu_LB1_vet_vgd_shell_int | 114 | 1024  | 6.44e+06 B | 22.599697 / 25.000000 | 237.760000 us |
+| ncu_LB2_vet_vgd_shell_int | 114 | 1024  | 6.46e+06 B | 22.603868 / 25.000000 | 238.048000 us |
+| ncu_REL_vet_vgd_shell | 98 | 1024  | 4.5e+06 B | 22.385922 / 25.000000 | 276.768000 us |
+| ncu_RU_vet_vgd_shell_int | 114 | 1024  | 6.44e+06 B | 22.607760 / 25.000000 | 238.432000 us |
+- **The define does not reach the kernel that runs.** RU's shell work runs in vet_vgd_shell_int (and _edge), and shell_int keeps 114 registers and 22.6 % occupancy under LB=2 and LB=1. VET_VGD_CUDA_LB seems to bound only the plain vet_vgd_shell, which RU no longer launches on this path. That fits the unchanged sweep time. Please check where the bound is applied in 0e1601792.
+- Also a correction to the 27zza S4 numbers: REL and RU there ran back to back, so their ratio (0.985) stands. Absolute s/cycle on this node moved by about 5 % between 01:50 and 02:30.
