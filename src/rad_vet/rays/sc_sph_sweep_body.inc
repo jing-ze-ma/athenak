@@ -49,9 +49,9 @@
         if (inw == (mr >= 0.0)) {return false;}
         bool dfd = false;
 #if VET_VGD_SWEEP_SLAB
-        // closure_consistency (sfs_): the ray's x1 face-sum scalars (entry, crossing,
-        // exit; the x2 / x3 ones in ScSlabFaceSum), as the Cartesian sweep's
-        Real gq[3] = {0.0, 0.0, 0.0};
+        // closure_consistency (sfs_): the ray's face-sum scalars (entry, x1 crossing,
+        // exit, x2 and x3 foot-shift flux), as the Cartesian sweep's
+        Real gq[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 #endif
         // the ray of direction d through cell (k, j, i) on source csx, intensities vix
         auto solve = [&](const DvceArray5D<Real> &csx, const ScIView &vix) -> Real {
@@ -465,6 +465,37 @@
                                idd, sfs_ ? &fc : nullptr);
               // x1: the intensity where the segment crosses the face
               gq[1] = dir_(d,3)*nx*fmax(fc, 0.0);
+#if VET_SLAB_PHI_FOLD
+              if (sfs_) {
+                // x2 (x3): the upwind shell's intensity the foot shift sh carries
+                // across the low face, the x3 (x2) part halved (S2 and S3 commute)
+                const Real wd = dir_(d,3), amr = fabs(mr), dxl = ds*amr;
+                const bool thr = (nx3b > 1);
+                const Real sh2 = fj - j, sh3 = thr ? (fk - k) : 0.0;
+                const int o2 = static_cast<int>(floor(sh2));
+                const int o3 = static_cast<int>(floor(sh3));
+                const Real a2 = sh2 - o2, a3 = sh3 - o3;
+                auto ipq = [&](const int dk, const int dj) {
+                  return rd(k + dk, j + dj, iu);
+                };
+                auto g2f = [&](const int q) {
+                  return thr ? 0.5*(ipq(0,q) + (1.0 - a3)*ipq(o3,q) + a3*ipq(o3+1,q))
+                             : ipq(0,q);
+                };
+                auto g3f = [&](const int q) {
+                  return 0.5*(ipq(q,0) + (1.0 - a2)*ipq(q,o2) + a2*ipq(q,o2+1));
+                };
+                for (int c = 0; c < (thr ? 2 : 1); ++c) {
+                  const Real sh = (c == 0) ? sh2 : sh3, s = fabs(sh), fl = floor(s);
+                  const int nn = static_cast<int>(fl), sg = (sh < 0.0) ? 1 : -1;
+                  auto g = [&](const int q) {return (c == 0) ? g2f(q) : g3f(q);};
+                  Real p = (s - fl)*g((sg > 0) ? (-1 - nn) : nn);
+                  for (int q = 0; q < nn; ++q) {p += g((sg > 0) ? (-1 - q) : q);}
+                  gq[3 + c] = wd*amr*((c == 0) ? lg_.Dx2(mbsize, m)
+                                               : lg_.Dx3(mbsize, m))/dxl*sg*p;
+                }
+              }
+#endif
 #else
               iv = ScSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
                                s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
@@ -486,8 +517,8 @@
         if (dfd) {return true;}
         vi_(m,d,k,j,i) = v;
 #if VET_VGD_SWEEP_SLAB
-        for (int q = 0; q < 3 && sfs_; ++q) {
-          rgs_((l & 1)*nmbt_ + m,q*n + d,k-ks,j-js) = gq[q];
+        for (int q = 0; q < (VET_SLAB_PHI_FOLD ? 5 : 3) && sfs_; ++q) {
+          rgs_(m,q*n + d,k-ks,j-js,i-is) = gq[q];
         }
 #endif
         return false;

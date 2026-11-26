@@ -29,6 +29,12 @@
 #include "bvals/bvals.hpp"
 #include "utils/time_table.hpp"
 #include "rad_vet/rad_vet_defs.hpp"
+
+// the slab's x2 / x3 face scalars in its shell kernel (1) or a kernel of their own after
+// each shell (0); a build switch (same bits)
+#ifndef VET_SLAB_PHI_FOLD
+#define VET_SLAB_PHI_FOLD 1
+#endif
 #include "rad_vet/rays/sc_band.hpp"
 
 // forward declarations
@@ -648,10 +654,12 @@ class RadiationVet {
   int vgd_x1p = 0;
   void ScSweepX1();
   // the slab's closure_consistency face sums, made in the sweep (as the Cartesian
-  // sweep's): the rays' scalars of two shells, (2 nmb, 5 n, nx3, nx2)
-  DvceArray4D<Real> vgd_rgs;
+  // sweep's): the rays' scalars of a pass, (nmb, 5 n, nx3, nx2, nx1), summed per cell
+  // at the pass's end
+  DvceArray5D<Real> vgd_rgs;
   void ScSlabFaceZero();
-  void ScSlabFaceSum(const int i, const int l, const bool inw);
+  void ScSlabFacePhi(const int i, const bool inw);
+  void ScSlabFaceSum(const bool inw);
   Real ScX1Exit(const bool cmp, Real &amax);
   void ScX1Load();
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange

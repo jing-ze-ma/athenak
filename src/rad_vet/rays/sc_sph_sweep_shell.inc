@@ -85,12 +85,11 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
   auto bmi_ = ibm_i;
   const int bmn_ = ibm_nr;
   const Kokkos::Array<int, 4> bmr_ = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
-  // closure_consistency: the face sums in the sweep (ScSlabFaceSum), per shell from the
-  // rays' x1 scalars in vgd_rgs (two shells: the next shell's interior may run while a
-  // shell is summed); zeroed per pass, so only a set's last x1 pass counts
+  // closure_consistency: the face sums in the sweep (ScSlabFaceSum), at a pass's end
+  // from its rays' scalars in vgd_rgs; zeroed per pass, so only a set's last x1 pass
+  // counts
   const bool sfs_ = cln_consist;
   const bool x1pr_ = vet_x1per;
-  const int nmbt_ = nmb1 + 1;
   if (sfs_ && !vgd_xff_prep) {ScSlabFaceZero();}
   auto rgs_ = vgd_rgs;
 #endif
@@ -643,9 +642,9 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
         run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
                  "vet_vgd_shell");
       }
-      // slab: the shell's face sums, after its interior and edge items (ScSlabFaceSum)
-#if VET_VGD_SWEEP_SLAB
-      if (sfs_) {ScSlabFaceSum(i, l, inw);}
+#if VET_VGD_SWEEP_SLAB && !VET_SLAB_PHI_FOLD
+      // slab: the shell's x2 / x3 face scalars, after its interior and edge items
+      if (sfs_) {ScSlabFacePhi(i, inw);}
 #endif
       if (rga) {
         // the previous shell has been read (stream order): save its inward band
@@ -758,6 +757,10 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
       }
       ScRingFlush();
     }
+#if VET_VGD_SWEEP_SLAB
+    // slab: the pass's face sums, per cell in ray order (ScSlabFaceSum)
+    if (sfs_) {ScSlabFaceSum(inw);}
+#endif
   }
   ScRingSweepEnd();
 }

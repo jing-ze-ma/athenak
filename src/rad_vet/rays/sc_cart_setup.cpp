@@ -47,17 +47,18 @@ extern Real g_vgd_tab_alpha;   // rays/sc_tables.cpp
 
 namespace {
 
-// writer of the slab's face sums of shell i (one pass): the sums of the ray's own cell
-// (f2) to (k, j, i), those of its upwind cell (fn) to (k, j, iu); slots as the
-// Cartesian sweep's (ClosureFromRays): F2, F1, FX, F3
-struct ScSlabFaceW {
+// writer of the slab's face sums for cell (k, j, i): only the sums of a ray set's own
+// cell (VSS_F2) or only those of its upwind cell (VSS_FN); slots as the Cartesian
+// sweep's (ClosureFromRays): F2, F1, FX, F3
+struct ScSlabFaceK {
   DvceArray5D<Real> cs;
-  int m, k, j, i, iu;
+  int m, k, j, i, kind;
   KOKKOS_INLINE_FUNCTION
-  void operator()(const int kind, const int, const int n, const Real v) const {
+  void operator()(const int kd, const int, const int n, const Real v) const {
+    if (kd != kind) {return;}
     const int c = (n < 4) ? CLN_F2 + n : ((n < 8) ? CLN_F1 + n - 4
                 : ((n < 12) ? CLN_FX + n - 8 : CLN_F3 + n - 12));
-    if (c < cs.extent_int(1)) {cs(m,c,k,j,(kind == VSS_FN) ? iu : i) += v;}
+    if (c < cs.extent_int(1)) {cs(m,c,k,j,i) += v;}
   }
 };
 
@@ -1227,8 +1228,8 @@ void RadiationVet::ScX1Load() {
 void RadiationVet::ScSlabFaceZero() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack, n = vgd_n;
-  if (vgd_rgs.extent_int(0) != 2*nmb || vgd_rgs.extent_int(1) != 5*n) {
-    Kokkos::realloc(vgd_rgs, 2*nmb, 5*n, indcs.nx3, indcs.nx2);
+  if (vgd_rgs.extent_int(0) != nmb || vgd_rgs.extent_int(1) != 5*n) {
+    Kokkos::realloc(vgd_rgs, nmb, 5*n, indcs.nx3, indcs.nx2, indcs.nx1);
   }
   auto cs = cln_s;
   const int nc = cs.extent_int(1);
@@ -1245,23 +1246,18 @@ void RadiationVet::ScSlabFaceZero() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ScSlabFaceSum
-//! \brief the face sums of slab shell i (pass inw).  (1) One thread per (block, ray,
-//! cell): the x2 (x3) scalar, the upwind shell's intensity the ray's constant foot shift
-//! sh carries across the low face, the x3 (x2) part halved (S2 and S3 commute; no PLM
-//! term), read from the shell iu the sweep read (the periodic image at an x1 end), into
-//! vgd_rgs beside the shell kernel's x1 scalars (entry, crossing, exit).  (2) One thread
-//! per (cell, component): the sums in ray order (VetScSum's face groups), entry, exit
-//! and the outward rays' crossing to the cell, the inward rays' crossing and every
-//! foot-shift flux to the upwind cell
+//! \fn void RadiationVet::ScSlabFacePhi
+//! \brief VET_SLAB_PHI_FOLD = 0: the x2 / x3 face scalars of slab shell i (pass inw),
+//! one thread per (block, ray, cell), as the shell kernel makes them when folded: the
+//! upwind shell's intensity the ray's constant foot shift sh carries across the low
+//! face, the x3 (x2) part halved (S2 and S3 commute; no PLM term), read from the shell
+//! iu the sweep read (the periodic image at an x1 end)
 
-void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
+void RadiationVet::ScSlabFacePhi(const int i, const bool inw) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, ks = indcs.ks, js = indcs.js;
-  const int nmb = pmy_pack->nmb_thispack, n = vgd_n, ib = l & 1, n1 = indcs.nx1;
+  const int nmb = pmy_pack->nmb_thispack, n = vgd_n, n1 = indcs.nx1, l = i - is;
   const int wb = vgd_w, nx2b = indcs.nx2, nx3b = indcs.nx3;
-  const int up = inw ? ((i < ie) ? i + 1 : (vet_x1per ? is : i))
-                     : ((i > is) ? i - 1 : (vet_x1per ? ie : i));
   // the rays of the sweep's typ 1 branch (no entry at an x1 end), their upwind shell,
   // chord and foot as the shell kernel's
   const int lcut = vgd_scut, x1p = vgd_x1p;
@@ -1278,8 +1274,6 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
   const bool raw_ = vgd_raw;
   auto wl_ = vgd_wall;
   auto mp_ = vgd_map;
-  auto cs = cln_s;
-  // (1) the rays' x2 / x3 scalars, slots 3 and 4 of vgd_rgs
   par_for("vet_vgd_slab_phi", vgd_cur, 0, nmb - 1, 0, n - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je,
   KOKKOS_LAMBDA(const int m, const int r, const int kc, const int jc) {
@@ -1348,22 +1342,53 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const bool inw) {
                                   : lg_.Dx3(mbsize, m))/dxl*sg*p;
       }
     }
-    rg_(ib*nmb + m,3*n + r,kc-ks,jc-js) = g12[0];
-    rg_(ib*nmb + m,4*n + r,kc-ks,jc-js) = g12[1];
+    rg_(m,3*n + r,kc-ks,jc-js,i-is) = g12[0];
+    rg_(m,4*n + r,kc-ks,jc-js,i-is) = g12[1];
   });
-  // (2) the sums per (cell, component), groups 3..6 of VetScSum; its scalars q = 0..4
-  // (entry, x2, x3, crossing, exit) at the slots 0, 3, 4, 1, 2 of vgd_rgs
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScSlabFaceSum
+//! \brief the face sums of a slab pass from its rays' scalars (vgd_rgs: entry, x1
+//! crossing, exit, x2 and x3 foot shift), one thread per (cell, component) of every
+//! shell, each slot's sums in ray order (VetScSum's face groups).  A cell takes its own
+//! rays' sums (entry and exit, the outward crossing) and those of the rays whose
+//! upwind cell it is (their foot-shift fluxes, the inward crossing), in the order the
+//! per-shell sums had: the own shell's first, the other one's after, except at the
+//! periodic wrap, where that other shell was swept first
+
+void RadiationVet::ScSlabFaceSum(const bool inw) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, ks = indcs.ks, js = indcs.js;
+  const int nmb = pmy_pack->nmb_thispack, n = vgd_n;
+  const bool per = vet_x1per;
+  auto dir_ = vgd_dir;
+  auto rg_ = vgd_rgs;
+  auto cs = cln_s;
   par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 3, 6, indcs.ks, indcs.ke, indcs.js,
-          indcs.je,
-  KOKKOS_LAMBDA(const int m, const int grp, const int kc, const int jc) {
-    VetScSum(grp, dir_, n, [&](const int r) {return (dir_(r,0) < 0.0) == inw;},
-             [](const int) {return 0.0;}, [](const int) {return 0.0;},
-             [&](const int q, const int r) {
-               const int sq = (q == 0) ? 0 : ((q == 1) ? 3 : ((q == 2) ? 4
-                            : ((q == 3) ? 1 : 2)));
-               return rg_(ib*nmb + m,sq*n + r,kc-ks,jc-js);
-             },
-             ScSlabFaceW{cs, m, kc, jc, i, up}, false, false, false, true);
+          indcs.je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int grp, const int k, const int j, const int i) {
+    // the shell whose rays have this cell upwind (-1: none; an x1 end's clamp sums
+    // to itself only zeros)
+    const int src = inw ? ((i > is) ? (i - 1) : (per ? ie : -1))
+                        : ((i < ie) ? (i + 1) : (per ? is : -1));
+    const bool wrap = per && (inw ? (i == is) : (i == ie));
+    auto act = [&](const int r) {return (dir_(r,0) < 0.0) == inw;};
+    auto sums = [&](const int ic, const int kind) {
+      // (VetScSum's scalars q = 0..4: entry, x2, x3, crossing, exit at slots 0, 3, 4,
+      // 1, 2 of vgd_rgs)
+      VetScSum(grp, dir_, n, act, [](const int) {return 0.0;},
+               [](const int) {return 0.0;},
+               [&](const int q, const int r) {
+                 const int sq = (q == 0) ? 0 : ((q == 1) ? 3 : ((q == 2) ? 4
+                              : ((q == 3) ? 1 : 2)));
+                 return rg_(m,sq*n + r,k-ks,j-js,ic-is);
+               },
+               ScSlabFaceK{cs, m, k, j, i, kind}, false, false, false, true);
+    };
+    if (src >= 0 && wrap) {sums(src, VSS_FN);}
+    sums(i, VSS_F2);
+    if (src >= 0 && !wrap) {sums(src, VSS_FN);}
   });
 }
 
