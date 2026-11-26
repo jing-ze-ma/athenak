@@ -863,6 +863,7 @@ class RadiationVet {
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // flux_cone
   bool cln_fcgas = false;    // flux_cone_gas
+  bool cln_fcpj[3] = {false, false, false};   // flux_cone_line: the projected dirs
   bool cln_fclz = false;    // flux_cone_lz
   bool cln_fcemx = false;   // flux_cone_emax
   bool cln_lzsp = false;    // lz_spin

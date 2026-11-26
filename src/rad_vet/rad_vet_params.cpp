@@ -581,6 +581,22 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // and L_z are exact; E pays the kinetic energy (the write-back's residual), which
     // a radiation-poor cell cannot (test floor_momentum's exch0 box blows up)
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","flux_cone_gas",false);
+    // flux_cone_line (default false; uniform mesh): the cut a face withholds from the gas
+    // less its mean along each mesh line of the directions whose faces carry P (as
+    // fwb_line), weighted by the faces' gas density: the line's gas takes its cut where
+    // its mass is (a telescoping face stress), so the cut moves no P; E pays the kinetic
+    // energy, which a radiation-poor line cannot (floor_momentum's exch box: a redo)
+    const bool fcl = cln_fcone && !cln_fcgas &&
+                     pin->GetOrAddBoolean("rad_vet", "flux_cone_line", false);
+    if (fcl && pml->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_vet>/flux_cone_line needs a uniform mesh"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (int d = 0; d < 3; ++d) {
+      cln_fcpj[d] = fcl && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ? 2 :
+                    1))));
+    }
     cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","flux_cone_lz") &&
                pin->GetBoolean("rad_vet","flux_cone_lz");
     // flux_cone_emax (read only when named; needs flux_cone): every inner
