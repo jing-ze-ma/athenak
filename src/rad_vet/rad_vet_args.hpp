@@ -109,9 +109,30 @@ inline void SolveFor(const char *name, const int nmb1, const int ks, const int k
   }
 }
 
+// CUDA blocks of 256 per SM (the register cap 65536/(256 mb), so mb 3 = 80, 2 = 128,
+// 1 = 255 registers) of the passes that spill at the default (ncu, H200: cln_gd_fs,
+// cln_drag, cln_rhsaf, cln_fs0; cln_facecoef runs par_for, mb 0).  Build-time
+// overrides for measuring per kernel; a cap changes only register allocation and
+// occupancy, not the arithmetic (-ffp-contract=off, --fmad=false): bitwise
+#ifndef ATHENA_LB_GD_FS
+#define ATHENA_LB_GD_FS kSolveForMb
+#endif
+#ifndef ATHENA_LB_DRAG
+#define ATHENA_LB_DRAG kSolveForMb
+#endif
+#ifndef ATHENA_LB_RHSAF
+#define ATHENA_LB_RHSAF kSolveForMb
+#endif
+#ifndef ATHENA_LB_FS0
+#define ATHENA_LB_FS0 kSolveForMb
+#endif
+#ifndef ATHENA_LB_FACECOEF
+#define ATHENA_LB_FACECOEF 0
+#endif
+
 // SolveFor with k fastest on HIP (the row order of a ScRag slab), so adjacent lanes
 // read adjacent intensity rows; only for passes with independent cells (bitwise)
-template <typename F>
+template <int kCudaMb = kSolveForMb, typename F>
 inline void SolveForK(const char *name, const int nmb1, const int ks, const int ke,
                       const int js, const int je, const int is, const int ie,
                       const F &f) {
@@ -119,7 +140,7 @@ inline void SolveForK(const char *name, const int nmb1, const int ks, const int 
   par_for(name, DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
   KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {f(m, k, j, i);});
 #else
-  SolveFor(name, nmb1, ks, ke, js, je, is, ie, f);
+  SolveFor<0, kCudaMb>(name, nmb1, ks, ke, js, je, is, ie, f);
 #endif
 }
 

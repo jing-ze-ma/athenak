@@ -75,7 +75,8 @@ void RadiationVet::FaceCoefficients() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int tf = VET_T2_F1 + dir;
 
-    par_for("cln_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<0, ATHENA_LB_FACECOEF>("cln_facecoef", nmb1, ks, ke+dk, js, je+dj, is,
+                                    ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real chi = FaceChi(op, x1f, mbc, dir, m, k, j, i, is, ie);
