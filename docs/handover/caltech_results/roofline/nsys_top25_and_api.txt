@@ -1,0 +1,53 @@
+# GPU kernel time over 5 warm cycles (ns7 - ns2): 10.2744 s = 2.0549 s/cycle
+rank | % | s/cycle | launches/cycle | mean us | Kokkos label
+1 | 12.0 | 0.2468 | 250.0 | 987.3 | vet_vgd_shell
+2 | 10.7 | 0.2205 | 26.4 | 8353.8 | cln_rhsaf
+3 | 5.7 | 0.1166 | 12.4 | 9399.8 | cln_drag
+4 | 5.6 | 0.1147 | 388.8 | 295.1 | cln_pcr2
+5 | 4.5 | 0.0926 | 26.4 | 3506.3 | cln_fs0
+6 | 3.9 | 0.0807 | 16.8 | 4802.9 | cln_facecoef
+7 | 3.5 | 0.0709 | 78.4 | 904.9 | cln_apply_st
+8 | 3.1 | 0.0630 | 1.0 | 63022.8 | cln_gd_fs
+9 | 2.8 | 0.0569 | 31.6 | 1800.3 | cln_cslat
+10 | 2.6 | 0.0529 | 129.6 | 408.5 | cls_restrict
+11 | 2.5 | 0.0511 | 8.8 | 5806.8 | cln_rhs
+12 | 2.4 | 0.0497 | 6.8 | 7315.1 | cln_velocity
+13 | 1.8 | 0.0360 | 20.4 | 1763.1 | cln_fwc
+14 | 1.6 | 0.0329 | 35.2 | 935.0 | cln_fsch
+15 | 1.4 | 0.0283 | 26.4 | 1072.1 | cln_fwb
+16 | 1.3 | 0.0266 | 6.8 | 3908.7 | cln_stencil
+17 | 1.2 | 0.0255 | 20.4 | 1248.2 | cln_xdonor
+18 | 1.2 | 0.0249 | 1.0 | 24915.7 | cln_gd
+19 | 1.2 | 0.0239 | 2.0 | 11944.5 | cln_wbcell
+20 | 1.0 | 0.0209 | 6.0 | 3482.1 | cln_wbxc
+21 | 1.0 | 0.0205 | 52.8 | 387.9 | cln_fwbs
+22 | 1.0 | 0.0199 | 150.0 | 132.6 | cln_scale
+23 | 0.9 | 0.0182 | 26.4 | 689.6 | cln_fs1
+24 | 0.9 | 0.0177 | 8.8 | 2009.6 | cln_newton
+25 | 0.8 | 0.0172 | 26.4 | 651.8 | cln_fs3
+
+# cuda_api_sum per cycle (5 warm cycles):
+- cudaEventSynchronize: 0.8649 s/cycle, 835.4 calls/cycle
+- cudaStreamSynchronize: 0.5562 s/cycle, 588.4 calls/cycle
+- cudaDeviceSynchronize: 0.3989 s/cycle, 251.0 calls/cycle
+- cudaMemcpyAsync: 0.2264 s/cycle, 356.4 calls/cycle
+- cudaLaunchKernel: 0.0112 s/cycle, 3244.4 calls/cycle
+- cudaMemcpyToSymbolAsync: 0.0033 s/cycle, 835.4 calls/cycle
+- cudaEventRecord: 0.0023 s/cycle, 835.4 calls/cycle
+- cudaFree: 0.0019 s/cycle, 28.8 calls/cycle
+
+# cuda_gpu_mem_time_sum per cycle (5 warm cycles):
+- [CUDA memcpy Device-to-Device]: 0.0037 s/cycle, 21.0 calls/cycle
+- [CUDA memset]: 0.0019 s/cycle, 85.8 calls/cycle
+- [CUDA memcpy Host-to-Device]: 0.0012 s/cycle, 1040.6 calls/cycle
+- [CUDA memcpy Device-to-Host]: 0.0004 s/cycle, 175.2 calls/cycle
+
+# mpi_event_sum per cycle (5 warm cycles):
+- MPI_Allreduce: 0.0005 s/cycle, 0.0 calls/cycle
+- MPI_File_close: 0.0003 s/cycle, 0.0 calls/cycle
+- MPI_File_write: 0.0003 s/cycle, 0.0 calls/cycle
+- MPI_Waitall: 0.0001 s/cycle, 0.0 calls/cycle
+- MPI_Finalize: 0.0001 s/cycle, 0.0 calls/cycle
+- MPI_Gather: 0.0000 s/cycle, 0.0 calls/cycle
+- MPI_Bcast: 0.0000 s/cycle, 0.0 calls/cycle
+- MPI_Alltoall: 0.0000 s/cycle, 0.0 calls/cycle
