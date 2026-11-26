@@ -4,7 +4,8 @@
   "max": {
    "dE": 1e-13,
    "dM": 1e-13,
-   "dLz": 1e-13
+   "dLz": 1e-13,
+   "dLz_gr": 1e-13
   }
  },
  "conservation_cs": {
