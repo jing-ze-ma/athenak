@@ -119,10 +119,12 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("pfacewb.x2f", pfacewb.x2f);
   v.view("pfacewb.x3f", pfacewb.x3f);
   v.value("use_dfl", use_dfl);
+  v.value("dfl_pass", dfl_pass);
   v.value("dfl_n", dfl_n);
   v.value("dfl_dp", dfl_dp);
   v.view("dfl_th", dfl_th);
   v.view("dfl_thc", dfl_thc);
+  for (int q0_ = 0; q0_ < 4; ++q0_) {v.view("dfl_g[]", dfl_g[q0_]);}
   v.view("dfl_sm", dfl_sm);
 }
 
@@ -148,6 +150,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   pbval_dfl : MeshBoundaryValuesCC *
 //   pbval_dfs : MeshBoundaryValuesCC *
 //   pdfl_fs : DvceFaceFld5D<Real> *
+//   pdfl_f0 : DvceFaceFld4D<Real> *
 //   pmy_pack : MeshBlockPack *
 
 #endif  // HYDRO_HYDRO_DTRETRY_VISIT_HPP_
