@@ -1,0 +1,351 @@
+CLEAN FCONE cycle 29657 t2s 2 faces 15364 momentum cut sum |dF| V/c^2 1.953817e+24
+CLEAN FCONE cycle 29657 t2s 3 faces 201768 momentum cut sum |dF| V/c^2 6.989086e+25
+CLEAN PLEDGER cycle 29657 dt 1.636277e+02 hflx -1.792217e+34 ntel 0.000000e+00 src -2.654137e+34 rad 8.617173e+33 cut -4.174322e+23 fwb 0.000000e+00 flr 5.571646e+25 mrg 1.409201e+16 gap 0.000000e+00 P -6.6986040097171303e+33 END 3.184614e+20 gross 1.108492e+36
+CLEAN WARNING restart: mesh/nghost = 3 from the restart file (code default 2; the deck does not name it)
+CLEAN WARNING restart: mesh/use_spherical_polar = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: mesh/use_grid_stretch_r_poly = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: meshblock/nx2 = 128 from the restart file (code default 256; the deck does not name it)
+CLEAN WARNING restart: meshblock/nx3 = 128 from the restart file (code default 256; the deck does not name it)
+CLEAN WARNING restart: time/ndiag = 50 from the restart file (code default 1; the deck does not name it)
+CLEAN WARNING restart: time/dt_retry_grow = 1.1 from the restart file (code default 1.25; the deck does not name it)
+CLEAN WARNING restart: time/dt_retry_ngood = 20 from the restart file (code default 10; the deck does not name it)
+CLEAN WARNING restart: units/mu = 0.62 from the restart file (code default 1; the deck does not name it)
+CLEAN WARNING restart: hydro/floor_from_ekin = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: hydro/sp_x2_periodic_image = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: hydro/eos = general from the restart file (code default ideal; the deck does not name it)
+CLEAN WARNING restart: hydro/etotgrav = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: hydro/wellbalance_dynamic = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: hydro/dfloor = 6.15245e-14 from the restart file (code default 1.1754943508222875e-38; the deck does not name it)
+CLEAN WARNING restart: hydro/pfloor = 8.9014e-3 from the restart file (code default 1.1754943508222875e-38; the deck does not name it)
+CLEAN WARNING restart: hydro/vceil = 3.0e8 from the restart file (code default 0; the deck does not name it)
+CLEAN WARNING restart: hydro/tfloor = 134104228155.32465 from the restart file (code default 1.1754943508222875e-38; the deck does not name it)
+CLEAN WARNING restart: hydro/wb_x1 = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: hydro/wb_rmax = 4.231839e+12 from the restart file (code default 0; the deck does not name it)
+CLEAN WARNING restart: rad_vet/floorcap_lz = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: rad_vet/floorcap_lz_spin = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: rad_vet/vet_gd_gl_nphi = 18 from the restart file (code default 12; the deck does not name it)
+CLEAN WARNING restart: rad_vet/vet_scatter = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: rad_vet/vet_gd_wall_interp = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: rad_vet/vet_gd_wall_sym = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: rad_vet/vet_gd_theta_seam_sym = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: rad_vet/opacity = table from the restart file (code default const; the deck does not name it)
+CLEAN WARNING restart: rad_vet/temp_unit_kelvin = 7.4568864364e-9 from the restart file (code default 1; the deck does not name it)
+CLEAN WARNING restart: rad_vet/e_floor = 1.0e-4 from the restart file (code default 1.1754943508222875e-38; the deck does not name it)
+CLEAN WARNING restart: rad_vet/force_reference = wb_arad from the restart file (code default none; the deck does not name it)
+CLEAN WARNING restart: rad_vet/transport = implicit from the restart file (code default explicit; the deck does not name it)
+CLEAN WARNING restart: rad_vet/time_scheme = hesdirk2 from the restart file (code default be; the deck does not name it)
+CLEAN WARNING restart: rad_vet/implicit_bc_x1min = flux from the restart file (code default auto; the deck does not name it)
+CLEAN WARNING restart: rad_vet/implicit_flux_x1min = 2.2942145641e+13 from the restart file (code default 0; the deck does not name it)
+CLEAN WARNING restart: rad_vet/implicit_bc_x1max = marshak from the restart file (code default auto; the deck does not name it)
+CLEAN WARNING restart: rad_vet/steady_init = steady from the restart file (code default given; the deck does not name it)
+CLEAN WARNING restart: rad_vet/vet_rotate_avg_ema = 0 from the restart file (code default 128; the deck does not name it)
+CLEAN WARNING restart: rad_vet/lz_telescope = false from the restart file (code default true; the deck does not name it)
+CLEAN WARNING restart: rad_vet/force_reference_work = split from the restart file (code default auto; the deck does not name it)
+CLEAN WARNING restart: rad_vet/solver_maxit = 200 from the restart file (code default 800; the deck does not name it)
+CLEAN WARNING restart: rad_vet/solver_sweep = rb from the restart file (code default sym; the deck does not name it)
+CLEAN WARNING restart: rad_vet/ray_cut_r = 0.01 from the restart file (code default 0.003; the deck does not name it)
+CLEAN WARNING restart: problem/user_srcs = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: problem/user_hist = true from the restart file (code default false; the deck does not name it)
+CLEAN WARNING restart: problem/star_nfine = 262144 from the restart file (code default 16384; the deck does not name it)
+CLEAN WARNING restart: problem/star_ic_cols = 5 from the restart file (code default 4; the deck does not name it)
+CLEAN WARNING restart: problem/star_bc_outer = copy from the restart file (code default noinflow; the deck does not name it)
+CLEAN WARNING restart: problem/mlt_src_time = start from the restart file (code default stage; the deck does not name it)
+CLEAN WARNING restart: problem/star_sponge_form = lawson from the restart file (code default exp; the deck does not name it)
+CLEAN WARNING restart: output1/data_format = %24.16e from the restart file (code default %12.5e; the deck does not name it)
+CLEAN FCONE cycle 29658 t2s 2 faces 149470 momentum cut sum |dF| V/c^2 3.776225e+25
+CLEAN FCONE cycle 29658 t2s 3 faces 106158 momentum cut sum |dF| V/c^2 2.671332e+25
+CLEAN PLEDGER cycle 29658 dt 1.636599e+02 hflx -1.792218e+34 ntel 0.000000e+00 src -2.654137e+34 rad 8.617178e+33 cut -6.506357e+23 fwb 0.000000e+00 flr 9.570130e+25 mrg 2.113385e+16 gap 0.000000e+00 P -7.0283919683085599e+33 END 7.587956e+20 gross 1.108387e+36
+CLEAN FCONE cycle 29659 t2s 2 faces 112668 momentum cut sum |dF| V/c^2 2.858115e+25
+CLEAN FCONE cycle 29659 t2s 3 faces 128595 momentum cut sum |dF| V/c^2 3.321644e+25
+CLEAN PLEDGER cycle 29659 dt 1.637364e+02 hflx -1.792219e+34 ntel 0.000000e+00 src -2.654137e+34 rad 8.617183e+33 cut -5.475881e+23 fwb 0.000000e+00 flr 1.331240e+26 mrg 1.408265e+16 gap 0.000000e+00 P -7.3559973701471225e+33 END 2.027534e+20 gross 1.108282e+36
+CLEAN FCONE cycle 29660 t2s 2 faces 126690 momentum cut sum |dF| V/c^2 3.270953e+25
+CLEAN FCONE cycle 29660 t2s 3 faces 126478 momentum cut sum |dF| V/c^2 3.288819e+25
+CLEAN PLEDGER cycle 29660 dt 1.636544e+02 hflx -1.792220e+34 ntel 0.000000e+00 src -2.654137e+34 rad 8.617188e+33 cut -5.890489e+23 fwb 0.000000e+00 flr 1.654349e+26 mrg 2.817942e+16 gap 0.000000e+00 P -7.6810619106980749e+33 END -1.667961e+20 gross 1.108177e+36
+CLEAN FCONE cycle 29661 t2s 2 faces 127639 momentum cut sum |dF| V/c^2 3.344957e+25
+CLEAN FCONE cycle 29661 t2s 3 faces 130708 momentum cut sum |dF| V/c^2 3.433517e+25
+CLEAN PLEDGER cycle 29661 dt 1.635770e+02 hflx -1.792221e+34 ntel 1.804336e+18 src -2.654137e+34 rad 8.617193e+33 cut -5.964901e+23 fwb 0.000000e+00 flr 1.904871e+26 mrg 1.409637e+16 gap 0.000000e+00 P -8.0035564051747022e+33 END 1.287135e+19 gross 1.108070e+36
+CLEAN FCONE cycle 29662 t2s 2 faces 130742 momentum cut sum |dF| V/c^2 3.462705e+25
+CLEAN FCONE cycle 29662 t2s 3 faces 132402 momentum cut sum |dF| V/c^2 3.505824e+25
+CLEAN PLEDGER cycle 29662 dt 1.635454e+02 hflx -1.792222e+34 ntel 0.000000e+00 src -2.654137e+34 rad 8.617198e+33 cut -6.090706e+23 fwb 0.000000e+00 flr 2.088944e+26 mrg 2.819821e+16 gap 0.000000e+00 P -8.3235361150222913e+33 END -2.178172e+20 gross 1.107963e+36
+CLEAN FCONE cycle 29663 t2s 2 faces 132738 momentum cut sum |dF| V/c^2 3.541479e+25
+CLEAN FCONE cycle 29663 t2s 3 faces 134462 momentum cut sum |dF| V/c^2 3.584889e+25
+CLEAN PLEDGER cycle 29663 dt 1.635045e+02 hflx -1.792223e+34 ntel 1.805136e+18 src -2.654138e+34 rad 8.617203e+33 cut -6.182884e+23 fwb 0.000000e+00 flr 2.226721e+26 mrg 7.051314e+15 gap 0.000000e+00 P -8.6409491067546345e+33 END -1.723730e+21 gross 1.107857e+36
+CLEAN FCONE cycle 29664 t2s 2 faces 134586 momentum cut sum |dF| V/c^2 3.614366e+25
+CLEAN FCONE cycle 29664 t2s 3 faces 136445 momentum cut sum |dF| V/c^2 3.648111e+25
+CLEAN PLEDGER cycle 29664 dt 1.634518e+02 hflx -1.792224e+34 ntel -1.805718e+18 src -2.654138e+34 rad 8.617208e+33 cut -6.268179e+23 fwb 0.000000e+00 flr 2.332259e+26 mrg 1.410717e+16 gap 0.000000e+00 P -8.9557381883636961e+33 END 7.826608e+20 gross 1.107750e+36
+CLEAN FCONE cycle 29665 t2s 2 faces 136550 momentum cut sum |dF| V/c^2 3.678754e+25
+CLEAN FCONE cycle 29665 t2s 3 faces 137884 momentum cut sum |dF| V/c^2 3.702465e+25
+CLEAN PLEDGER cycle 29665 dt 1.634162e+02 hflx -1.792225e+34 ntel -1.806111e+18 src -2.654138e+34 rad 8.617213e+33 cut -6.341746e+23 fwb 0.000000e+00 flr 2.414655e+26 mrg 2.116537e+16 gap 0.000000e+00 P -9.2679026233555933e+33 END 6.737649e+20 gross 1.107644e+36
+CLEAN FCONE cycle 29666 t2s 2 faces 138008 momentum cut sum |dF| V/c^2 3.736354e+25
+CLEAN FCONE cycle 29666 t2s 3 faces 139325 momentum cut sum |dF| V/c^2 3.755832e+25
+CLEAN PLEDGER cycle 29666 dt 1.633979e+02 hflx -1.792227e+34 ntel 0.000000e+00 src -2.654138e+34 rad 8.617219e+33 cut -6.414900e+23 fwb 0.000000e+00 flr 2.478426e+26 mrg 1.411183e+16 gap 0.000000e+00 P -9.5774459005010069e+33 END -5.662759e+20 gross 1.107540e+36
+CLEAN FCONE cycle 29667 t2s 2 faces 139328 momentum cut sum |dF| V/c^2 3.781112e+25
+CLEAN FCONE cycle 29667 t2s 3 faces 140719 momentum cut sum |dF| V/c^2 3.801771e+25
+CLEAN PLEDGER cycle 29667 dt 1.634118e+02 hflx -1.792228e+34 ntel 0.000000e+00 src -2.654138e+34 rad 8.617224e+33 cut -6.474842e+23 fwb 0.000000e+00 flr 2.524169e+26 mrg 7.055315e+15 gap 0.000000e+00 P -9.8844056616378264e+33 END 7.720539e+20 gross 1.107435e+36
+CLEAN FCONE cycle 29668 t2s 2 faces 140431 momentum cut sum |dF| V/c^2 3.826315e+25
+CLEAN FCONE cycle 29668 t2s 3 faces 141588 momentum cut sum |dF| V/c^2 3.834103e+25
+CLEAN PLEDGER cycle 29668 dt 1.634539e+02 hflx -1.792229e+34 ntel -1.805695e+18 src -2.654138e+34 rad 8.617230e+33 cut -6.530067e+23 fwb 0.000000e+00 flr 2.561114e+26 mrg 2.116049e+16 gap 0.000000e+00 P -1.0188810383563483e+34 END -1.176299e+21 gross 1.107330e+36
+CLEAN FCONE cycle 29669 t2s 2 faces 141387 momentum cut sum |dF| V/c^2 3.865567e+25
+CLEAN FCONE cycle 29669 t2s 3 faces 142235 momentum cut sum |dF| V/c^2 3.864374e+25
+CLEAN PLEDGER cycle 29669 dt 1.635324e+02 hflx -1.792230e+34 ntel 0.000000e+00 src -2.654138e+34 rad 8.617235e+33 cut -6.579137e+23 fwb 0.000000e+00 flr 2.588518e+26 mrg 2.820044e+16 gap 0.000000e+00 P -1.0490696968818054e+34 END 5.536267e+20 gross 1.107226e+36
+CLEAN FCONE cycle 29670 t2s 2 faces 142113 momentum cut sum |dF| V/c^2 3.897428e+25
+CLEAN FCONE cycle 29670 t2s 3 faces 143010 momentum cut sum |dF| V/c^2 3.899037e+25
+CLEAN PLEDGER cycle 29670 dt 1.636128e+02 hflx -1.792231e+34 ntel 0.000000e+00 src -2.654138e+34 rad 8.617241e+33 cut -6.624957e+23 fwb 0.000000e+00 flr 2.613393e+26 mrg 1.409329e+16 gap 0.000000e+00 P -1.0790041431338780e+34 END 4.670875e+20 gross 1.107121e+36
+CLEAN FCONE cycle 29671 t2s 2 faces 142691 momentum cut sum |dF| V/c^2 3.926453e+25
+CLEAN FCONE cycle 29671 t2s 3 faces 143540 momentum cut sum |dF| V/c^2 3.933227e+25
+CLEAN PLEDGER cycle 29671 dt 1.635620e+02 hflx -1.792232e+34 ntel 0.000000e+00 src -2.654138e+34 rad 8.617246e+33 cut -6.675435e+23 fwb 0.000000e+00 flr 2.636202e+26 mrg 2.114651e+16 gap 0.000000e+00 P -1.1086581853388964e+34 END 3.236586e+20 gross 1.107016e+36
+CLEAN FCONE cycle 29672 t2s 2 faces 143198 momentum cut sum |dF| V/c^2 3.954832e+25
+CLEAN FCONE cycle 29672 t2s 3 faces 143951 momentum cut sum |dF| V/c^2 3.959115e+25
+CLEAN PLEDGER cycle 29672 dt 1.635440e+02 hflx -1.792234e+34 ntel 0.000000e+00 src -2.654139e+34 rad 8.617252e+33 cut -6.720652e+23 fwb 0.000000e+00 flr 2.651992e+26 mrg 2.819845e+16 gap 0.000000e+00 P -1.1380353761473990e+34 END 1.148429e+19 gross 1.106911e+36
+CLEAN FCONE cycle 29673 t2s 2 faces 143800 momentum cut sum |dF| V/c^2 3.988278e+25
+CLEAN FCONE cycle 29673 t2s 3 faces 144385 momentum cut sum |dF| V/c^2 3.990414e+25
+CLEAN PLEDGER cycle 29673 dt 1.635694e+02 hflx -1.792235e+34 ntel 1.804420e+18 src -2.654139e+34 rad 8.617258e+33 cut -6.776343e+23 fwb 0.000000e+00 flr 2.663236e+26 mrg 1.409703e+16 gap 0.000000e+00 P -1.1671409356083403e+34 END -1.066480e+21 gross 1.106805e+36
+CLEAN FCONE cycle 29674 t2s 2 faces 143988 momentum cut sum |dF| V/c^2 4.008904e+25
+CLEAN FCONE cycle 29674 t2s 3 faces 144940 momentum cut sum |dF| V/c^2 4.020919e+25
+CLEAN PLEDGER cycle 29674 dt 1.636066e+02 hflx -1.792236e+34 ntel 0.000000e+00 src -2.654139e+34 rad 8.617264e+33 cut -6.815384e+23 fwb 0.000000e+00 flr 2.671452e+26 mrg 7.046914e+15 gap 0.000000e+00 P -1.1959745397359712e+34 END -5.742951e+19 gross 1.106699e+36
+CLEAN FCONE cycle 29675 t2s 2 faces 144571 momentum cut sum |dF| V/c^2 4.044178e+25
+CLEAN FCONE cycle 29675 t2s 3 faces 144897 momentum cut sum |dF| V/c^2 4.039723e+25
+CLEAN PLEDGER cycle 29675 dt 1.636307e+02 hflx -1.792237e+34 ntel 1.803744e+18 src -2.654139e+34 rad 8.617270e+33 cut -6.867230e+23 fwb 0.000000e+00 flr 2.676109e+26 mrg 7.045876e+15 gap 0.000000e+00 P -1.2245317129358780e+34 END -2.731463e+20 gross 1.106593e+36
+CLEAN FCONE cycle 29676 t2s 2 faces 144786 momentum cut sum |dF| V/c^2 4.070417e+25
+CLEAN FCONE cycle 29676 t2s 3 faces 145244 momentum cut sum |dF| V/c^2 4.065134e+25
+CLEAN PLEDGER cycle 29676 dt 1.636411e+02 hflx -1.792239e+34 ntel 0.000000e+00 src -2.654139e+34 rad 8.617276e+33 cut -6.909972e+23 fwb 0.000000e+00 flr 2.684224e+26 mrg 1.409086e+16 gap 0.000000e+00 P -1.2528081801893578e+34 END -1.894615e+20 gross 1.106486e+36
+CLEAN FCONE cycle 29677 t2s 2 faces 144996 momentum cut sum |dF| V/c^2 4.091206e+25
+CLEAN FCONE cycle 29677 t2s 3 faces 145924 momentum cut sum |dF| V/c^2 4.090301e+25
+CLEAN PLEDGER cycle 29677 dt 1.636550e+02 hflx -1.792240e+34 ntel 0.000000e+00 src -2.654139e+34 rad 8.617282e+33 cut -6.942944e+23 fwb 0.000000e+00 flr 2.684628e+26 mrg 1.408966e+16 gap 0.000000e+00 P -1.2808030351391594e+34 END 1.722133e+20 gross 1.106379e+36
+CLEAN FCONE cycle 29678 t2s 2 faces 145757 momentum cut sum |dF| V/c^2 4.113974e+25
+CLEAN FCONE cycle 29678 t2s 3 faces 146314 momentum cut sum |dF| V/c^2 4.112682e+25
+CLEAN PLEDGER cycle 29678 dt 1.636573e+02 hflx -1.792241e+34 ntel 1.803450e+18 src -2.654139e+34 rad 8.617288e+33 cut -6.976537e+23 fwb 0.000000e+00 flr 2.687248e+26 mrg 2.817891e+16 gap 0.000000e+00 P -1.3085132770819163e+34 END -4.809506e+20 gross 1.106273e+36
+CLEAN FCONE cycle 29679 t2s 2 faces 146103 momentum cut sum |dF| V/c^2 4.136947e+25
+CLEAN FCONE cycle 29679 t2s 3 faces 146557 momentum cut sum |dF| V/c^2 4.134590e+25
+CLEAN PLEDGER cycle 29679 dt 1.636551e+02 hflx -1.792243e+34 ntel 0.000000e+00 src -2.654139e+34 rad 8.617294e+33 cut -7.007697e+23 fwb 0.000000e+00 flr 2.693240e+26 mrg 2.113447e+16 gap 0.000000e+00 P -1.3359371938313506e+34 END -3.100886e+20 gross 1.106166e+36
+CLEAN FCONE cycle 29680 t2s 2 faces 146256 momentum cut sum |dF| V/c^2 4.156116e+25
+CLEAN FCONE cycle 29680 t2s 3 faces 146829 momentum cut sum |dF| V/c^2 4.154607e+25
+CLEAN PLEDGER cycle 29680 dt 1.636534e+02 hflx -1.792244e+34 ntel 1.803494e+18 src -2.654140e+34 rad 8.617300e+33 cut -7.032127e+23 fwb 0.000000e+00 flr 2.695121e+26 mrg 2.113470e+16 gap 0.000000e+00 P -1.3630739665675940e+34 END 9.539532e+20 gross 1.106060e+36
+CLEAN FCONE cycle 29681 t2s 2 faces 146422 momentum cut sum |dF| V/c^2 4.177888e+25
+CLEAN FCONE cycle 29681 t2s 3 faces 146688 momentum cut sum |dF| V/c^2 4.167919e+25
+CLEAN PLEDGER cycle 29681 dt 1.636584e+02 hflx -1.792245e+34 ntel 0.000000e+00 src -2.654140e+34 rad 8.617306e+33 cut -7.053476e+23 fwb 0.000000e+00 flr 2.695398e+26 mrg 1.408936e+16 gap 0.000000e+00 P -1.3899235556102088e+34 END 9.783761e+19 gross 1.105953e+36
+CLEAN FCONE cycle 29682 t2s 2 faces 146343 momentum cut sum |dF| V/c^2 4.187749e+25
+CLEAN FCONE cycle 29682 t2s 3 faces 146731 momentum cut sum |dF| V/c^2 4.183764e+25
+CLEAN PLEDGER cycle 29682 dt 1.636764e+02 hflx -1.792246e+34 ntel 1.803240e+18 src -2.654140e+34 rad 8.617312e+33 cut -7.064393e+23 fwb 0.000000e+00 flr 2.693502e+26 mrg 2.113172e+16 gap 0.000000e+00 P -1.4164871204169216e+34 END -3.110636e+20 gross 1.105846e+36
+CLEAN FCONE cycle 29683 t2s 2 faces 146194 momentum cut sum |dF| V/c^2 4.198428e+25
+CLEAN FCONE cycle 29683 t2s 3 faces 146412 momentum cut sum |dF| V/c^2 4.190249e+25
+CLEAN PLEDGER cycle 29683 dt 1.637096e+02 hflx -1.792248e+34 ntel 0.000000e+00 src -2.654140e+34 rad 8.617318e+33 cut -7.072323e+23 fwb 0.000000e+00 flr 2.694015e+26 mrg 2.112744e+16 gap 0.000000e+00 P -1.4427662851122561e+34 END 5.680057e+20 gross 1.105738e+36
+CLEAN FCONE cycle 29684 t2s 2 faces 146195 momentum cut sum |dF| V/c^2 4.210278e+25
+CLEAN FCONE cycle 29684 t2s 3 faces 146611 momentum cut sum |dF| V/c^2 4.201290e+25
+CLEAN PLEDGER cycle 29684 dt 1.637559e+02 hflx -1.792249e+34 ntel 0.000000e+00 src -2.654140e+34 rad 8.617325e+33 cut -7.083626e+23 fwb 0.000000e+00 flr 2.692644e+26 mrg 1.408098e+16 gap 0.000000e+00 P -1.4687623052195766e+34 END -4.852323e+20 gross 1.105629e+36
+CLEAN FCONE cycle 29685 t2s 2 faces 146401 momentum cut sum |dF| V/c^2 4.219399e+25
+CLEAN FCONE cycle 29685 t2s 3 faces 146623 momentum cut sum |dF| V/c^2 4.207687e+25
+CLEAN PLEDGER cycle 29685 dt 1.637029e+02 hflx -1.792250e+34 ntel -1.802948e+18 src -2.654140e+34 rad 8.617331e+33 cut -7.096205e+23 fwb 0.000000e+00 flr 2.693390e+26 mrg 4.929936e+16 gap 0.000000e+00 P -1.4944588507642446e+34 END 4.679392e+20 gross 1.105519e+36
+CLEAN FCONE cycle 29686 t2s 2 faces 146356 momentum cut sum |dF| V/c^2 4.227397e+25
+CLEAN FCONE cycle 29686 t2s 3 faces 146494 momentum cut sum |dF| V/c^2 4.215007e+25
+CLEAN PLEDGER cycle 29686 dt 1.636425e+02 hflx -1.792252e+34 ntel -1.803614e+18 src -2.654141e+34 rad 8.617337e+33 cut -7.110518e+23 fwb 0.000000e+00 flr 2.693388e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5198547949039923e+34 END 6.536990e+20 gross 1.105408e+36
+CLEAN FCONE cycle 29687 t2s 2 faces 146292 momentum cut sum |dF| V/c^2 4.233434e+25
+CLEAN FCONE cycle 29687 t2s 3 faces 146556 momentum cut sum |dF| V/c^2 4.220980e+25
+CLEAN PLEDGER cycle 29687 dt 1.636008e+02 hflx -1.792253e+34 ntel 0.000000e+00 src -2.654141e+34 rad 8.617343e+33 cut -7.121063e+23 fwb 0.000000e+00 flr 2.692391e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5449535402752239e+34 END -3.699508e+20 gross 1.105297e+36
+CLEAN FCONE cycle 29688 t2s 2 faces 146502 momentum cut sum |dF| V/c^2 4.241783e+25
+CLEAN FCONE cycle 29688 t2s 3 faces 146679 momentum cut sum |dF| V/c^2 4.220628e+25
+CLEAN PLEDGER cycle 29688 dt 1.635484e+02 hflx -1.792254e+34 ntel 0.000000e+00 src -2.654141e+34 rad 8.617349e+33 cut -7.131236e+23 fwb 0.000000e+00 flr 2.693482e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5697539914233855e+34 END 1.270131e+20 gross 1.105184e+36
+CLEAN FCONE cycle 29689 t2s 2 faces 146530 momentum cut sum |dF| V/c^2 4.237912e+25
+CLEAN FCONE cycle 29689 t2s 3 faces 146760 momentum cut sum |dF| V/c^2 4.217563e+25
+CLEAN PLEDGER cycle 29689 dt 1.634929e+02 hflx -1.792256e+34 ntel 0.000000e+00 src -2.654141e+34 rad 8.617356e+33 cut -7.128525e+23 fwb 0.000000e+00 flr 2.693942e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5942567892418839e+34 END -6.251104e+20 gross 1.105072e+36
+CLEAN FCONE cycle 29690 t2s 2 faces 146661 momentum cut sum |dF| V/c^2 4.234375e+25
+CLEAN FCONE cycle 29690 t2s 3 faces 147045 momentum cut sum |dF| V/c^2 4.214577e+25
+CLEAN PLEDGER cycle 29690 dt 1.634377e+02 hflx -1.792257e+34 ntel 0.000000e+00 src -2.654141e+34 rad 8.617362e+33 cut -7.127549e+23 fwb 0.000000e+00 flr 2.694154e+26 mrg 1.410839e+16 gap 0.000000e+00 P -1.6184631217588589e+34 END 9.917617e+20 gross 1.104959e+36
+CLEAN FCONE cycle 29691 t2s 2 faces 146789 momentum cut sum |dF| V/c^2 4.230902e+25
+CLEAN FCONE cycle 29691 t2s 3 faces 146888 momentum cut sum |dF| V/c^2 4.209186e+25
+CLEAN PLEDGER cycle 29691 dt 1.633977e+02 hflx -1.792258e+34 ntel 0.000000e+00 src -2.654141e+34 rad 8.617368e+33 cut -7.122788e+23 fwb 0.000000e+00 flr 2.693914e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.6423763431025946e+34 END 3.896939e+20 gross 1.104845e+36
+CLEAN FCONE cycle 29692 t2s 2 faces 146657 momentum cut sum |dF| V/c^2 4.223867e+25
+CLEAN FCONE cycle 29692 t2s 3 faces 147070 momentum cut sum |dF| V/c^2 4.208665e+25
+CLEAN PLEDGER cycle 29692 dt 1.633795e+02 hflx -1.792259e+34 ntel 1.806517e+18 src -2.654142e+34 rad 8.617374e+33 cut -7.113710e+23 fwb 0.000000e+00 flr 2.693001e+26 mrg 2.822683e+16 gap 0.000000e+00 P -1.6660003345667084e+34 END 4.439447e+20 gross 1.104731e+36
+CLEAN FCONE cycle 29693 t2s 2 faces 146705 momentum cut sum |dF| V/c^2 4.220486e+25
+CLEAN FCONE cycle 29693 t2s 3 faces 146812 momentum cut sum |dF| V/c^2 4.205895e+25
+CLEAN PLEDGER cycle 29693 dt 1.633896e+02 hflx -1.792261e+34 ntel 0.000000e+00 src -2.654142e+34 rad 8.617381e+33 cut -7.104832e+23 fwb 0.000000e+00 flr 2.692848e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.6893398989546054e+34 END 3.187832e+20 gross 1.104617e+36
+CLEAN FCONE cycle 29694 t2s 2 faces 146707 momentum cut sum |dF| V/c^2 4.221098e+25
+CLEAN FCONE cycle 29694 t2s 3 faces 146798 momentum cut sum |dF| V/c^2 4.190826e+25
+CLEAN PLEDGER cycle 29694 dt 1.634288e+02 hflx -1.792262e+34 ntel 0.000000e+00 src -2.654142e+34 rad 8.617387e+33 cut -7.094504e+23 fwb 0.000000e+00 flr 2.690097e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.7124005212007253e+34 END 3.421497e+20 gross 1.104504e+36
+CLEAN FCONE cycle 29695 t2s 2 faces 146700 momentum cut sum |dF| V/c^2 4.220805e+25
+CLEAN FCONE cycle 29695 t2s 3 faces 146834 momentum cut sum |dF| V/c^2 4.186009e+25
+CLEAN PLEDGER cycle 29695 dt 1.634875e+02 hflx -1.792263e+34 ntel 0.000000e+00 src -2.654142e+34 rad 8.617393e+33 cut -7.083338e+23 fwb 0.000000e+00 flr 2.687861e+26 mrg 1.410409e+16 gap 0.000000e+00 P -1.7351860983929616e+34 END -5.082694e+20 gross 1.104390e+36
+CLEAN FCONE cycle 29696 t2s 2 faces 146802 momentum cut sum |dF| V/c^2 4.212952e+25
+CLEAN FCONE cycle 29696 t2s 3 faces 146937 momentum cut sum |dF| V/c^2 4.183976e+25
+CLEAN PLEDGER cycle 29696 dt 1.634136e+02 hflx -1.792265e+34 ntel 0.000000e+00 src -2.654142e+34 rad 8.617399e+33 cut -7.071175e+23 fwb 0.000000e+00 flr 2.689300e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.7576795179460308e+34 END 2.115464e+20 gross 1.104276e+36
+CLEAN FCONE cycle 29697 t2s 2 faces 146868 momentum cut sum |dF| V/c^2 4.210115e+25
+CLEAN FCONE cycle 29697 t2s 3 faces 147117 momentum cut sum |dF| V/c^2 4.181157e+25
+CLEAN PLEDGER cycle 29697 dt 1.633801e+02 hflx -1.792266e+34 ntel 1.806511e+18 src -2.654142e+34 rad 8.617405e+33 cut -7.066060e+23 fwb 0.000000e+00 flr 2.687585e+26 mrg 1.411337e+16 gap 0.000000e+00 P -1.7798884123182856e+34 END -1.166510e+20 gross 1.104163e+36
+CLEAN FCONE cycle 29698 t2s 2 faces 147068 momentum cut sum |dF| V/c^2 4.209210e+25
+CLEAN FCONE cycle 29698 t2s 3 faces 147353 momentum cut sum |dF| V/c^2 4.178186e+25
+CLEAN PLEDGER cycle 29698 dt 1.633697e+02 hflx -1.792267e+34 ntel 0.000000e+00 src -2.654143e+34 rad 8.617412e+33 cut -7.062624e+23 fwb 0.000000e+00 flr 2.687262e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.8018180696440932e+34 END 8.850670e+19 gross 1.104049e+36
+CLEAN FCONE cycle 29699 t2s 2 faces 147639 momentum cut sum |dF| V/c^2 4.216229e+25
+CLEAN FCONE cycle 29699 t2s 3 faces 147686 momentum cut sum |dF| V/c^2 4.182867e+25
+CLEAN PLEDGER cycle 29699 dt 1.633831e+02 hflx -1.792268e+34 ntel -1.806478e+18 src -2.654143e+34 rad 8.617418e+33 cut -7.070190e+23 fwb 0.000000e+00 flr 2.686692e+26 mrg 2.822621e+16 gap 0.000000e+00 P -1.8234733794907585e+34 END 6.372773e+20 gross 1.103935e+36
+CLEAN FCONE cycle 29700 t2s 2 faces 147719 momentum cut sum |dF| V/c^2 4.215526e+25
+CLEAN FCONE cycle 29700 t2s 3 faces 148373 momentum cut sum |dF| V/c^2 4.198567e+25
+CLEAN PLEDGER cycle 29700 dt 1.633305e+02 hflx -1.792270e+34 ntel 0.000000e+00 src -2.654143e+34 rad 8.617424e+33 cut -7.076923e+23 fwb 0.000000e+00 flr 2.687452e+26 mrg 1.411765e+16 gap 0.000000e+00 P -1.8448469242430261e+34 END -3.720287e+20 gross 1.103822e+36
+CLEAN FCONE cycle 29701 t2s 2 faces 148202 momentum cut sum |dF| V/c^2 4.227711e+25
+CLEAN FCONE cycle 29701 t2s 3 faces 148346 momentum cut sum |dF| V/c^2 4.200397e+25
+CLEAN PLEDGER cycle 29701 dt 1.632316e+02 hflx -1.792271e+34 ntel -1.808154e+18 src -2.654143e+34 rad 8.617430e+33 cut -7.095128e+23 fwb 0.000000e+00 flr 2.684105e+26 mrg 1.412620e+16 gap 0.000000e+00 P -1.8659346324147667e+34 END -1.149726e+20 gross 1.103708e+36
+CLEAN FCONE cycle 29702 t2s 2 faces 148397 momentum cut sum |dF| V/c^2 4.238477e+25
+CLEAN FCONE cycle 29702 t2s 3 faces 148430 momentum cut sum |dF| V/c^2 4.207487e+25
+CLEAN PLEDGER cycle 29702 dt 1.631187e+02 hflx -1.792272e+34 ntel 0.000000e+00 src -2.654143e+34 rad 8.617436e+33 cut -7.114142e+23 fwb 0.000000e+00 flr 2.684008e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.8867374136621257e+34 END 2.055938e+19 gross 1.103595e+36
+CLEAN FCONE cycle 29703 t2s 2 faces 148529 momentum cut sum |dF| V/c^2 4.241413e+25
+CLEAN FCONE cycle 29703 t2s 3 faces 148964 momentum cut sum |dF| V/c^2 4.218929e+25
+CLEAN PLEDGER cycle 29703 dt 1.630137e+02 hflx -1.792273e+34 ntel 0.000000e+00 src -2.654143e+34 rad 8.617442e+33 cut -7.130725e+23 fwb 0.000000e+00 flr 2.686364e+26 mrg 2.829017e+16 gap 0.000000e+00 P -1.9072596224441402e+34 END 4.507676e+20 gross 1.103483e+36
+CLEAN FCONE cycle 29704 t2s 2 faces 148905 momentum cut sum |dF| V/c^2 4.248476e+25
+CLEAN FCONE cycle 29704 t2s 3 faces 149362 momentum cut sum |dF| V/c^2 4.224674e+25
+CLEAN PLEDGER cycle 29704 dt 1.629178e+02 hflx -1.792275e+34 ntel 0.000000e+00 src -2.654144e+34 rad 8.617448e+33 cut -7.146524e+23 fwb 0.000000e+00 flr 2.682248e+26 mrg 1.415342e+16 gap 0.000000e+00 P -1.9275057927967328e+34 END 6.830468e+20 gross 1.103371e+36
+CLEAN FCONE cycle 29705 t2s 2 faces 149344 momentum cut sum |dF| V/c^2 4.258367e+25
+CLEAN FCONE cycle 29705 t2s 3 faces 149550 momentum cut sum |dF| V/c^2 4.223600e+25
+CLEAN PLEDGER cycle 29705 dt 1.628405e+02 hflx -1.792276e+34 ntel 0.000000e+00 src -2.654144e+34 rad 8.617454e+33 cut -7.165586e+23 fwb 0.000000e+00 flr 2.684067e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.9474812208200202e+34 END 1.209855e+21 gross 1.103260e+36
+CLEAN FCONE cycle 29706 t2s 2 faces 149643 momentum cut sum |dF| V/c^2 4.258897e+25
+CLEAN FCONE cycle 29706 t2s 3 faces 149886 momentum cut sum |dF| V/c^2 4.227959e+25
+CLEAN PLEDGER cycle 29706 dt 1.627853e+02 hflx -1.792277e+34 ntel -1.813111e+18 src -2.654144e+34 rad 8.617460e+33 cut -7.176023e+23 fwb 0.000000e+00 flr 2.683697e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.9671912025924533e+34 END -3.500704e+20 gross 1.103149e+36
+CLEAN FCONE cycle 29707 t2s 2 faces 149996 momentum cut sum |dF| V/c^2 4.266386e+25
+CLEAN FCONE cycle 29707 t2s 3 faces 150014 momentum cut sum |dF| V/c^2 4.228280e+25
+CLEAN PLEDGER cycle 29707 dt 1.627627e+02 hflx -1.792278e+34 ntel -1.813364e+18 src -2.654144e+34 rad 8.617465e+33 cut -7.190001e+23 fwb 0.000000e+00 flr 2.683184e+26 mrg 1.416690e+16 gap 0.000000e+00 P -1.9866421616249734e+34 END 4.370858e+20 gross 1.103037e+36
+CLEAN FCONE cycle 29708 t2s 2 faces 150263 momentum cut sum |dF| V/c^2 4.270550e+25
+CLEAN FCONE cycle 29708 t2s 3 faces 150505 momentum cut sum |dF| V/c^2 4.237200e+25
+CLEAN PLEDGER cycle 29708 dt 1.627623e+02 hflx -1.792279e+34 ntel -1.813368e+18 src -2.654144e+34 rad 8.617471e+33 cut -7.204232e+23 fwb 0.000000e+00 flr 2.684311e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0058395728522162e+34 END -5.099686e+20 gross 1.102926e+36
+CLEAN FCONE cycle 29709 t2s 2 faces 150549 momentum cut sum |dF| V/c^2 4.272472e+25
+CLEAN FCONE cycle 29709 t2s 3 faces 150708 momentum cut sum |dF| V/c^2 4.248174e+25
+CLEAN PLEDGER cycle 29709 dt 1.626219e+02 hflx -1.792281e+34 ntel 1.814934e+18 src -2.654145e+34 rad 8.617477e+33 cut -7.219564e+23 fwb 0.000000e+00 flr 2.684526e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0247703666568473e+34 END -1.019477e+21 gross 1.102814e+36
+CLEAN FCONE cycle 29710 t2s 2 faces 150892 momentum cut sum |dF| V/c^2 4.282969e+25
+CLEAN FCONE cycle 29710 t2s 3 faces 151183 momentum cut sum |dF| V/c^2 4.252441e+25
+CLEAN PLEDGER cycle 29710 dt 1.625190e+02 hflx -1.792282e+34 ntel 0.000000e+00 src -2.654145e+34 rad 8.617482e+33 cut -7.240000e+23 fwb 0.000000e+00 flr 2.682339e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0434426888156525e+34 END 2.476023e+19 gross 1.102703e+36
+CLEAN FCONE cycle 29711 t2s 2 faces 150994 momentum cut sum |dF| V/c^2 4.282359e+25
+CLEAN FCONE cycle 29711 t2s 3 faces 151318 momentum cut sum |dF| V/c^2 4.257890e+25
+CLEAN PLEDGER cycle 29711 dt 1.624352e+02 hflx -1.792283e+34 ntel 0.000000e+00 src -2.654145e+34 rad 8.617488e+33 cut -7.246183e+23 fwb 0.000000e+00 flr 2.681965e+26 mrg 1.419546e+16 gap 0.000000e+00 P -2.0618622960328576e+34 END -8.240604e+20 gross 1.102591e+36
+CLEAN FCONE cycle 29712 t2s 2 faces 151448 momentum cut sum |dF| V/c^2 4.289603e+25
+CLEAN FCONE cycle 29712 t2s 3 faces 151554 momentum cut sum |dF| V/c^2 4.257600e+25
+CLEAN PLEDGER cycle 29712 dt 1.623841e+02 hflx -1.792284e+34 ntel 0.000000e+00 src -2.654145e+34 rad 8.617494e+33 cut -7.259054e+23 fwb 0.000000e+00 flr 2.682295e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0800364496013854e+34 END 1.210421e+21 gross 1.102479e+36
+CLEAN FCONE cycle 29713 t2s 2 faces 151639 momentum cut sum |dF| V/c^2 4.293419e+25
+CLEAN FCONE cycle 29713 t2s 3 faces 151820 momentum cut sum |dF| V/c^2 4.264727e+25
+CLEAN PLEDGER cycle 29713 dt 1.623429e+02 hflx -1.792285e+34 ntel 0.000000e+00 src -2.654145e+34 rad 8.617499e+33 cut -7.271610e+23 fwb 0.000000e+00 flr 2.683860e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0979697807821689e+34 END -9.363197e+20 gross 1.102368e+36
+CLEAN FCONE cycle 29714 t2s 2 faces 151648 momentum cut sum |dF| V/c^2 4.295410e+25
+CLEAN FCONE cycle 29714 t2s 3 faces 151766 momentum cut sum |dF| V/c^2 4.263557e+25
+CLEAN PLEDGER cycle 29714 dt 1.622882e+02 hflx -1.792286e+34 ntel 0.000000e+00 src -2.654146e+34 rad 8.617505e+33 cut -7.279838e+23 fwb 0.000000e+00 flr 2.683704e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1156644482426770e+34 END -2.866981e+20 gross 1.102257e+36
+CLEAN FCONE cycle 29715 t2s 2 faces 151814 momentum cut sum |dF| V/c^2 4.297940e+25
+CLEAN FCONE cycle 29715 t2s 3 faces 152007 momentum cut sum |dF| V/c^2 4.267157e+25
+CLEAN PLEDGER cycle 29715 dt 1.622269e+02 hflx -1.792287e+34 ntel 1.819353e+18 src -2.654146e+34 rad 8.617510e+33 cut -7.290082e+23 fwb 0.000000e+00 flr 2.684326e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1331235534329556e+34 END 4.870941e+19 gross 1.102146e+36
+CLEAN FCONE cycle 29716 t2s 2 faces 152062 momentum cut sum |dF| V/c^2 4.306920e+25
+CLEAN FCONE cycle 29716 t2s 3 faces 152114 momentum cut sum |dF| V/c^2 4.271135e+25
+CLEAN PLEDGER cycle 29716 dt 1.621664e+02 hflx -1.792288e+34 ntel 0.000000e+00 src -2.654146e+34 rad 8.617515e+33 cut -7.301823e+23 fwb 0.000000e+00 flr 2.684143e+26 mrg 1.421900e+16 gap 0.000000e+00 P -2.1503509027472167e+34 END -3.127079e+20 gross 1.102036e+36
+CLEAN FCONE cycle 29717 t2s 2 faces 152103 momentum cut sum |dF| V/c^2 4.310541e+25
+CLEAN FCONE cycle 29717 t2s 3 faces 152268 momentum cut sum |dF| V/c^2 4.279475e+25
+CLEAN PLEDGER cycle 29717 dt 1.620757e+02 hflx -1.792289e+34 ntel -1.821050e+18 src -2.654146e+34 rad 8.617520e+33 cut -7.313021e+23 fwb 0.000000e+00 flr 2.683447e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1673473173634569e+34 END -5.380768e+20 gross 1.101926e+36
+CLEAN FCONE cycle 29718 t2s 2 faces 151794 momentum cut sum |dF| V/c^2 4.307246e+25
+CLEAN FCONE cycle 29718 t2s 3 faces 152551 momentum cut sum |dF| V/c^2 4.294758e+25
+CLEAN PLEDGER cycle 29718 dt 1.619191e+02 hflx -1.792290e+34 ntel 0.000000e+00 src -2.654146e+34 rad 8.617526e+33 cut -7.323064e+23 fwb 0.000000e+00 flr 2.683512e+26 mrg 5.696285e+16 gap 0.000000e+00 P -2.1841094637976326e+34 END 4.562461e+20 gross 1.101817e+36
+CLEAN FCONE cycle 29719 t2s 2 faces 152033 momentum cut sum |dF| V/c^2 4.319348e+25
+CLEAN FCONE cycle 29719 t2s 3 faces 152353 momentum cut sum |dF| V/c^2 4.295044e+25
+CLEAN PLEDGER cycle 29719 dt 1.617827e+02 hflx -1.792291e+34 ntel 0.000000e+00 src -2.654147e+34 rad 8.617531e+33 cut -7.334175e+23 fwb 0.000000e+00 flr 2.683998e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2006428807675181e+34 END -7.374524e+20 gross 1.101708e+36
+CLEAN FCONE cycle 29720 t2s 2 faces 152237 momentum cut sum |dF| V/c^2 4.334718e+25
+CLEAN FCONE cycle 29720 t2s 3 faces 152216 momentum cut sum |dF| V/c^2 4.300489e+25
+CLEAN PLEDGER cycle 29720 dt 1.616703e+02 hflx -1.792292e+34 ntel 0.000000e+00 src -2.654147e+34 rad 8.617536e+33 cut -7.349774e+23 fwb 0.000000e+00 flr 2.683280e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2169539070431115e+34 END 7.236647e+20 gross 1.101601e+36
+CLEAN FCONE cycle 29721 t2s 2 faces 152135 momentum cut sum |dF| V/c^2 4.343766e+25
+CLEAN FCONE cycle 29721 t2s 3 faces 152214 momentum cut sum |dF| V/c^2 4.314402e+25
+CLEAN PLEDGER cycle 29721 dt 1.615893e+02 hflx -1.792293e+34 ntel 0.000000e+00 src -2.654147e+34 rad 8.617541e+33 cut -7.358273e+23 fwb 0.000000e+00 flr 2.682472e+26 mrg 5.707910e+16 gap 0.000000e+00 P -2.2330497710928658e+34 END 8.310481e+20 gross 1.101493e+36
+CLEAN FCONE cycle 29722 t2s 2 faces 152093 momentum cut sum |dF| V/c^2 4.349884e+25
+CLEAN FCONE cycle 29722 t2s 3 faces 152281 momentum cut sum |dF| V/c^2 4.312969e+25
+CLEAN PLEDGER cycle 29722 dt 1.615153e+02 hflx -1.792294e+34 ntel 0.000000e+00 src -2.654147e+34 rad 8.617546e+33 cut -7.365497e+23 fwb 0.000000e+00 flr 2.685045e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2489352164402346e+34 END 6.090485e+20 gross 1.101386e+36
+CLEAN FCONE cycle 29723 t2s 2 faces 152153 momentum cut sum |dF| V/c^2 4.348219e+25
+CLEAN FCONE cycle 29723 t2s 3 faces 152497 momentum cut sum |dF| V/c^2 4.309510e+25
+CLEAN PLEDGER cycle 29723 dt 1.613214e+02 hflx -1.792295e+34 ntel 0.000000e+00 src -2.654147e+34 rad 8.617551e+33 cut -7.369886e+23 fwb 0.000000e+00 flr 2.686878e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2646026596724821e+34 END -4.418816e+20 gross 1.101278e+36
+CLEAN FCONE cycle 29724 t2s 2 faces 152507 momentum cut sum |dF| V/c^2 4.347322e+25
+CLEAN FCONE cycle 29724 t2s 3 faces 152728 momentum cut sum |dF| V/c^2 4.314485e+25
+CLEAN PLEDGER cycle 29724 dt 1.611562e+02 hflx -1.792296e+34 ntel -1.831440e+18 src -2.654148e+34 rad 8.617555e+33 cut -7.377560e+23 fwb 0.000000e+00 flr 2.686240e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2800593002428145e+34 END 1.024842e+21 gross 1.101171e+36
+CLEAN FCONE cycle 29725 t2s 2 faces 152431 momentum cut sum |dF| V/c^2 4.342880e+25
+CLEAN FCONE cycle 29725 t2s 3 faces 152811 momentum cut sum |dF| V/c^2 4.306171e+25
+CLEAN PLEDGER cycle 29725 dt 1.610223e+02 hflx -1.792297e+34 ntel -1.832963e+18 src -2.654148e+34 rad 8.617560e+33 cut -7.376335e+23 fwb 0.000000e+00 flr 2.686691e+26 mrg 2.864004e+16 gap 0.000000e+00 P -2.2953122130078589e+34 END 7.058658e+20 gross 1.101065e+36
+CLEAN FCONE cycle 29726 t2s 2 faces 152634 momentum cut sum |dF| V/c^2 4.338600e+25
+CLEAN FCONE cycle 29726 t2s 3 faces 152899 momentum cut sum |dF| V/c^2 4.306597e+25
+CLEAN PLEDGER cycle 29726 dt 1.609143e+02 hflx -1.792298e+34 ntel 0.000000e+00 src -2.654148e+34 rad 8.617565e+33 cut -7.374142e+23 fwb 0.000000e+00 flr 2.684292e+26 mrg 2.865928e+16 gap 0.000000e+00 P -2.3103678154187130e+34 END 2.506666e+20 gross 1.100958e+36
+CLEAN FCONE cycle 29727 t2s 2 faces 152637 momentum cut sum |dF| V/c^2 4.332597e+25
+CLEAN FCONE cycle 29727 t2s 3 faces 152629 momentum cut sum |dF| V/c^2 4.290504e+25
+CLEAN PLEDGER cycle 29727 dt 1.608075e+02 hflx -1.792299e+34 ntel 0.000000e+00 src -2.654148e+34 rad 8.617569e+33 cut -7.366224e+23 fwb 0.000000e+00 flr 2.684701e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3252302296866764e+34 END -2.545453e+20 gross 1.100853e+36
+CLEAN FCONE cycle 29728 t2s 2 faces 152255 momentum cut sum |dF| V/c^2 4.319869e+25
+CLEAN FCONE cycle 29728 t2s 3 faces 152430 momentum cut sum |dF| V/c^2 4.283312e+25
+CLEAN PLEDGER cycle 29728 dt 1.606919e+02 hflx -1.792300e+34 ntel 0.000000e+00 src -2.654148e+34 rad 8.617574e+33 cut -7.352954e+23 fwb 0.000000e+00 flr 2.685295e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3399024201107250e+34 END -3.492562e+20 gross 1.100749e+36
+CLEAN FCONE cycle 29729 t2s 2 faces 152253 momentum cut sum |dF| V/c^2 4.315979e+25
+CLEAN FCONE cycle 29729 t2s 3 faces 152199 momentum cut sum |dF| V/c^2 4.266559e+25
+CLEAN PLEDGER cycle 29729 dt 1.605784e+02 hflx -1.792301e+34 ntel 0.000000e+00 src -2.654149e+34 rad 8.617578e+33 cut -7.344773e+23 fwb 0.000000e+00 flr 2.682591e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3543885876640053e+34 END -6.347689e+19 gross 1.100646e+36
+CLEAN FCONE cycle 29730 t2s 2 faces 152033 momentum cut sum |dF| V/c^2 4.301763e+25
+CLEAN FCONE cycle 29730 t2s 3 faces 152115 momentum cut sum |dF| V/c^2 4.264351e+25
+CLEAN PLEDGER cycle 29730 dt 1.604784e+02 hflx -1.792301e+34 ntel 0.000000e+00 src -2.654149e+34 rad 8.617583e+33 cut -7.332218e+23 fwb 0.000000e+00 flr 2.680549e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3686941060939694e+34 END -6.388739e+20 gross 1.100543e+36
+CLEAN FCONE cycle 29731 t2s 2 faces 151814 momentum cut sum |dF| V/c^2 4.290857e+25
+CLEAN FCONE cycle 29731 t2s 3 faces 152040 momentum cut sum |dF| V/c^2 4.260660e+25
+CLEAN PLEDGER cycle 29731 dt 1.603999e+02 hflx -1.792302e+34 ntel 0.000000e+00 src -2.654149e+34 rad 8.617587e+33 cut -7.319601e+23 fwb 0.000000e+00 flr 2.680944e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3828245271270169e+34 END -5.049753e+20 gross 1.100440e+36
+CLEAN FCONE cycle 29732 t2s 2 faces 151778 momentum cut sum |dF| V/c^2 4.287917e+25
+CLEAN FCONE cycle 29732 t2s 3 faces 151859 momentum cut sum |dF| V/c^2 4.244887e+25
+CLEAN PLEDGER cycle 29732 dt 1.603481e+02 hflx -1.792303e+34 ntel 0.000000e+00 src -2.654149e+34 rad 8.617591e+33 cut -7.313329e+23 fwb 0.000000e+00 flr 2.681162e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3967854509676951e+34 END -9.941811e+20 gross 1.100339e+36
+CLEAN FCONE cycle 29733 t2s 2 faces 151638 momentum cut sum |dF| V/c^2 4.273584e+25
+CLEAN FCONE cycle 29733 t2s 3 faces 151712 momentum cut sum |dF| V/c^2 4.232554e+25
+CLEAN PLEDGER cycle 29733 dt 1.603250e+02 hflx -1.792304e+34 ntel 0.000000e+00 src -2.654149e+34 rad 8.617596e+33 cut -7.299793e+23 fwb 0.000000e+00 flr 2.680802e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4105825181476453e+34 END -3.373327e+20 gross 1.100238e+36
+CLEAN FCONE cycle 29734 t2s 2 faces 151698 momentum cut sum |dF| V/c^2 4.266308e+25
+CLEAN FCONE cycle 29734 t2s 3 faces 151796 momentum cut sum |dF| V/c^2 4.228149e+25
+CLEAN PLEDGER cycle 29734 dt 1.603297e+02 hflx -1.792305e+34 ntel 0.000000e+00 src -2.654150e+34 rad 8.617600e+33 cut -7.290646e+23 fwb 0.000000e+00 flr 2.681100e+26 mrg 2.876376e+16 gap 0.000000e+00 P -2.4242210864759224e+34 END 1.122579e+20 gross 1.100139e+36
+CLEAN FCONE cycle 29735 t2s 2 faces 151734 momentum cut sum |dF| V/c^2 4.258283e+25
+CLEAN FCONE cycle 29735 t2s 3 faces 151861 momentum cut sum |dF| V/c^2 4.222189e+25
+CLEAN PLEDGER cycle 29735 dt 1.602275e+02 hflx -1.792305e+34 ntel 0.000000e+00 src -2.654150e+34 rad 8.617604e+33 cut -7.285216e+23 fwb 0.000000e+00 flr 2.680183e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4376950517970981e+34 END -4.018243e+20 gross 1.100039e+36
+CLEAN FCONE cycle 29736 t2s 2 faces 151703 momentum cut sum |dF| V/c^2 4.255034e+25
+CLEAN FCONE cycle 29736 t2s 3 faces 151992 momentum cut sum |dF| V/c^2 4.218326e+25
+CLEAN PLEDGER cycle 29736 dt 1.601292e+02 hflx -1.792306e+34 ntel 0.000000e+00 src -2.654150e+34 rad 8.617608e+33 cut -7.281849e+23 fwb 0.000000e+00 flr 2.680603e+26 mrg 2.879977e+16 gap 0.000000e+00 P -2.4510079922517548e+34 END -3.625906e+20 gross 1.099942e+36
+CLEAN FCONE cycle 29737 t2s 2 faces 151750 momentum cut sum |dF| V/c^2 4.248144e+25
+CLEAN FCONE cycle 29737 t2s 3 faces 152017 momentum cut sum |dF| V/c^2 4.208601e+25
+CLEAN PLEDGER cycle 29737 dt 1.600595e+02 hflx -1.792307e+34 ntel 1.843989e+18 src -2.654150e+34 rad 8.617612e+33 cut -7.272894e+23 fwb 0.000000e+00 flr 2.679502e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4641656013221773e+34 END 7.912972e+19 gross 1.099844e+36
+CLEAN FCONE cycle 29738 t2s 2 faces 151796 momentum cut sum |dF| V/c^2 4.239982e+25
+CLEAN FCONE cycle 29738 t2s 3 faces 152069 momentum cut sum |dF| V/c^2 4.204709e+25
+CLEAN PLEDGER cycle 29738 dt 1.600128e+02 hflx -1.792308e+34 ntel 0.000000e+00 src -2.654151e+34 rad 8.617616e+33 cut -7.263371e+23 fwb 0.000000e+00 flr 2.676959e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4771732211589855e+34 END 6.663254e+20 gross 1.099746e+36
+CLEAN FCONE cycle 29739 t2s 2 faces 151760 momentum cut sum |dF| V/c^2 4.233709e+25
+CLEAN FCONE cycle 29739 t2s 3 faces 152083 momentum cut sum |dF| V/c^2 4.200533e+25
+CLEAN PLEDGER cycle 29739 dt 1.599751e+02 hflx -1.792308e+34 ntel 1.844962e+18 src -2.654151e+34 rad 8.617620e+33 cut -7.250511e+23 fwb 0.000000e+00 flr 2.678690e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4900349115113809e+34 END -1.124275e+21 gross 1.099649e+36
+CLEAN FCONE cycle 29740 t2s 2 faces 151734 momentum cut sum |dF| V/c^2 4.226941e+25
+CLEAN FCONE cycle 29740 t2s 3 faces 151739 momentum cut sum |dF| V/c^2 4.182672e+25
+CLEAN PLEDGER cycle 29740 dt 1.599258e+02 hflx -1.792309e+34 ntel 0.000000e+00 src -2.654151e+34 rad 8.617624e+33 cut -7.237546e+23 fwb 0.000000e+00 flr 2.679341e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5027525967109666e+34 END 3.701309e+19 gross 1.099552e+36
+CLEAN FCONE cycle 29741 t2s 2 faces 151778 momentum cut sum |dF| V/c^2 4.223821e+25
+CLEAN FCONE cycle 29741 t2s 3 faces 151762 momentum cut sum |dF| V/c^2 4.174912e+25
+CLEAN PLEDGER cycle 29741 dt 1.598746e+02 hflx -1.792310e+34 ntel 1.846122e+18 src -2.654151e+34 rad 8.617627e+33 cut -7.230351e+23 fwb 0.000000e+00 flr 2.678050e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5153284924934857e+34 END -1.262537e+21 gross 1.099456e+36
+CLEAN FCONE cycle 29742 t2s 2 faces 151750 momentum cut sum |dF| V/c^2 4.214360e+25
+CLEAN FCONE cycle 29742 t2s 3 faces 151705 momentum cut sum |dF| V/c^2 4.170202e+25
+CLEAN PLEDGER cycle 29742 dt 1.598353e+02 hflx -1.792310e+34 ntel -1.846576e+18 src -2.654151e+34 rad 8.617631e+33 cut -7.218543e+23 fwb 0.000000e+00 flr 2.677835e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5277658653990521e+34 END -5.043034e+20 gross 1.099359e+36
+CLEAN FCONE cycle 29743 t2s 2 faces 151644 momentum cut sum |dF| V/c^2 4.209401e+25
+CLEAN FCONE cycle 29743 t2s 3 faces 151692 momentum cut sum |dF| V/c^2 4.167659e+25
+CLEAN PLEDGER cycle 29743 dt 1.598160e+02 hflx -1.792311e+34 ntel 0.000000e+00 src -2.654152e+34 rad 8.617635e+33 cut -7.210521e+23 fwb 0.000000e+00 flr 2.677690e+26 mrg 2.885621e+16 gap 0.000000e+00 P -2.5400688132130350e+34 END 1.101407e+20 gross 1.099261e+36
+CLEAN FCONE cycle 29744 t2s 2 faces 151596 momentum cut sum |dF| V/c^2 4.208635e+25
+CLEAN FCONE cycle 29744 t2s 3 faces 151625 momentum cut sum |dF| V/c^2 4.167719e+25
+CLEAN PLEDGER cycle 29744 dt 1.598159e+02 hflx -1.792312e+34 ntel 1.846799e+18 src -2.654152e+34 rad 8.617638e+33 cut -7.204316e+23 fwb 0.000000e+00 flr 2.675627e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5522415404434086e+34 END -3.383078e+20 gross 1.099164e+36
+CLEAN FCONE cycle 29745 t2s 2 faces 151472 momentum cut sum |dF| V/c^2 4.208081e+25
+CLEAN FCONE cycle 29745 t2s 3 faces 151320 momentum cut sum |dF| V/c^2 4.163723e+25
+CLEAN PLEDGER cycle 29745 dt 1.598476e+02 hflx -1.792312e+34 ntel 0.000000e+00 src -2.654152e+34 rad 8.617642e+33 cut -7.198582e+23 fwb 0.000000e+00 flr 2.677542e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5642894493668807e+34 END -1.945680e+20 gross 1.099067e+36
+CLEAN FCONE cycle 29746 t2s 2 faces 151180 momentum cut sum |dF| V/c^2 4.205329e+25
+CLEAN FCONE cycle 29746 t2s 3 faces 151306 momentum cut sum |dF| V/c^2 4.164632e+25
+CLEAN PLEDGER cycle 29746 dt 1.599093e+02 hflx -1.792313e+34 ntel -3.691440e+18 src -2.654152e+34 rad 8.617645e+33 cut -7.192819e+23 fwb 0.000000e+00 flr 2.673946e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5762177506570203e+34 END -1.144487e+20 gross 1.098970e+36
+CLEAN FCONE cycle 29747 t2s 2 faces 151136 momentum cut sum |dF| V/c^2 4.206014e+25
+CLEAN FCONE cycle 29747 t2s 3 faces 151143 momentum cut sum |dF| V/c^2 4.165959e+25
+CLEAN PLEDGER cycle 29747 dt 1.599475e+02 hflx -1.792314e+34 ntel 0.000000e+00 src -2.654152e+34 rad 8.617649e+33 cut -7.190283e+23 fwb 0.000000e+00 flr 2.674421e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5880278416893888e+34 END 1.163631e+20 gross 1.098875e+36
+CLEAN FCONE cycle 29748 t2s 2 faces 150924 momentum cut sum |dF| V/c^2 4.205922e+25
+CLEAN FCONE cycle 29748 t2s 3 faces 150868 momentum cut sum |dF| V/c^2 4.163494e+25
+CLEAN PLEDGER cycle 29748 dt 1.598897e+02 hflx -1.792314e+34 ntel -1.845947e+18 src -2.654153e+34 rad 8.617652e+33 cut -7.194562e+23 fwb 0.000000e+00 flr 2.673251e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5997155651583735e+34 END -6.047669e+20 gross 1.098780e+36
+CLEAN FCONE cycle 29749 t2s 2 faces 150726 momentum cut sum |dF| V/c^2 4.199916e+25
+CLEAN FCONE cycle 29749 t2s 3 faces 151050 momentum cut sum |dF| V/c^2 4.164361e+25
+CLEAN PLEDGER cycle 29749 dt 1.598639e+02 hflx -1.792315e+34 ntel 1.846245e+18 src -2.654153e+34 rad 8.617656e+33 cut -7.195738e+23 fwb 0.000000e+00 flr 2.673837e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6112861597109118e+34 END 9.336914e+20 gross 1.098686e+36
+CLEAN FCONE cycle 29750 t2s 2 faces 150824 momentum cut sum |dF| V/c^2 4.197629e+25
+CLEAN FCONE cycle 29750 t2s 3 faces 151152 momentum cut sum |dF| V/c^2 4.165576e+25
+CLEAN PLEDGER cycle 29750 dt 1.598690e+02 hflx -1.792315e+34 ntel 0.000000e+00 src -2.654153e+34 rad 8.617659e+33 cut -7.200601e+23 fwb 0.000000e+00 flr 2.672198e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6227444681478866e+34 END 1.241021e+21 gross 1.098594e+36
+CLEAN FCONE cycle 29751 t2s 2 faces 150869 momentum cut sum |dF| V/c^2 4.196620e+25
+CLEAN FCONE cycle 29751 t2s 3 faces 151182 momentum cut sum |dF| V/c^2 4.163404e+25
+CLEAN PLEDGER cycle 29751 dt 1.597994e+02 hflx -1.792316e+34 ntel 0.000000e+00 src -2.654153e+34 rad 8.617662e+33 cut -7.207516e+23 fwb 0.000000e+00 flr 2.673600e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6340869962285988e+34 END -7.094520e+20 gross 1.098502e+36
+CLEAN FCONE cycle 29752 t2s 2 faces 151079 momentum cut sum |dF| V/c^2 4.199413e+25
+CLEAN FCONE cycle 29752 t2s 3 faces 151046 momentum cut sum |dF| V/c^2 4.157744e+25
+CLEAN PLEDGER cycle 29752 dt 1.597557e+02 hflx -1.792317e+34 ntel 0.000000e+00 src -2.654153e+34 rad 8.617666e+33 cut -7.217480e+23 fwb 0.000000e+00 flr 2.672623e+26 mrg 1.443356e+16 gap 0.000000e+00 P -2.6453178407670313e+34 END -1.496698e+20 gross 1.098411e+36
+CLEAN FCONE cycle 29753 t2s 2 faces 150921 momentum cut sum |dF| V/c^2 4.193675e+25
+CLEAN FCONE cycle 29753 t2s 3 faces 151063 momentum cut sum |dF| V/c^2 4.159067e+25
+CLEAN PLEDGER cycle 29753 dt 1.597149e+02 hflx -1.792317e+34 ntel 1.847968e+18 src -2.654154e+34 rad 8.617669e+33 cut -7.222273e+23 fwb 0.000000e+00 flr 2.672846e+26 mrg 1.443725e+16 gap 0.000000e+00 P -2.6564392440688820e+34 END 3.992233e+20 gross 1.098321e+36
+CLEAN FCONE cycle 29754 t2s 2 faces 151137 momentum cut sum |dF| V/c^2 4.194019e+25
+CLEAN FCONE cycle 29754 t2s 3 faces 151106 momentum cut sum |dF| V/c^2 4.147851e+25
+CLEAN PLEDGER cycle 29754 dt 1.596649e+02 hflx -1.792318e+34 ntel 0.000000e+00 src -2.654154e+34 rad 8.617672e+33 cut -7.229309e+23 fwb 0.000000e+00 flr 2.671804e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6674521448031988e+34 END -4.386355e+20 gross 1.098231e+36
+CLEAN FCONE cycle 29755 t2s 2 faces 151010 momentum cut sum |dF| V/c^2 4.186723e+25
+CLEAN FCONE cycle 29755 t2s 3 faces 151121 momentum cut sum |dF| V/c^2 4.146094e+25
+CLEAN PLEDGER cycle 29755 dt 1.596172e+02 hflx -1.792318e+34 ntel 0.000000e+00 src -2.654154e+34 rad 8.617675e+33 cut -7.231136e+23 fwb 0.000000e+00 flr 2.671683e+26 mrg 4.333824e+16 gap 0.000000e+00 P -2.6783587253994557e+34 END 4.183104e+20 gross 1.098140e+36
+CLEAN FCONE cycle 29756 t2s 2 faces 151274 momentum cut sum |dF| V/c^2 4.183901e+25
+CLEAN FCONE cycle 29756 t2s 3 faces 151354 momentum cut sum |dF| V/c^2 4.144493e+25
+CLEAN PLEDGER cycle 29756 dt 1.595808e+02 hflx -1.792319e+34 ntel 0.000000e+00 src -2.654154e+34 rad 8.617678e+33 cut -7.235926e+23 fwb 0.000000e+00 flr 2.670393e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6891617136764831e+34 END 1.473371e+20 gross 1.098050e+36
