@@ -287,3 +287,111 @@ void Kokkos::Impl::cuda_parallel_launch_local_memory<Kokkos::Impl::ParallelFor<r
   REG:240 STACK:216 SHARED:1024 LOCAL:0 CONSTANT[0]:648 TEXTURE:0 SURFACE:0 SAMPLER:0	 Function void Kokkos::Impl::cuda_parallel_launch_constant_memory<Kokkos::Impl::ParallelFor<radvet::SolveFor<0, 3, radvet::RadiationVet::RightHandSide(bool, bool)::{lambda(int, int, int, int)#1}>(char const*, int, 
 void Kokkos::Impl::cuda_parallel_launch_constant_memory<Kokkos::Impl::ParallelFor<radvet::SolveFor<0, 1, radvet::RadiationVet::FaceCoefficients()::{lambda(int, int, int, int)#1}>(char const*, int, int, int, int, int, int, int, radvet::RadiationVet::FaceCoefficients()::{lambda(int, int, int, int)#1} 
 ```
+
+## cuobjdump REG / STACK, corrected
+- The block in the post above is mis-paired: my paste put each REG line next to the next function's name. Ignore it.
+- Below: every kernel generated inside the host functions RightHandSide (cln_rhsaf), FaceDrag (cln_drag), RayFaceSums (cln_gd_fs), FluxSolve (cln_fs0) and FaceCoefficients (cln_facecoef).
+  - The label is the host function's. Columns: launch bounds (SolveFor<D,MB> = LaunchBounds<256,MB>), the lambda, Kokkos constant- or local-memory launch, REG, STACK (bytes per thread).
+### lb0_52ae024b8
+| cln_drag | SolveFor<0,3> | lambda#1(int, int, int, int) | local launch | REG 80 | STACK 160 |
+| cln_facecoef | plain | lambda#1(int, int, int, int) | local launch | REG 56 | STACK 776 |
+| cln_fs0 | LaunchBounds<32,1> | lambda#1(int, double&, double&) | constant launch | REG 113 | STACK 0 |
+| cln_fs0 | LaunchBounds<32,1> | lambda#2(int) | constant launch | REG 91 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#2(int, int, int, int) | constant launch | REG 78 | STACK 72 |
+| cln_fs0 | SolveFor<0,3> | lambda#3(int, int, int, int) | local launch | REG 52 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 80 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#5(int, int, int, int) | constant launch | REG 80 | STACK 0 |
+| cln_fs0 | SolveFor<4,3> | lambda#1(int, int, int, int) | local launch | REG 80 | STACK 40 |
+| cln_fs0 | plain | lambda#1(Kokkos::Impl::CudaTeamMember) | constant launch | REG 64 | STACK 16 |
+| cln_fs0 | plain | lambda#2(int, int, int, int) | constant launch | REG 52 | STACK 72 |
+| cln_fs0 | plain | lambda#2(int, int, int, int) | local launch | REG 52 | STACK 72 |
+| cln_fs0 | plain | lambda#6(int, int, int, int) | local launch | REG 64 | STACK 0 |
+| cln_fs0 | plain | lambda#6(int, int, int, int) | local launch | REG 64 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#1(int, int, int, int) | local launch | REG 30 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 45 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#5(int, int, int, int) | constant launch | REG 80 | STACK 184 |
+| cln_gd_fs | SolveFor<0,3> | lambda#6(int, int, int, int) | constant launch | REG 80 | STACK 232 |
+| cln_gd_fs | SolveFor<0,3> | lambda#8(int, int, int, int) | constant launch | REG 80 | STACK 152 |
+| cln_gd_fs | SolveFor<0,3> | lambda#9(int, int, int, int) | local launch | REG 76 | STACK 40 |
+| cln_gd_fs | plain | lambda#1(int, int, int) | constant launch | REG 122 | STACK 40 |
+| cln_gd_fs | plain | lambda#2(int, int, int) | constant launch | REG 128 | STACK 40 |
+| cln_gd_fs | plain | lambda#2(int, int, int, int) | local launch | REG 26 | STACK 0 |
+| cln_gd_fs | plain | lambda#3(int, int, int) | local launch | REG 74 | STACK 0 |
+| cln_gd_fs | plain | lambda#3(int, int, int, int) | local launch | REG 28 | STACK 0 |
+| cln_gd_fs | plain | lambda#7(int, int, int, int) | local launch | REG 124 | STACK 40 |
+| cln_rhsaf | LaunchBounds<256,1> | lambda#1(int, double&, double&) | local launch | REG 37 | STACK 0 |
+| cln_rhsaf | LaunchBounds<256,3> | lambda#3(int, int, int, int) | local launch | REG 80 | STACK 312 |
+| cln_rhsaf | SolveFor<0,3> | lambda#1(int, int, int, int) | constant launch | REG 79 | STACK 40 |
+| cln_rhsaf | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 32 | STACK 0 |
+| cln_rhsaf | SolveFor<4,3> | lambda#2(int, int, int, int) | local launch | REG 80 | STACK 304 |
+### lb2_d66795438
+| cln_drag | SolveFor<0,2> | lambda#1(int, int, int, int) | local launch | REG 128 | STACK 16 |
+| cln_facecoef | SolveFor<0,2> | lambda#1(int, int, int, int) | constant launch | REG 100 | STACK 40 |
+| cln_fs0 | LaunchBounds<32,1> | lambda#1(int, double&, double&) | constant launch | REG 113 | STACK 0 |
+| cln_fs0 | LaunchBounds<32,1> | lambda#2(int) | constant launch | REG 91 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#2(int, int, int, int) | constant launch | REG 78 | STACK 72 |
+| cln_fs0 | SolveFor<0,3> | lambda#3(int, int, int, int) | local launch | REG 52 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 80 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#5(int, int, int, int) | constant launch | REG 80 | STACK 0 |
+| cln_fs0 | SolveFor<4,2> | lambda#1(int, int, int, int) | local launch | REG 128 | STACK 0 |
+| cln_fs0 | plain | lambda#1(Kokkos::Impl::CudaTeamMember) | constant launch | REG 64 | STACK 16 |
+| cln_fs0 | plain | lambda#2(int, int, int, int) | constant launch | REG 52 | STACK 72 |
+| cln_fs0 | plain | lambda#2(int, int, int, int) | local launch | REG 52 | STACK 72 |
+| cln_fs0 | plain | lambda#6(int, int, int, int) | local launch | REG 64 | STACK 0 |
+| cln_fs0 | plain | lambda#6(int, int, int, int) | local launch | REG 64 | STACK 0 |
+| cln_gd_fs | SolveFor<0,2> | lambda#6(int, int, int, int) | constant launch | REG 128 | STACK 48 |
+| cln_gd_fs | SolveFor<0,3> | lambda#1(int, int, int, int) | local launch | REG 30 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 45 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#5(int, int, int, int) | constant launch | REG 80 | STACK 184 |
+| cln_gd_fs | SolveFor<0,3> | lambda#8(int, int, int, int) | constant launch | REG 80 | STACK 152 |
+| cln_gd_fs | SolveFor<0,3> | lambda#9(int, int, int, int) | local launch | REG 76 | STACK 40 |
+| cln_gd_fs | plain | lambda#1(int, int, int) | constant launch | REG 122 | STACK 40 |
+| cln_gd_fs | plain | lambda#2(int, int, int) | constant launch | REG 128 | STACK 40 |
+| cln_gd_fs | plain | lambda#2(int, int, int, int) | local launch | REG 26 | STACK 0 |
+| cln_gd_fs | plain | lambda#3(int, int, int) | local launch | REG 74 | STACK 0 |
+| cln_gd_fs | plain | lambda#3(int, int, int, int) | local launch | REG 28 | STACK 0 |
+| cln_gd_fs | plain | lambda#7(int, int, int, int) | local launch | REG 124 | STACK 40 |
+| cln_rhsaf | LaunchBounds<256,1> | lambda#1(int, double&, double&) | local launch | REG 37 | STACK 0 |
+| cln_rhsaf | LaunchBounds<256,3> | lambda#3(int, int, int, int) | local launch | REG 80 | STACK 312 |
+| cln_rhsaf | SolveFor<0,3> | lambda#1(int, int, int, int) | constant launch | REG 79 | STACK 40 |
+| cln_rhsaf | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 32 | STACK 0 |
+| cln_rhsaf | SolveFor<4,2> | lambda#2(int, int, int, int) | local launch | REG 128 | STACK 216 |
+### lb1_7ab29a67e
+| cln_drag | SolveFor<0,1> | lambda#1(int, int, int, int) | local launch | REG 220 | STACK 0 |
+| cln_facecoef | SolveFor<0,1> | lambda#1(int, int, int, int) | constant launch | REG 100 | STACK 40 |
+| cln_fs0 | LaunchBounds<32,1> | lambda#1(int, double&, double&) | constant launch | REG 113 | STACK 0 |
+| cln_fs0 | LaunchBounds<32,1> | lambda#2(int) | constant launch | REG 91 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#2(int, int, int, int) | constant launch | REG 78 | STACK 72 |
+| cln_fs0 | SolveFor<0,3> | lambda#3(int, int, int, int) | local launch | REG 52 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 80 | STACK 0 |
+| cln_fs0 | SolveFor<0,3> | lambda#5(int, int, int, int) | constant launch | REG 80 | STACK 0 |
+| cln_fs0 | SolveFor<4,1> | lambda#1(int, int, int, int) | local launch | REG 204 | STACK 0 |
+| cln_fs0 | plain | lambda#1(Kokkos::Impl::CudaTeamMember) | constant launch | REG 64 | STACK 16 |
+| cln_fs0 | plain | lambda#2(int, int, int, int) | constant launch | REG 52 | STACK 72 |
+| cln_fs0 | plain | lambda#2(int, int, int, int) | local launch | REG 52 | STACK 72 |
+| cln_fs0 | plain | lambda#6(int, int, int, int) | local launch | REG 64 | STACK 0 |
+| cln_fs0 | plain | lambda#6(int, int, int, int) | local launch | REG 64 | STACK 0 |
+| cln_gd_fs | SolveFor<0,1> | lambda#6(int, int, int, int) | constant launch | REG 146 | STACK 40 |
+| cln_gd_fs | SolveFor<0,3> | lambda#1(int, int, int, int) | local launch | REG 30 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 45 | STACK 0 |
+| cln_gd_fs | SolveFor<0,3> | lambda#5(int, int, int, int) | constant launch | REG 80 | STACK 184 |
+| cln_gd_fs | SolveFor<0,3> | lambda#8(int, int, int, int) | constant launch | REG 80 | STACK 152 |
+| cln_gd_fs | SolveFor<0,3> | lambda#9(int, int, int, int) | local launch | REG 76 | STACK 40 |
+| cln_gd_fs | plain | lambda#1(int, int, int) | constant launch | REG 122 | STACK 40 |
+| cln_gd_fs | plain | lambda#2(int, int, int) | constant launch | REG 128 | STACK 40 |
+| cln_gd_fs | plain | lambda#2(int, int, int, int) | local launch | REG 26 | STACK 0 |
+| cln_gd_fs | plain | lambda#3(int, int, int) | local launch | REG 74 | STACK 0 |
+| cln_gd_fs | plain | lambda#3(int, int, int, int) | local launch | REG 28 | STACK 0 |
+| cln_gd_fs | plain | lambda#7(int, int, int, int) | local launch | REG 124 | STACK 40 |
+| cln_rhsaf | LaunchBounds<256,1> | lambda#1(int, double&, double&) | local launch | REG 37 | STACK 0 |
+| cln_rhsaf | LaunchBounds<256,3> | lambda#3(int, int, int, int) | local launch | REG 80 | STACK 312 |
+| cln_rhsaf | SolveFor<0,3> | lambda#1(int, int, int, int) | constant launch | REG 79 | STACK 40 |
+| cln_rhsaf | SolveFor<0,3> | lambda#4(int, int, int, int) | local launch | REG 32 | STACK 0 |
+| cln_rhsaf | SolveFor<4,1> | lambda#2(int, int, int, int) | local launch | REG 240 | STACK 216 |
+- In short, for the five bounded kernels, REG / STACK in LB0 -> LB2 -> LB1:
+  - FaceDrag#1: 80 / 160 -> 128 / 16 -> 220 / 0
+  - RightHandSide SolveFor<4,.>#2: 80 / 304 -> 128 / 216 -> see lb1 rows
+  - RayFaceSums SolveFor#6: 80 / 232 -> 128 / 48 -> see lb1 rows
+  - FluxSolve SolveFor<4,.>#1: 80 / 40 -> 128 / 0 -> see lb1 rows
+  - FaceCoefficients: plain launch, 56 / 776 -> 100 / 40 (SolveFor<0,2>) -> 100 / 40
+- Kernels outside the five keep their REG/STACK in all three builds.
