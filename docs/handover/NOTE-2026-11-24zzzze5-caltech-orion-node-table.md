@@ -969,3 +969,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 00:29 02-17: scl_F8b -> IDLE
 - 11-26 00:32 02-09: lz_RST-MIX-t9l62-a pa_lzan -> lz_RST-MIX-t9l62-b1 pa_lzan
 - 11-26 00:32 02-17: IDLE -> rf_ncu_cln_drag rf_ncu_cln_pcr2 rf_ncu_cln_rhsaf rf_ncu_vet_vgd_shell
+- 11-26 00:33 02-11: IDLE -> scl_F1
+- 11-26 00:33 02-17: rf_ncu_cln_drag rf_ncu_cln_pcr2 rf_ncu_cln_rhsaf rf_ncu_vet_vgd_shell -> rf_ncu_cln_pcr2 rf_ncu_cln_rhsaf rf_ncu_vet_vgd_shell
+- 11-26 00:34 02-17: rf_ncu_cln_pcr2 rf_ncu_cln_rhsaf rf_ncu_vet_vgd_shell -> rf_ncu_cln_apply_st rf_ncu_cln_facecoef rf_ncu_cln_fs0 rf_ncu_cln_gd_fs
+- 11-26 00:35 01-17: n2_full0 n2_full2 n2_full3 -> n2_full2 n2_full3
+- 11-26 00:35 02-09: lz_RST-MIX-t9l62-b1 pa_lzan -> lz_RST-MIX-t9l62-b2 pa_lzan
+- 11-26 00:35 02-17: rf_ncu_cln_apply_st rf_ncu_cln_facecoef rf_ncu_cln_fs0 rf_ncu_cln_gd_fs -> rf_ncu_cln_apply_st rf_ncu_cln_facecoef
+- 11-26 00:36 02-17: rf_ncu_cln_apply_st rf_ncu_cln_facecoef -> rf_ncu_cln_cslat rf_ncu_cls_restrict
