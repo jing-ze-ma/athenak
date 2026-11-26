@@ -828,3 +828,10 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 22:51 02-11: b_dfl b_lzd b_pled -> IDLE
 - 11-25 22:52 02-09: b_rcf lz_DFL0 -> b_rcf lz_DFL1
 - 11-25 22:53 02-11: IDLE -> sc_H4L_A
+- 11-25 22:54 02-09: b_rcf lz_DFL1 -> b_mix b_rcf lz_PLED1
+- 11-25 22:54 02-11: sc_H4L_A -> IDLE
+- 11-25 22:55 02-09: b_mix b_rcf lz_PLED1 -> b_mix lz_PLED1 r_GATE_rcf
+- 11-25 22:55 02-11: IDLE -> lz_RST-DFL-bsg-b1
+- 11-25 22:55 02-17: lz_LZB-bsg -> lz_LZA-m35
+- 11-25 22:56 02-09: b_mix lz_PLED1 r_GATE_rcf -> b_mix lz_PLED1
+- 11-25 22:56 02-11: lz_RST-DFL-bsg-b1 -> lz_RST-DFL-bsg-b2
