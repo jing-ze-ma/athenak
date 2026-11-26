@@ -130,7 +130,7 @@ other Cartesian decks, Marshak radiation faces).
 | `shadow` | `rad_shadow` | opaque clump in a thin gas illuminated by a 1740 K bath (Hayes & Norman 2003), 3 light-crossing times, vs the run without the clump | radiation left in the geometric umbra behind the clump <= 2 % (measured 0.61 %); cells whose sight lines miss the clump unchanged to 2 % |
 
 Not ported: `beam`, `pulse1d` (free streaming of a set-up packet in vacuum: the gas is not
-initialised by the problem generator and the `vet_sc` formal solution has no source there, so
+initialised by the problem generator and the sc formal solution has no source there, so
 the packet does not move); `jump`, `advect_shear` (no such `vet_test` in the problem
 generator); `equil`, `equil_table` (= `thermal_eq`), `atmosphere` (= `nlte_*`);
 `g5_pulse2d` is part of `diffusion`.

@@ -67,10 +67,12 @@ the gas only through $\mathbf G$. The scheme requires the full speed of light, $
 
 **Closure: variable Eddington tensor from rays.** $\mathsf D = \mathsf K/J$ comes from a
 formal solution of the grey transfer equation $\hat n\cdot\nabla I = \chi(S - I)$ along a
-fixed set of global directions (the `vet_gd` rays: a Gauss-Legendre product set,
-level-symmetric, geodesic or HEALPix set). The sweep is a short-characteristics sweep over
-the whole mesh, shell by shell on spherical-polar and cubed-sphere meshes (Cartesian meshes
-use a Cartesian short-characteristics sweep, optionally with the same sets). The source
+fixed set of directions. One short-characteristics method (sc) serves every mesh: the same
+formal solution along each ray segment (the source linear in optical depth, upwind values
+interpolated from the neighbouring cells) and the same boundary rules. Only the order of the
+sweep and the direction set follow the mesh: shell by shell on spherical-polar and
+cubed-sphere meshes, with a global set (a Gauss-Legendre product set, level-symmetric,
+geodesic or HEALPix set), and layer by layer along x1 on Cartesian meshes, with a double-Gauss set about x1 or a ring. The source
 function is the state's own ($\epsilon\,aT^4 + (1-\epsilon)E$, or an absorption/scattering
 split), so the closure does not depend on $\Delta t$. Besides $\mathsf D$, the rays give the
 half-range fluxes (outgoing and incoming parts of the flux) and the rays' own flux through
@@ -90,7 +92,9 @@ intensity $S + \mu\,(-dS/d\tau)$; inward rays start at the top with no incoming 
 a bath or a mirror where the boundary asks for one). On a periodic wedge, a ray that leaves
 through one side comes back through the other side in the matching direction of the set.
 Each build sweeps every direction once: inward rays top-down, then outward rays bottom-up,
-one shell at a time. Cartesian meshes sweep all cells, layer by layer. The settings are on
+one shell at a time. The cut is one shell index for the whole mesh, found from whole radial
+columns, so it needs the radius in one MeshBlock, as in the star runs; Cartesian meshes have no
+cut and sweep all cells, layer by layer along x1. The settings are on
 [Keys](KEYS.md).
 
 **Scattering without a scattering iteration.** Electron scattering enters twice. In the moment
