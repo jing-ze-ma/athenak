@@ -681,4 +681,31 @@ void RadiationVet::DtRetryAfterRestore() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::RotAvgRstHdr
+//! \brief the vet_rotate_avg history header of a restart file (kVetRaRstMagic): no
+//! history since the old Cartesian sweep's moment averaging was retired (the ring keeps
+//! its own): nslab h[1] = 0, the header is not written
+
+void RadiationVet::RotAvgRstHdr(int64_t *h) const {
+  for (int q = 0; q < VET_RA_RST_NH; ++q) {h[q] = 0;}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationVet::RotAvgRstLoad
+//! \brief the vet_rotate_avg history of an older restart file: not read (retired with the
+//! old Cartesian sweep); under the ring an EMA history marks its closure as converged
+//! (cln_rhist), as before
+
+bool RadiationVet::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &,
+                                 const int) {
+  cln_rhist = cln_ring && vra_ema && h[0] == 1;
+  if (!cln_ring && h[0] == 1 && global_variable::my_rank == 0) {
+    std::cout << "### NOTE: <rad_vet> the vet_rotate_avg history of this restart file "
+              << "(the retired moment averaging of the old Cartesian sweep) is not read"
+              << std::endl;
+  }
+  return false;
+}
+
 }  // namespace radvet

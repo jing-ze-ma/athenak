@@ -8,7 +8,7 @@
 //! MeshBlocks.
 //!
 //!  called from: rad_vet.cpp, rad_vet_closure_faces.cpp, rad_vet_closure_ring.cpp,
-//!    rad_vet_params_implicit.cpp, rays/sc_cart_sweep.cpp, rays/sc_cart_sweep_mb.cpp,
+//!    rad_vet_params_implicit.cpp, rad_vet_closure.cpp, rad_vet_restart.cpp,
 //!    rays/sc_cs_sweep.cpp, rays/sc_sph_sweep.cpp
 //!  calls into: rad_vet_geometry.cpp, rad_vet_params_closure.cpp, rays/sc_directions.cpp
 
@@ -33,7 +33,6 @@
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_args.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
-#include "rad_vet/rays/sc_cart_exchange.hpp"
 #include "rad_vet/rays/sc_cart_sum.hpp"
 #include "utils/recipe.hpp"
 
@@ -45,11 +44,17 @@ namespace radvet {
 
 extern Real g_vgd_tab_alpha;   // rays/sc_tables.cpp
 
+static inline void VetFatal(const std::string &msg) {
+  std::cout << "### FATAL ERROR in rad_vet/rays/sc_cart_setup.cpp" << std::endl << msg
+            << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
 namespace {
 
 // writer of the slab's face sums of shell i (one pass): the sums of the ray's own cell
 // (f2) to (k, j, i), those of its upwind cell (fn) to (k, j, iu); slots as the
-// Cartesian sweep's (ClosureFromRays): F2, F1, FX, F3
+// Cartesian sweep's: F2, F1, FX, F3
 struct ScSlabFaceW {
   DvceArray5D<Real> cs;
   int m, k, j, i, iu;
@@ -111,10 +116,10 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
   if (!trans_on) {
     VetFatal("<rad_vet>/closure = sc needs transport = implicit on a MULTI-D mesh");
   }
-  // several MeshBlocks or ranks: the banded sweep ScCartSweepMB
+  // several MeshBlocks or ranks: fixed x1-periodic passes by default
   const bool mbpath = (pm->nmb_total != 1 || global_variable::nranks != 1);
   // a non-periodic x2 (x3) boundary is a vacuum face of the formal solution (I = 0
-  // entering); single MeshBlock only
+  // entering)
   vet_x2open = (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic ||
                 pm->mesh_bcs[BoundaryFace::outer_x2] != BoundaryFlag::periodic);
   vet_x3open = trans_x3 &&
@@ -262,33 +267,19 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(vet_cell, nmb, VETRAY_NC + VETRAY_NKP +
-                  (cln_consist ? VETRAY_NFS : 0), ncells3, ncells2, ncells1);
+  // the slab's raw moments J, K, H for the vet_sc outputs (ClosureFromSc)
+  Kokkos::realloc(vet_cell, nmb, VETRAY_NC + VETRAY_NKP, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
-  Kokkos::realloc(vray_cnt, 1);   // intensities < 0 clipped (ClosureFromRays reports)
-  Kokkos::deep_copy(vray_cnt, 0.0);
-  // device: one thread per (block, ray, cell), then per-cell sums; host: one thread per
-  // cell over the rays; same bits
-  vsc_rayk = !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
-  if (vsc_rayk) {Kokkos::realloc(vet_rayg, nmb, 5*vet_nray, ncells3, ncells2);}
-  if (mbpath) {
-    ScCartInitMB(pin);   // the banded plane buffers live in vet_mbs
-  } else {
-    Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
-    Kokkos::deep_copy(vet_ipl, 0.0);
-    if (vet_x1per && vet_x1ptol > 0.0) {
-      Kokkos::realloc(vet_x1ent, nmb, vet_nray, ncells3, ncells2);
-    }
+  // the adaptive x1-periodic sweep's exit planes (ScSweepX1, restart files)
+  if (vet_x1per && vet_x1ptol > 0.0) {
+    Kokkos::realloc(vet_x1ent, nmb, vet_nray, ncells3, ncells2);
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> closure = sc: short characteristics, " << vet_nray
               << (vsc_gd ? " rays (vet_sc_set = gd: the vet_gd set, pole on x1"
                          : " rays (double-Gauss nmu=" + std::to_string(vet_nmu) +
                            " x nphi=" + std::to_string(vet_nphi))
-              << "), lagged per hydro step"
-              << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
-              << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
-              << ", vet_bc_diff = " << (vet_bc_face ? "face" : "cell")
+              << "), vet_bc_diff = " << (vet_bc_face ? "face" : "cell")
               << std::endl;
   }
 }
@@ -432,19 +423,6 @@ void RadiationVet::ScGdAngles(const Real beta) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetRotUpdate
-//! \brief vet_sc set of the current rotation block (RotBlock, the step's midpoint);
-//! double-Gauss: azimuth q 2 pi/nphi; ring: 0.8 (q - 1/2) 2 pi/N (rays >= 0.1 ring step
-//! from +-x2).  Rebuilt only when the angle changes.
-
-void RadiationVet::VetRotUpdate() {
-  if (!vsc_rot) {return;}
-  const Real beta = VetRotBeta(RotBlock(pmy_pack->pmesh->ncycle));
-  if (beta == vsc_beta) {return;}
-  VetRotSet(beta);
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::VetRotBeta
 //! \brief vet_sc set rotation of block blk
 
@@ -467,417 +445,6 @@ Real RadiationVet::VetRotBeta(const int64_t blk) const {
 void RadiationVet::VetRotSet(const Real beta) {
   vsc_beta = beta;
   ScCartAngles(beta);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetScRotAvgSetup
-//! \brief register the vet_sc fields averaged by vet_rotate_avg: J (ratio) and, as X/J,
-//! K_ab, H_a, the half-range sums and the C1 sum; the projection follows from the
-//! averaged K/J
-
-void RadiationVet::VetScRotAvgSetup() {
-  RotAvgTab &t = vra_tab;
-  t.nf = 0;
-  vra_a0 = vet_cell;
-  vra_a1 = vet_cell;
-  vra_c = DvceArray3D<Real>();
-  auto add = [&](const int comp, const int kind, const Real lo, const Real hi) {
-    t.arr[t.nf] = 0; t.comp[t.nf] = comp; t.kind[t.nf] = kind;
-    t.lo[t.nf] = lo; t.hi[t.nf] = hi; ++t.nf;
-  };
-  t.jf = 0;
-  t.jw = 0;   // the sets weighted by their J (union of the sets)
-  add(VETRAY_J, 2, 0.0, 0.0);
-  for (int c = 0; c < 3; ++c) {add(VETRAY_K11 + c, 3, 0.0, 1.0);}
-  for (int c = 3; c < 6; ++c) {add(VETRAY_K11 + c, 3, -1.0, 1.0);}
-  for (int c = 0; c < 3; ++c) {add(VETRAY_H1 + c, 3, -1.0, 1.0);}
-  if (impl_beam_hr) {
-    for (int c = 0; c < 3; ++c) {add(VETRAY_HP1 + c, 3, 0.0, 1.0);}
-  }
-  if (thsw_c1) {add(VETRAY_NL, 3, 0.0, 1.0e300);}
-  t.farr = -1;
-  t.fcomp = 0;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ScCartInitMB
-//! \brief several MeshBlocks / ranks: band widths, neighbour tables, buffers (uniform
-//! mesh, periodic x2 (x3), every block at least 2 cells in x1)
-
-void RadiationVet::ScCartInitMB(ParameterInput *pin) {
-  Mesh *pm = pmy_pack->pmesh;
-  auto &indcs = pm->mb_indcs;
-  auto &mindcs = pm->mesh_indcs;
-  vet_mbs = new ScCartMBState;
-  ScCartMBState &st = *vet_mbs;
-  const int nmb = pmy_pack->nmb_thispack;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const bool thrd = trans_x3;
-  if ((mindcs.nx1 % nx1) != 0 || (mindcs.nx2 % nx2) != 0 ||
-      (thrd && (mindcs.nx3 % nx3) != 0)) {
-    VetFatal("<rad_vet>/closure = sc on several MeshBlocks needs a uniform mesh");
-  }
-  st.nbx1 = mindcs.nx1/nx1;
-  const int nbx2 = mindcs.nx2/nx2;
-  const int nbx3 = thrd ? (mindcs.nx3/nx3) : 1;
-  st.nx1g = mindcs.nx1;
-  if (nx1 < 2) {
-    VetFatal("<rad_vet>/closure = sc needs <meshblock>/nx1 >= 2");
-  }
-  const int me = global_variable::my_rank;
-  // sweep blocks: the rank's own; rays: all, up rays (mu1 > 0) first
-  st.gsb0 = pm->gids_eachrank[me];
-  st.nsb = nmb;
-  st.nrl = vet_nray;
-  st.nhl = vet_nray/2;
-
-  // band: the largest horizontal reach of a ray per layer, in cells
-  auto ah = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
-  const Real dx1 = MeshBlock0Dx(0), dx2 = MeshBlock0Dx(1), dx3 = MeshBlock0Dx(2);
-  Real s2 = 0.0, s3 = 0.0;
-  for (int r = 0; r < vet_nray; ++r) {
-    s2 = std::max(s2, dx1*std::fabs(ah(r,1))/(std::fabs(ah(r,0))*dx2));
-    s3 = std::max(s3, dx1*std::fabs(ah(r,2))/(std::fabs(ah(r,0))*dx3));
-  }
-  if (vsc_rot) {
-    // the band covers every rotated set: |mu_perp|/|mu1| bounds both axes
-    // (double-Gauss), the ring's steepest ray at either end of its rotation
-    for (int r = 0; r < vet_nray; ++r) {
-      const Real tp = std::sqrt(ah(r,1)*ah(r,1) + ah(r,2)*ah(r,2))/std::fabs(ah(r,0));
-      if (vet_ring_n == 0) {
-        s2 = std::max(s2, dx1*tp/dx2);
-        s3 = std::max(s3, dx1*tp/dx3);
-      }
-    }
-    if (vet_ring_n > 0) {
-      const Real tm = std::tan(0.5*M_PI - 0.1*2.0*M_PI/vet_ring_n);
-      s2 = std::max(s2, dx1*tm/dx2);
-      s3 = std::max(s3, dx1*tm/dx3);
-    }
-  }
-  // one cell more for the PLM foot slopes (VetPlmFoot), and one more for a reach within
-  // round-off of an integer
-  const int wp = 1;
-  auto wband = [wp](const Real s) {
-    return static_cast<int>(std::floor(s)) + 1 + wp +
-           ((std::fabs(s - std::round(s)) < 1.0e-9) ? 1 : 0);
-  };
-  st.w2 = wband(s2);
-  st.w3 = thrd ? wband(s3) : 0;
-  st.b2 = st.w2;
-  st.b3 = st.w3;
-  st.npb = std::max((st.b2 + nx2 - 1)/nx2, thrd ? (st.b3 + nx3 - 1)/nx3 : 1);
-  st.n2w = nx2 + 2*st.b2;
-  st.n3w = thrd ? (nx3 + 2*st.b3) : 1;
-  const int nx3e = thrd ? nx3 : 1;
-  if (thrd) {
-    st.nof = 8;
-    for (int t = 0, o = 0; t < 9; ++t) {
-      if (t == 4) continue;
-      st.oj[o] = t%3 - 1;
-      st.ok[o] = t/3 - 1;
-      ++o;
-    }
-  } else {
-    st.nof = 2;
-    st.oj[0] = -1;
-    st.oj[1] = 1;
-    st.ok[0] = st.ok[1] = 0;
-  }
-  for (int o = st.nof; o < 8; ++o) {
-    st.oj[o] = st.ok[o] = 0;
-  }
-  st.maxreg = thrd ? std::max(std::max(st.b2*nx3, nx2*st.b3), st.b2*st.b3) : st.b2;
-  // per-ray band: cells a ray reads beyond the active area per layer, below and above in
-  // x2 (x3), one more within round-off of an integer.  With rotation the band of each
-  // slot is the union over the whole rotation range (sampled, padded by the largest
-  // offset change between samples, capped at w).
-  {
-    Kokkos::realloc(st.rdep, st.nrl, 4);
-    auto rdh = Kokkos::create_mirror_view(st.rdep);
-    for (int rl = 0; rl < st.nrl; ++rl) {
-      const int r = rl;
-      for (int d = 0; d < 2; ++d) {
-        rdh(rl,2*d) = 0;
-        rdh(rl,2*d + 1) = 0;
-        if (d == 1 && !thrd) continue;
-        const Real dxp = (d == 0) ? dx2 : dx3;
-        const Real sh = -dx1*ah(r,1 + d)/(std::fabs(ah(r,0))*dxp);
-        const int o = static_cast<int>(std::floor(sh));
-        const int eps = (std::fabs(sh - std::round(sh)) < 1.0e-9) ? 1 : 0;
-        rdh(rl,2*d) = std::max(0, -o) + eps + wp;
-        rdh(rl,2*d + 1) = std::max(0, o + 1) + eps + wp;
-        if (rdh(rl,2*d) > ((d == 0) ? st.w2 : st.w3) ||
-            rdh(rl,2*d + 1) > ((d == 0) ? st.w2 : st.w3)) {
-          VetFatal("<rad_vet>/closure = sc: per-ray band wider than the band");
-        }
-      }
-    }
-    if (vsc_rot) {
-      // every set VetRotBeta can give (q in [0, 1])
-      const int nsam = 512;
-      // a real copy (on a host build create_mirror_view would alias vet_ang)
-      auto keep = Kokkos::create_mirror(Kokkos::HostSpace(), vet_ang);
-      Kokkos::deep_copy(keep, vet_ang);
-      std::vector<Real> smn(2*st.nrl, 1.0e300), smx(2*st.nrl, -1.0e300);
-      std::vector<Real> sprev(2*st.nrl, 0.0), dmax(2*st.nrl, 0.0);
-      for (int qs = 0; qs <= nsam; ++qs) {
-        const Real q = static_cast<Real>(qs)/nsam;
-        const Real beta = (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n
-                                           : q*2.0*M_PI/vet_nphi;
-        ScCartAngles(beta);
-        auto bh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
-        for (int rl = 0; rl < st.nrl; ++rl) {
-          const int r = rl;
-          for (int d = 0; d < 2; ++d) {
-            if (d == 1 && !thrd) continue;
-            const Real dxp = (d == 0) ? dx2 : dx3;
-            const Real sh = -dx1*bh(r,1 + d)/(std::fabs(bh(r,0))*dxp);
-            const int x = 2*rl + d;
-            smn[x] = std::min(smn[x], sh);
-            smx[x] = std::max(smx[x], sh);
-            if (qs > 0) {dmax[x] = std::max(dmax[x], std::fabs(sh - sprev[x]));}
-            sprev[x] = sh;
-          }
-        }
-      }
-      Kokkos::deep_copy(vet_ang, keep);   // the current set, bit for bit
-      for (int rl = 0; rl < st.nrl; ++rl) {
-        for (int d = 0; d < 2; ++d) {
-          if (d == 1 && !thrd) continue;
-          const int x = 2*rl + d;
-          const int w = (d == 0) ? st.w2 : st.w3;
-          const int olo = static_cast<int>(std::floor(smn[x] - dmax[x] - 1.0e-9));
-          const int ohi = static_cast<int>(std::floor(smx[x] + dmax[x] + 1.0e-9));
-          rdh(rl,2*d) = std::min(w, std::max(rdh(rl,2*d), std::max(0, -olo) + wp));
-          rdh(rl,2*d + 1) = std::min(w, std::max(rdh(rl,2*d + 1),
-                                                 std::max(0, ohi + 1) + wp));
-        }
-      }
-    }
-    Kokkos::deep_copy(st.rdep, rdh);
-    Kokkos::realloc(st.offs, st.nof, st.nrl + 1);
-    Kokkos::realloc(st.offr, st.nof, st.nrl + 1);
-    auto osh = Kokkos::create_mirror_view(st.offs);
-    auto orh = Kokkos::create_mirror_view(st.offr);
-    st.cnts.assign(st.nof, 0);
-    st.cntr.assign(st.nof, 0);
-    for (int o = 0; o < st.nof; ++o) {
-      for (int sd = 0; sd < 2; ++sd) {   // sd = 0: sent (direction -o), 1: received
-        const int dj = (sd == 0) ? -st.oj[o] : st.oj[o];
-        const int dk = (sd == 0) ? -st.ok[o] : st.ok[o];
-        int off = 0;
-        for (int r = 0; r < st.nrl; ++r) {
-          ((sd == 0) ? osh : orh)(o,r) = off;
-          int j0, nj, k0, nk;
-          VetRayRegion(dj, nx2, st.b2, rdh(r,0), rdh(r,1), j0, nj);
-          VetRayRegion(dk, nx3e, st.b3, rdh(r,2), rdh(r,3), k0, nk);
-          off += nj*nk;
-        }
-        ((sd == 0) ? osh : orh)(o,st.nrl) = off;
-        ((sd == 0) ? st.cnts : st.cntr)[o] = off;
-      }
-    }
-    Kokkos::deep_copy(st.offs, osh);
-    Kokkos::deep_copy(st.offr, orh);
-  }
-
-  // neighbour tables from the global LogicalLocation list over the sweep blocks
-  // (gid gsb0 + s); a neighbour on this rank is local (its sweep index)
-  const int nbt = st.nbx1*nbx2*nbx3;
-  std::vector<int> gof(nbt, -1);
-  for (int g = 0; g < pm->nmb_total; ++g) {
-    LogicalLocation &l = pm->lloc_eachmb[g];
-    gof[(l.lx3*nbx2 + l.lx2)*st.nbx1 + l.lx1] = g;
-  }
-  for (int t = 0; t < nbt; ++t) {
-    if (gof[t] < 0) {
-      VetFatal("<rad_vet>/closure = sc: incomplete MeshBlock grid");
-    }
-  }
-  const int nsb = st.nsb, g0 = st.gsb0;
-  // owner of a block: rank and its sweep index there
-  auto cpart = [&](const int g, int &rk, int &lid) {
-    rk = pm->rank_eachmb[g];
-    lid = g - pm->gids_eachrank[rk];
-  };
-  Kokkos::realloc(st.lx1, nsb);
-  Kokkos::realloc(st.hloc, 8*nsb);
-  Kokkos::realloc(st.xloc, 2*nsb);
-  st.hrank.assign(8*nsb, me);
-  st.hlid.assign(8*nsb, -1);
-  st.xrank.assign(2*nsb, -1);
-  st.xlid.assign(2*nsb, -1);
-  for (int m = 0; m < nsb; ++m) {
-    LogicalLocation &l = pm->lloc_eachmb[g0 + m];
-    st.lx1.h_view(m) = l.lx1;
-    for (int o = 0; o < 8; ++o) {
-      st.hloc.h_view(8*m + o) = -1;
-      if (o >= st.nof) continue;
-      const int l2 = (l.lx2 + st.oj[o] + nbx2) % nbx2;
-      const int l3 = (l.lx3 + st.ok[o] + nbx3) % nbx3;
-      const int g = gof[(l3*nbx2 + l2)*st.nbx1 + l.lx1];
-      if (pm->rank_eachmb[g] == me) {
-        st.hloc.h_view(8*m + o) = g - g0;
-      } else {
-        cpart(g, st.hrank[8*m + o], st.hlid[8*m + o]);
-        st.hmpi = true;
-      }
-    }
-    for (int s = 0; s < 2; ++s) {
-      int lx = l.lx1 + ((s == 0) ? -1 : 1);
-      st.xloc.h_view(2*m + s) = -2;
-      if (vet_x1per) lx = (lx + st.nbx1) % st.nbx1;   // the periodic image
-      if (lx < 0 || lx >= st.nbx1) continue;
-      const int g = gof[(l.lx3*nbx2 + l.lx2)*st.nbx1 + lx];
-      if (pm->rank_eachmb[g] == me) {
-        st.xrank[2*m + s] = me;
-        st.xloc.h_view(2*m + s) = g - g0;
-      } else {
-        cpart(g, st.xrank[2*m + s], st.xlid[2*m + s]);
-        st.xloc.h_view(2*m + s) = -1;
-        st.xmpi = true;
-      }
-    }
-  }
-  st.lx1.modify_host();
-  st.lx1.sync_device();
-  st.hloc.modify_host();
-  st.hloc.sync_device();
-  st.xloc.modify_host();
-  st.xloc.sync_device();
-
-  // message plans: a piece is one (sweep block, slot) pair with a remote neighbour,
-  // ordered by the receiver's (block, slot) = (hlid, nof-1-o) on the sender, (m, o) on
-  // the receiver
-  auto plan = [&](ScCartMBState::Agg &A, const std::vector<int> &csz,
-                  const std::vector<int> &crz) {
-    std::vector<std::array<int, 4>> ps, pr;   // (rank, key1, key2, index 8m+o)
-    for (int m = 0; m < nsb; ++m) {
-      for (int o = 0; o < st.nof; ++o) {
-        if (st.hloc.h_view(8*m + o) >= 0) continue;
-        ps.push_back({st.hrank[8*m + o], st.hlid[8*m + o], st.nof - 1 - o, 8*m + o});
-        pr.push_back({st.hrank[8*m + o], m, o, 8*m + o});
-      }
-    }
-    std::sort(ps.begin(), ps.end());
-    std::sort(pr.begin(), pr.end());
-    Kokkos::realloc(A.soff, 8*nsb);
-    Kokkos::realloc(A.roff, 8*nsb);
-    auto soh = Kokkos::create_mirror_view(A.soff);
-    auto roh = Kokkos::create_mirror_view(A.roff);
-    for (int t = 0; t < 8*nsb; ++t) {
-      soh(t) = -1;
-      roh(t) = -1;
-    }
-    A.prk.clear();
-    A.sdsp.clear();
-    A.scnt.clear();
-    A.rdsp.clear();
-    A.rcnt.clear();
-    for (const auto &x : ps) {
-      if (A.prk.empty() || A.prk.back() != x[0]) {
-        A.prk.push_back(x[0]);
-        A.sdsp.push_back(A.stot);
-        A.scnt.push_back(0);
-      }
-      soh(x[3]) = A.stot;
-      const int c = csz[x[3]%8];
-      A.stot += c;
-      A.scnt.back() += c;
-    }
-    // receive side: the same peers (the neighbour relation is symmetric per slot)
-    A.rdsp.assign(A.prk.size(), 0);
-    A.rcnt.assign(A.prk.size(), 0);
-    size_t ip = 0;
-    int last = -1;
-    for (const auto &x : pr) {
-      while (ip < A.prk.size() && A.prk[ip] != x[0]) ++ip;
-      if (ip == A.prk.size()) {
-        VetFatal("<rad_vet>/closure = sc: asymmetric neighbour ranks");
-      }
-      if (static_cast<int>(ip) != last) {
-        A.rdsp[ip] = A.rtot;
-        last = static_cast<int>(ip);
-      }
-      roh(x[3]) = A.rtot;
-      const int c = crz[x[3]%8];
-      A.rtot += c;
-      A.rcnt[ip] += c;
-    }
-    Kokkos::deep_copy(A.soff, soh);
-    Kokkos::deep_copy(A.roff, roh);
-  };
-  {
-    std::vector<int> csP(8, 0), crP(8, 0), csB(8, 0), crB(8, 0);
-    const int nab = 2*(nx1 + 4);
-    for (int o = 0; o < st.nof; ++o) {
-      csP[o] = st.cnts[o];
-      crP[o] = st.cntr[o];
-      const int nj = (st.oj[o] == 0) ? nx2 : st.b2, nk = (st.ok[o] == 0) ? nx3e : st.b3;
-      csB[o] = nab*nj*nk;
-      crB[o] = nab*nj*nk;
-    }
-    plan(st.aP, csP, crP);
-    plan(st.aB, csB, crB);
-    const int ns = std::max(std::max(st.aP.stot, st.aB.stot), 1);
-    const int nr = std::max(std::max(st.aP.rtot, st.aB.rtot), 1);
-    Kokkos::realloc(st.sfl, ns);
-    Kokkos::realloc(st.rfl, nr);
-  }
-
-  Kokkos::realloc(st.csw, nsb, nx1 + 4, 2, st.n3w, st.n2w);
-  Kokkos::deep_copy(st.csw, 0.0);
-  Kokkos::realloc(st.ipl, nsb, st.nring, st.nrl, st.n3w, st.n2w);
-  Kokkos::deep_copy(st.ipl, 0.0);
-  if (cln_consist) Kokkos::realloc(st.spl, nsb, 4, VETRAY_NFS, st.n3w, st.n2w);
-  Kokkos::realloc(vet_ipl, 1, 1, 1, 1, 1);
-  if (vet_full) {
-    const int n1 = nx1 + 2*indcs.ng;
-    const int n2 = nx2 + 2*indcs.ng;
-    const int n3 = thrd ? (nx3 + 2*indcs.ng) : 1;
-    Kokkos::realloc(st.dsc, nmb, 6, n3, n2, n1);
-    Kokkos::deep_copy(st.dsc, 0.0);
-    Kokkos::realloc(st.dsc_c, nmb, 6, 1, 1, 1);
-    st.pbd = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    st.pbd->InitializeBuffers(6);
-    // the D halo follows <mesh>/cs_seam_blockend (read here: pbval_u does not exist yet)
-    st.pbd->cs_blockend_ext_ = CsSeamBlockendExtend(pmy_pack, pin);
-    // the six D_ab are scalars to the exchange (no vector pairs)
-    st.pbd->SetVectorPairs(6, {});
-  }
-  if (vet_x1per && vet_x1ptol > 0.0) {
-    VetFatal("<rad_vet>/vet_x1_periodic on several MeshBlocks needs a fixed "
-             "vet_x1_npass");
-  }
-#if MPI_PARALLEL_ENABLED
-  MPI_Comm_dup(MPI_COMM_WORLD, &st.comm);
-#endif
-  if (global_variable::my_rank == 0) {
-    const double mb = 8.0e-6*(static_cast<double>(st.csw.size()) + st.ipl.size()
-                              + st.dsc.size() + st.sfl.size() + st.rfl.size());
-    std::cout << "<rad_vet> vet_sc on " << pm->nmb_total << " MeshBlocks (" << st.nbx1
-              << " x " << nbx2 << " x " << nbx3 << "), " << global_variable::nranks
-              << " rank(s): exact banded sweep, reach " << st.w2 << " x " << st.w3
-              << " cells, cell-parallel kernel, one message per rank, " << st.nof
-              << " horizontal slots, " << mb << " MB of sweep buffers on this rank"
-              << std::endl;
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ScCartFree
-
-void RadiationVet::ScCartFree() {
-  if (vet_mbs == nullptr) return;
-  if (vet_mbs->pbd != nullptr) {
-    delete vet_mbs->pbd;
-  }
-#if MPI_PARALLEL_ENABLED
-  MPI_Comm_free(&(vet_mbs->comm));
-#endif
-  delete vet_mbs;
-  vet_mbs = nullptr;
 }
 
 //----------------------------------------------------------------------------------------
@@ -982,9 +549,8 @@ void RadiationVet::ImplBeamInit(ParameterInput *pin) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::ScSlabSelect
-//! \brief the kernel of the Cartesian sc rays, once at the first build: the curved shell
-//! sweep as a slab (x1 plays r, rays/sc_sph_sweep.cpp) where it has every feature the
-//! run uses, else the Cartesian sweep ScCartSweep, logged with what the slab lacks
+//! \brief the Cartesian sc rays at the first build: the curved shell sweep as a slab
+//! (x1 plays r, rays/sc_sph_sweep.cpp); what it does not cover stops the run
 
 void RadiationVet::ScSlabSelect() {
   Mesh *pm = pmy_pack->pmesh;
@@ -994,37 +560,27 @@ void RadiationVet::ScSlabSelect() {
   }
   std::string lack;
   auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
-  need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC), " x1 periodic mesh, open sweep;");
+  need(vet_x1per == (ibc_x1min == VET_IBC_PERIODIC),
+       " a periodic x1 mesh needs vet_x1_periodic = true;");
   need(nb1 == 1 || !vet_x1per, " several MeshBlocks along an x1-periodic mesh;");
-  need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
-  vgd_slab = lack.empty() ? 1 : 0;
-  // the Cartesian sweep has vacuum x2 (x3) faces on one MeshBlock only
-  if (!vgd_slab && (vet_x2open || vet_x3open) &&
-      (pm->nmb_total != 1 || global_variable::nranks != 1)) {
-    VetFatal("<rad_vet>/closure = sc with non-periodic x2 (x3) boundaries on the "
-             "Cartesian sweep (the slab lacks:" + lack + ") needs a single MeshBlock "
-             "on one rank");
+  need(!pm->multilevel, " SMR/AMR;");
+  need(pm->multi_d && pm->mb_indcs.nx1 >= 3, " a multi-D mesh, MeshBlock nx1 >= 3;");
+  if (!lack.empty()) {
+    VetFatal("<rad_vet>/closure = sc on a Cartesian mesh (the slab sweep) does not "
+             "cover:" + lack);
   }
-  if (vgd_slab) {
-    // the top bath of vet_bc_bath; the halo (compact masks, exact lists, IPC, band
-    // ring) with sp's defaults, on the slab's read boxes (ScCand) and branch
-    // (ScHaloKeepTP)
-    vgd_tbath = vet_bc_bath;
-    vgd_hcomp = 2;
+  vgd_slab = 1;
+  // the top bath of vet_bc_bath; the halo (compact masks, exact lists, IPC, band ring)
+  // with sp's defaults, on the slab's read boxes (ScCand) and branch (ScHaloKeepTP)
+  vgd_tbath = vet_bc_bath;
+  vgd_hcomp = 2;
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
-    vgd_ipc_on = true;
+  vgd_ipc_on = true;
 #endif
-    // passes (x1 periodic, a mirrored top) read the exit shells' band of the pass
-    // before, which the band ring would have handed back: no ring there
-    if (vet_x1per || (vet_bc_mirror_hi && ibc_x1max == VET_IBC_REFLECT)) {
-      vgd_ring_par = false;
-    }
-  }
-  if (global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> closure = sc on a Cartesian mesh: "
-              << (vgd_slab ? std::string("the curved shell sweep as a slab (x1 = r)")
-                           : "the OLD Cartesian sweep ScCartSweep (the slab lacks:" +
-                             lack + ")") << std::endl;
+  // passes (x1 periodic, a mirrored top) read the exit shells' band of the pass before,
+  // which the band ring would have handed back: no ring there
+  if (vet_x1per || (vet_bc_mirror_hi && ibc_x1max == VET_IBC_REFLECT)) {
+    vgd_ring_par = false;
   }
 }
 

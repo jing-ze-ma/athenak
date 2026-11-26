@@ -216,10 +216,7 @@ add_executable(
         rad_vet/rad_vet_update.cpp
         rad_vet/rays/sc_bandring.cpp
         rad_vet/rays/sc_build.cpp
-        rad_vet/rays/sc_cart_rotavg.cpp
         rad_vet/rays/sc_cart_setup.cpp
-        rad_vet/rays/sc_cart_sweep.cpp
-        rad_vet/rays/sc_cart_sweep_mb.cpp
         rad_vet/rays/sc_cs_halo.cpp
         rad_vet/rays/sc_cs_setup.cpp
         rad_vet/rays/sc_cs_sweep.cpp

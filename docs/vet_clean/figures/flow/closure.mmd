@@ -8,12 +8,11 @@ flowchart TD
   beu["Backward Euler: stored moments, no sweep<br/>ClosureExtrap, rad_vet_closure.cpp"]
   beu2["After the solve: rays of the new state<br/>RayMoments, rad_vet_closure.cpp"]
   tr["Sweep the rays<br/>TraceRays, rad_vet_closure.cpp"]
-  mesh{"Mesh?<br/>TraceRays, rad_vet_closure.cpp"}
-  cart["Cartesian sweep, layer by layer<br/>ScCartBuild, rays/sc_cart_sweep.cpp"]
   src["Extinction and source of every cell<br/>ScSource, rays/sc_build.cpp"]
-  sp["Spherical polar, shell by shell<br/>ScSweep, rays/sc_sph_sweep.cpp"]
+  mesh{"Mesh?<br/>ScSweep, rays/sc_sph_sweep.cpp"}
+  sp["Shell by shell (spherical polar; Cartesian: x1 plays r)<br/>ScSweep, rays/sc_sph_sweep.cpp"]
   cs["Cubed sphere, shell by shell<br/>ScCsSweep, rays/sc_cs_sweep.cpp"]
-  cell["Closure of a cell from its rays<br/>ClosureFromSc, ClosureFromRays, rad_vet_closure_rays.cpp"]
+  cell["Closure of a cell from its rays<br/>ClosureFromSc, rad_vet_closure_rays.cpp"]
   ring["If the sets rotate: mix the sets<br/>RingMoments, rad_vet_closure_ring.cpp"]
   face["Ray sums on faces<br/>RayFaceSums, rad_vet_closure_faces.cpp"]
   fill["Cells without rays, ghost zones<br/>ClosureFill, rad_vet_closure.cpp"]
@@ -23,13 +22,11 @@ flowchart TD
   which -->|stage 1| s1 --> s1b --> tr
   which -->|stage 2| s2 --> fill
   which -->|backward Euler| beu --> beu2 --> tr
-  tr --> mesh
-  mesh -->|Cartesian| cart --> cell
-  mesh -->|curved| src
-  src --> sp --> cell
-  src --> cs --> cell
+  tr --> src --> mesh
+  mesh -->|spherical polar, Cartesian| sp --> cell
+  mesh -->|cubed sphere| cs --> cell
   cell -->|curved| face --> ring
-  cell -->|Cartesian| ring
+  cell -->|Cartesian: face sums in the sweep| ring
   ring -->|for this solve| fill --> use
   ring -->|after backward Euler| keep
   fill -->|stage 1| keep

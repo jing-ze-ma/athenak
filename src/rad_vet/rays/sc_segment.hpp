@@ -6,8 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file sc_segment.hpp
-//! \brief Short-characteristics segment kernels (vet_seg, vet_interp), vet_gd launch
-//! policies and the PLM foot of the transverse interpolation.
+//! \brief Short-characteristics segment kernels (vet_seg) and the vet_gd launch policies.
 //!
 //! vet_seg = split: the segment u -> 0 is two sub-segments split at the cell face
 //! (upwind optical depth hu, own h0), S piecewise linear in tau, continuous at
@@ -164,116 +163,8 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
   return ia*ex0 + wu0*sf + w00*s0;
 }
 
-// one SC segment from the upwind point (I_u, chi_u, S_u) to the cell centre (chi_0, S_0)
-// over hl = dx1/|mu1|, split or mean; ifc (if given) gets the face I; suu, sdd as above
-KOKKOS_INLINE_FUNCTION
-Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const Real c0,
-               const Real hl, const bool spl, const int spe, Real *ifc = nullptr,
-               const Real suu = -1.0, const Real sdd = -1.0) {
-  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc, suu, sdd);}
-  if (ifc != nullptr) *ifc = VetSegFaceI(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, 0);
-  Real ex, w0, wu;
-  VetSegW(0.5*(cu + c0)*hl, ex, w0, wu);
-  return iu*ex + wu*su + w0*s0;
-}
-
-// vet_interp: upwind segment from the (bi)linear stencil of the upwind plane, weights
-// w[4] (sum 1) and corner I, chi, S:
-//   1 log:    I_u = sum w I_q, chi_u and S_u geometric means, one segment;
-//   2 corner: one segment per corner, I = sum w I_q(segment): keeps a thin corner's
-//             intensity at a sharp opaque edge (lin would put the opaque chi_u on a
-//             grazing ray); smooth fields: corner - lin = O(dx^2);
-//   3 auto:   corner where max/min chi > kVetCornerRatio (material edge), else log.
-// ifc (if given) gets the face I; suq the corners' S one x1 cell further upwind (jump),
-// sdd the own cell's S one x1 cell downstream.
+// a material edge of the upwind stencil: max/min chi > kVetCornerRatio (the corner rule
+// of the curved core, ScCornerEdge)
 constexpr Real kVetCornerRatio = 4.0;
-
-KOKKOS_INLINE_FUNCTION
-Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
-                 const Real sq[4], const Real s0, const Real c0, const Real hl,
-                 const bool spl, const int spe, Real *ifc = nullptr,
-                 const Real *suq = nullptr, const Real sdd = -1.0) {
-  if (mode == 3) {
-    Real cmn = 1.0e300, cmx = 0.0;
-    for (int q = 0; q < 4; ++q) {
-      if (w[q] > 0.0) {cmn = fmin(cmn, cq[q]); cmx = fmax(cmx, cq[q]);}
-    }
-    mode = (cmx > kVetCornerRatio*cmn) ? 2 : 1;
-  }
-  if (mode == 2) {
-    Real iv = 0.0, fq = 0.0;
-    if (ifc != nullptr) *ifc = 0.0;
-    for (int q = 0; q < 4; ++q) {
-      if (!(w[q] > 0.0)) continue;
-      iv += w[q]*VetSegOne(iq[q], sq[q], s0, cq[q], c0, hl, spl, spe,
-                           (ifc != nullptr) ? &fq : nullptr,
-                           (suq != nullptr) ? suq[q] : -1.0, sdd);
-      if (ifc != nullptr) *ifc += w[q]*fq;
-    }
-    return iv;
-  }
-  Real iu = 0.0, lc = 0.0, ls = 0.0, lu = 0.0;
-  for (int q = 0; q < 4; ++q) {
-    iu += w[q]*iq[q];
-    lc += w[q]*log(fmax(cq[q], 1.0e-300));
-    ls += w[q]*log(fmax(sq[q], 1.0e-300));
-    if (suq != nullptr) lu += w[q]*log(fmax(suq[q], 1.0e-300));
-  }
-  return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe, ifc,
-                   (suq != nullptr) ? exp(lu) : -1.0, sdd);
-}
-
-// second-order foot of the transverse interpolation: PLM remap of the upwind plane.  Each
-// corner cell (dk, dj) in {0, 1}^2 has van Leer slopes along x2 and x3, scaled together
-// so that its linear profile stays inside [min, max] of the cell and its 4 neighbours
-// (the multi-D limiter; in 2-D van Leer alone does that): the remap, the window mean of
-// the profiles, is bounded by the plane, I >= 0 by construction.  Returns the correction
-// dv to the bilinear value; dq[2*dk + dj] = a corner's profile at the centroid of its
-// part of the window minus its value (sum w dq = dv); fl[0] (x2), fl[1] (x3) = the part
-// crossing the cell's low face, keeping the update in flux form.  ip(dk, dj) = I at
-// (ka + dk, ja + dj).
-template <class IP>
-KOKKOS_INLINE_FUNCTION
-Real VetPlmFoot(const IP &ip, const Real a2, const Real a3, const bool thrd, Real fl[2],
-                Real dq[4]) {
-  auto sl = [](const Real m, const Real c, const Real p) {
-    const Real dl = c - m, dr = p - c;
-    return (dl*dr > 0.0) ? 2.0*dl*dr/(dl + dr) : 0.0;
-  };
-  Real s2[2][2] = {{0.0, 0.0}, {0.0, 0.0}}, s3[2][2] = {{0.0, 0.0}, {0.0, 0.0}};
-  for (int c = 0; c < (thrd ? 2 : 1); ++c) {
-    for (int b = 0; b < 2; ++b) {
-      const Real v = ip(c,b), w = ip(c,b-1), e = ip(c,b+1);
-      const Real s = thrd ? ip(c-1,b) : v, n = thrd ? ip(c+1,b) : v;
-      s2[c][b] = sl(w, v, e);
-      s3[c][b] = thrd ? sl(s, v, n) : 0.0;
-      const Real h = 0.5*(fabs(s2[c][b]) + fabs(s3[c][b]));
-      const Real d = fmin(v - fmin(fmin(v, w), fmin(e, fmin(s, n))),
-                          fmax(fmax(v, w), fmax(e, fmax(s, n))) - v);
-      if (h > d) {
-        s2[c][b] *= d/h;
-        s3[c][b] *= d/h;
-      }
-    }
-  }
-  const Real k2 = 0.5*a2*(1.0 - a2), k3 = 0.5*a3*(1.0 - a3);
-  Real dv = 0.0;
-  fl[0] = 0.0;
-  fl[1] = 0.0;
-  for (int b = 0; b < (thrd ? 2 : 1); ++b) {
-    const Real wr = (b == 0) ? 1.0 - a3 : a3, wc = (b == 0) ? 1.0 - a2 : a2;
-    dv += wr*k2*(s2[b][0] - s2[b][1]);
-    fl[0] += wr*k2*s2[b][0];
-    if (!thrd) continue;
-    dv += wc*k3*(s3[0][b] - s3[1][b]);
-    fl[1] += wc*k3*s3[0][b];
-  }
-  for (int q = 0; q < 4; ++q) {
-    const int c = q/2, b = q%2;
-    dq[q] = s2[c][b]*((b == 0) ? 0.5*a2 : 0.5*(a2 - 1.0))
-            + s3[c][b]*((c == 0) ? 0.5*a3 : 0.5*(a3 - 1.0));
-  }
-  return dv;
-}
 
 #endif  // RAD_VET_RAYS_SC_SEGMENT_HPP_

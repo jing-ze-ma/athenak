@@ -12,8 +12,8 @@
 //! rhs)/(g dt).  Without a valid K1 (first step, restart without the slope, failed stage)
 //! the step is backward Euler and stores K1 = (Y - rhs)/dt.
 //!
-//!  called from: rad_vet_gas.cpp, rays/sc_cart_sweep.cpp, rays/sc_cart_sweep_mb.cpp,
-//!    rays/sc_directions.cpp, rays/sc_source.cpp, driver/driver.cpp
+//!  called from: rad_vet_gas.cpp, rays/sc_directions.cpp, rays/sc_source.cpp,
+//!    driver/driver.cpp
 //!  calls into: rad_vet_fct.cpp, rad_vet_gas.cpp, rad_vet_ledger.cpp, rad_vet_opacity.cpp
 
 #include <algorithm>

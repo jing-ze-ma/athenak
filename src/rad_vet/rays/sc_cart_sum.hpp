@@ -6,13 +6,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file sc_cart_sum.hpp
-//! \brief Cartesian short characteristics: per-cell sums of one layer launch (moments of
-//! the up and down rays and the face sums), for the per-cell kernel (VetScAcc) and the
-//! ray-parallel kernels (VetScSumGroup, one thread per cell and group of sums).
-//! Every sum is added in ray order and written in the same order in both forms, so the
-//! two give the same bits.
+//! \brief the Cartesian slab's per-cell face sums (VetScSumGroup, one thread per cell and
+//! group of sums), every sum added in ray order.
 //!
-//!  called from: rays/sc_cart_sweep.cpp, rays/sc_cart_sweep_mb.cpp
+//!  called from: rays/sc_cart_setup.cpp
 
 #include "athena.hpp"
 #include "rad_vet/rad_vet.hpp"
@@ -56,100 +53,11 @@ void VetScFaceW(const W &w, const int n, const Real f2u, const Real f2d, const R
   w(VSS_FN, 1, n, fnd);
 }
 
-// per-cell sums of one launch: moments of the up (u = 0) and down (u = 1) rays of the
-// cells iu, id and the face sums into them (f2) and into their upwind cells (fn)
-struct VetScAcc {
-  Real ac[2][10] = {}, hp[2][3] = {}, kp[2][VETRAY_NKP] = {}, nl[2] = {};
-  Real f2[2][VETRAY_NFS] = {}, fn[2][VETRAY_NFS] = {};
-  // ray r of intensity iv in a cell of source s0; g the scalars of its face sums (entry,
-  // x2 and x3 interpolation flux, face crossing, exit), each times (1, mu)
-  template <class A>
-  KOKKOS_INLINE_FUNCTION void Add(const A &ang, const int r, const Real iv, const Real s0,
-                                  const Real g[5], const bool hrs, const bool kps,
-                                  const bool nls) {
-    const Real m1 = ang(r,0), m2 = ang(r,1), m3 = ang(r,2), wr = ang(r,3);
-    const bool up = (m1 > 0.0);
-    const int u = up ? 0 : 1;
-    auto add4 = [&](Real *fx, const Real q) {
-      fx[0] += q;
-      fx[1] += q*m1;
-      fx[2] += q*m2;
-      fx[3] += q*m3;
-    };
-    add4(f2[u] + 4, g[0]);
-    add4(fn[u], g[1]);
-    add4(fn[u] + 12, g[2]);
-    add4(up ? f2[0] + 8 : fn[1] + 8, g[3]);
-    add4(f2[u] + 4, g[4]);
-    const Real a = wr*iv;
-    for (int n = 0; n < 10; ++n) {ac[u][n] += VetScMom(n, a, m1, m2, m3);}
-    if (hrs) {
-      hp[u][0] += a*fmax(m1, 0.0);
-      hp[u][1] += a*fmax(m2, 0.0);
-      hp[u][2] += a*fmax(m3, 0.0);
-    }
-    if (kps) {
-      const Real mu[3] = {m1, m2, m3};
-      for (int d = 0; d < 3; ++d) {
-        if (!(mu[d] > 0.0)) continue;
-        for (int b = 0; b < 3; ++b) kp[u][3*d+b] += a*mu[b]*mu[d];
-      }
-    }
-    if (nls) {nl[u] += wr*fabs(iv - s0);}
-  }
-  // the sums to the writer w(kind, u, n, value), in the order VetScSumGroup uses
-  // (mbo: the banded sweep's order of the face sums, up f2 fn then down f2 fn)
-  template <class W>
-  KOKKOS_INLINE_FUNCTION void Emit(const W &w, const bool hrs, const bool kps,
-                                   const bool nls, const bool f2s,
-                                   const bool mbo = false) const {
-    for (int n = 0; n < 10; ++n) {
-      w(VSS_J, 0, n, ac[0][n]);
-      w(VSS_J, 1, n, ac[1][n]);
-    }
-    if (hrs) {
-      for (int n = 0; n < 3; ++n) {w(VSS_HP, 0, n, hp[0][n]); w(VSS_HP, 1, n, hp[1][n]);}
-    }
-    if (kps) {
-      for (int n = 0; n < VETRAY_NKP; ++n) {
-        w(VSS_KP, 0, n, kp[0][n]);
-        w(VSS_KP, 1, n, kp[1][n]);
-      }
-    }
-    if (nls) {w(VSS_NL, 0, 0, nl[0]); w(VSS_NL, 1, 0, nl[1]);}
-    if (f2s) {
-      for (int n = 0; n < VETRAY_NFS; ++n) {
-        VetScFaceW(w, n, f2[0][n], f2[1][n], fn[0][n], fn[1][n], mbo);
-      }
-    }
-  }
-};
-
-// writer of a single-MeshBlock launch: up sums to cell iu (face sums fn to ium), down
-// sums to id (fn to idp)
-template <class V>
-struct VetScWriter {
-  V vc;
-  int m, k, j, iu, id, ium, idp;
-  KOKKOS_INLINE_FUNCTION
-  VetScWriter(const V &v, const int m_, const int k_, const int j_, const int iu_,
-              const int id_, const int ium_, const int idp_)
-      : vc(v), m(m_), k(k_), j(j_), iu(iu_), id(id_), ium(ium_), idp(idp_) {}
-  KOKKOS_INLINE_FUNCTION
-  void operator()(const int kind, const int u, const int n, const Real v) const {
-    const int i = (kind == VSS_FN) ? (u ? idp : ium) : (u ? id : iu);
-    const int c = (kind == VSS_J) ? (VETRAY_J + n) : (kind == VSS_HP) ? (VETRAY_HP1 + n)
-                : (kind == VSS_KP) ? (VETRAY_KP + n) : (kind == VSS_NL) ? VETRAY_NL
-                : (VETRAY_F2 + n);
-    vc(m,c,k,j,i) += v;
-  }
-};
-
 //----------------------------------------------------------------------------------------
 //! \fn VetScSumGroup
 //! \brief group G of the sums of one cell over rays [0, nray): ray r with active(r)
 //! (up rays m1 > 0 to u = 0), intensity iv(r), own-cell source s0(r) (non-locality) and
-//! face-sum scalar g(q, r); written to w as VetScAcc::Emit does (mbo: its order). Each
+//! face-sum scalar g(q, r); written to w (mbo: up f2 fn, then down f2 fn).  Each
 //! group holds at most 26 sums: VETSUM_NG threads per cell, few registers each.
 template <int G, class A, class FA, class FI, class FS, class FG, class W>
 KOKKOS_INLINE_FUNCTION

@@ -366,14 +366,6 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         if (!one) pradvet->RssRstPack(t, nmb, rmode);
       });
     }
-    // vet_rotate_avg: the averaging history, densely packed slabs
-    const int nra = pradvet->RotAvgRstNslab(nout1*nout2*nout3);
-    if (nra > 0) {
-      // packed per MeshBlock in chunks of 4 slabs (was a device copy of the
-      // whole record, the largest transient on top of the steady state); same bytes
-      Kokkos::realloc(outarray_vetr, nmb, nra, nout3, nout2, nout1);
-      pradvet->RotAvgRstPackHost(outarray_vetr, nmb, 4);
-    }
   }
   // <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's sdirk2
   // spin slope amk1), kAmSpinRstMagic, the last slabs of each record

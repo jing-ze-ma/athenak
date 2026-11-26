@@ -419,32 +419,16 @@ void RadiationVet::Time2Report() {
 //! \fn void RadiationVet::ScCartReport
 
 void RadiationVet::ScCartReport() {
-  if (global_variable::my_rank != 0 || vet_ncall <= 0.0) return;
-  std::cout << "<rad_vet> vet_sc: formal solutions=" << vet_ncall
-            << " SC seconds=" << vet_time << " (" << vet_time/vet_ncall << " per call)"
-            << " implicit-solve seconds incl. SC=" << vet_itime
-            << " SC/(implicit solve without SC)="
-            << vet_time/std::fmax(vet_itime - vet_time, 1.0e-300) << std::endl;
+  if (global_variable::my_rank != 0) return;
   if (vet_x1_nbuild > 0.0) {   // adaptive periodic x1 sweep
     std::cout << "<rad_vet> vet_sc periodic x1 sweep (vet_x1_ptol=" << vet_x1ptol
               << ", cap vet_x1_npass=" << vet_x1npass << "): builds=" << vet_x1_nbuild
               << " passes mean=" << vet_x1_npsum/vet_x1_nbuild << " max=" << vet_x1_npmax
               << " builds that hit the cap=" << vet_x1_ncap << std::endl;
   }
-  if (vra_on && vsc_rot) {
-    std::cout << "<rad_vet> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
-              << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit
-              << "), " << vra_time << " s incl. offsets (rank 0, fenced)" << std::endl;
-  }
   if (impl_hr_sf) {
     std::cout << "<rad_vet> implicit_hr_face=sf: cells with Jh > J (sf face ratios) "
               << hsf_nsf << " of " << hsf_ncell << " cell-solves (rank 0)" << std::endl;
-  }
-  if (vet_full) {
-    std::cout << "<rad_vet> vet_tensor=full: guard triggered in " << vet_nguard << " of "
-              << vet_ncell << " cell-calls (eigenvalue floor " << vet_eig_min
-              << "); max |D_guarded - K/J|=" << vet_guard_max
-              << " (incl. trace normalisation); min D_11=" << vet_d11_min << std::endl;
   }
 }
 

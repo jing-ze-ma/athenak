@@ -125,7 +125,7 @@ bool RadiationVet::VetBcEmit() const {
 
 void RadiationVet::RotAvgParse(ParameterInput *pin) {
   // vet_rotate_avg = K (read only when named; < 2 off): closure averaged over the last
-  // K rotated sets (rays/sc_cart_rotavg.cpp)
+  // K rotated sets (the ring, rad_vet_closure_ring.cpp)
   if (pin->DoesParameterExist("rad_vet","vet_rotate_avg")) {
     vra_k = pin->GetInteger("rad_vet","vet_rotate_avg");
     if (vra_k > VET_RA_NF) {
@@ -239,11 +239,10 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
     pin->SetString("rad_vet","closure","sc");
   }
   // vet_source_noesrc (default false on every mesh): the rays' source without the
-  // explicit source term in backward-Euler solves (VsrcNoes; rays/sc_source.cpp,
-  // rays/sc_cart_sweep.cpp)
+  // explicit source term in backward-Euler solves (VsrcNoes; rays/sc_source.cpp)
   vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",false);
   if (!sph_geom) {
-    // a Cartesian mesh (rays/sc_cart_sweep.cpp)
+    // a Cartesian mesh (the slab, rays/sc_cart_setup.cpp)
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
     // vet_gd_rotate_every has no vet_sc clock: inert

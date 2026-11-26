@@ -84,8 +84,8 @@ Paths are relative to `src/rad_vet/`.
 | `rad_vet_init.cpp`, `rad_vet_geometry.cpp` | Arrays; geometry |
 | `rad_vet.hpp`, `rad_vet_defs.hpp` | The class; array slots and small structs |
 | `rad_vet_args.hpp`, `rad_vet_faces.hpp`, `rad_vet_rows.hpp`, `rad_vet_momentum.hpp`, `rad_vet_flux.hpp`, `rad_vet_moments.hpp` | Device functions |
-| `rays/sc_cart_sweep.cpp`, `rays/sc_cart_sweep_mb.cpp`, `rays/sc_cart_setup.cpp`, `rays/sc_cart_rotavg.cpp` | Short characteristics, Cartesian |
-| `rays/sc_sph_sweep.cpp`, `rays/sc_sph_halo.cpp`, `rays/sc_sph_walls.cpp` | Short characteristics, spherical polar |
+| `rays/sc_cart_setup.cpp`, `rays/sc_cart_sum.hpp` | Short characteristics on a Cartesian mesh: the angle sets, beams, the slab of the shell sweep (x1 plays r), its x1-periodic passes and face sums |
+| `rays/sc_sph_sweep.cpp`, `rays/sc_sph_sweep_shell.inc`, `rays/sc_sph_sweep_body.inc`, `rays/sc_sph_halo.cpp`, `rays/sc_sph_walls.cpp` | Short characteristics: the shell sweep of spherical polar and of the Cartesian slab |
 | `rays/sc_cs_sweep.cpp`, `rays/sc_cs_halo.cpp`, `rays/sc_cs_setup.cpp` | Short characteristics, cubed sphere |
 | `rays/sc_source.cpp`, `rays/sc_build.cpp`, `rays/sc_setup.cpp`, `rays/sc_tables.cpp`, `rays/sc_directions.cpp`, `rays/sc_bandring.cpp` | Shared by both curved meshes |
 

@@ -8,7 +8,7 @@
 //!
 //!  called from: rad_vet_closure.cpp, rad_vet_closure_ring.cpp,
 //!    rad_vet_params_closure.cpp, rays/sc_build.cpp, rays/sc_cart_setup.cpp,
-//!    rays/sc_cart_sweep.cpp, rays/sc_setup.cpp, rays/sc_tables.cpp, driver/driver.cpp,
+//!    rays/sc_setup.cpp, rays/sc_tables.cpp, driver/driver.cpp,
 //!    driver/dt_retry.cpp, mesh/mesh.cpp
 //!  calls into: rad_vet_imex.cpp
 

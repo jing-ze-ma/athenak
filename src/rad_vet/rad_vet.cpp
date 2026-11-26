@@ -308,7 +308,6 @@ RadiationVet::~RadiationVet() {
   ImplicitReport();
   Time2Report();      // time_scheme = sdirk2
   if (vet_sc) {ScCartReport();}
-  ScCartFree();
   delete pbval_u;
   if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_sg != nullptr) {delete pbval_sg;}

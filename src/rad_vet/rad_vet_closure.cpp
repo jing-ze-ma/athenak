@@ -11,7 +11,7 @@
 //!  called from: rad_vet_tasks.cpp
 //!  calls into: rad_vet_bvals.cpp, rad_vet_closure_faces.cpp, rad_vet_closure_rays.cpp,
 //!    rad_vet_closure_ring.cpp, rad_vet_init.cpp, rays/sc_build.cpp,
-//!    rays/sc_cart_sweep.cpp, rays/sc_directions.cpp, rays/sc_source.cpp,
+//!    rays/sc_directions.cpp, rays/sc_source.cpp,
 //!    rays/sc_sph_walls.cpp
 
 #include <math.h>
@@ -521,17 +521,8 @@ void RadiationVet::TraceRays() {
   // (the closure's time; a step of at least one rotation block takes its start's sets)
   const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
                   ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
+  // (a Cartesian mesh: the slab, rays/sc_cart_setup.cpp)
   if (!vgd_on && vgd_slab < 0) ScSlabSelect();
-  if (!vgd_on && vgd_slab == 0 && cln_ring) {   // (the rotating vet_sc set: RingMoments)
-    RingSets(tc, pmy_pack->pmesh->ncycle);
-    RingMoments();
-    return;
-  }
-  if (!vgd_on && vgd_slab == 0) {
-    ScCartBuild();
-    ClosureFromRays();
-    return;
-  }
   if (!vray_ready) VetRayInit();
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto iw_ = iw;

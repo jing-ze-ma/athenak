@@ -11,7 +11,7 @@
 //!    driver/dt_retry.cpp
 //!  calls into: rad_vet_bvals.cpp, rad_vet_closure_faces.cpp, rad_vet_closure_rays.cpp,
 //!    rad_vet_init.cpp, rays/sc_build.cpp, rays/sc_cart_setup.cpp,
-//!    rays/sc_cart_sweep.cpp, rays/sc_directions.cpp, rays/sc_sph_halo_fused.cpp,
+//!    rays/sc_directions.cpp, rays/sc_sph_halo_fused.cpp,
 //!    rays/sc_sph_sweep.cpp, rays/sc_sph_walls.cpp, rays/sc_tables.cpp
 
 #include <algorithm>
@@ -119,7 +119,7 @@ bool RingMix(const RingL &rl, const DvceArray5D<Real> &rr,
 //! RotXfBlend): the raw moments q of (1 - s) A + s T in the normalised fields and J. A =
 //! the current set with the EMA offsets (e = rr's first nfr, its J entry the ratio r =
 //! J_avg/J_b), T = the next set with the EMA the coming boundary makes of this state's
-//! Delta (RotAvgEmaShift): aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
+//! Delta: aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
 //! (1 - aw)(r/R)/r' (e - D), R = J_{b+1}/J_b; a_ch is this build's (pd's entry nfr), n
 //! rr's entry nfr + 2 (0: no history, A and T the sets themselves).  The face sums (not
 //! cell moments) as (1 - s) A + s T in raw moments, linear in the faces' own sums: no
@@ -400,11 +400,7 @@ void RadiationVet::RingMoments() {
     const bool older = (p >= 0 && p < nr);
     const bool keep = (older && fill) || p == nr || p == nk;
     if (older && fill) vra_gen += 1;
-    if (!vgd_on && vgd_slab != 1) {   // (vet_sc: the set of block cln_fvblk[q] alone)
-      VetRotSet(VetRotBeta(cln_fvblk[q]));
-      ScCartSweep();
-      ClosureFromRays();
-    } else {
+    {
       cln_fvd = cln_fvdm[q];
       // the sc rays: set q swept alone (its tables, its own weights)
       cln_rq = q;

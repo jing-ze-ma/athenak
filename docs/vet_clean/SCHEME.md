@@ -575,7 +575,15 @@ The face and cell kernels are written once in terms of cell volumes, face areas,
 centre-to-centre distances and each cell's local orthonormal frame, which each mesh supplies
 (the exact AthenaK volumes and areas on curved meshes). Supported: Cartesian 1-D to 3-D,
 spherical polar 1-D to 3-D (wedges, axisymmetric, full sphere (not tested, below); radial
-stretching allowed) and the cubed sphere. The mesh must not be refined (FATAL). Two
+stretching allowed) and the cubed sphere. The mesh must not be refined (FATAL).
+
+One sc method: the rays are one shell sweep on every mesh (`rays/sc_sph_sweep.cpp`). On a
+Cartesian mesh x1 plays r: the shells are the x1 layers, each direction's foot is a constant
+offset, the wall maps are identities, and the closure-consistency face sums are made in the
+sweep (the x1 face crossing of each segment, the foot shift across the lateral faces); the
+cubed sphere has its own shell kernel on the same core (`rays/sc_cs_sweep.cpp`). The
+Cartesian sweep that preceded it, and its moment averaging of rotating sets (now the ring,
+as on the curved meshes), were retired (Jing-Ze Ma (with Claude Opus 5.5)). Two
 options are geometry-specific by construction: `clean_stag_fwb_ring` (3-D spherical polar with
 periodic phi) and the cubed-sphere torque redistribution.
 
@@ -590,7 +598,7 @@ following. The properties of this section are not verified there.
 |---|---|---|
 | spherical polar with the poles (full sphere, `<mesh>/use_polar_boundary`) under `vet_gd` | accepted, not tested | wedges clear of the poles; the full sphere on the cubed sphere (`*_cs`) |
 | stretched theta (`<mesh>/use_grid_stretch_theta`, `theta_plateau`) under `vet_gd` | accepted, not tested | uniform theta; radial stretching in the star decks |
-| several MeshBlocks along x1 under `vet_gd` | the sweep has the code, but the start-up check stops with a FATAL error on spherical polar and the cubed sphere (`meshblock/nx1` must equal `mesh/nx1`), so it cannot be reached | one MeshBlock along x1; several on a Cartesian mesh with `closure = vet_sc` (`idort_beams_mb`) |
+| several MeshBlocks along x1 on spherical polar and the cubed sphere | the sweep has the code, but the start-up check stops with a FATAL error there (`meshblock/nx1` must equal `mesh/nx1`), so it cannot be reached | one MeshBlock along x1; several on a Cartesian mesh (the same shell sweep as a slab, `idort_beams_mb`) |
 | radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with the SDIRK2 stages of the stars (the stage-1 solve takes the field B^n + g (B* - B^n) through \|B\|^2/2, B* and the flux state's EMFs take the stage-2 CT update with the Heun weights; second order also where the exchange is stiff and with Ohmic and ambipolar diffusion explicit in the stages, `order_mhd`), tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
 
 ## 3. Code map

@@ -165,11 +165,8 @@ class RadiationVet {
   void ScGdAngles(const Real beta);
   void ScBuildSet(std::vector<double> &d) const;
   void VetRotInit(ParameterInput *pin);   // (rays/sc_directions.cpp)
-  void VetRotUpdate();
   Real VetRotBeta(const int64_t blk) const;   // rotation of block blk
   void VetRotSet(const Real beta);
-  void VetScRotAvgSetup();     // vet_sc's averaged fields (vet_cell)
-  void ScCartSweep();    // build with the current set
   bool vet_full = false;     // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   static constexpr Real vet_eig_min = 0.0;   // full: eigenvalue floor of D
   Real vet_nguard{}, vet_ncell{}; // full: cell-calls the guard changed D / all cell-calls
@@ -622,13 +619,10 @@ class RadiationVet {
   //! VET: read <rad_vet>/vet_*, check the mesh, allocate
   void ScCartInit(ParameterInput *pin);
   //! VET: short-characteristics formal solution and the uniaxial tensor (chi, n)
-  void ScCartBuild();
   //! VET, vet_tensor = full: guarded D = K/J (and its ghosts) for the solve
-  void ScCartTensor();
   //! VET: cost line at the end of the run
   void ScCartReport();
   //! VET, several MeshBlocks: allocate the banded buffers and neighbour tables
-  void ScCartInitMB(ParameterInput *pin);
   // Cartesian sc rays on the curved shell sweep as a slab (x1 plays r), where it has
   // every feature of the run; decided at the first build (ScSlabSelect)
   int vgd_slab = -1;         // -1 undecided, 0 the Cartesian sweep, 1 the slab
@@ -654,10 +648,6 @@ class RadiationVet {
   void ScSlabFaceX1(const bool inw);
   Real ScX1Exit(const bool cmp, Real &amax);
   void ScX1Load();
-  //! VET, several MeshBlocks: exact sweep with per-layer band exchange
-  void ScCartSweepMB();
-  //! VET: free the multi-block state
-  void ScCartFree();
   // ---- scheme = clean: the implicit stage solve (rad_vet_tasks.cpp)
   TaskStatus StageSolve(Driver *d, int stage);
   // the step's radiation (rad_vet_imex.cpp), called by Driver::Execute
@@ -695,7 +685,6 @@ class RadiationVet {
   void ClosureIterate();
   void StageOpacity();
   void TraceRays();
-  void ClosureFromRays();
   void ClosureFromSc();
   void RayCut();
   void RayFaceSums();
@@ -1140,7 +1129,7 @@ class RadiationVet {
   bool vgd_rot3 = false;
   void ScRot3(const Real key, double r[9]) const;
   std::vector<double> ScRotate(const Real alpha) const;
-  // vet_rotate_avg = K >= 2 (rays/sc_cart_rotavg.cpp): the closure is the mean over the
+  // vet_rotate_avg = K >= 2 (the ring, RingMoments): the closure is the mean over the
   // last K
   // rotated direction sets. A closure registers its normalised fields (ratios to J); the
   // mean is kept as offsets d_j = g_{b-j} - g_b, each from two sweeps of the same state:
@@ -1160,15 +1149,11 @@ class RadiationVet {
   // e = avg - g_b(now), r = Jbar/J_b, + an aux slot; vra_k = 3)
   bool vra_ema = false;
   Real vra_ema_n = 0.0;
-  void RotAvgEmaInit(const int ilo);
-  void RotAvgEmaShift(const int ds);
-  void RotAvgEmaChange(const int ilo);
   static constexpr Real kEmaEps = 0.05;   // the change test's relative change
   bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step | linear
   // curved meshes (clean ring): a = a_ch alone (no 1/N floor, no 1/(n + 1)
   // count): a static state keeps its closure
   bool vra_ema_wb = false;
-  void RotAvgEmaApply(const int ilo);
   // vet_gd_rotate_xfade (needs vet_gd_rotate_dt > 0): clean ring live, the closure
   // cross-faded from the current to the next set over each block (RingSets); both
   // sets' tables on the device (ScXfTables)
@@ -1218,22 +1203,12 @@ class RadiationVet {
   bool vra_raw = false;        // a snapshot sweep: the closure leaves its fields raw
   double vra_nsweep = 0.0, vra_nrot = 0.0, vra_ninit = 0.0;
   Real vra_time = 0.0;
-  void RotAvgSnap(const int slot, const int ilo);
-  void RotAvgUpdate(const int ilo);
-  void RotAvgApply(const int ilo);
   void RotAvgParse(ParameterInput *pin);
-  void RotAvgDelta(const int slot, const int ilo);
-  void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
-  // history in the restart file (kVetRaRstMagic, rays/sc_cart_rotavg.cpp)
+  // history in the restart file (kVetRaRstMagic, rad_vet_restart.cpp: not written)
   static constexpr int VET_RA_RST_NH = 11;   // int64 header entries (10)
-  int RotAvgNf() const;
-  int RotAvgRstNslab(const int ncell) const;
-  int RotAvgRstI0() const;     // first written radial cell
   void RotAvgRstHdr(int64_t *h) const;
-  void RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc);
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
-  bool RotAvgRstCheck();
   int vra_rst_nf = -1;         // nf of a history loaded from the file (-1: none/checked)
   int64_t vra_blk = INT64_MIN; // block of the last build
   bool vra_last = false;       // this build is on the last step of its block
