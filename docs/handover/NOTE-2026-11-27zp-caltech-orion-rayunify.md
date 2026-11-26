@@ -42,3 +42,12 @@ make[1]: *** [CMakeFiles/Makefile2:373: src/CMakeFiles/athena.dir/all] Error 2
 make: *** [Makefile:136: all] Error 2
 srun: error: hpc-sm-02-11: task 0: Exited with exit code 2
 ```
+
+- The full error line (cut off above), the same in both builds (star_vet and built_in_pgens):
+```
+/resnick/groups/carnegie_poc/jingze/wt_orion1121/ru/src/rad_vet/rays/sc_cart_sweep_mb.cpp(266): error: A type local to a function ("lambda [](int, int, int, Real)->void") cannot be used in the return or parameter types of the operator() of an extended __device__ or __host__ __device__ lambda
+      auto writer = [=] __attribute__((host)) __attribute__((device))(const int m, const int k, const int j) {
+                    ^
+
+```
+- One error only. Nothing was run; the 27zp arms wait for a fixed tip.
