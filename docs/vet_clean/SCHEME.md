@@ -77,6 +77,22 @@ half-range fluxes (outgoing and incoming parts of the flux) and the rays' own fl
 each face, which the face fluxes use in optically thin regions. Normally a step costs one ray
 sweep: the second stage uses an extrapolation of the closure in time.
 
+**Where the rays start.** The rays are not swept through the whole star. On 3-D
+spherical-polar and cubed-sphere meshes with one MeshBlock along the radius (the star runs),
+the sweep starts at a shell chosen automatically, the ray cut: in each column, the lowest cell
+that is thinner than one optical depth or where the source function changes by 1 % or more per
+optical depth, then 10 optical depths deeper; the deepest cut of all columns is used. The cut
+moves down at once and up only after 10 ray builds, and restart files keep it. Below the cut
+the closure is the diffusion limit of each cell's own $E$ and $\mathbf F$ (the intensity
+$J + 3\,\hat n\cdot\mathbf H$ in every direction), whose error there is at most of the order of the
+square of that 1 %. Outward rays start at the bottom of the swept shells with the diffusion
+intensity $S + \mu\,(-dS/d\tau)$; inward rays start at the top with no incoming radiation (or
+a bath or a mirror where the boundary asks for one). On a periodic wedge, a ray that leaves
+through one side comes back through the other side in the matching direction of the set.
+Each build sweeps every direction once: inward rays top-down, then outward rays bottom-up,
+one shell at a time. Cartesian meshes sweep all cells, layer by layer. The settings are on
+[Keys](KEYS.md).
+
 **Scattering without a scattering iteration.** Electron scattering enters twice. In the moment
 equations it is part of the total extinction in the flux equation and, in the energy equation,
 of the O(v/c) work of the radiation force on the gas (with the flux-mean opacity) and the
