@@ -1303,3 +1303,6 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-26 14:52 02-11: n5_full2 n5_full3 -> n5_full3
 - 11-26 14:52 02-17: IDLE for 10 min
 - 11-26 14:56 02-17: IDLE -> b_ex3 b_un2
+- 11-26 14:57 02-11: n5_full3 -> IDLE
+- 11-26 14:57 02-16: IDLE for 10 min
+- 11-26 14:59 02-11: IDLE -> lzan7
