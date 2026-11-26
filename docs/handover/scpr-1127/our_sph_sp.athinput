@@ -1,0 +1,64 @@
+# SCPR (for AUDITFIX item 10): ours, curved path. The same sphere (radius 0.6, a T^4 = 1) on a
+# spherical-polar wedge r 0.3..1.2, theta pi/2 +- 0.2 (reflect), phi 0..2 pi/20 (periodic);
+# hot_blob with blob_a2 = blob_a3 = 0 is a centred sphere in r. blob_rho 3.125 -> chi = 50 (thick:
+# the inner face is 15 optical depths below the surface). GL 8 x 20 unstaggered, fixed set.
+<job>
+basename = oursphsp
+<mesh>
+nx1 = 64
+x1min = 0.3
+x1max = 1.2
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 64
+x2min = 1.3707963267948966
+x2max = 1.7707963267948966
+ix2_bc = reflect
+ox2_bc = reflect
+nx3 = 64
+x3min = 0.0
+x3max = 0.3141592653589793
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+<meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 64
+<time>
+nlim = 1
+tlim = 1.0e-8
+dt_fixed = 1.0e-8
+ndiag = 1
+<hydro>
+eos = ideal
+gamma = 1.666666666666667
+<rad_vet>
+c_light = 100.0
+arad = 1.0
+e_floor = 1.0e-30
+kappa_p = 16.0
+gas_feedback = false
+vet_scatter = false
+implicit_bc_x1max = marshak
+vet_gd_gl_nmu = 8
+vet_gd_gl_nphi = 20
+vet_gd_gl_stagger = false
+vet_gd_rotate_dt = 0
+clean_verbose = 1
+<problem>
+pgen_name = rad_vet_beam
+vet_test = hot_blob
+blob_rho = 3.125
+blob_temp = 1.0
+bg_rho = 1.0e-12
+bg_temp = 1.0e-3
+blob_edge = 1.0e-9
+blob_a1 = 0.6
+blob_a2 = 0.0
+blob_a3 = 0.0
+<output1>
+file_type = bin
+bin_double = true
+variable = vet_vsc
+dt = 1.0e-8
