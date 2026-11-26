@@ -404,7 +404,7 @@ Real RadiationVet::VelocityUpdate() {
   xh.hi = cln_split;
   xh.mcl = true;
   if (cln_mclc.extent_int(0) != 1) Kokkos::realloc(cln_mclc, 1);
-  Kokkos::deep_copy(cln_mclc, 0.0);
+  Kokkos::deep_copy(DevExeSpace(), cln_mclc, 0.0);   // (stream order: no fence)
   xh.mclc = cln_mclc;
   // the F solve's face tie after the drag (same face T: CLF_PT)
   const bool td = cln_fwork;

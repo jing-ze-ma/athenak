@@ -384,14 +384,14 @@ void RadiationVet::WriteBack() {
     Kokkos::realloc(pfc_def, nmb1 + 1, icp.nx3 + 2*icp.ng, icp.nx2 + 2*icp.ng,
                     icp.nx1 + 2*icp.ng);
   }
-  if (pfc) Kokkos::deep_copy(pfc_def, 0.0);
+  if (pfc) Kokkos::deep_copy(DevExeSpace(), pfc_def, 0.0);
   auto pfd = pfc_def;
   const bool pgc = pfc;
   if (pgc && pgc_def.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(pgc_def, nmb1 + 1, pfc_def.extent_int(1), pfc_def.extent_int(2),
                     pfc_def.extent_int(3));
   }
-  if (pgc) Kokkos::deep_copy(pgc_def, 0.0);
+  if (pgc) Kokkos::deep_copy(DevExeSpace(), pgc_def, 0.0);
   auto pgd = pgc_def;
   const bool xwb = feedback && !cln_vzero;
   const bool cls = xwb;   // the closure in CLW_PW, printed below
@@ -683,7 +683,8 @@ void RadiationVet::WriteBack() {
     });
     WbFct(x, px, wfp, pfo, pf);
   }
-  if (wmc) Kokkos::deep_copy(xh.mclc, 0.0);   // (the write-back's own, not the probe's)
+  // (the write-back's own, not the probe's)
+  if (wmc) Kokkos::deep_copy(DevExeSpace(), xh.mclc, 0.0);
   SolveFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     wbc(m, k, j, i, false);
