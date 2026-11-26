@@ -146,9 +146,7 @@ void RadiationVet::CleanSteadyStart(Driver *pdrive) {
     const Real nf = cln_nfail + cln_nneg;
     // one radiation step: the ordinary m1 task lists (closure, solve, ghost exchange)
     for (int stage = 1; stage <= nstage; ++stage) {
-      pdrive->ExecuteTaskList(pm, "vet_before_stagen", stage);
-      pdrive->ExecuteTaskList(pm, "vet_stagen", stage);
-      pdrive->ExecuteTaskList(pm, "vet_after_stagen", stage);
+      RunStage(pdrive, stage);
     }
     (void) ApplyClosureLimits(pdrive, 1);
     if (cln_nfail + cln_nneg > nf) {

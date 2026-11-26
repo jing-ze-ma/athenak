@@ -636,4 +636,19 @@ void RadiationVet::CleanClosureFill() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanStageClosure
+//! \brief the closure a stage solve starts with
+
+void RadiationVet::CleanStageClosure() {
+  // from the gas before the stage increments; clean_closure = iterate with no closure
+  // in place takes the predicted one
+  if (cln_extrap > 0) {
+    CleanClosureExtrap();
+  } else if (!cln_closit || !cln_cip) {
+    CleanClosure();
+  }
+  if (cln_ring == 2) CleanRingSolveSet();
+}
+
 }  // namespace radvet

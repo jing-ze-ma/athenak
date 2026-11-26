@@ -313,6 +313,32 @@ struct RadiationVetTaskIDs {
   TaskID csend;
   TaskID crecv;
 };
+//----------------------------------------------------------------------------------------
+//! \struct SolvePass
+//! \brief state of the passes of one stage solve (CleanSolve); host only
+
+struct SolvePass {
+  int n = 0, nmax = 1;         // pass, cap of the passes
+  bool iterate = false;        // passes (gas coupling, lagged closure), else one solve
+  bool clos1 = false;          // the stage-1 solve takes its own closure once (pass 1)
+  bool t2stage = false;        // a stage solve (its failure: the backward-Euler redo)
+  bool converged = false;
+  bool clos = false, opr = false;   // this pass takes a new closure, new opacities
+  bool lp = false;             // implicit_lin_maxit: the linear solve ended at its cap
+  int nit = 0, nit_sum = 0, nsolve = 0, nneg = 0;
+  std::array<int, 2> nfirst = {0, 0};
+  Real tol_nl = 0.0, trel = 0.0;    // tolerance of the changes
+  Real de = 0.0, dv = 0.0;     // the pass's changes of E and v, the ones before
+  Real de0 = 1.0e300, dv0 = 1.0e300;
+  Real dnl = 0.0, dnl0 = -1.0; // the last pass's change and the one before
+  std::vector<Real> rhist;     // changes of the passes (clean_gas_newton_switch)
+  // a change that stopped decreasing within 100 x both its round-off level (cln_fe,
+  // cln_fv) and tol_nl is converged too
+  bool Settled(const Real d, const Real d0, const Real f) const {
+    return d < tol_nl || (d > 0.5*d0 && d < 100.0*fmin(f, tol_nl));
+  }
+};
+
 }  // namespace radvet
 
 #endif  // RAD_VET_RAD_VET_DEFS_HPP_

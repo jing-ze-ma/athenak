@@ -664,4 +664,42 @@ void RadiationVet::CleanWoBind() {
   MemArenaBind();
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanSolveBegin
+//! \brief once per solve, before the closure: arrays, the direction sets and half ranges
+//! a restart needs, the first cycle's face fluxes
+
+void RadiationVet::CleanSolveBegin() {
+  if (!cln_init) CleanInit();
+  // the vet_gd direction set first (a restart's first solve reads it before any build)
+  if (vgd_on && !vray_ready) VetRayInit();
+  // sc rays' ring on the cubed sphere: the union's directions and weights too
+  if (vgd_on && cln_cssc && cln_ring && cln_fvn == 0) {
+    CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
+    // sc ring: its two sets' intensities from the restart file (zero from a file of
+    // another ray method, until the first build)
+    if (cln_cssc) CleanScUnion2();
+  }
+  if (cln_cssc && !cln_ring) {   // clean_rays = sc: the sweep's set, its cln_fvi
+    cln_fvd = vgd_dir;
+    cln_fvn = vgd_n;
+  }
+  // restart from a file with the intensities (version 5): their face half ranges, set by
+  // set
+  if (cln_cssc && cln_fh.extent_int(0) == 0 && cln_fvi.extent_int(0) > 0) {
+    for (int q = 0; q < cln_fvi.extent_int(1)/vgd_n; ++q) {
+      CleanFaceHalf(cln_fvd, q*vgd_n, q == 0, q*vgd_n);
+    }
+    cln_fvi = DvceArray5D<Real>();
+  }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  cln_feedback = gas_feedback && fl.on;
+
+  // 1. starting face fluxes on the first cycle (restarts carry them)
+  if (!cln_faces_set) {
+    cln_faces_set = true;
+    if (pmy_pack->pmesh->ncycle == 0) CleanInitFaceFluxes();
+  }
+}
+
 }  // namespace radvet
