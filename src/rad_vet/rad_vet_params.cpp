@@ -115,8 +115,8 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/clean_conv_est_f", "=false"}, {"rad_vet/clean_retry_budget", "=true"},
     {"rad_vet/vet_gd_twin", "=false"},
     // study keys: removed
-    {"rad_vet/clean_stag_colflux", "=false"}, {"rad_vet/clean_stag_fcone_gas", "=false"},
-    {"rad_vet/clean_stag_fwb_cart", "=false"}, {"rad_vet/clean_stag_fwb_line", "=false"},
+    {"rad_vet/clean_stag_colflux", "=false"}, {"rad_vet/clean_stag_fwb_cart", "=false"},
+    {"rad_vet/clean_stag_fwb_line", "=false"},
     {"rad_vet/clean_stag_fwb_stage", "=false"}, {"rad_vet/clean_stag_fwb_t2", "=false"},
     {"rad_vet/clean_stag_rayratio", "=false"}, {"rad_vet/clean_vel_settled", "=false"},
     {"rad_vet/clean_xt_cons", "=false"}, {"rad_vet/clean_xt_norm", "=false"},
@@ -547,6 +547,11 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // is scaled only where those faces alone exceed c E, and its cut is the gas's at the
     // face (as fcone_gas; clean_lz_spin: a rigid rotation), so that L_z is exact (cubed
     // sphere: CsTorque)
+    // clean_stag_fcone_gas (default false): the gas takes the momentum fcone cuts at each
+    // inner face (the cut F's absorption is not withheld), so gas + radiation momentum
+    // and L_z are exact; E pays the kinetic energy (the write-back's residual), which
+    // a radiation-poor cell cannot (test floor_momentum's exch0 box blows up)
+    cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
     cln_fclz = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_lz", curv &&
                                 fix("clean_stag_fcone_lz", "true", "false"));
     // clean_stag_fcone_emax (read only when named; needs clean_stag_fcone): every inner

@@ -869,6 +869,7 @@ class RadiationVet {
   std::array<RingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
+  bool cln_fcgas = false;    // clean_stag_fcone_gas
   bool cln_fclz = false;    // clean_stag_fcone_lz
   bool cln_fcemx = false;   // clean_stag_fcone_emax
   bool cln_lzsp = false;    // clean_lz_spin
