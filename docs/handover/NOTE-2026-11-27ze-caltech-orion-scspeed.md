@@ -257,3 +257,200 @@ written rst/bin: 0
 <rad_vet>/vet_gd: vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)
 ```
 - G4L_B and kp_G4_B print the same. The message is complete: it is the theta mirror wall (reflecting theta boundaries), which needs one MeshBlock along x2, as you guessed. Round 3 (sp2/cart2) follows after the LZAB arms.
+
+## scspeed round 3 (your 27zi): sp2 / cart2 decks at 66b1c4ef4, node 02-11, suite binary rel6 8cc98fb3, one rank per GPU
+```
+S1 rc=0 wall=11 s args: sp2.athinput time/nlim=1
+S4 rc=0 wall=9 s args: sp2.athinput time/nlim=1 meshblock/nx2=32 meshblock/nx3=32
+H1_A1 rc=0 wall=7 s args: cart2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=32
+H1_B1 rc=0 wall=7 s args: sp2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=11.851851851851851
+H1_A2 rc=0 wall=12 s args: cart2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=32
+H1_B2 rc=0 wall=13 s args: sp2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=11.851851851851851
+H4_A1 rc=0 wall=10 s args: cart2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=64 meshblock/nx3=64 rad_vet/kappa_p=32
+H4_B1 rc=0 wall=16 s args: sp2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=64 meshblock/nx3=64 rad_vet/kappa_p=11.851851851851851
+H4_A2 rc=0 wall=16 s args: cart2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=64 meshblock/nx3=64 rad_vet/kappa_p=32
+H4_B2 rc=0 wall=10 s args: sp2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=64 meshblock/nx3=64 rad_vet/kappa_p=11.851851851851851
+H4L_A rc=0 wall=18 s args: cart2.athinput mesh/nx1=256 mesh/nx2=256 mesh/nx3=256 meshblock/nx1=256 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=64
+H4L_B rc=0 wall=19 s args: sp2.athinput mesh/nx1=256 mesh/nx2=256 mesh/nx3=256 meshblock/nx1=256 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=23.703703703703702
+kp_H1_B rc=0 wall=7 s args: sp2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=128 meshblock/nx3=128 rad_vet/kappa_p=11.851851851851851
+kp_H4_A rc=0 wall=16 s args: cart2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=64 meshblock/nx3=64 rad_vet/kappa_p=32
+kp_H4_B rc=0 wall=11 s args: sp2.athinput mesh/nx1=128 mesh/nx2=128 mesh/nx3=128 meshblock/nx1=128 meshblock/nx2=64 meshblock/nx3=64 rad_vet/kappa_p=11.851851851851851
+written rst/bin: 0
+```
+### S1: s/cycle nan over cycles 2-6; cpu time used  = 5.948387e-01; zone-cycles/cpu_second = 4.406976e+05
+- elapsed: c0 0.197; c1 0.792
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 2.209747e-02, sweeps 3.946630e-02 (of which per-shell halo+walls 3.027000e-05, of which MPI wait 0.000000e+00), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 0.000000e+00, bytes sent 0.000000e+00 (0.000000e+00 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 14400, direction maps exact 580608 of 1814400 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### S4: s/cycle nan over cycles 2-6; cpu time used  = 7.091144e-01; zone-cycles/cpu_second = 3.696780e+05
+- elapsed: c0 0.504; c1 1.213
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 5.116580e-02, sweeps 2.783647e-01 (of which per-shell halo+walls 2.570163e-01, of which MPI wait 7.622265e-03), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 2.600000e+02, bytes sent 4.797966e+08 (1.845372e+06 per exchange), post 0.000000e+00 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 6720, direction maps exact 322560 of 846720 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### H1_A1: s/cycle 0.3063 over cycles 2-6; cpu time used  = 2.057489e+00; zone-cycles/cpu_second = 6.115664e+06
+- elapsed: c0 0.031; c1 0.543; c2 0.863; c3 1.180; c4 1.482; c5 1.786; c6 2.088
+  - `<rad_vet> vet_sc: formal solutions=7.000000e+00 SC seconds=8.905608e-01 (1.272230e-01 per call) implicit-solve seconds incl. SC=0.000000e+00 SC/(implicit solve without SC)=8.905608e+299`
+  - `<rad_vet> vet_sc_set = gd: 126 rays, min |mu1| 0.0851519, x1 mirror pairs no`
+  - `Terminating on cycle limit`
+### H1_B1: s/cycle 0.2867 over cycles 2-6; cpu time used  = 2.246501e+00; zone-cycles/cpu_second = 5.601116e+06
+- elapsed: c0 0.039; c1 0.840; c2 1.139; c3 1.429; c4 1.715; c5 2.000; c6 2.286
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 6.601630e-03, sweeps 4.404852e-01 (of which per-shell halo+walls 1.660390e-04, of which MPI wait 0.000000e+00), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 0.000000e+00, bytes sent 0.000000e+00 (0.000000e+00 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 35600, direction maps exact 1612800 of 4485600 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### H1_A2: s/cycle 0.3065 over cycles 2-6; cpu time used  = 2.051783e+00; zone-cycles/cpu_second = 6.132671e+06
+- elapsed: c0 0.030; c1 0.539; c2 0.856; c3 1.173; c4 1.475; c5 1.780; c6 2.082
+  - `<rad_vet> vet_sc: formal solutions=7.000000e+00 SC seconds=8.873419e-01 (1.267631e-01 per call) implicit-solve seconds incl. SC=0.000000e+00 SC/(implicit solve without SC)=8.873419e+299`
+  - `<rad_vet> vet_sc_set = gd: 126 rays, min |mu1| 0.0851519, x1 mirror pairs no`
+  - `Terminating on cycle limit`
+### H1_B2: s/cycle 0.2856 over cycles 2-6; cpu time used  = 2.240059e+00; zone-cycles/cpu_second = 5.617224e+06
+- elapsed: c0 0.033; c1 0.833; c2 1.131; c3 1.419; c4 1.705; c5 1.988; c6 2.273
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 6.710301e-03, sweeps 4.412851e-01 (of which per-shell halo+walls 1.767580e-04, of which MPI wait 0.000000e+00), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 0.000000e+00, bytes sent 0.000000e+00 (0.000000e+00 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 35600, direction maps exact 1612800 of 4485600 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### H4_A1: s/cycle 0.1882 over cycles 2-6; cpu time used  = 1.503626e+00; zone-cycles/cpu_second = 8.368382e+06
+- elapsed: c0 0.496; c1 1.054; c2 1.247; c3 1.437; c4 1.625; c5 1.815; c6 1.999
+  - `<rad_vet> vet_sc: formal solutions=7.000000e+00 SC seconds=8.172215e-01 (1.167459e-01 per call) implicit-solve seconds incl. SC=0.000000e+00 SC/(implicit solve without SC)=8.172215e+299`
+  - `<rad_vet> vet_sc_set = gd: 126 rays, min |mu1| 0.0851519, x1 mirror pairs no`
+  - `Terminating on cycle limit`
+### H4_B1: s/cycle 0.1161 over cycles 2-6; cpu time used  = 1.362632e+00; zone-cycles/cpu_second = 9.234267e+06
+- elapsed: c0 0.495; c1 1.263; c2 1.393; c3 1.513; c4 1.629; c5 1.743; c6 1.858
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 6.716173e-02, sweeps 2.682702e-01 (of which per-shell halo+walls 1.962171e-02, of which MPI wait 1.141048e-02), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 1.813000e+03, bytes sent 6.990299e+08 (3.855653e+05 per exchange), post 7.327997e-03 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 13900, direction maps exact 718200 of 1751400 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### H4_A2: s/cycle 0.1869 over cycles 2-6; cpu time used  = 1.485051e+00; zone-cycles/cpu_second = 8.473048e+06
+- elapsed: c0 0.488; c1 1.034; c2 1.225; c3 1.416; c4 1.600; c5 1.790; c6 1.973
+  - `<rad_vet> vet_sc: formal solutions=7.000000e+00 SC seconds=8.119568e-01 (1.159938e-01 per call) implicit-solve seconds incl. SC=0.000000e+00 SC/(implicit solve without SC)=8.119568e+299`
+  - `<rad_vet> vet_sc_set = gd: 126 rays, min |mu1| 0.0851519, x1 mirror pairs no`
+  - `Terminating on cycle limit`
+### H4_B2: s/cycle 0.1153 over cycles 2-6; cpu time used  = 1.372168e+00; zone-cycles/cpu_second = 9.170097e+06
+- elapsed: c0 0.488; c1 1.271; c2 1.400; c3 1.519; c4 1.634; c5 1.748; c6 1.861
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 6.307289e-02, sweeps 2.795505e-01 (of which per-shell halo+walls 1.936070e-02, of which MPI wait 1.134798e-02), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 1.813000e+03, bytes sent 6.990299e+08 (3.855653e+05 per exchange), post 7.767704e-03 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 13900, direction maps exact 718200 of 1751400 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### H4L_A: s/cycle 0.6065 over cycles 2-6; cpu time used  = 4.238243e+00; zone-cycles/cpu_second = 2.375119e+07
+- elapsed: c0 0.520; c1 1.696; c2 2.332; c3 2.950; c4 3.563; c5 4.178; c6 4.758
+  - `<rad_vet> vet_sc: formal solutions=7.000000e+00 SC seconds=1.735953e+00 (2.479933e-01 per call) implicit-solve seconds incl. SC=0.000000e+00 SC/(implicit solve without SC)=1.735953e+300`
+  - `<rad_vet> vet_sc_set = gd: 126 rays, min |mu1| 0.0851519, x1 mirror pairs no`
+  - `Terminating on cycle limit`
+### H4L_B: s/cycle 0.5943 over cycles 2-6; cpu time used  = 5.036487e+00; zone-cycles/cpu_second = 1.998681e+07
+- elapsed: c0 0.510; c1 2.533; c2 3.169; c3 3.775; c4 4.371; c5 4.958; c6 5.547
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 8.540212e-02, sweeps 1.268784e+00 (of which per-shell halo+walls 1.777907e-01, of which MPI wait 2.456280e-02), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 3.619000e+03, bytes sent 3.168571e+09 (8.755377e+05 per exchange), post 1.572514e-02 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 31947, direction maps exact 1712718 of 4025322 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### kp_H1_B: s/cycle 0.3072 over cycles 2-6; cpu time used  = 2.392797e+00; zone-cycles/cpu_second = 5.258662e+06
+- elapsed: c0 0.035; c1 0.879; c2 1.199; c3 1.510; c4 1.817; c5 2.120; c6 2.428
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 6.820108e-03, sweeps 4.560092e-01 (of which per-shell halo+walls 3.330880e-04, of which MPI wait 0.000000e+00), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 0.000000e+00, bytes sent 0.000000e+00 (0.000000e+00 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 35600, direction maps exact 1612800 of 4485600 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+### kp_H4_A: s/cycle 0.2120 over cycles 2-6; cpu time used  = 1.657317e+00; zone-cycles/cpu_second = 7.592338e+06
+- elapsed: c0 0.492; c1 1.083; c2 1.301; c3 1.518; c4 1.727; c5 1.942; c6 2.149
+  - `<rad_vet> vet_sc: formal solutions=7.000000e+00 SC seconds=8.430594e-01 (1.204371e-01 per call) implicit-solve seconds incl. SC=0.000000e+00 SC/(implicit solve without SC)=8.430594e+299`
+  - `<rad_vet> vet_sc_set = gd: 126 rays, min |mu1| 0.0851519, x1 mirror pairs no`
+  - `Terminating on cycle limit`
+### kp_H4_B: s/cycle 0.1470 over cycles 2-6; cpu time used  = 1.598915e+00; zone-cycles/cpu_second = 7.869654e+06
+- elapsed: c0 0.501; c1 1.355; c2 1.513; c3 1.665; c4 1.812; c5 1.956; c6 2.100
+  - `<rad_vet> vet_gd: rank 0 fenced seconds: source 6.568841e-02, sweeps 3.624421e-01 (of which per-shell halo+walls 1.123011e-01, of which MPI wait 1.211569e-02), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)`
+  - `<rad_vet> vet_gd halo (rank 0): exchanges 1.813000e+03, bytes sent 6.990299e+08 (3.855653e+05 per exchange), post 8.705500e-03 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00`
+  - `<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)`
+  - `<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 13900, direction maps exact 718200 of 1751400 (the rest: nearest direction)`
+  - `Terminating on cycle limit`
+- kp_H1_B kp.0 top 25:
+```
+# total 2.503617 s
+      0.439622       1792 vet_vgd_shell
+      0.161634        147 cln_rhsaf
+      0.112877       1910 cln_pcr2
+      0.069569        147 cln_fs0
+      0.068445         98 cln_fsch
+      0.055398          7 cln_gd_fs
+      0.053078       2110 <deep_copy>
+      0.035015         38 cln_velocity
+      0.033752         49 cln_rhs
+      0.032356        261 cln_apply_st
+      0.030450         48 cln_facecoef
+      0.029463        125 cln_cslat
+      0.029183         49 cln_drag
+      0.029019        114 cln_fwc
+      0.028016         98 cln_fs2
+      0.026616         12 dfl_th
+      0.026062        382 cls_restrict
+      0.023926          7 cln_gd
+      0.023826        147 cln_fwb
+      0.023636       1459 cln_ghost1
+      0.022636        463 vet_lay_red2
+      0.021155       1471 cln_hd_copy
+      0.020241        114 cln_xdonor
+      0.019553         38 cln_stencil
+```
+- kp_H4_A kp.0 top 25:
+```
+# total 2.191280 s
+      0.721682        896 vet_vet_mb_sweep
+      0.058769       2070 cln_pcr2
+      0.039397        141 cln_rhsaf
+      0.031913        188 cln_fsch
+      0.022810        480 vet_lay_red2
+      0.018909       1901 <deep_copy>
+      0.016641       1460 cln_hd_pack
+      0.016419       1460 cln_hd_unpack
+      0.015600       1448 cln_ghost1
+      0.014962        141 cln_fs0
+      0.012288         94 cln_fs2
+      0.012007        889 vet_vet_plane_unpka
+      0.011824        889 vet_vet_plane_packa
+      0.011806        414 cls_restrict
+      0.011275        889 vet_vet_plane_loc
+      0.010914        273 cln_apply_st
+      0.010511         12 hflux_x1
+      0.008705         48 cln_facecoef
+      0.008153         47 cln_rhs
+      0.007793        141 cln_fwb
+      0.007718         33 cln_wbxc
+      0.007465        108 cln_fwc
+      0.007344         36 cln_velocity
+      0.006628        123 cln_cslat
+```
+- kp_H4_B kp.0 top 25:
+```
+# total 2.206511 s
+      0.107492       1792 vet_vgd_shell
+      0.061639       2090 cln_pcr2
+      0.045703        147 cln_rhsaf
+      0.036194       1820 vet_vgd_ring
+      0.034643        196 cln_fsch
+      0.033198       2486 <deep_copy>
+      0.023973        499 vet_lay_red2
+      0.021804        147 cln_fs0
+      0.019674       1785 vet_vgd_hl_scatter
+      0.019373       1785 vet_vgd_ipc_pack
+      0.019181       1584 cln_hd_pack
+      0.018947       1584 cln_hd_unpack
+      0.018922       1792 vet_vgd_ipc_k2
+      0.018002       1572 cln_ghost1
+      0.013095         98 cln_fs2
+      0.012842          7 cln_gd_fs
+      0.012834        382 vet_vgd_hxb_mark
+      0.012581        418 cls_restrict
+      0.011311        279 cln_apply_st
+      0.010569         12 hflux_x1
+      0.010472          2 vet_vgd_shl
+      0.009612        114 cln_fwc
+      0.009578         49 cln_rhs
+      0.009426         38 cln_velocity
+```
