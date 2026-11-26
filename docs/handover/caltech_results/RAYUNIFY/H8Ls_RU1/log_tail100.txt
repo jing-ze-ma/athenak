@@ -1,0 +1,100 @@
+  rad_vet/e_floor = 1.0e-30 (default 1.1754943508222875e-38) file
+  rad_vet/kappa_p = 23.703703703703702 (default 0) cmdline
+  rad_vet/vet_gd_gl_nphi = 18 (default 12) file
+  time/nlim = 6 (default -1) file
+  mesh/use_spherical_polar = true (default false) file
+--- end (5 keys) ---
+<rad_vet> RSLA check: chat = c, no reduced speed of light (tau_max=64, measured v_max=0)
+
+Setup complete, executing task list(s)...
+
+elapsed=6.102054e-01 cycle=0 time=0.000000e+00 dt=1.000000e-03
+<time> dt_retry checkpoint: 1001 members, 312 Views (9 copied, 6.099775e+02 MB on rank 0): hyd.u0 9.830240e+01 hyd.w0 9.830240e+01 vet.f0x1 1.973552e+01 vet.f0x2 1.980720e+01 vet.f0x3 1.994134e+01 vet.t2k1 1.572838e+02 vet.t2pf1 5.898144e+01 vet.u0 7.864192e+01 vet.opac 5.898144e+01
+<rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.661338e-16, |sum w n| 1.994932e-17, |sum w nn - I/3| 2.775558e-16 (rotated 1.110223e-16), 4th-moment anisotropy 2.498002e-16 (rotated 1.110223e-16)
+<rad_vet> vet_gd: the exact-list band needs 69 cells, MeshBlocks of 128 x 64 (theta x phi) hold 64: the raw global band (no clamped reads)
+<rad_vet> vet_gd: exact per-shell lateral halo, band 69 cells (needed 69), per-shell depth mean 5.267188e+01
+<rad_vet> vet_gd_band_global: COMPACT exchange (vet_gd_halo_compact = 2): per shell and pass only the kept (cell, direction) values; polar zone rows 70 per pole keep their whole branch
+<rad_vet> vet_gd_halo_ipc: not possible (a partner off-node, or IPC failed): MPI path
+<rad_vet> vet_gd_band_global: band 69 cells keyed on the global cell (exact copies from any block; rank 0: on-rank 0, sent 45540, received 45540 positions per shell at full depth, partners 7); stencil clamped to the cell's own window (layout independent)
+<rad_vet> vet_gd_band_ring: compact intensities 2.163474e+00 GB + 3 band slots 1.624856e-01 GB on rank 0
+<rad_vet> vet_gd: ragged per-shell band intensity array 2.325960e+00 GB on rank 0 (dense band 1.419041e+01 GB)
+<rad_vet> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 27531, direction maps exact 1712718 of 3468906 (the rest: nearest direction)
+CLEAN ray cut cycle 0 shell -1 -> 0 (want 0)
+<rad_vet> clean_halo_direct: ON, rank 0 copies 0 ghosts, sends 304128 cells, receives 304128 in 5 messages; on-rank ghosts by depth 0 0 0
+<rad_vet> mem_arena: 1.904713e+00 GB of solver and hydro scratch over the intensities
+CLEAN cycle 0 t2s 1 it 12 (sum 62) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 0 t2s 1 faces 17040384 radiation momentum sum |dp| 1.085304e-06 x1 faces sum dp -8.900090e-07
+CLEAN LZB cycle 0 t2s 1 ledger 5.9482888720933241e-19
+CLEAN XT cycle 0 t2s 1 write-back closure 4.833e-09
+### WARNING: 1 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   job/basename = sp2
+elapsed=4.636877e+00 cycle=1 time=1.000000e-03 dt=1.000000e-03
+<rad_vet> mem_arena: intensities 2.325960e+00 GB in one allocation; solve scratch moved over them (6.684564e-01 GB on rank 0):
+CLEAN cycle 1 t2s 2 it 1 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 1 t2s 2 faces 17303552 radiation momentum sum |dp| 1.213340e-05 x1 faces sum dp 9.786150e-06
+CLEAN XT cycle 1 t2s 2 write-back closure 2.236e-06
+CLEAN cycle 1 t2s 3 it 3 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 1 t2s 3 faces 17303552 radiation momentum sum |dp| 1.031995e-05 x1 faces sum dp 8.158200e-06
+CLEAN XT cycle 1 t2s 3 write-back closure 7.140e-07
+CLEAN LZB cycle 1 t2s 3 ledger 1.0750156979908907e-18
+elapsed=5.231811e+00 cycle=2 time=2.000000e-03 dt=1.000000e-03
+CLEAN cycle 2 t2s 2 it 1 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 2 t2s 2 faces 17566720 radiation momentum sum |dp| 2.033727e-05 x1 faces sum dp 1.617772e-05
+CLEAN XT cycle 2 t2s 2 write-back closure 1.646e-06
+CLEAN cycle 2 t2s 3 it 1 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 2 t2s 3 faces 17566720 radiation momentum sum |dp| 1.777432e-05 x1 faces sum dp 1.409329e-05
+CLEAN XT cycle 2 t2s 3 write-back closure 2.976e-06
+CLEAN LZB cycle 2 t2s 3 ledger 1.4327222809032899e-18
+elapsed=5.788323e+00 cycle=3 time=3.000000e-03 dt=1.000000e-03
+CLEAN cycle 3 t2s 2 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 3 t2s 2 faces 17566720 radiation momentum sum |dp| 1.945651e-05 x1 faces sum dp 1.538807e-05
+CLEAN XT cycle 3 t2s 2 write-back closure 1.164e-06
+CLEAN cycle 3 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 3 t2s 3 faces 17566720 radiation momentum sum |dp| 1.595180e-05 x1 faces sum dp 1.252619e-05
+CLEAN XT cycle 3 t2s 3 write-back closure 1.667e-06
+CLEAN LZB cycle 3 t2s 3 ledger 1.7293122796935204e-18
+elapsed=6.331881e+00 cycle=4 time=4.000000e-03 dt=1.000000e-03
+CLEAN cycle 4 t2s 2 it 0 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 4 t2s 2 faces 17566720 radiation momentum sum |dp| 1.852357e-05 x1 faces sum dp 1.464977e-05
+CLEAN XT cycle 4 t2s 2 write-back closure 2.153e-06
+CLEAN cycle 4 t2s 3 it 2 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 4 t2s 3 faces 17566720 radiation momentum sum |dp| 1.533435e-05 x1 faces sum dp 1.200001e-05
+CLEAN XT cycle 4 t2s 3 write-back closure 4.946e-07
+CLEAN LZB cycle 4 t2s 3 ledger 1.9845357556885230e-18
+elapsed=6.879841e+00 cycle=5 time=5.000000e-03 dt=1.000000e-03
+CLEAN cycle 5 t2s 2 it 0 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FWB cycle 5 t2s 2 faces 17566720 radiation momentum sum |dp| 1.717389e-05 x1 faces sum dp 1.358781e-05
+CLEAN XT cycle 5 t2s 2 write-back closure 1.388e-06
+CLEAN cycle 5 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FWB cycle 5 t2s 3 faces 17566720 radiation momentum sum |dp| 1.447842e-05 x1 faces sum dp 1.129770e-05
+CLEAN XT cycle 5 t2s 3 write-back closure 7.499e-07
+CLEAN LZB cycle 5 t2s 3 ledger 2.2074114648307717e-18
+<time> dt_retry: 6 checkpoints (3.159201e-02 s, 6.099775e+02 MB on rank 0), 0 retries, cap 1.000000e-03
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (vet_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=0.000000e+00 energy created x vol=0.000000e+00 | FOFC first-order cell-stages=0.000000e+00
+<hydro> dfloor_flux_limit: outflow-limited cell-stages (all attempts)=0.000000e+00, their x1 momentum x vol removed=0.000000e+00, kinetic energy x vol made heat=0.000000e+00
+elapsed=7.419635e+00 cycle=6 time=6.000000e-03 dt=1.000000e-03
+
+Terminating on cycle limit
+time=6.000000e-03 cycle=6
+tlim=1.000000e+30 nlim=6
+
+MeshBlock-cycles = 48
+cpu time used  = 6.809427e+00
+main loop time (before the final outputs) = 6.809383e+00
+zone-cycles/cpu_second = 1.478293e+07
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_vet> vet_gd: 7.000000e+00 builds checked; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_vet> vet_gd: rank 0 fenced seconds: source 2.563097e-01, sweeps 3.836933e+00 (of which per-shell halo+walls 3.806099e+00, of which MPI wait 1.562247e+00), tables (rotation) 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_vet> vet_gd halo (rank 0): exchanges 3.619000e+03, bytes sent 2.287342e+10 (6.320370e+06 per exchange), post 0.000000e+00 s, partners 5; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_vet> vet_gd global band (rank 0): compact, intensity values sent 2.695962e+09 of dense 1.021973e+10 (2.637996e-01); list builds 0.000000e+00 (0.000000e+00 s)
+<rad_vet> vet_gd ragged band (rank 0): out-of-slab accesses 0.000000e+00
+<rad_vet> vet_gd_band_ring (rank 0): sweeps 7.000000e+00, dense band saves 0.000000e+00, save store 2.293801e+00 GB
+<rad_vet> (rank 0) vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_vet> (rank 0) exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_vet> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_vet> vet-positivity: gas cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | hydro EOS floors energy created=0.000000e+00
+<rad_vet> time_scheme=hesdirk2: stage steps=5.000000e+00 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=1.000000e+01 skipped(no face flux)=0.000000e+00 K1 flux from U^n=0.000000e+00 limited cells=0.000000e+00 max rounds=0.000000e+00 withheld E x vol=0.000000e+00 left (Q<=0)=0.000000e+00 emptied (E < 1.000000e-01 E^n) cells=0.000000e+00 min E/E^n=1.000000e+300 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00)
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 2.752915e+00 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 4.022284e+00 | discarded dt_retry attempts 0.000000e+00
