@@ -94,3 +94,42 @@ Per arm: user.hst, hydro.hst, log first 400 / last 200 lines, `grep "CLEAN PLEDG
 5. Physics difference X2 vs REL at the last cycle as item 6 above.
 
 -- CONSERV-EXACTP (orion)
+
+## Addendum 2 (EXACTP, 2026-11-26): radial-momentum forms on vet-next4b, binary caltech-starmix-3a79dfd45
+
+From CONSERV-EXACTP (orion). **Supersedes the X2 arms of the first EXACTP addendum: if they have not started, run these X3 arms instead; if they are running, finish them and add X3.** Idle test nodes only, never with production.
+
+### Binary
+- **MIX3** = branch **`caltech-starmix-3a79dfd45`** (pushed) = MERGE's vet-next4b `3c681d9d1` (aa2646b92 + raycut, reconfatal, CONSERV dfl fix, SCHEME M-matrix, AUDITFIX, KEYS2 removals and the keys without `clean` (old names read as aliases), REPRO tile default, removed-key rule) + 8 EXACTP commits (`git log --oneline 3c681d9d1..3a79dfd45`):
+  - p_ledger (read-only momentum ledger) with classes `cut`, `fwb`; the withheld reference force booked to `src`; the ledger's slopes in the restart file (`p_ledger_k1`, the ledger restarts bitwise).
+  - `flux_cone_gas` key back, default false.
+  - `fwb_line = true`: the fwb residual projected off every radial line.
+  - `flux_cone_line` (default **false**): `true` gives the cone cut back along every radial line, weighted by the faces' gas density (telescoping face stress; P exact; on the tiny BSG every unphysical ledger class is then round-off). Not the default because E pays the kinetic energy of the cut given back: the radiation-poor test box `floor_momentum/exch` takes one backward-Euler redo with it. Arm X3L tests it on a star.
+  - `dfloor_flux_limit`: the momentum DflMomentum removes now leaves by a face floor flux to the cells the outflow went to (P exact; a physical face's share is a boundary flux).
+  - VETPAR stream-ordered zero fills (bitwise).
+- Orion CPU gate (job 243403): star_vet md5 fefc02e1, tiny_bsg_rel5 pass1 3.720e-11 PASS, quick 28/28, targeted 15/15 (p_ledger incl. the ledger's restart lines, wb_star, wb_sp, wb_cs, shell_force_cs, conservation_sp/cs, restart_sp/cs, layout_tile, layout_cs, mpi_ranks, floor_momentum, star_smoke, order_time). Tiny BSG 10 cycles, p_ledger: cut 1e-6 (0 with flux_cone_line), fwb 0, flr 3e-18, mrg 1e-17 (merge_lat_mom = radial), gap 0, END 1e-15 of the gross sum per step.
+- Key names: the templates of this branch use the new names (`steady_init`, `flux_cone`, ...); old names in your decks are read as aliases with one NOTE.
+- Build as REL: CUDA 12.9 + g++13, star_vet, never CUDA 12.2. Tiny gate first: pass1 must be 3.720e-11. Post md5 and prov.
+
+### Arms (4 single-GPU arms per H200 node, same node type and layout as the REL arms)
+| arm | star | start | N | extra keys |
+|---|---|---|---|---|
+| X3-bsg | bsg | fresh, MIX3 template | 300 | `<hydro> p_ledger = true` |
+| X3-m35 | m35mms | fresh, MIX3 template | 300 | same |
+| X3-t9 | t9l62 | fresh, MIX3 template | 300 | same |
+| X3L-bsg | bsg | fresh, MIX3 template | 300 | same + `<rad_vet> flux_cone_line = true` (the exact cone cut: does the star run clean, any redo / implicit_pos_floor?) |
+
+Then on the same node, one after another: XR3-bsg, XR3-m35, XR3-t9 = latest production rst, 100 cycles, production keys named, `p_ledger = true`.
+
+### RST (MIX3): production 2-step restart + bitwise
+As in the RST section above (bsg, m35mms, t9l62, M35ZAMS): (a) 2 cycles straight, (b) 1 + rst + 1, with `p_ledger = true`. Final rst / hydro_w byte-identical yes/no, and the `CLEAN PLEDGER` line of cycle 2 identical in (a) and (b). FATAL / CLEAN WARNING counts, `CLEAN WARNING restart:` lines, the alias NOTE lines.
+
+### Report (NOTE caltech-orion-starmix3; files to caltech_results/STARMIX3/<arm>/)
+Per arm: user.hst, hydro.hst, log first 400 / last 200 lines, `grep "CLEAN PLEDGER\|CLEAN FCONE\|CLEAN FWB\|CLEAN LZB"` as lines.txt, `grep -c "CLEAN WARNING"`.
+1. Cycles, wall, s/cycle (median of the last 100) against REL on the same node type.
+2. Every Pr class per cycle from `CLEAN PLEDGER` (rate x dt / gross): max and RMS of `cut`, `fwb`, `flr`, `mrg`, `gap`, `ntel`, `END`. Expected: fwb, gap 0 (cut 0 in X3L); ntel, mrg (radial), END round-off; flr round-off unless the primitive recovery floors or the floor-gas cap act (give their CLEAN FLOORMOM / floorcap lines then).
+3. WB of the fresh start: max |v_r|/c_s and max |v_lat|/c_s at cycles 0, 1, 2, 5, 10 (below the photosphere and all cells), X3 and X3L against R (REL).
+4. CLEAN WARNING / FATAL / DT_RETRY counts.
+5. Physics difference X3 vs REL and X3L vs X3 at the last cycle as item 6 of the MIX report.
+
+-- CONSERV-EXACTP (orion)
