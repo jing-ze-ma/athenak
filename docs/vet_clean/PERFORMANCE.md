@@ -4,8 +4,6 @@
 
 16.8 million cells, 29,657 cycles, 4 MPI ranks on 4 NVIDIA H200 GPUs.
 
-> Draft: the row of M56 LBV is to be updated (the run is still going).
-
 ## 1. Wall times of the star runs, one node of 4 H200
 
 | star | mass and type | resolution | model time | **wall time** | status | seconds per cycle, early / late |
@@ -14,9 +12,8 @@
 | M35 MMS | 35 Msun, middle of the main sequence | 336 x 256 x 256 (22.0 M cells) | 10 d | **19.89 h** | complete | 0.660 / 0.962 |
 | M35 ZAMS | 35 Msun, zero-age main sequence (ZAMS) | 384 x 128 x 128 (6.3 M cells) | 10 d | **20.08 h** | complete | 0.289 / 0.296 |
 | M56 LBV (radiative IC) | 56 Msun, luminous blue variable (T9L6.2) | 512 x 256 x 512 (67.1 M cells) | 31.04 d | **21.99 h** | complete | 2.53 / 3.09 |
-| M56 LBV | as M56 LBV (radiative IC), mixing-length start | 512 x 256 x 512 (67.1 M cells) | 20.5 d so far, of 31 d | 15.29 h so far | running when written | 2.383 / 3.088 |
+| M56 LBV | as M56 LBV (radiative IC), mixing-length start | 512 x 256 x 512 (67.1 M cells) | 31.04 d | **23.64 h** | complete | 2.38 / 3.20 |
 
-- M56 LBV was still running when this was written (read on 2026-11-25): its row is to be updated.
 - One node, so the node-hours equal the hours. The wall time is the time of the job steps,
   with the start-up and the final restart dump; the pause between two segments of a run (24 to
   30 s) is not counted.

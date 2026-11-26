@@ -3,4 +3,4 @@ bsg,16777216,57.0,6.027,complete,0.761,0.743,job step time and run log; one segm
 m35mms,22020096,10.0,19.886,complete,0.660,0.962,job step times and run logs; segments 15477 s + 56112 s; gap of 30 s not counted; cycles 0-73280
 m35zams,6291456,10.0,20.076,complete,0.289,0.296,job step times and run logs; segments 16047 s + 56225 s; gap of 29 s not counted; cycles 0-248240
 t9l62,67108864,31.04,21.985,complete,2.53,3.09,job step times and run logs; segments 2.65 h + 19.34 h (79145 s in all); gap of 24 s not counted; cycles 0-29228
-t9mlt,67108864,20.5,15.290,running (66.2 % of 31 d on 2026-11-25),2.383,3.088,job step time and run log; 55043 s so far; to cycle 18390
+t9mlt,67108864,31.04,23.639,complete,2.38,3.20,job step time and run log; one segment of 85099 s; cycles 0-27837
