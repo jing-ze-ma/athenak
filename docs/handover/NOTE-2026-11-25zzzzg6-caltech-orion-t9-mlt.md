@@ -39,3 +39,5 @@
 - (11-24 21:10) check c500: t9mlt: cycle 500, s/cyc 2.3986 (c200-500), t 4.9858e+04 dt 96.62 L_top/L_in 1.00132 L_bot/L_in 1.00038, floor_pay(sum) 6.52e+28, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
 
 - (11-24 21:29) check c1000: t9mlt: cycle 1000, s/cyc 2.3482 (c700-1000), t 9.7301e+04 dt 96.62 L_top/L_in 1.01308 L_bot/L_in 1.00133, floor_pay(sum) 1.36e+29, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
+
+- (11-25 20:27) **t9mlt finished** (t 2.6820000000000000e+06 of 2.682e6): t9mlt: cycle 27800, s/cyc 3.1324 (c27500-27800), t 2.6820e+06 dt 87.4 L_top/L_in 1.02018 L_bot/L_in 1.00503, floor_pay(sum) 1.46e+35, CW 0, FATAL 0, inf 0, DT_RETRY 0, fallback 0, clamped 0
