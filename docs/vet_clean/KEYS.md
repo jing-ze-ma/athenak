@@ -251,17 +251,17 @@ prints one NOTE with the keys and values the code runs.
 
 | removed key = value | | |
 |---|---|---|
-| `be_legacy` = `false` | `clean_bc_area` = `true` | `clean_bc` = `halfrange` |
-| `clean_bicg_stall_fac` = `0.99` | `clean_bicg_stall_its` = `0` | `clean_conv_est_f` = `false` |
-| `clean_cs_lz_abs` = `2` | `clean_cs_lz_bnd_free` = `true` | `clean_face_area` = `false` |
-| `clean_face_hctau` = `true` | `clean_face_jse_cell` = `false` | `clean_face_jse` = `true` |
-| `clean_face_opac` = `harmonic` | `clean_fill_cs_remap` = `false` | `clean_fill_passes` = `8` |
-| `clean_gas_newton_switch_min` = `6` | `clean_gas_newton_switch` = `4` | `clean_gas_secant` = `max_stage2` |
-| `clean_gas_tfloor` = `true` | `clean_halo_direct` = `true` | `clean_init_cnorm` = `1e-10` |
-| `clean_layout` = `staggered` | `clean_lin_cnorm` = `1e-10` | `clean_lin_pass` = `true` |
-| `clean_maxpic` = `12` | `clean_nl_norm` = `global` | `clean_pass_damp` = `0` |
-| `clean_pred_stage` = `false` | `clean_pred_xch` = `true` | `clean_predict` = `true` |
-| `chat_over_c` = `1` | `clean_ray_cut_margin` = `10` | `clean_ray_cut_taumin` = `0` |
+| `be_legacy` = `false` | `chat_over_c` = `1` | `clean_bc` = `halfrange` |
+| `clean_bc_area` = `true` | `clean_bicg_stall_fac` = `0.99` | `clean_bicg_stall_its` = `0` |
+| `clean_conv_est_f` = `false` | `clean_cs_lz_abs` = `2` | `clean_cs_lz_bnd_free` = `true` |
+| `clean_face_area` = `false` | `clean_face_hctau` = `true` | `clean_face_jse` = `true` |
+| `clean_face_jse_cell` = `false` | `clean_face_opac` = `harmonic` | `clean_fill_cs_remap` = `false` |
+| `clean_fill_passes` = `8` | `clean_gas_newton_switch` = `4` | `clean_gas_newton_switch_min` = `6` |
+| `clean_gas_secant` = `max_stage2` | `clean_gas_tfloor` = `true` | `clean_halo_direct` = `true` |
+| `clean_init_cnorm` = `1e-10` | `clean_layout` = `staggered` | `clean_lin_cnorm` = `1e-10` |
+| `clean_lin_pass` = `true` | `clean_maxpic` = `12` | `clean_nl_norm` = `global` |
+| `clean_pass_damp` = `0` | `clean_pred_stage` = `false` | `clean_pred_xch` = `true` |
+| `clean_predict` = `true` | `clean_ray_cut_margin` = `10` | `clean_ray_cut_taumin` = `0` |
 | `clean_rays` = `sc` | `clean_retry_budget` = `true` | `clean_ring_jmin` = `true` |
 | `clean_rot_ring_fill_rst` = `true` | `clean_rst_mshare` = `true` | `clean_source_convex` = `true` |
 | `clean_stag_central` = `true` | `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` |
@@ -276,6 +276,7 @@ prints one NOTE with the keys and values the code runs.
 | `clean_w_fse_tau` = `true` | `clean_wb_fct` = `true` | `clean_wb_floor_fail` = `false` |
 | `clean_xt_cons` = `false` | `clean_xt_exact` = `cons` | `clean_xt_norm` = `false` |
 | `dbg_energy_tally` = `false` | `doppler_face` = `donor` | `floorcap_mesh_vol` = `true` |
+| `flux_cone_gas` = `false` | `flux_cone_line` = `false` | `fwb_line` = `false` |
 | `implicit_am_cs` = `true` | `implicit_enthalpy` = `plm` | `implicit_pos_floor_cons` = `true` |
 | `implicit_pos_floor_gas_keep` = `1` | `implicit_pos_gas` = `true` | `implicit_pos_gas_cons` = `true` |
 | `implicit_pos_gas_frac` = `1e-3` | `implicit_predictor` = `step` | `implicit_predictor_tcap` = `1.1` |
@@ -325,9 +326,6 @@ Scheme options (in brackets the templates' values):
 
 - `closure_consistency` (true with the rays), `face_thin` (true), `flux_cone` (true): the flux bound by the rays, the thin-limit correction, the cone limit |F| <= cE.
 - `flux_balance_lat` (default true on the cubed sphere, also on a restart whose file lacks it, with a NOTE in the log: name `flux_balance_lat=false` to keep the old; cubed sphere only, else FATAL): a spherically symmetric radiation pressure pushes the gas along r alone, the same in every cell of a shell. Lateral faces: their cells' lateral stress sums are projected perpendicular to each cell's radial direction (without it a constant lateral force of O(dtheta^2) of the radial one, at every radius, with the cube's symmetry: the interior m = 4 pattern). Radial faces: the normal stress takes the hydro's area r^2 Omega instead of the vector area r^2 |S| (without it a smaller panel pattern of the radial force). Test `shell_force_cs`.
-- `flux_cone_gas` (false): `true` gives the gas the momentum the cone cut takes from each inner face (its absorption of the unscaled F), so gas + radiation momentum and L_z are exact, and E pays the kinetic energy; where the radiation cannot pay it the run fails (the radiation-poor exchange box `exch0` of test `floor_momentum`: dt collapse at cycle 1). `false`: the cut is withheld from the gas (`hydro/p_ledger` class `cut`). Old name `clean_stag_fcone_gas`.
-- `flux_cone_line` (false; FATAL on a refined mesh; off with `flux_cone_gas`): `true` makes the cut exact: the cone cut each face withholds from the gas less its mean along each mesh line of the directions whose faces carry P, weighted by the faces' gas density (in the write-back's solve): every line's gas takes its cut where its mass is, a telescoping face stress, so the cut moves no P (`hydro/p_ledger` class `cut` 0, tiny BSG: all unphysical classes round-off). Each cell's gas internal energy pays the kinetic energy of the cut it takes back (E unchanged by the return), capped at half its internal energy above e_min; a capped cell is counted (`CLEAN FCLINE`: cells, momentum not returned, which `p_ledger` books as `cut`). Not the default: test `floor_momentum`'s `exch` box (arad 1e-12) caps every cell and still takes two backward-Euler redos with it (`CLEAN WARNING`).
-- `fwb_line` (default false; FATAL on a refined one): the well-balancing residual s less its mean along each mesh line of the directions whose faces carry the momentum P (x1 on spherical polar and cubed sphere; x1, x2, x3 on a Cartesian mesh, unless the old `clean_stag_fwb_cart = false` is named), so fwb gives no P (`hydro/p_ledger` class `fwb` 0). Cost: the time error of F in `order_time` +18 % (finest 1.98e-4 instead of 1.68e-4, order 1.79). Not the default: s is the thin rows' pull towards the rays' flux, and with its line mean removed the line-mean F error is not damped where nothing absorbs (`idort_beams` without the cone cut: \|F\|/cE 329 instead of 0.68). `false` (default): the unprojected residual, its momentum booked in `p_ledger` class `fwb`. Old name `clean_stag_fwb_line`.
 - `flux_cone_lz` (true with `flux_cone` on spherical polar and the cubed sphere, also on a restart whose file lacks it, with a NOTE; false on Cartesian meshes, where L_z about the mesh z axis is not a property of the scheme): fcone takes a cell's excess from the face families without an L_z arm first (spherical polar x1, x2; cubed sphere x1; Cartesian x3); that cut is counted and printed signed per family (`CLEAN FCONE_LZ`). The faces with an arm are scaled only where they alone exceed cE, and the gas takes their cut at the face, so L_z is exact.
 - `lz_spin` (true with `flux_cone_lz` on spherical polar and the cubed sphere, also on a restart whose file lacks it, with a NOTE; false on Cartesian meshes, where the rigid rotation would change the box's linear momentum; needs `flux_cone_lz`; a no-op on the cubed sphere, where `lz_telescope` covers it): the L_z X of the arm faces' fcone cut, the `flux_cone_emax` clamp and the `update_mcap` cap goes to the gas as one rigid rotation dOmega = X/I, I = sum rho V R^2 (no per-cell kick; E pays the kinetic energy; `CLEAN LZSPIN`).
 - `flux_cone_emax` (read only when named; needs `flux_cone`): every inner face's F within c max(E_L, E_R), an opaque face's too. L_z-exact with `flux_cone_lz` + `lz_spin`.

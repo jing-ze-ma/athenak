@@ -753,8 +753,7 @@ class RadiationVet {
   void FluxCsShared();
   void FluxCone(const int e, const int kd);
   void FluxBalanceProject(const int d, const int slot, const DvceArray4D<Real> &rs,
-                          const DvceArray4D<Real> &rw, const bool cnt,
-                          const DvceArray4D<Real> &ret = DvceArray4D<Real>());
+                          const DvceArray4D<Real> &rw, const bool cnt);
   void FluxTie(const int e, const int kd, const bool pt = false);
   void CsFaceTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real FluxSweepChange();
@@ -862,17 +861,12 @@ class RadiationVet {
   std::array<RingMates, 3> cln_fwr;   // (fwb: the lines' MeshBlocks)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // flux_cone
-  bool cln_fcgas = false;    // flux_cone_gas
-  bool cln_fcpj[3] = {false, false, false};   // flux_cone_line: the projected dirs
-  DvceArray4D<Real> cln_fcret[3];   // (flux_cone_line: each face's line share, -q rho_f)
-  Real cln_fcwh[3] = {0.0, 0.0, 0.0};   // (the write-back's cut withheld, P components)
   bool cln_fclz = false;    // flux_cone_lz
   bool cln_fcemx = false;   // flux_cone_emax
   bool cln_lzsp = false;    // lz_spin
   DvceArray5D<Real> cln_fcx;   // (lz_spin: fcone's cut withheld, by face)
   DvceArray2D<Real> cln_cx[2];   // (lz_spin, Cartesian: the cell centres x, y)
   bool cln_fwbring = false;   // clean_stag_fwb_ring
-  bool cln_fwbpj[3] = {false, false, false};   // clean_stag_fwb_line: the projected dirs
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // face_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)

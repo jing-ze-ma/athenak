@@ -117,6 +117,8 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/vet_gd_twin", "=false"},
     // study keys: removed
     {"rad_vet/clean_stag_colflux", "=false"}, {"rad_vet/clean_stag_fwb_cart", "=false"},
+    {"rad_vet/flux_cone_gas", "=false"}, {"rad_vet/flux_cone_line", "=false"},
+    {"rad_vet/fwb_line", "=false"},
     {"rad_vet/clean_stag_fwb_stage", "=false"}, {"rad_vet/clean_stag_fwb_t2", "=false"},
     {"rad_vet/clean_stag_rayratio", "=false"}, {"rad_vet/clean_vel_settled", "=false"},
     {"rad_vet/clean_xt_cons", "=false"}, {"rad_vet/clean_xt_norm", "=false"},
@@ -544,24 +546,6 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
         pmy_pack->pmesh->three_d &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
     recipe::Rule(pin, "rad_vet", "clean_stag_fwb_ring", cln_fwbring ? "true" : "false");
-    // fwb_line (default false; uniform mesh only): fwb's s less its line mean along
-    // each direction whose faces carry the momentum P (FluxBalanceProject): x1 (radial)
-    // on spherical polar and cubed sphere, x1, x2, x3 on a Cartesian mesh (not with the
-    // old clean_stag_fwb_cart = false named): fwb gives no P.  Not the default: s is the thin
-    // rows' pull towards F_ray, and its line mean removed leaves the line-mean F error
-    // undamped where nothing absorbs (idort_beams without the cone: |F|/cE 329)
-    Mesh *pml = pmy_pack->pmesh;
-    const bool cur = pml->use_spherical_polar || pml->use_cubed_sphere;
-    const bool fln = cln_fwb && pin->GetOrAddBoolean("rad_vet", "fwb_line", false);
-    if (fln && pml->multilevel) {
-      std::cout << "### FATAL ERROR: <rad_vet>/fwb_line needs a uniform mesh"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    for (int d = 0; d < 3; ++d) {
-      cln_fwbpj[d] = fln && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ?
-                     2 : 1)) && !pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart")));
-    }
     // flux_cone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
     // (FluxCone)
@@ -578,27 +562,6 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // is scaled only where those faces alone exceed c E, and its cut is the gas's at the
     // face (as fcone_gas; lz_spin: a rigid rotation), so that L_z is exact (cubed
     // sphere: CsTorque)
-    // flux_cone_gas (default false): the gas takes the momentum fcone cuts at each
-    // inner face (the cut F's absorption is not withheld), so gas + radiation momentum
-    // and L_z are exact; E pays the kinetic energy (the write-back's residual), which
-    // a radiation-poor cell cannot (test floor_momentum's exch0 box blows up)
-    cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","flux_cone_gas",false);
-    // flux_cone_line (default false; uniform mesh): the cut the faces withhold from the
-    // gas goes back to the gas of each mesh line of the directions whose faces carry P
-    // (as fwb_line), shared by the faces' gas density (a telescoping face stress), each
-    // cell's eint paying its kinetic energy (capped and counted where it cannot): the
-    // cut moves no P (WriteBack); floor_momentum's exch box still redoes steps with it
-    const bool fcl = cln_fcone && !cln_fcgas &&
-                     pin->GetOrAddBoolean("rad_vet", "flux_cone_line", false);
-    if (fcl && pml->multilevel) {
-      std::cout << "### FATAL ERROR: <rad_vet>/flux_cone_line needs a uniform mesh"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    for (int d = 0; d < 3; ++d) {
-      cln_fcpj[d] = fcl && (d == 0 || (!cur && d < (pml->three_d ? 3 : (pml->multi_d ? 2 :
-                    1))));
-    }
     cln_fclz = cln_fcone && pin->GetOrAddBoolean("rad_vet","flux_cone_lz", curv &&
                                 fix("flux_cone_lz", "true", "false"));
     // flux_cone_emax (read only when named; needs flux_cone): every inner

@@ -127,13 +127,12 @@ Notes:
   am and user sources, less the reference force the radiation withholds from the gas
   (force_reference: the hydro's well-balanced background gives it); `Pr_rad`, the
   radiation update and write-back (boundary radiation stress, geometric terms); `Pr_cut`,
-  the cone cut the gas does not take (0 with `flux_cone_line = true`); `Pr_fwb`, the
-  unprojected fwb residual's momentum (0 with `fwb_line`);
+  the cone cut the gas does not take; `Pr_fwb`, the fwb residual's momentum;
   `Pr_flr`, floors
   (dfloor_flux_limit, ConToPrim, floor-gas cap); `Pr_mrg`, the average of the merged
   lateral cells (`merge_lat`); `Pr_gap`, the rest (0). So dPr_tot + Pr_hflx dt - (the
   other rates) dt = 0 to the round-off of the sums (the `END` of `CLEAN PLEDGER`); `ntel`,
-  `fwb`, `mrg` (`merge_lat_mom = radial`) and `gap` are round-off. On a
+  `mrg` (`merge_lat_mom = radial`) and `gap` are round-off. On a
   Cartesian mesh the columns are `Px_*`, `Py_*`, `Pz_*`.
 - With `hydro/p_ledger_lz = true` (3-D spherical polar) twelve `LzL_*` columns take the
   place of the `Pr_*` ones: `LzL_tot`, gas + radiation L_z (sum V R m_phi plus each cell's

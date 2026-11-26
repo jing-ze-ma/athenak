@@ -26,7 +26,6 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
 #include "rad_vet/rad_vet_flux.hpp"
-#include "rad_vet/rad_vet_fluid.hpp"
 #include "utils/p_ledger.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
@@ -43,11 +42,9 @@ namespace radvet {
 //! u_f) within the realisable cone |F_i| <= c E_i (E of work vector e), by construction.
 //! Each face is scaled towards 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i^2 =
 //! sum_fg max(0, F_f u_f . F_g u_g), so |F_i| <= l_i S_i <= c E_i.  One value per face
-//! (cubed sphere: the lower gid's) keeps flux form.  flux_cone_gas: the gas takes the cut
-//! at each inner face, its absorption of the unscaled F, so gas + radiation momentum is
-//! exact; else the scaled F's (CLF_N + 1), the cut withheld (p_ledger cut).  A physical
-//! boundary face's cut is the radiation's boundary flux.  G + d is kept, the momentum cut
-//! is printed (CLEAN FCONE).
+//! (cubed sphere: the lower gid's) keeps flux form.  The gas takes the absorption of the
+//! scaled F (CLF_N + 1), G + d is kept, the momentum cut is booked and printed (CLEAN
+//! FCONE).
 
 void RadiationVet::FluxCone(const int e, const int kd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -59,7 +56,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E;
   // lz_spin: the others' cut withheld, its L_z X the gas's rigid rotation; the
   // cubed sphere's gas phi momentum is lz_tel's torque, which holds the cut already)
-  const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph, fg = cln_fcgas;
+  const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph;
   auto fa = KOKKOS_LAMBDA(const int q) {return !LzFamily(sph, cub, q);};
   auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
     return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
@@ -139,33 +136,10 @@ void RadiationVet::FluxCone(const int e, const int kd) {
     FluxCsShared();
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
-  if (wbc) Kokkos::deep_copy(DevExeSpace(), sl, 0.0);
-  // (flux_cone_line: the withheld cut and the face's gas density; the line's share of
-  // each face, cln_fcret, the write-back returns, WriteBack)
-  DvceArray4D<Real> rs, rw;
-  if (cln_fcpj[0] && wbc) {
-    rs = ScratchView<DvceArray4D<Real>>("cln_fcrs", nmb1 + 1, u0.extent_int(2),
-                                        u0.extent_int(3), u0.extent_int(4));
-    rw = ScratchView<DvceArray4D<Real>>("cln_fcrw", nmb1 + 1, u0.extent_int(2),
-                                        u0.extent_int(3), u0.extent_int(4));
-    for (int d = 0; d < 3; ++d) {
-      if (cln_fcpj[d] && cln_fcret[d].extent_int(0) != nmb1 + 1) {
-        Kokkos::realloc(cln_fcret[d], nmb1 + 1, u0.extent_int(2), u0.extent_int(3),
-                        u0.extent_int(4));
-      }
-    }
-  }
-  FluidRef fl = FluidRef::Get(pmy_pack);
-  auto uh = fl.u0;
-  const bool hf = fl.on;
+  if (wbc) Kokkos::deep_copy(sl, 0.0);
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
-    const bool pj = cln_fcpj[d] && wbc;   // (passes: local)
-    if (pj) {
-      Kokkos::deep_copy(DevExeSpace(), rs, 0.0);
-      Kokkos::deep_copy(DevExeSpace(), rw, 0.0);
-    }
     SolveFor("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // a physical boundary face has no F equation: the gas takes its half cell's
@@ -177,14 +151,11 @@ void RadiationVet::FluxCone(const int e, const int kd) {
                       lf(x.w(m,CLW_CP,k-lin*dk,j-lin*dj,i-lin*di), d)*f;
       fc(m,CLF_N+2,k,j,i) = fs;
       if (spn) fcx(m,d,k,j,i) = 0.0;
-      if (pj && !bd) rw(m,k,j,i) = hf ? 0.5*(uh(m,IDN,k,j,i) + uh(m,IDN,k-dk,j-dj,i-di))
-                                      : 1.0;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
       // (lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
-      if (spn && !bd && !fa(d) && !fg && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
-      const bool wh = !bd && !fg && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
-      if (wh && pj) rs(m,k,j,i) = -(f - fs)*it;
+      if (spn && !bd && !fa(d) && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
+      const bool wh = !bd && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
       if (wh) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;
@@ -203,7 +174,6 @@ void RadiationVet::FluxCone(const int e, const int kd) {
                       k, j, i) : 0.0) + (lin ? CellVolume(x, m, k-dk, j-dj, i-di) :
                       0.0))/(x.c*x.c));
     });
-    if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, false, cln_fcret[d]);
   }
   if (wbc) SlotSum(sl, fcc, 5);
   if (e == CLW_X) {
@@ -215,8 +185,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
     }
     Real q[3];   // (every rank: the sums are collective)
     for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h(2+d), false);
-    for (int d = 0; d < 3; ++d) cln_fcwh[d] = q[d];   // (line form: WriteBack books)
-    if (cln_feedback && !cln_vzero && !cln_fcpj[0]) {
+    if (cln_feedback && !cln_vzero) {
       p_ledger::Withheld(0, q, PSlope(t2_solve), dt_sub, !t2_inprobe);
     }
     if (n > 0.0 && cln_fclz) {
@@ -247,15 +216,14 @@ void RadiationVet::RingMatesInit(const int d, RingMates &rm) {
   std::set<std::array<int, 3>> sent;
   Kokkos::realloc(rm.src, nmb, nr[d]);
   auto h = Kokkos::create_mirror_view(rm.src);
-  auto loc = [&](const int g) {   // (the cubed sphere: gids by panel, uniform mesh)
+  auto loc = [&](const int g) {
     const LogicalLocation &l = pm->lloc_eachmb[g];
-    return std::array<int, 5>{static_cast<int>(l.lx1), static_cast<int>(l.lx2),
-                              static_cast<int>(l.lx3), l.level,
-                              g/(pm->nmb_total/pm->npanels)};
+    return std::array<int, 4>{static_cast<int>(l.lx1), static_cast<int>(l.lx2),
+                              static_cast<int>(l.lx3), l.level};
   };
   for (int m = 0; m < nmb; ++m) {
     const int gm = pmy_pack->pmb->mb_gid.h_view(m);
-    std::array<int, 5> w = loc(gm);
+    std::array<int, 4> w = loc(gm);
     const int p0 = w[d];
     for (int p = 0; p < nr[d]; ++p) {
       w[d] = p;
@@ -297,8 +265,7 @@ void RadiationVet::RingMatesInit(const int d, RingMates &rm) {
 
 void RadiationVet::FluxBalanceProject(const int d, const int slot,
                                       const DvceArray4D<Real> &rs,
-                                      const DvceArray4D<Real> &rw, const bool cnt,
-                                      const DvceArray4D<Real> &ret) {
+                                      const DvceArray4D<Real> &rw, const bool cnt) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks, nmb = pmy_pack->nmb_thispack;
   Mesh *pm = pmy_pack->pmesh;
@@ -311,7 +278,6 @@ void RadiationVet::FluxBalanceProject(const int d, const int slot,
   SolveArgs x = MakeArgs();
   auto fc = x.fc[d];
   auto fwc = cln_fwbc;
-  const bool rt = ret.extent_int(0) > 0;
   const int tn = (d > 0 && repro::tile_n > 0) ? repro::tile_n : n, nc = n/tn;
   auto mu = ScratchView<DvceArray4D<Real>>("cln_fwmu" + std::to_string(d), nmb, nb, na,
                                            2*nc);
@@ -388,10 +354,6 @@ void RadiationVet::FluxBalanceProject(const int d, const int slot,
       int k, j, i, kr, jr, ir;
       face(t, a, b, k, j, i);
       face((wrap && t == n) ? 0 : t, a, b, kr, jr, ir);
-      if (rt) {   // (ret: the line's share -q rw only, slot untouched)
-        ret(m,k,j,i) = -q*rw(m,kr,jr,ir);
-        continue;
-      }
       const Real s = rs(m,kr,jr,ir) - q*rw(m,kr,jr,ir);
       fc(m,slot,k,j,i) += s/(x.h*x.c*x.c);
       if (!cnt || t == n) continue;   // counters: the printed s, the write-back's

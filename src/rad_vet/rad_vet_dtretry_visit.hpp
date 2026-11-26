@@ -374,17 +374,12 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_fsjt[]", cln_fsjt[q0_]);}
   v.view("cln_fwbc", cln_fwbc);
   v.value("cln_fcone", cln_fcone);
-  v.value("cln_fcgas", cln_fcgas);
-  v.value("cln_fcpj", cln_fcpj);
-  for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_fcret[]", cln_fcret[q0_]);}
-  v.value("cln_fcwh", cln_fcwh);
   v.value("cln_fclz", cln_fclz);
   v.value("cln_fcemx", cln_fcemx);
   v.value("cln_lzsp", cln_lzsp);
   v.view("cln_fcx", cln_fcx);
   for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("cln_cx[]", cln_cx[q0_]);}
   v.value("cln_fwbring", cln_fwbring);
-  v.value("cln_fwbpj", cln_fwbpj);
   v.view("cln_fconc", cln_fconc);
   v.value("cln_xdfz", cln_xdfz);
   v.value("cln_xdh", cln_xdh);

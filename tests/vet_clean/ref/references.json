@@ -1013,7 +1013,7 @@
   }
  },
  "p_ledger": {
-  "_about": "<hydro>/p_ledger: per step |END| / gross sum V |p| (gas + radiation) and each class's |x| dt / gross on the periodic box (Cartesian P; amplitude 1e-3 and 0.1) and the shells (radial P); the classes that are no physical source are round-off (ntel, fwb, flr, mrg, gap; rad on the box: no wall, no geometric term); bitwise: the ledger run's dumps and old history columns against the run without it",
+  "_about": "<hydro>/p_ledger: per step |END| / gross sum V |p| (gas + radiation) and each class's |x| dt / gross on the periodic box (Cartesian P; amplitude 1e-3 and 0.1) and the shells (radial P); the classes that are no physical source are round-off (ntel, flr, mrg, gap; cut and fwb booked: > 0 where they act; rad on the box: no wall, no geometric term); bitwise: the ledger run's dumps and old history columns against the run without it",
   "max": {
    "box_small_end": 1e-13,
    "box_small_rad": 1e-13,
@@ -1025,13 +1025,11 @@
    "box_violent_end": 1e-13,
    "box_violent_rad": 1e-13,
    "box_violent_ntel": 1e-13,
-   "box_violent_fwb": 1e-13,
    "box_violent_flr": 1e-13,
    "box_violent_mrg": 1e-13,
    "box_violent_gap": 1e-13,
    "sp_end": 1e-13,
    "sp_ntel": 1e-13,
-   "sp_fwb": 1e-13,
    "sp_flr": 1e-13,
    "sp_mrg": 1e-13,
    "sp_gap": 1e-13,
@@ -1042,6 +1040,12 @@
    "cs_mrg": 1e-13,
    "cs_gap": 1e-13,
    "lz_end": 1e-12
+  },
+  "min": {
+   "box_violent_cut": 1e-3,
+   "box_violent_fwb": 1e-7,
+   "sp_cut": 1e-3,
+   "sp_fwb": 1e-3
   },
   "equal": {
    "lz_cols": 1,
