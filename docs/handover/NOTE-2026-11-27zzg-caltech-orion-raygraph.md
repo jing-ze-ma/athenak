@@ -34,3 +34,18 @@
     - `<rad_vet> vet_gd graph: shell loop launch by launch: MPI halo (host wait per shell)`
   - No FATAL or warning lines about the graph.
 - nsys on S4: not done. My wrapper's quoting broke (rc 2 before start). The S4 GPU idle can be added on request.
+
+## nsys rank 0, S4, RU vs RG (02-11 alone; capture 75-87 s after launch, about cycles 60-70; wrapper fixed)
+- ns_RU rc=0 reps 4
+- ns_RG rc=0 reps 4
+| per cycle, rank 0, capture window | RU | RG |
+|---|---|---|
+| GPU span [s] | 11.96 | 11.96 |
+| GPU idle [s] | 1.008 | 2.259 |
+| idle gaps > 10 us | 3.091e+04 | 3.086e+04 |
+| cudaEventSynchronize | 2.139e+04 | 2.123e+04 |
+| cudaStreamSynchronize | 1.689e+04 | 1.679e+04 |
+| cudaDeviceSynchronize | 5022 | 5025 |
+| cudaLaunchKernel | 9.366e+04 | 7.575e+04 |
+| cudaGraphLaunch | 0 | 34 |
+- totals over the 12 s capture (not per cycle); s/cycle about 1.25, so divide by about 9.6 for per cycle
