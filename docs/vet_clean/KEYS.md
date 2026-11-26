@@ -232,35 +232,35 @@ another value: FATAL with the key to name).
 | `clean_layout` = `staggered` | `clean_lin_cnorm` = `1e-10` | `clean_lin_pass` = `true` |
 | `clean_maxpic` = `12` | `clean_nl_norm` = `global` | `clean_pass_damp` = `0` |
 | `clean_pred_stage` = `false` | `clean_pred_xch` = `true` | `clean_predict` = `true` |
-| `clean_ray_cut_margin` = `10` | `clean_ray_cut_r` = `0.01` | `clean_ray_cut_taumin` = `0` |
-| `clean_rays` = `sc` | `clean_retry_budget` = `false` | `clean_ring_jmin` = `true` |
-| `clean_rot_ring_fill_rst` = `true` | `clean_rst_mshare` = `true` | `clean_source_convex` = `true` |
-| `clean_stag_central` = `true` | `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` |
-| `clean_stag_eicarry` = `true` | `clean_stag_fcone_gas` = `false` | `clean_stag_flim` = `false` |
-| `clean_stag_fs_line` = `pcr` | `clean_stag_fs_pcr_cs` = `true` | `clean_stag_fs_pcr` = `true` |
-| `clean_stag_fwb_cart` = `false` | `clean_stag_fwb_line` = `false` | `clean_stag_fwb_stage` = `false` |
-| `clean_stag_fwb_t2` = `false` | `clean_stag_lat_sums` = `true` | `clean_stag_mg_color` = `mirror` |
-| `clean_stag_opac_drag` = `true` | `clean_stag_opac_update` = `true` | `clean_stag_pcr` = `true` |
-| `clean_stag_rayratio` = `false` | `clean_stag_tie_gid` = `true` | `clean_stag_vimp_cs` = `true` |
-| `clean_stag_vimp` = `true` | `clean_stag_xdonor` = `lag` | `clean_stag_xsrc` = `true` |
-| `clean_stall_fac` = `0.5` | `clean_troot_rtol` = `1e-13` | `clean_vel_settled` = `false` |
-| `clean_w_face_min` = `false` | `clean_w_fse_tau` = `true` | `clean_w_fse` = `true` |
-| `clean_wb_fct` = `true` | `clean_wb_floor_fail` = `false` | `clean_xt_cons` = `false` |
-| `clean_xt_exact` = `cons` | `clean_xt_norm` = `false` | `dbg_energy_tally` = `false` |
-| `doppler_face` = `donor` | `implicit_am_cs` = `true` | `implicit_enthalpy` = `plm` |
-| `implicit_pos_floor_cons` = `true` | `implicit_pos_floor_gas_keep` = `1` | `implicit_pos_gas_cons` = `true` |
-| `implicit_pos_gas_frac` = `1e-3` | `implicit_pos_gas` = `true` | `implicit_predictor_tcap` = `1.1` |
-| `implicit_predictor` = `step` | `polar_ring_avg` = `false` | `restart_pack_per_mb` = `true` |
-| `scheme` = `clean` | `time2_cfl_post` = `true` | `time2_face_fct` = `true` |
-| `time2_fref_wacc` = `true` | `time2_gtime_mom` = `true` | `time2_k1_redist` = `0` |
-| `time2_k1_stiff` = `0` | `vet_col_lat_cut_thin` = `1` | `vet_gd_halo_compact` = `2` |
-| `vet_gd_rotate_align` = `true` | `vet_gd_rotate_stretch` = `0.02` | `vet_gd_rotate_t0` = `0` |
-| `vet_gd_rotate_xfade_m` = `0` | `vet_gd_twin` = `false` | `vet_interp` = `auto` |
-| `vet_rotate_avg_ema_change_j` = `true` | `vet_rotate_avg_ema_change` = `0.05` | `vet_rotate_avg_ema_dema` = `false` |
-| `vet_rotate_avg_ema_diag` = `0` | `vet_rotate_avg_ema_lc` = `0` | `vet_rotate_avg_ema_tau` = `0` |
-| `vet_rotate_avg_weight` = `j` | `vet_scatter_form` = `ma` | `vet_scatter_j` = `relaxed` |
-| `vet_seg_plateau` = `false` | `vet_seg` = `jump` | `vet_source_noesrc_h2be` = `true` |
-| `vet_tensor` = `full` | `zalesak_active` = `true` | `zalesak_halo_skip` = `true` |
+| `clean_ray_cut_margin` = `10` | `clean_ray_cut_taumin` = `0` | `clean_rays` = `sc` |
+| `clean_retry_budget` = `false` | `clean_ring_jmin` = `true` | `clean_rot_ring_fill_rst` = `true` |
+| `clean_rst_mshare` = `true` | `clean_source_convex` = `true` | `clean_stag_central` = `true` |
+| `clean_stag_colflux` = `false` | `clean_stag_csvec_radial` = `true` | `clean_stag_eicarry` = `true` |
+| `clean_stag_fcone_gas` = `false` | `clean_stag_flim` = `false` | `clean_stag_fs_line` = `pcr` |
+| `clean_stag_fs_pcr_cs` = `true` | `clean_stag_fs_pcr` = `true` | `clean_stag_fwb_cart` = `false` |
+| `clean_stag_fwb_line` = `false` | `clean_stag_fwb_stage` = `false` | `clean_stag_fwb_t2` = `false` |
+| `clean_stag_lat_sums` = `true` | `clean_stag_mg_color` = `mirror` | `clean_stag_opac_drag` = `true` |
+| `clean_stag_opac_update` = `true` | `clean_stag_pcr` = `true` | `clean_stag_rayratio` = `false` |
+| `clean_stag_tie_gid` = `true` | `clean_stag_vimp_cs` = `true` | `clean_stag_vimp` = `true` |
+| `clean_stag_xdonor` = `lag` | `clean_stag_xsrc` = `true` | `clean_stall_fac` = `0.5` |
+| `clean_troot_rtol` = `1e-13` | `clean_vel_settled` = `false` | `clean_w_face_min` = `false` |
+| `clean_w_fse_tau` = `true` | `clean_w_fse` = `true` | `clean_wb_fct` = `true` |
+| `clean_wb_floor_fail` = `false` | `clean_xt_cons` = `false` | `clean_xt_exact` = `cons` |
+| `clean_xt_norm` = `false` | `dbg_energy_tally` = `false` | `doppler_face` = `donor` |
+| `implicit_am_cs` = `true` | `implicit_enthalpy` = `plm` | `implicit_pos_floor_cons` = `true` |
+| `implicit_pos_floor_gas_keep` = `1` | `implicit_pos_gas_cons` = `true` | `implicit_pos_gas_frac` = `1e-3` |
+| `implicit_pos_gas` = `true` | `implicit_predictor_tcap` = `1.1` | `implicit_predictor` = `step` |
+| `polar_ring_avg` = `false` | `restart_pack_per_mb` = `true` | `scheme` = `clean` |
+| `time2_cfl_post` = `true` | `time2_face_fct` = `true` | `time2_fref_wacc` = `true` |
+| `time2_gtime_mom` = `true` | `time2_k1_redist` = `0` | `time2_k1_stiff` = `0` |
+| `vet_col_lat_cut_thin` = `1` | `vet_gd_halo_compact` = `2` | `vet_gd_rotate_align` = `true` |
+| `vet_gd_rotate_stretch` = `0.02` | `vet_gd_rotate_t0` = `0` | `vet_gd_rotate_xfade_m` = `0` |
+| `vet_gd_twin` = `false` | `vet_interp` = `auto` | `vet_rotate_avg_ema_change_j` = `true` |
+| `vet_rotate_avg_ema_change` = `0.05` | `vet_rotate_avg_ema_dema` = `false` | `vet_rotate_avg_ema_diag` = `0` |
+| `vet_rotate_avg_ema_lc` = `0` | `vet_rotate_avg_ema_tau` = `0` | `vet_rotate_avg_weight` = `j` |
+| `vet_scatter_form` = `ma` | `vet_scatter_j` = `relaxed` | `vet_seg_plateau` = `false` |
+| `vet_seg` = `jump` | `vet_source_noesrc_h2be` = `true` | `vet_tensor` = `full` |
+| `zalesak_active` = `true` | `zalesak_halo_skip` = `true` | |
 
 Removed keys whose value follows from the run (FATAL when named otherwise):
 
@@ -306,6 +306,7 @@ Scheme options (in brackets the templates' values):
 - `implicit_pos_floor` (true): the E floor, paid from the cell's gas and its radial column. A non-finite E (a diverged iterate) is never raised: the write-back rejects the solve.
 - `time2_gtime_slope`, `time2_gtime_pos` (true); `vet_rotate_avg_ema_change_form` (`linear`; HG: `step`); `vet_source_noesrc`.
 - `vet_bc_inner`, `vet_bc_diff`, `vet_bc_bath`, `vet_gd_wall_interp`, `vet_gd_allow_clamp`, `clean_ray_min`, `clean_ray_cut_wait`, `clean_rot_fuse`: ray-sweep details.
+- `clean_ray_cut_r` (0.003): the ray cut's trigger, a column's lowest cell with |grad S|/(chi S) >= this (SCHEME.md, where the rays start; the closure error below the cut is of the order of its square). 0.01 before 2026-11-26: a restart file that holds 0.01 keeps it, with a NOTE (name `clean_ray_cut_r=0.003` to switch); one without the key takes 0.003, with a NOTE.
 
 Solver internals (in brackets the templates' values): `clean_conv` (`budget`), `clean_conv_max`
 (1e-5), `clean_conv_kappa`, `clean_tol`, `clean_tol_nl`, `clean_maxit` (200), `clean_maxnl` (200),
@@ -317,8 +318,8 @@ staggered multigrid preconditioner), `clean_clos1_budget` (true), `clean_bud_max
 
 Tests and diagnostics: `clean_dbg_inf`, `time2_dbg_fail`, `dbg_gas_force`, `clean_wb_floor_diag`,
 `implicit_timers`. State kept in restart files: `rst_version`, `clean_ray_cut_now`,
-`clean_ray_cut_count`. Number of `<rad_vet>` keys the code reads: 137 (user 73, physics 32,
-scheme and solver 19, tests 8, pgen / state 5).
+`clean_ray_cut_count`. Number of `<rad_vet>` keys the code reads: 138 (user 73, physics 32,
+scheme and solver 20, tests 8, pgen / state 5).
 
 Removed study and debug keys stop the run with a message when named with another value than
 their old default (`CheckKeys` in `rad_vet/rad_vet_params.cpp` lists them); keys of the
