@@ -34,3 +34,24 @@
 - Plots (mesa2 + idort_style): docs/handover/caltech_results/SCALING/scaling_S.png (series 1), docs/handover/caltech_results/SCALING/scaling_G.png (series 2). The relevant log lines of each arm are in docs/handover/caltech_results/SCALING/<arm>_lines.txt.
 - Not used: my earlier fresh ladder (tile 64, cycles 5-20, F1/F4/F8) is superseded by series 1. Its F8 also overlapped another step of mine once.
 - nsys of S4/S16 (item 7): not run. S16 is impossible here, and the remaining time went to the queue.
+
+## Item 7: nsys of S4, rank 0
+- Capture: delay 79 s, duration 15 s, set from S4's elapsed lines.
+- By the run's own elapsed lines that window holds about 17 cycles (68-84). The per-cycle values below divide by 17; approximate.
+- nsys ended the run at the end of the capture (so no Terminating line).
+cycles in the capture window (elapsed 79-94 s): 17 (cycles 68-84)
+| per cycle (rank 0, nsys capture window) | S4 |
+|---|---|
+| GPU timeline span [s] | 0.8805 |
+| GPU idle [s] | 0.3685 |
+| idle gaps > 10 us | 1491.2 |
+| cudaStreamSynchronize | 776.0 |
+| cudaDeviceSynchronize | 247.2 |
+| cudaEventSynchronize | 985.4 |
+| cudaMemcpyAsync calls | 316.3 |
+| H2D copies | 1159.6 |
+| MPI_Allreduce | 125.0 |
+| MPI_Allgather | 144.8 |
+| MPI_Waitall | 1593.2 |
+| MPI_Isend bytes | 2864892265.4 |
+- S16 is impossible here (largest holder 3 nodes). The VETPAR 27zt nsys pair on the rst (R4n) gives the same picture: about 0.4-0.5 s of GPU idle per cycle on rank 0 at 4 GPUs.
