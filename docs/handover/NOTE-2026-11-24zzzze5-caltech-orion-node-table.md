@@ -810,3 +810,7 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 22:34 02-17: sc_G4x_B -> sc_kp_G1_B
 - 11-25 22:35 02-11: b_dfl -> b_dfl b_lzd b_pled
 - 11-25 22:35 02-17: sc_kp_G1_B -> IDLE
+- 11-25 22:37 02-17: IDLE -> sc_G4p_A1
+- 11-25 22:38 02-17: sc_G4p_A1 -> sc_G4Lp_A
+- 11-25 22:39 02-17: sc_G4Lp_A -> sc_G4Lp_B
+- 11-25 22:40 02-17: sc_G4Lp_B -> IDLE
