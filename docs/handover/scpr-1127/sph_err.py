@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SCPR: J of a homogeneous sphere (radius 0.6, S 1, sigma SIG, default 5) against exact transport.
 usage: [SIG=50] [BINPY=<athenak>/vis/python] sph_err.py BINFILE VAR [gl NMU NPHI] [sp]
-  VAR: sc_rad_J (PR #798) or vet_vj (ours).  sp: spherical-polar output (x1 = r).
+  VAR: sc_rad_J (PR #798), vet_vj (ours, Cartesian, variable vet_vsc) or vet_tj (ours, curved, variable vet_thsw).  sp: spherical-polar output (x1 = r).
 Prints (a) interior cells r < 0.36 (PR's r_mask 0.6 R): rel L2 / Linf of J vs the exact continuous J,
 and with 'gl' also vs the same-quadrature J of our GL product set (pole on x1, Cartesian only);
 (b) the exterior profile: mean J/J_exact in shells r/R = 1.00-1.05, ..., up to the domain edge."""
@@ -36,7 +36,8 @@ def jex(rv):  # outside: nodes mapped onto the cone [mu_c, 1] that sees the sphe
     return 0.5*S*0.5*(1.0 - mc)*np.sum(wq[None, :]*(1.0 - np.exp(-SIG*ipath(rv[:, None], mm))), axis=1)
 def err(p, q): return np.sqrt(np.sum((p - q)**2)/np.sum(q*q)), np.max(np.abs(p - q)/q)
 tag = f"{os.path.basename(a[1])} {'sp' if sp else 'cart'} sigma={SIG:g} grid={J.shape[::-1]}"
-m = r < 0.6*R
+ok = J >= 0.0  # vet_tj = -1: no formal solution (below the ray cut)
+m = (r < 0.6*R) & ok
 if m.any():
     rv = r[m]; je = jex(rv); e2, ei = err(J[m], je)
     print(f'{tag} interior cells={m.sum()} vs exact: L2 {e2:.3e} Linf {ei:.3e}')
@@ -52,7 +53,7 @@ if m.any():
 rmax = r.max() if sp else min(abs(x).max(), abs(y).max(), abs(z).max())
 print(f'{tag} exterior profile: r/R  ncell  <J/J_exact>  min  max')
 for lo in np.arange(1.0, rmax/R - 0.05 + 1e-9, 0.05):
-    mm = (r >= lo*R) & (r < (lo + 0.05)*R)
+    mm = (r >= lo*R) & (r < (lo + 0.05)*R) & ok
     if not mm.any(): continue
     q = J[mm]/jex(r[mm])
     print(f'  {lo:.2f}-{lo+0.05:.2f} {mm.sum():7d}  {q.mean():.4f}  {q.min():.4f}  {q.max():.4f}')
