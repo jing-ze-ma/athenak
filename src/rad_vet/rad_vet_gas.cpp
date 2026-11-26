@@ -44,12 +44,12 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationVet::HydroConToPrim
+//! \fn TaskStatus RadiationVet::GasUpdate
 //! \brief refresh hydro ghost zones and primitives after the coupling wrote u0, once
 //! per stage: the next hydro fluxes read ghost primitives, so ConToPrim alone would
 //! leave stale ghosts (restrict, exchange, BCs as InitBoundaryValuesAndPrimitives).
 
-TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
+TaskStatus RadiationVet::GasUpdate(Driver *pdrive, int stage) {
   Time2GasTime(pdrive, 2);   // sdirk2: the gas of the stage-1 solve at t^{n+1}
   // <hydro>/merge_lat_rad: radiation E, F of merged lateral groups -> group values
   {
@@ -123,7 +123,7 @@ void FloorCapMomentum(const bool sph, const bool cub, const bool lz, const int p
 //! floorcap_lz_spin: the whole velocity is capped (so |v| <= floorcap_v), and the L_z
 //! X it removes goes to the gas at or above floorcap_rho as one rigid rotation
 //! dOmega = X/I, I = sum rho V R^2 (both summed per cell, then in a fixed order:
-//! CleanSumCells), its kinetic energy paid from the cell's E_rad: L_z and E exact.
+//! SumCells), its kinetic energy paid from the cell's E_rad: L_z and E exact.
 
 void RadiationVet::FloorGasCap() {
   hydro::Hydro *ph = pmy_pack->phydro;
@@ -154,8 +154,8 @@ void RadiationVet::FloorGasCap() {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   auto cosc = cub ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("fcap_c",1,1,1);
   auto pnl = pmy_pack->pmb->mb_panel.d_view;
-  CleanArgs x;
-  if (mv) x = CleanMakeArgs();
+  SolveArgs x;
+  if (mv) x = MakeArgs();
   // (floorcap_lz_spin: dOmega = X/I, from the state before the cap)
   const bool spn = fcap_spin;
   Real dom = 0.0;
@@ -171,13 +171,13 @@ void RadiationVet::FloorGasCap() {
       Real f[3], msq, pf, r;
       FloorCapMomentum(sph, cub, true, pnl(m), mbs.d_view(m), cub ? cosc(m,k,j) : 0.0,
                        i - is, j - js, k - ks, nx1, nx2, nx3, p, f, msq, pf, r);
-      if (sph || cub) r = CleanLzArm(x, m, k, j, i);
-      const Real wv = CleanVol(x, m, k, j, i);
+      if (sph || cub) r = LzArm(x, m, k, j, i);
+      const Real wv = CellVolume(x, m, k, j, i);
       const bool cap = (dd < rc) && (dd > 0.0) && (vc > 0.0) && (msq > SQR(vc*dd));
       lxx(m,k,j,i) = cap ? (1.0 - vc*dd/sqrt(msq))*pf*r*wv : 0.0;
       lxi(m,k,j,i) = (dd >= rc) ? dd*wv*r*r : 0.0;
     });
-    const Real lx = CleanSumCells(lxx), li = CleanSumCells(lxi);
+    const Real lx = SumCells(lxx), li = SumCells(lxi);
     if (lx != 0.0 && !(li > 0.0)) {
       std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz_spin: the cap removed L_z "
                 << lx << " but no gas is at or above floorcap_rho to take it"
@@ -192,7 +192,7 @@ void RadiationVet::FloorGasCap() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
     if (!(dd > 0.0) || (!(dd < rc) && dom == 0.0)) return;
-    const Real wv = mv ? CleanVol(x, m, k, j, i) :
+    const Real wv = mv ? CellVolume(x, m, k, j, i) :
         (hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
                /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k))) : 1.0);
     Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
@@ -202,7 +202,7 @@ void RadiationVet::FloorGasCap() {
     FloorCapMomentum(sph, cub, flz, pnl(m), mbs.d_view(m), c, i - is, j - js, k - ks, nx1,
                      nx2, nx3, pm, f, msq, pf, rf);
     if (!(dd < rc)) {   // (floorcap_lz_spin: dOmega rho R phi_hat, E_rad pays its KE)
-      const Real r = (sph || cub) ? CleanLzArm(x, m, k, j, i) : rf, w = dom*dd*r;
+      const Real r = (sph || cub) ? LzArm(x, m, k, j, i) : rf, w = dom*dd*r;
       const Real q[3] = {m1 + w*f[0], m2 + w*f[1], m3 + w*f[2]};
       Real g[3], qsq, qf, qr;
       FloorCapMomentum(sph, cub, false, 0, mbs.d_view(m), c, 0, 0, 0, 1, 1, 1, q, g, qsq,
@@ -211,7 +211,7 @@ void RadiationVet::FloorGasCap() {
       uh(m,IM1,k,j,i) = q[0]; uh(m,IM2,k,j,i) = q[1]; uh(m,IM3,k,j,i) = q[2];
       uh(m,IEN,k,j,i) += dk;
       u0_(m,VET_E,k,j,i) -= dk;
-      CleanSlotAdd(sl, 5, m, k, j, i, -w*r*wv);
+      SlotAdd(sl, 5, m, k, j, i, -w*r*wv);
       return;
     }
     Real ekin = 0.5*msq/dd;
@@ -223,7 +223,7 @@ void RadiationVet::FloorGasCap() {
       Real fs;
       const Real ek = EkinScale(ekin, 0.5*pf*pf/dd, 0.5*vc*vc*dd, fs);
       const Real dke = ekin - ek;
-      CleanSlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*sqrt(fmax(msq - pf*pf, 0.0))*wv);
+      SlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*sqrt(fmax(msq - pf*pf, 0.0))*wv);
       m1 = fs*(m1 - pf*f[0]) + pf*f[0];
       m2 = fs*(m2 - pf*f[1]) + pf*f[1];
       m3 = fs*(m3 - pf*f[2]) + pf*f[2];
@@ -231,20 +231,20 @@ void RadiationVet::FloorGasCap() {
       ekin = ek;
       etot -= dke;
       erad += dke;
-      CleanSlotAdd(sl, 0, m, k, j, i, 1.0);
-      CleanSlotAdd(sl, 2, m, k, j, i, dke*wv);
+      SlotAdd(sl, 0, m, k, j, i, 1.0);
+      SlotAdd(sl, 2, m, k, j, i, dke*wv);
     } else if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
       // book the removed momentum |dp| V and its L_z
       Real p[3] = {m1, m2, m3};
-      if (mv) CleanGasMomentum(x, uh, m, k, j, i, p);
-      CleanSlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
+      if (mv) GasMomentum(x, uh, m, k, j, i, p);
+      SlotAdd(sl, 4, m, k, j, i, (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
                          p[2]*p[2]) : sqrt(msq))*wv);
       if (mv) {
-        CleanSlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*CleanLzArm(x, m, k, j, i)*p[2]*wv);
+        SlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*LzArm(x, m, k, j, i)*p[2]*wv);
       } else if (hv) {
-        CleanSlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
+        SlotAdd(sl, 5, m, k, j, i, (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
                            sin(0.5*(x2f(m,j) + x2f(m,j+1)))*wv);
       }
       m1 *= fs; m2 *= fs; m3 *= fs;
@@ -252,8 +252,8 @@ void RadiationVet::FloorGasCap() {
       ekin -= dke;
       etot -= dke;
       erad += dke;
-      CleanSlotAdd(sl, 0, m, k, j, i, 1.0);
-      CleanSlotAdd(sl, 2, m, k, j, i, dke*wv);
+      SlotAdd(sl, 0, m, k, j, i, 1.0);
+      SlotAdd(sl, 2, m, k, j, i, dke*wv);
     }
     const Real eg = etot - ekin - egrv;
     if (eg > 0.0) {
@@ -267,15 +267,15 @@ void RadiationVet::FloorGasCap() {
         if (de > 0.0) {
           etot -= de;
           erad += de;
-          CleanSlotAdd(sl, 1, m, k, j, i, 1.0);
-          CleanSlotAdd(sl, 3, m, k, j, i, de*wv);
+          SlotAdd(sl, 1, m, k, j, i, 1.0);
+          SlotAdd(sl, 3, m, k, j, i, de*wv);
         }
       }
     }
     uh(m,IEN,k,j,i) = etot;
     u0_(m,VET_E,k,j,i) = erad;
   });
-  CleanSlotSum(sl, cnt_.d_view, 6);
+  SlotSum(sl, cnt_.d_view, 6);
   const int rep = fcap_report;
   const int cyc = pmy_pack->pmesh->ncycle;
   if (rep > 0 && (cyc % rep) == 0) {

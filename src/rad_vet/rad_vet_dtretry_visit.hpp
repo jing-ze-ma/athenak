@@ -873,18 +873,18 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 }
 
 // not visited (pointers, const, threads, timers, MPI, ...):
-//   vet_mbs : VetMBState *
+//   vet_mbs : ScCartMBState *
 //   pos_un_drop : Real (protocol counter, kept monotonic)
 //   tmr_t : Kokkos::Timer
 //   pbval_d3 : MeshBoundaryValuesCC *
 //   pbval_sg : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
 //   id : RadiationVetTaskIDs
-//   cln_gdx : const CleanArgs *
+//   cln_gdx : const SolveArgs *
 //   cln_pcrl : std::map<std::array<int, 7>, DvceArray1D<int>> (protocol counter, kept monotonic)
 //   cln_dbginf : int (one-shot test injection, kept)
 //   pin_rcut_ : ParameterInput *
-//   cln_fwr : std::array<CleanRingMates, 3> (protocol counter, kept monotonic)
+//   cln_fwr : std::array<RingMates, 3> (protocol counter, kept monotonic)
 //   cln_lzpin : ParameterInput *
 //   cln_wci : DvceArray5D<Real> (protocol counter, kept monotonic)
 //   cln_sgv : DvceArray4D<Real> (protocol counter, kept monotonic)
@@ -894,10 +894,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_sgd2 : DvceArray4D<Real> (protocol counter, kept monotonic)
 //   cln_sgx : DvceArray2D<Real> (protocol counter, kept monotonic)
 //   cln_sgtg : DvceArray3D<Real> (protocol counter, kept monotonic)
-//   cln_halo : std::map<int, CleanHalo> (views over cln_hbuf, kept)
+//   cln_halo : std::map<int, SolveHalo> (views over cln_hbuf, kept)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
-//   cln_hdl : CleanHaloList (cell lists made at first use, kept)
+//   cln_hdl : SolveHaloList (cell lists made at first use, kept)
 //   pbval_vs : MeshBoundaryValuesCC *
 //   pin_rot_ : ParameterInput *
 //   vgd_es2 : DevExeSpace
@@ -913,7 +913,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   vgd_ipc_sig : long long *
 //   vgd_ipc_err : int *
 //   vgd_ipc_seq : long long (protocol counter, kept monotonic)
-//   vgd_hlp : VgdHlPend
+//   vgd_hlp : ScHlPend
 //   vgd_tabf : std::future<void>
 //   vgd_tex : DevExeSpace
 //   vgd_cur : DevExeSpace

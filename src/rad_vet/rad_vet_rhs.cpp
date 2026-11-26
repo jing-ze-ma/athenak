@@ -28,14 +28,14 @@ namespace radvet {
 
 // 4-D par_for (same index flattening) at MB blocks of 256 per SM
 template <int MB, typename F>
-static void CleanParForLb(const char *name, const int nmb1, const int ks, const int ke,
-                          const int js, const int je, const int is, const int ie,
-                          const F &f) {
+static void ParForLb(const char *name, const int nmb1, const int ks, const int ke,
+                     const int js, const int je, const int is, const int ie,
+                     const F &f) {
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
 #if defined(KOKKOS_ENABLE_HIP)
   constexpr int mb = 2;   // HIP: cln_rhs at 2 waves per SIMD (faster despite spills)
 #else
-  constexpr int mb = CleanLbMb(MB);
+  constexpr int mb = SolveLbMb(MB);
 #endif
   Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,
                        mb>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
@@ -46,29 +46,29 @@ static void CleanParForLb(const char *name, const int nmb1, const int ks, const 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanStagAdvFace
+//! \fn Real AdvFace
 //! \brief the advective flux a E at face (k,j,i) normal to n as the face fluxes carry it:
 //! clean_stag_upwind takes the share phi as donor-cell a_f E_f plus the lagged rest
-//! (CleanFaceWeights), else the central mean; xh the face momentum state
+//! (FaceWeights), else the central mean; xh the face momentum state
 
 KOKKOS_INLINE_FUNCTION
-static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int n,
-                             const int m, const int kk, const int jj, const int ii) {
+static Real AdvFace(const SolveArgs &x, const SolveArgs &xh, const int n,
+                    const int m, const int kk, const int jj, const int ii) {
   const int kl = kk - (n == 2), jl = jj - (n == 1), il = ii - (n == 0);
   const Real ul = x.w(m,CLW_A1+n,kl,jl,il), ur = x.w(m,CLW_A1+n,kk,jj,ii);
   const Real el = x.w(m,CLW_EK,kl,jl,il), er = x.w(m,CLW_EK,kk,jj,ii);
   const Real ac = 0.5*(ul*el + ur*er);
-  if (!x.upw || CleanBoundaryFace(x, n, m, kk, jj, ii)) return ac;
+  if (!x.upw || IsBoundaryFace(x, n, m, kk, jj, ii)) return ac;
   Real al, ar, phi = 0.0;
-  CleanFaceWeights(xh, n, m, kk, jj, ii, al, ar, &phi);
+  FaceWeights(xh, n, m, kk, jj, ii, al, ar, &phi);
   if (!(phi > 0.0)) return ac;
-  const Real ah = CleanStagAdvectCorr(x, n, m, kk, jj, ii) +
+  const Real ah = AdvectCorr(x, n, m, kk, jj, ii) +
                   ((ul + ur > 0.0) ? ul*el : ur*er);
   return ac + phi*(ah - ac);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRightHandSide
+//! \fn void RadiationVet::RightHandSide
 //! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source + h esrc, the
 //! exchange linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), and the
 //! initial guess X = E_k.  W: the work of the iterate's radiation force on the gas (with
@@ -78,13 +78,13 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! 2 beta.y_k] (y_k = F/c of the iterate; the gas eint takes its opposite, CLW_EP), with
 //! beta = v/c (CLW_BT) and hc kP a T^4 (CLW_RE) for the face fluxes (eq. 57).
 
-void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
+void RadiationVet::RightHandSide(const bool beta, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   const Real arad_ = arad;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
@@ -104,64 +104,64 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
   const bool eso = esrc_on;
   auto es = esrc;
   const bool bud = cln_bon;
-  // CleanSteadyStart's equilibrium relax (icr_fmeas): h -> infinity
+  // SteadyStart's equilibrium relax (icr_fmeas): h -> infinity
   const bool eqr = icr_fmeas && x.vzero && x.feedback;
 
   if (x.feedback) {
     const bool rx = x.cub;
-    CLEAN_HIPX(const CleanArgs *pxb = CleanDevArgs(x, 0);)
-    CleanFor<0, 3>("cln_beta", nmb1, ks, ke, js, je, is, ie,
+    CLEAN_HIPX(const SolveArgs *pxb = DevArgs(x, 0);)
+    SolveFor<0, 3>("cln_beta", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      CLEAN_HIPX(const CleanArgs &x = *pxb;)   // in device memory: no per-thread copy
+      CLEAN_HIPX(const SolveArgs &x = *pxb;)   // in device memory: no per-thread copy
       Real p[3];
-      CleanStagGasMomentum(x, uh, m, k, j, i, p);
+      FaceFrameGasMomentum(x, uh, m, k, j, i, p);
       for (int n = 0; n < 3; ++n) {
         x.w(m,CLW_BT+n,k,j,i) = (p[n] + x.w(m,CLW_DM+n,k,j,i))/(uh(m,IDN,k,j,i)*x.c);
       }
       x.w(m,CLW_RE,k,j,i) = x.h*x.c*op(m,VET_OP_P,k,j,i)*arad_*
                             SQR(SQR(x.w(m,CLW_T,k,j,i)));
-      // r of the exchange, for the face beta terms (CleanFaceWeights, CleanFaceSource)
+      // r of the exchange, for the face beta terms (FaceWeights, FaceSource)
       const Real d = uh(m,IDN,k,j,i), t = x.w(m,CLW_T,k,j,i);
       Real b2 = 0.0, e, pg, chi_rho, chi_t, cv;
       for (int n = 0; n < 3; ++n) b2 += SQR(x.w(m,CLW_BT+n,k,j,i));
       eos.ThermoAt(d, t, e, pg, chi_rho, chi_t, cv);
       const Real s = 4.0*x.h*x.c*op(m,VET_OP_P,k,j,i)*(1.0 - 0.5*b2)*arad_*t*t*t;
       x.w(m,CLW_GX,k,j,i) = (s > 0.0) ? s/(d*cv + s) : 0.0;
-      if (rx) x.w(m,CLW_JV+2,k,j,i) = d;   // CleanStagDrag's rho: a seam ghost's own
+      if (rx) x.w(m,CLW_JV+2,k,j,i) = d;   // FaceDrag's rho: a seam ghost's own
     });
     // E_k's ghosts are those of its last change; BT, RE, GX in one exchange before the
     // lateral sums
-    CleanGhostDefer(cln_w, CLW_BT, 4);
-    CleanGhostFill(cln_w, rx ? CLW_JV+2 : CLW_GX, rx ? 2 : 1);
-    if (lat) CleanStagCsLateral(CLW_EK);
+    GhostDefer(cln_w, CLW_BT, 4);
+    GhostFill(cln_w, rx ? CLW_JV+2 : CLW_GX, rx ? 2 : 1);
+    if (lat) CsLateralStress(CLW_EK);
   }
   if (beta) return;
-  CleanArgs xh = x;   // face momentum state (clean_stag_split)
+  SolveArgs xh = x;   // face momentum state (clean_stag_split)
   xh.hi = cln_split;
   // a pass without the F solve's F: its F^H, each face once in cln_rhsaf into CLF_N
   const bool fh = x.feedback && !cln_fsk;
   xh.fs = true;
-  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-  const auto *peos = CleanDev(eos, 2);
-  CleanArgs xr = x;   // clean_stag_xdonor: the face sources as they are
+  const SolveArgs *px = DevArgs(x, 0), *pxh = DevArgs(xh, 1);
+  const auto *peos = SolveDev(eos, 2);
+  SolveArgs xr = x;   // clean_stag_xdonor: the face sources as they are
   xr.xq = -1;
-  const CleanArgs *pxr = CleanDevArgs(xr, 3);
+  const SolveArgs *pxr = DevArgs(xr, 3);
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub, xsp = (x.xq >= 0) && !cln_xdh;
-  // one launch per direction, its face code for a compile-time direction (CleanDirCase)
+  // one launch per direction, its face code for a compile-time direction (DirCase)
   for (int dir = 0; dir < nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    CleanFor<4>("cln_rhsaf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<4>("cln_rhsaf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
-      CleanDirCase(dir, [&](auto d) {
+      const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
+      DirCase(dir, [&](auto d) {
         constexpr int n = decltype(d)::value;
-        if (xsp) CleanStagXSplit(x, *pxr, n, m, k, j, i);
-        x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
-        if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux<n>(xh, CLW_EK, n, m, k, j, i,
-                                                          true);
-        if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
+        if (xsp) XSplit(x, *pxr, n, m, k, j, i);
+        x.fc[n](m,CLF_SR,k,j,i) = FaceSource(x, n, m, k, j, i);
+        if (fh) x.fc[n](m,CLF_N,k,j,i) = FaceFlux<n>(xh, CLW_EK, n, m, k, j, i,
+                                                     true);
+        if (af) x.fc[n](m,CLF_PT,k,j,i) = AdvFace(x, xh, n, m, k, j, i);
       });
     });
   }
@@ -170,9 +170,9 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
   // sdirk2's stage 2: the chord, CLW_RR holds the last pass's T
   const bool gsc = t2_solve == VET_T2S_STAGE2;
   const Real eps_ = std::numeric_limits<Real>::epsilon();
-  CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
+  ParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
+    const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
     const auto &eos = *peos;
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,VET_OP_E,k,j,i);
@@ -186,14 +186,14 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
         return xh.fc[d](m,CLF_N,kk,jj,ii);
       };
       // gflux: an open boundary face's flux, absorbed in an opaque half cell, enters the
-      // cell mean as its half-cell mean, (1 - e^-q)/q, q = chi dx/2 (CleanMomentumChange)
+      // cell mean as its half-cell mean, (1 - e^-q)/q, q = chi dx/2 (FaceMomentumChange)
       Real fw[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
       for (int n = 0; n < 3; ++n) {   // trip 3: fw stays in registers
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
         for (int sd = 0; sd < 2 && x.gf && n < x.nf; ++sd) {
-          if (!CleanBoundaryFace(x, n, m, k+sd*dk, j+sd*dj, i+sd*di) ||
-              !CleanOpen(x, m, 2*n + sd)) continue;
-          const Real q = 0.5*op(m,VET_OP_T,k,j,i)/CleanDivW(x, n, m, k, j, i, sd);
+          if (!IsBoundaryFace(x, n, m, k+sd*dk, j+sd*dj, i+sd*di) ||
+              !IsOpenFace(x, m, 2*n + sd)) continue;
+          const Real q = 0.5*op(m,VET_OP_T,k,j,i)/DivW(x, n, m, k, j, i, sd);
           fw[2*n+sd] = (q > 1.0e-8) ? -expm1(-q)/q : 1.0;
         }
       }
@@ -201,13 +201,13 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
         if (n < x.nf) fs[n] = fw[2*n]*ff(n, k, j, i) + fw[2*n+1]*ff(n, k+dk, j+dj, i+di);
       }
-      if (x.cub) {   // the cell's flux vector (CleanStagCellVector)
+      if (x.cub) {   // the cell's flux vector (CellVector)
         Real c[6];
         for (int d = 0; d < 3; ++d) {
           c[2*d] = fw[2*d]*ff(d, k, j, i);
           c[2*d+1] = fw[2*d+1]*ff(d, k+(d == 2), j+(d == 1), i+(d == 0));
         }
-        CleanStagCellVector(x, m, k, j, i, c, fs);
+        CellVector(x, m, k, j, i, c, fs);
         for (int d = 0; d < 3; ++d) fs[d] *= 2.0;
       }
       for (int n = 0; n < 3; ++n) {
@@ -240,7 +240,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
         const Real s0 = hcke*dop*x.w(m,CLW_EK,k,j,i), sl = 2.0*hcke*std::sqrt(b2)*ek;
         sb = s0 + fmin(fmax(sb - s0, -sl), sl);
       }
-      if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // d sb/dE (CleanNewtonUpdate)
+      if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // d sb/dE (NewtonUpdate)
       gr = sb != -x.w(m,CLW_EP,k,j,i);   // T took the last pass's sb
     }
     const Real hckp = x.h*x.c*op(m,VET_OP_P,k,j,i)*gm;
@@ -305,8 +305,8 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
       // kinetic energy the gas gains; with wb_arad also the reference force's work
       // h rho arad_ref.v at the iterate's velocity
       Real pg[3], rf[3] = {0.0, 0.0, 0.0};
-      CleanStagGasMomentum(x, uh, m, k, j, i, pg);
-      if (wsp) CleanStagRefForce(x, fref, fr, aref, d, m, k, j, i, rf);
+      FaceFrameGasMomentum(x, uh, m, k, j, i, pg);
+      if (wsp) RefForce(x, fref, fr, aref, d, m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
         work += (pg[n] + 0.5*dm)*dm/d;
@@ -324,7 +324,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
     // eqr: the exchange via the gas row of the root T, hckp a T^4 - r hcke E =
     // EI - e(T) - sb + (1 - r) hcke E, avoiding the cancellation of two ~ hcke E terms
     // (round-off at h -> infinity exceeds E in opaque cells)
-    const Real sdv = CleanSourceDivergence(x, m, k, j, i);
+    const Real sdv = SourceDivergence(x, m, k, j, i);
     const Real hes = eso ? x.h*es(m,k,j,i) : 0.0;
     x.w(m,CLW_B,k,j,i) = eqr ?
         x.w(m,CLW_EO,k,j,i) + x.w(m,CLW_EI,k,j,i) - eg - work
@@ -352,7 +352,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
       for (int sd = 0; sd < 2; ++sd) {
         const int kf = k + sd*(n == 2), jf = j + sd*(n == 1), iff = i + sd*(n == 0);
         const auto &f = x.fc[n];
-        fl += CleanDivW(x, n, m, k, j, i, sd)*(CleanBoundaryFace(x, n, m, kf, jf, iff) ?
+        fl += DivW(x, n, m, k, j, i, sd)*(IsBoundaryFace(x, n, m, kf, jf, iff) ?
               cs : fmax(fabs(f(m,CLF_G,kf,jf,iff)), x.c*f(m,CLF_TH,kf,jf,iff)*eo));
       }
     }
@@ -365,7 +365,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
   Real smax[2] = {0.0, 0.0};
   // flat range reduction
   const int n1 = ie - is + 1, n2 = je - js + 1, nji = n2*n1, nkji = (ke - ks + 1)*nji;
-  Kokkos::parallel_reduce("cln_smax", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  Kokkos::parallel_reduce("cln_smax", SolveRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx, Real &se, Real &sg) {
     const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
     const int i = is + idx%n1;
@@ -377,7 +377,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
 #endif
   const Real fse = 1.0e-12*smax[0];
   const Real fsg = fmax(1.0e-12*smax[1], 1.0e-300);
-  CleanFor("cln_sfloor", nmb1, ks, ke, js, je, is, ie,
+  SolveFor("cln_sfloor", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     w(m,CLW_SE,k,j,i) = fmax(w(m,CLW_SE,k,j,i), fmax(fse, 1.0e-300));
     w(m,CLW_SG,k,j,i) = fmax(w(m,CLW_SG,k,j,i), fsg);

@@ -91,15 +91,15 @@ const char *kDtrMinimal[] = {
   "vet.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the face
   // arrays' clean_stag_fkin energy flux memory d and its slope K1 (CLF_N + 3, CLF_KD;
-  // copied to cln_rstd, RadiationVet::CleanDtrD), the sc rays' intensities (cln_fvi),
-  // with cln_fref_set (force_reference = clean recaptures), and the sc rays' top shell a
-  // reflecting top mirrors (cln_top).  The closure's extrap history is left alone: its
-  // flags go with the handles the attempt swapped and, on a first cycle, with cln_init.
-  // clean_rot_ring: the offsets and the pending Delta (a retried first step of a block
-  // shifted the ring twice), and the swept directions with their weights the step's solve
-  // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them).
-  // (cln_rstd itself is that checkpoint: written only by DtRetryQuiesce, CleanDtrD, so
-  // it needs no clone of its own)
+  // copied to cln_rstd, RadiationVet::FluxMemoryRetry), the sc rays' intensities
+  // (cln_fvi), with cln_fref_set (force_reference = clean recaptures), and the sc rays'
+  // top shell a reflecting top mirrors (cln_top).  The closure's extrap history is left
+  // alone: its flags go with the handles the attempt swapped and, on a first cycle, with
+  // cln_init. clean_rot_ring: the offsets and the pending Delta (a retried first step of
+  // a block shifted the ring twice), and the swept directions with their weights the
+  // step's solve reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites
+  // them). (cln_rstd itself is that checkpoint: written only by DtRetryQuiesce,
+  // FluxMemoryRetry, so it needs no clone of its own)
   "vet.cln_fvi", "vet.cln_fh", "vet.cln_top",
   "vet.cln_rr", "vet.cln_rpd", "vet.cln_fvd",
   // (not visited before the generated visitor): the cumulative counters of the run
@@ -565,13 +565,13 @@ void DtRetry::Build(Mesh *pm) {
   }
   {
     // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
-    // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
+    // build's copy of vgd_i, written before it is read; RayFaceSums)
     auto *vet = pk->pradvet;
     // (on the cubed sphere too; their face half ranges cln_fh where every solve rebuilds
-    // them first, CleanFhBuilt)
+    // them first, FhBuilt)
     if (!vet->cln_scmem) {
       sel.erase("vet.cln_fvi");
-      if (!vet->cln_cssc || vet->CleanFhBuilt()) sel.erase("vet.cln_fh");
+      if (!vet->cln_cssc || vet->FhBuilt()) sel.erase("vet.cln_fh");
     }
     // (and the rays' source vray_cs, each build's, written before it is read)
     sel.erase("vet.vray_cs");
@@ -593,7 +593,7 @@ void DtRetry::Build(Mesh *pm) {
       e->SetGen(&(pk->pradvet->vra_gen));
     }
     // (and both, with the pending Delta, while no build of the cycle shifts the ring:
-    // RadiationVet::CleanRingPreShift)
+    // RadiationVet::RingPreShift)
     if (e->name == "vet.cln_rr" || e->name == "vet.cln_rpd") {
       e->SetSkip(&(pk->pradvet->cln_rfix));
     }
@@ -739,7 +739,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
     ngood_ = 0;
   }
   if (dtn != dto && pm->pmb_pack->pradvet != nullptr) {
-    dtn = pm->pmb_pack->pradvet->VetGdAlignDt(pm->time, dtn);
+    dtn = pm->pmb_pack->pradvet->RotAlignDt(pm->time, dtn);
   }
   pm->dt = dtn;
   // the words the production link scripts STOP on (DIVERGED, nan, NON-CONVERGED=) are not
@@ -898,7 +898,7 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
     BackView(pvet->acl_cnt_d, s.acl, s.hacl);
     BackView(pvet->opn_nskip_d, s.opn, s.hopn);
     BackView(pvet->fcap_cnt.d_view, s.fcp, s.hfcp);
-    pvet->cln_lzl = s.lz[0];   // (the discarded attempt's bookings, CleanLzBook)
+    pvet->cln_lzl = s.lz[0];   // (the discarded attempt's bookings, LzBook)
     pvet->cln_lzp = s.lz[1];
   }
   nrb_[why] += 1;

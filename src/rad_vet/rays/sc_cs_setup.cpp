@@ -42,11 +42,11 @@ int64_t g_vgd_csgen[16] = {0};        // VET_VGD_CSCL_MAX
 int64_t g_vgd_csgen_save[16] = {0};
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsInit
-//! \brief cs band setup (from VetGdInit): depth vgd_w, panel tables, unit vector of
+//! \fn void RadiationVet::ScCsInit
+//! \brief cs band setup (from ScInit): depth vgd_w, panel tables, unit vector of
 //! every band cell, exact exchange lists
 
-void RadiationVet::VetGdCsInit() {
+void RadiationVet::ScCsInit() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -55,9 +55,9 @@ void RadiationVet::VetGdCsInit() {
   const int nc = pm->mesh_indcs.nx2;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3;
   if (nc < 2 || pm->mesh_indcs.nx3 != nc || (nc % nx2) != 0 || (nc % nx3) != 0) {
-    VgdCsFatal("needs mesh nx2 = nx3 = N >= 2 per panel, divided by the MeshBlock sizes");
+    ScCsFatal("needs mesh nx2 = nx3 = N >= 2 per panel, divided by the MeshBlock sizes");
   }
-  if (pm->multilevel) {VgdCsFatal("SMR/AMR not supported");}
+  if (pm->multilevel) {ScCsFatal("SMR/AMR not supported");}
   vgd_csn = nc;
   const double h = 0.5*M_PI/nc;
   const double q4 = 0.25*M_PI;
@@ -72,7 +72,7 @@ void RadiationVet::VetGdCsInit() {
     const LogicalLocation &l = pm->lloc_eachmb[g];
     if (l.panel < 0 || l.panel > 5 || l.lx2 < 0 || l.lx2 >= nbj || l.lx3 < 0 ||
         l.lx3 >= nbk) {
-      VgdCsFatal("unexpected MeshBlock location (panel / lx2 / lx3)");
+      ScCsFatal("unexpected MeshBlock location (panel / lx2 / lx3)");
     }
     bp[g] = l.panel;
     bj[g] = l.lx2*nx2;
@@ -80,7 +80,7 @@ void RadiationVet::VetGdCsInit() {
     gofi(g, l.panel, l.lx3, l.lx2) = g;
   }
   for (size_t t = 0; t < gof.size(); ++t) {
-    if (gof[t] < 0) {VgdCsFatal("incomplete MeshBlock grid");}
+    if (gof[t] < 0) {ScCsFatal("incomplete MeshBlock grid");}
   }
   {
     // the local blocks' sizes agree with the logical locations
@@ -89,7 +89,7 @@ void RadiationVet::VetGdCsInit() {
       const double x2 = -1.0 + 2.0*bj[g0 + m]/nc, x3 = -1.0 + 2.0*bk[g0 + m]/nc;
       if (std::fabs(mbs.h_view(m).x2min - x2) > 1.0e-12 ||
           std::fabs(mbs.h_view(m).x3min - x3) > 1.0e-12) {
-        VgdCsFatal("MeshBlock size does not match its logical location");
+        ScCsFatal("MeshBlock size does not match its logical location");
       }
     }
   }
@@ -112,7 +112,7 @@ void RadiationVet::VetGdCsInit() {
       for (int q = 0; q < 6; ++q) {
         if (t[0]*fn[q][0] + t[1]*fn[q][1] + t[2]*fn[q][2] > 0.5) {nbr[p][s] = q;}
       }
-      if (nbr[p][s] < 0) {VgdCsFatal("panel neighbour table");}
+      if (nbr[p][s] < 0) {ScCsFatal("panel neighbour table");}
     }
   }
   auto cen = [&](const int p, const int a, const int t, double c[3]) {
@@ -149,7 +149,7 @@ void RadiationVet::VetGdCsInit() {
     t = static_cast<int>(std::lround(gt));
     if (std::fabs(ga - a) > 1.0e-6 || std::fabs(gt - t) > 1.0e-6 || a < 0 || a >= nc ||
         t < 0 || t >= nc) {
-      VgdCsFatal("unfold: the mirror cell is off the neighbour's lattice");
+      ScCsFatal("unfold: the mirror cell is off the neighbour's lattice");
     }
     return true;
   };
@@ -168,13 +168,13 @@ void RadiationVet::VetGdCsInit() {
       const bool o0 = unfold(p, jb, kb, q0, a0, t0);
       const bool o1 = unfold(p, jb + ((s < 2) ? sj : 1), kb, q1, a1, t1);
       const bool o2 = unfold(p, jb, kb + ((s < 2) ? 1 : sk), q2, a2, t2);
-      if (!o0 || !o1 || !o2 || q1 != q0 || q2 != q0) {VgdCsFatal("unfold strip");}
+      if (!o0 || !o1 || !o2 || q1 != q0 || q2 != q0) {ScCsFatal("unfold strip");}
       const int stj = (s < 2) ? sj : 1, stk = (s < 2) ? 1 : sk;
       const int uj0 = (a1 - a0)*stj, uj1 = (t1 - t0)*stj;   // (a, t) per unit J
       const int uk0 = (a2 - a0)*stk, uk1 = (t2 - t0)*stk;   // (a, t) per unit K
       if (std::abs(uj0) + std::abs(uj1) != 1 || std::abs(uk0) + std::abs(uk1) != 1 ||
           uj0*uk0 + uj1*uk1 != 0) {
-        VgdCsFatal("unfold: not a signed permutation");
+        ScCsFatal("unfold: not a signed permutation");
       }
       CM(p,q0,0) = 1;
       CM(p,q0,1) = uj0;
@@ -193,10 +193,10 @@ void RadiationVet::VetGdCsInit() {
           const int J = (s == 0) ? (-1 - d) : ((s == 1) ? (nc + d) : g);
           const int K = (s == 2) ? (-1 - d) : ((s == 3) ? (nc + d) : g);
           int q, a, t;
-          if (!unfold(p, J, K, q, a, t)) {VgdCsFatal("unfold check");}
+          if (!unfold(p, J, K, q, a, t)) {ScCsFatal("unfold check");}
           const int jj = CM(p,q,1)*a + CM(p,q,2)*t + CM(p,q,3);
           const int kk = CM(p,q,4)*a + CM(p,q,5)*t + CM(p,q,6);
-          if (jj != J || kk != K) {VgdCsFatal("unfold: inverse map mismatch");}
+          if (jj != J || kk != K) {ScCsFatal("unfold: inverse map mismatch");}
         }
       }
     }
@@ -449,27 +449,27 @@ void RadiationVet::VetGdCsInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsSource
+//! \fn void RadiationVet::ScCsSource
 //! \brief band of ln chi, ln S (vgd_cs) for every shell of the sweep
 
-void RadiationVet::VetGdCsSource() {
+void RadiationVet::ScCsSource() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int ilo = indcs.is, ie = indcs.ie;
-  VetGdCsHalo(vgd_cs, 2, ilo, ie, true);
+  ScCsHalo(vgd_cs, 2, ilo, ie, true);
   Kokkos::fence();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdCsTab
+//! \fn void RadiationVet::ScCsTab
 //! \brief host tables of direction set d on cs: no walls, identity map, branch n . r_hat
 //! of every band cell
 
-void RadiationVet::VetGdCsTab(const std::vector<double> &d) {
+void RadiationVet::ScCsTab(const std::vector<double> &d) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c2 = indcs.nx2 + 2*vgd_w, c3 = indcs.nx3 + 2*vgd_w;
   const int n = vgd_n;
-  VgdTabHost &H = vgd_tabh;
+  ScTabHost &H = vgd_tabh;
   for (int m = 0; m < nmb; ++m) {
     for (int k = 0; k < c3; ++k) {
       for (int j = 0; j < c2; ++j) {

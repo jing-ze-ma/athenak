@@ -19,15 +19,15 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStoreMoments
+//! \fn void StoreMoments
 //! \brief a cell's closure from its ray moments q (CLN_*, not normalised): D = K/J,
 //! h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J; J = 0: isotropic, marked for the fill
 
 KOKKOS_INLINE_FUNCTION
-void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &valid,
-                       const Real *q, const int m, const int k, const int j,
-                       const int i) {
-  const int ns = cs.extent_int(1);   // (the staggered layout: no k+, CleanInit)
+void StoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &valid,
+                  const Real *q, const int m, const int k, const int j,
+                  const int i) {
+  const int ns = cs.extent_int(1);   // (the staggered layout: no k+, InitArrays)
   if (q[CLN_J] > 0.0) {
     const Real ij = 1.0/q[CLN_J];
     for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = q[CLN_D11+a]*ij;
@@ -61,14 +61,14 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanFaceVector
+//! \fn void FaceVector
 //! \brief exact vector area a of the low face of cell (k,j,i) normal to dir (spherical
-//! polar exact, cubed sphere CleanCsGeometry's, Cartesian along e_dir)
+//! polar exact, cubed sphere CsGeometry's, Cartesian along e_dir)
 
 KOKKOS_INLINE_FUNCTION
-void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int dir,
-                     const int m, const int k, const int j, const int i, Real a[3]) {
-  if (x.cub) {   // the exact closed face vectors of CleanCsGeometry
+void FaceVector(const SolveArgs &x, const DvceArray2D<Real> &x3f, const int dir,
+                const int m, const int k, const int j, const int i, Real a[3]) {
+  if (x.cub) {   // the exact closed face vectors of CsGeometry
     for (int c = 0; c < 3; ++c)
       a[c] = x.area[dir](m,k,j,i)*x.g.At<CLG_N>(m,3*dir+c,k,j,i);
     return;
@@ -99,11 +99,11 @@ void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanLocalBasis
+//! \fn void LocalBasis
 //! \brief the local orthonormal basis (r_hat, theta_hat, phi_hat) at (th, ph)
 
 KOKKOS_INLINE_FUNCTION
-void CleanLocalBasis(const Real th, const Real ph, Real e[3][3]) {
+void LocalBasis(const Real th, const Real ph, Real e[3][3]) {
   const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
   e[0][0] = st*cp; e[0][1] = st*sp; e[0][2] = ct;
   e[1][0] = ct*cp; e[1][1] = ct*sp; e[1][2] = -st;
@@ -111,39 +111,39 @@ void CleanLocalBasis(const Real th, const Real ph, Real e[3][3]) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanThickI
+//! \fn Real ThickI
 //! \brief clean_ray_cut: intensity along n in a cell below the cut, the diffusion limit
-//! I = J + 3 n . H of its E en and F f in the frame e (CleanThickFrame)
+//! I = J + 3 n . H of its E en and F f in the frame e (ThickFrame)
 
 KOKKOS_INLINE_FUNCTION
-void CleanThickFrame(const CleanArgs &x, const DvceArray2D<Real> &x3v, const int m,
-                     const int k, const int j, const int i, Real e[3][3]) {
+void ThickFrame(const SolveArgs &x, const DvceArray2D<Real> &x3v, const int m,
+                const int k, const int j, const int i, Real e[3][3]) {
   if (x.cub) {
-    CleanCsFrame(x, m, k, j, i, e);
+    CsFrame(x, m, k, j, i, e);
   } else {
-    CleanLocalBasis(x.x2v(m,j), x3v(m,k), e);
+    LocalBasis(x.x2v(m,j), x3v(m,k), e);
   }
 }
 
 KOKKOS_INLINE_FUNCTION
-Real CleanThickI(const Real e[3][3], const Real f[3], const Real en, const Real ic,
-                 const Real n[3]) {
+Real ThickI(const Real e[3][3], const Real f[3], const Real en, const Real ic,
+            const Real n[3]) {
   Real nf = 0.0;
   for (int b = 0; b < 3; ++b) nf += (n[0]*e[b][0] + n[1]*e[b][1] + n[2]*e[b][2])*f[b];
   return fmax(en + 3.0*ic*nf, 0.0);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool CleanRealizable
+//! \fn bool Realizable
 //! \brief true if moments q (J > 0) are realisable: |H| <= J, K - H H^T/J PSD (to 1e-12)
 
 KOKKOS_INLINE_FUNCTION
-bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k,
-                     const int j, const int i) {
+bool Realizable(const SolveArgs &x, const Real *q, const int m, const int k,
+                const int j, const int i) {
   const Real ij = 1.0/q[CLN_J];
   Real s[3], h[3], a[3][3];
   for (int b = 0; b < 3; ++b) s[b] = (q[CLN_HP+b] + q[CLN_HM+b])*ij;
-  CleanRayFlux(x, m, k, j, i, s, h);
+  RayFlux(x, m, k, j, i, s, h);
   a[0][0] = q[CLN_D11]*ij;
   a[1][1] = q[CLN_D11+1]*ij;
   a[2][2] = q[CLN_D11+2]*ij;
@@ -166,17 +166,17 @@ bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k
 }
 
 // one cell's directions as a strided row: the address once per cell (dummy: stride 0)
-struct CleanRow {
+struct DirRow {
   Real *p;
   int64_t s;
   KOKKOS_INLINE_FUNCTION Real operator[](const int d) const {return p[d*s];}
 };
 
 KOKKOS_INLINE_FUNCTION
-CleanRow VgdRow(const RadiationVet::VgdRag &vi, const int m, const int kb, const int jb,
+DirRow ScDirRow(const RadiationVet::ScRag &vi, const int m, const int kb, const int jb,
                 const int i) {
   Real *p = &vi(m,0,kb,jb,i);
-  return CleanRow{p, (p == vi.d.data() + vi.dummy) ? 0 : 1};
+  return DirRow{p, (p == vi.d.data() + vi.dummy) ? 0 : 1};
 }
 
 }  // namespace radvet

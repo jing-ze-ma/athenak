@@ -253,7 +253,7 @@ void RadiationVet::ReadMatterKeys(ParameterInput *pin) {
       fcap_report = pin->GetInteger("rad_vet","floorcap_report");
     }
     // floorcap_mesh_vol: counters weighted by the mesh cell volume, |dp| and L_z in the
-    // frame of y (CleanVol, CleanLzArm)
+    // frame of y (CellVolume, LzArm)
     {
       fcap_mvol = pin->GetOrAddBoolean("rad_vet","floorcap_mesh_vol",
                                        fix("floorcap_mesh_vol", "true", "false"));

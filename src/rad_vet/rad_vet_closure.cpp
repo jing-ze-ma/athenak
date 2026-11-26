@@ -36,13 +36,13 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosure
+//! \fn void RadiationVet::BuildClosure
 //! \brief builds the closure for t^{n+1}, once per step and dt (all stage solves end
 //! there); clean_closure = eddington: isotropic
 
-void RadiationVet::CleanClosure() {
+void RadiationVet::BuildClosure() {
   if (cln_sphere) {
-    if (!cln_havec) CleanClosureSphere();
+    if (!cln_havec) ClosureSphere();
     cln_havec = true;
     return;
   }
@@ -51,14 +51,14 @@ void RadiationVet::CleanClosure() {
   if (cln_havec && time == cln_tc && dt == cln_dtb) return;
 
   if (cln_edd) {
-    CleanClosureEddington();
+    ClosureEddington();
   } else {
-    CleanPredictState(true);
-    CleanRays();
+    PredictState(true);
+    TraceRays();
     if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
-    CleanClosureFill();
+    ClosureFill();
   }
-  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
+  GhostFill(cln_s, 0, cln_s.extent_int(1));
 
   cln_tc = time;
   cln_dtb = dt;
@@ -67,17 +67,17 @@ void RadiationVet::CleanClosure() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureEddington
+//! \fn void RadiationVet::ClosureEddington
 //! \brief clean_closure = eddington: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0
 
-void RadiationVet::CleanClosureEddington() {
+void RadiationVet::ClosureEddington() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto cs = cln_s;
-  CleanFor("cln_edd", nmb1, ks, ke, js, je, is, ie,
+  SolveFor("cln_edd", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int a = 0; a < 3; ++a) {
       cs(m,CLN_D11+a,k,j,i) = 1.0/3.0;
@@ -94,11 +94,11 @@ void RadiationVet::CleanClosureEddington() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureIterate
+//! \fn void RadiationVet::ClosureIterate
 //! \brief clean_closure = iterate: closure from the formal solution of the current
 //! iterate's E, T and F
 
-void RadiationVet::CleanClosureIterate() {
+void RadiationVet::ClosureIterate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -115,20 +115,20 @@ void RadiationVet::CleanClosureIterate() {
     iw_(m,VET_IW_F2,k,j,i) = u0_(m,VET_F1+1,k,j,i);
     iw_(m,VET_IW_F3,k,j,i) = u0_(m,VET_F1+2,k,j,i);
   });
-  CleanRays();
-  CleanClosureFill();
-  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
+  TraceRays();
+  ClosureFill();
+  GhostFill(cln_s, 0, cln_s.extent_int(1));
   cln_havec = false;
   cln_cip = true;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRayMoments
+//! \fn void RadiationVet::RayMoments
 //! \brief ray moments J, K, H+-, <|I - S|> and face fluxes (CLN_*, not normalised) into
 //! dst: of a new formal solution of the current state, or (solve = false) of the closure
 //! in place
 
-void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
+void RadiationVet::RayMoments(DvceArray5D<Real> dst, const bool solve) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -136,17 +136,17 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
   if (solve) {
-    CleanPredictState(false);
-    CleanRays();
+    PredictState(false);
+    TraceRays();
     if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
   }
 
   auto cs = cln_s;
-  CleanFor("cln_raymom", nmb1, ks, ke, js, je, is, ie,
+  SolveFor("cln_raymom", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
     for (int n = 0; n < cs.extent_int(1); ++n) {
-      dst(m,n,k-ks,j-js,i-is) = ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*
+      dst(m,n,k-ks,j-js,i-is) = ((CellMoment(n) && n != CLN_J) ? jr : 1.0)*
                                 cs(m,n,k,j,i);
     }
   });
@@ -154,47 +154,47 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureAfterSolve
+//! \fn void RadiationVet::ClosureAfterSolve
 //! \brief clean_closure = extrap(2): store the ray moments of a converged solution: the
 //! step's last solve at t^{n+1}, extrap2 also stage 1 at its time.  extrap1: the stage-1
 //! closure's moments at t^n + (a21 + g) dt; only backward Euler solves here
 
-void RadiationVet::CleanClosureAfterSolve() {
+void RadiationVet::ClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE2) return;
   if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE1) {
-    CleanRayMoments(cln_mc, false);
+    RayMoments(cln_mc, false);
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     cln_tm = time + ((t2_tab == 0) ? dt : (tb.a21 + tb.g)*dt);
     cln_have_c = true;
     cln_cand_be = false;
-    CleanRingJump();
+    RingJump();
     return;
   }
   if (t2_solve == VET_T2S_STAGE1) {
     if (cln_extrap != 2) return;
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
-    CleanRayMoments(cln_m1);
+    RayMoments(cln_m1);
     cln_t1 = time + (tb.a21 + tb.g)*dt;
     cln_have_1 = true;
     return;
   }
-  CleanRayMoments(cln_mc);
+  RayMoments(cln_mc);
   cln_tm = time + dt;
   cln_have_c = true;
   cln_cand_be = (t2_solve != VET_T2S_STAGE2);
-  CleanRingJump();
+  RingJump();
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRingSolveSet
+//! \fn void RadiationVet::RingSolveSet
 //! \brief clean_rot_ring = jump: the face half ranges use the swept set of the step's
 //! rotation block
 
-void RadiationVet::CleanRingSolveSet() {
-  if (cln_cssc) return;   // (cubed-sphere sc rays: CleanScUnion2's two sets)
-  const int64_t bs = VetGdBlock(pmy_pack->pmesh->ncycle);
+void RadiationVet::RingSolveSet() {
+  if (cln_cssc) return;   // (cubed-sphere sc rays: RingUnion's two sets)
+  const int64_t bs = RotBlock(pmy_pack->pmesh->ncycle);
   const int ns = static_cast<int>(cln_fvdm.size());
   for (int q = 0; q < ns && ns > 1; ++q) {
     if (cln_fvblk[q] == bs) Kokkos::deep_copy(cln_fvd, cln_fvdm[q]);
@@ -202,11 +202,11 @@ void RadiationVet::CleanRingSolveSet() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRingJump
+//! \fn void RadiationVet::RingJump
 //! \brief clean_rot_ring = jump: at a rotation-block end the moments jump to the next
 //! block's; the next step does not extrapolate through it
 
-void RadiationVet::CleanRingJump() {
+void RadiationVet::RingJump() {
   if (!cln_rjump) return;
   Kokkos::deep_copy(cln_mc, cln_rnew);
   cln_cand_be = true;
@@ -214,7 +214,7 @@ void RadiationVet::CleanRingJump() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureExtrap
+//! \fn void RadiationVet::ClosureExtrap
 //! \brief clean_closure = extrap(2): the closure at the stage time from ray moments of
 //! converged solutions, extrapolated linearly in time (exact for S and inflow linear in
 //! t).  The line runs through t^{n-1} and t^n, or (stage 2, extrap2) t^n and stage 1.
@@ -224,11 +224,11 @@ void RadiationVet::CleanRingJump() {
 //! line through the last and this step's stage-1 sets, weighted 1/(1 + z), z = c dt/dx
 //! (no over-relaxation where the field is quasi-static)
 
-void RadiationVet::CleanClosureExtrap() {
+void RadiationVet::ClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   cln_nguard = 0;
-  const bool sx = CleanExtrapSx();   // (stage-1 moments before t^n+1)
+  const bool sx = ExtrapSx();   // (stage-1 moments before t^n+1)
   // (stage 2 of sx: the line through two stage-1 sets, the last not from backward
   // Euler, a restart or a ring jump)
   const bool usec = sx && t2_solve == VET_T2S_STAGE2 && cln_have_c && !cln_cand_be &&
@@ -247,7 +247,7 @@ void RadiationVet::CleanClosureExtrap() {
     cln_have_1 = false;
   }
   if (!cln_have_n || !(cln_tn == time || (sx && cln_tn < time))) {
-    CleanClosure();
+    BuildClosure();
     return;
   }
 
@@ -277,7 +277,7 @@ void RadiationVet::CleanClosureExtrap() {
   auto cs = cln_s;
   const int ns = cs.extent_int(1);
   auto valid = cln_v;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   int nguard = 0;
   Kokkos::parallel_reduce("cln_extrap",
                           Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nk*nj*ni),
@@ -289,7 +289,7 @@ void RadiationVet::CleanClosureExtrap() {
     // (stage 2 of sx: the line times 1/(1 + z), z = c dt/dx of the thinnest direction)
     Real z = 0.0;
     for (int d = 0; d < x.nf && usec; ++d) {
-      z = fmax(z, x.c*dt*CleanDivF(x, d, m, k, j, i, 0.0, 1.0));
+      z = fmax(z, x.c*dt*DivF(x, d, m, k, j, i, 0.0, 1.0));
     }
     const Real wc = wx/(1.0 + z);
     Real q[CLN_N];
@@ -300,26 +300,26 @@ void RadiationVet::CleanClosureExtrap() {
     }
     // the extrapolated moments must be those of a non-negative intensity
     const bool ok = line && ma(m,CLN_J,kr,jr,ir) > 0.0 && q[CLN_J] > 0.0 &&
-                    CleanRealizable(x, q, m, k, j, i);
+                    Realizable(x, q, m, k, j, i);
     if (!ok) {
       if (line && mn(m,CLN_J,kr,jr,ir) > 0.0) ++ng;
       // (cubed sphere: face sums, held on both sides, stay extrapolated alike)
       for (int n = 0; n < ns; ++n) {
-        if (!x.cub || CleanCellMoment(n)) q[n] = mn(m,n,kr,jr,ir);
+        if (!x.cub || CellMoment(n)) q[n] = mn(m,n,kr,jr,ir);
       }
     }
-    CleanStoreMoments(cs, valid, q, m, k, j, i);
+    StoreMoments(cs, valid, q, m, k, j, i);
   }, Kokkos::Sum<int>(nguard));
-  cln_nguard = static_cast<int>(CleanReduce(nguard, false));
+  cln_nguard = static_cast<int>(GlobalReduce(nguard, false));
   cln_nguard_sum += cln_nguard;
   if (line) cln_next_sum += 1.0;
 
-  CleanClosureFill();
-  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
+  ClosureFill();
+  GhostFill(cln_s, 0, cln_s.extent_int(1));
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanPredictState
+//! \fn void RadiationVet::PredictState
 //! \brief predict the t^{n+1} state for the formal solution (iw: E, T, F; opac if
 //! T-dependent), O(dt^2), from the hydro's explicit stage and K1 = f(U^n) (FSAL):
 //!  1. momentum: hydro + dt K1_M (cancels the explicit gravity kick where supported);
@@ -328,7 +328,7 @@ void RadiationVet::CleanClosureExtrap() {
 //! No valid K1 (first step, backward Euler): only 3.  No feedback: gas fixed.
 //! use_k1 = false: the current state itself
 
-void RadiationVet::CleanPredictState(const bool use_k1) {
+void RadiationVet::PredictState(const bool use_k1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -368,9 +368,9 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
   bool scat = vscat;
   Real arad_ = arad, cl = c_light;
   const bool feedback = cln_feedback;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
 
-  CleanFor("cln_predict", nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  SolveFor("cln_predict", nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // K1 is stored on active cells only; ghost cells take the explicit state
     const bool active = (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie);
@@ -382,12 +382,12 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
       d = uh(m,IDN,k,j,i);
       Real mom[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
       const Real ekin = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
-      const Real eint_h = fmax(CleanGasEint(x, uh, ekin, m, k, j, i), 0.0);
+      const Real eint_h = fmax(GasEint(x, uh, ekin, m, k, j, i), 0.0);
       t = eos.Temperature(d, eint_h);
       if (use_rates && !feedback) {
         // gas held fixed: E advances at its own rate, which includes the exchange
         const Real de = dt*k1(m,VET_T2_E,k,j,i);
-        e = CleanPredictE(e0, de);
+        e = PredictE(e0, de);
       } else if (relax) {
         // transport over dt (valid K1) less the radiation force's work, then the
         // implicit local exchange of (eint, E)
@@ -396,18 +396,18 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
           const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
           const Real de = dt*(k1(m,VET_T2_E,k,j,i) + k1(m,VET_T2_EN,k,j,i))
                           - (ekin_new - ekin);
-          e = CleanPredictE(e0, de);
+          e = PredictE(e0, de);
         }
         // E (1 + h c kE) = e + h c kP a T^4,  eint(T) + E = eint_h + e
         const Real hce = dt*cl*opac_(m,VET_OP_E,k,j,i);
         const Real hcp = dt*cl*opac_(m,VET_OP_P,k,j,i)*arad_;
-        t = CleanExchangeTemperature(eos, d, hcp/(1.0 + hce), eint_h + e*hce/(1.0 + hce),
-                                     t);
+        t = ExchangeTemperature(eos, d, hcp/(1.0 + hce), eint_h + e*hce/(1.0 + hce),
+                                t);
         e = (e + hcp*SQR(SQR(t)))/(1.0 + hce);
       }
     } else if (use_rates) {
       const Real de = dt*k1(m,VET_T2_E,k,j,i);
-      e = CleanPredictE(e0, de);
+      e = PredictE(e0, de);
     }
 
     if (active) {
@@ -434,7 +434,7 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureSphere
+//! \fn void RadiationVet::ClosureSphere
 //! \brief exact closure of a uniformly bright sphere of radius R = clean_sphere_radius
 //! in vacuum.  Outside, the cone mu > mu_c = sqrt(1 - R^2/r^2): D_rr = (1 + mu_c +
 //! mu_c^2)/3, D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0, h+-_t = h+-_p =
@@ -442,7 +442,7 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
 //! k+^t = (k, D_tt/2, 0), k+^p = (k, 0, D_pp/2), k = (R/r)(1 + mu_c)/(3 pi).  Inside:
 //! isotropic.  Cubed sphere: Cartesian about r_hat and the lateral family normals n_d
 
-void RadiationVet::CleanClosureSphere() {
+void RadiationVet::ClosureSphere() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -452,9 +452,9 @@ void RadiationVet::CleanClosureSphere() {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   auto x1v = pmy_pack->pcoord->x1v;
   auto cs = cln_s;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
 
-  CleanFor("cln_sphere", nmb1, ks, ke, js, je, is, ie,
+  SolveFor("cln_sphere", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
     Real drr = 1.0/3.0, hpr = 0.25, hmr = -0.25, ht = 0.25, c1 = 0.0, kr = 0.0,
@@ -496,7 +496,7 @@ void RadiationVet::CleanClosureSphere() {
     if (!cub) return;
     const Real dt = 0.5*(1.0 - drr);
     Real nd[3][3];
-    CleanCsFamily(x, m, k, j, i, nd);
+    CsFamily(x, m, k, j, i, nd);
     const int ab[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
     for (int a = 0; a < 6; ++a) {
       cs(m,CLN_D11+a,k,j,i) = (drr - dt)*nd[0][ab[a][0]]*nd[0][ab[a][1]] +
@@ -509,26 +509,26 @@ void RadiationVet::CleanClosureSphere() {
       }
     }
   });
-  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
+  GhostFill(cln_s, 0, cln_s.extent_int(1));
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRays
+//! \fn void RadiationVet::TraceRays
 //! \brief formal solution of the state in iw (chi from opac) and its closure: vet_sc,
 //! or vet_gd on curved meshes; the state's own source (no dt-dependent relaxation)
 
-void RadiationVet::CleanRays() {
+void RadiationVet::TraceRays() {
   // (the closure's time; a step of at least one rotation block takes its start's sets)
   const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
                   ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
-  if (!vgd_on && cln_ring) {   // (the rotating vet_sc set: CleanRingMoments sweeps it)
-    CleanFvSets(tc, pmy_pack->pmesh->ncycle);
-    CleanRingMoments();
+  if (!vgd_on && cln_ring) {   // (the rotating vet_sc set: RingMoments sweeps it)
+    RingSets(tc, pmy_pack->pmesh->ncycle);
+    RingMoments();
     return;
   }
   if (!vgd_on) {
-    VetShortChar();
-    CleanClosureFromRays();
+    ScCartBuild();
+    ClosureFromRays();
     return;
   }
   if (!vray_ready) VetRayInit();
@@ -540,32 +540,32 @@ void RadiationVet::CleanRays() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,VET_IW_KT,k,j,i) = opac_(m,VET_OP_T,k,j,i);
   });
-  if (cln_ring) {   // (the sc rays: each set's sweep in CleanRingMoments)
-    VetGdSource();
-    CleanFvSets(tc, pmy_pack->pmesh->ncycle);
+  if (cln_ring) {   // (the sc rays: each set's sweep in RingMoments)
+    ScSource();
+    RingSets(tc, pmy_pack->pmesh->ncycle);
   } else {
-    VetGdBuild();
-    if (cln_scmem) VetGdTopCopy();
+    ScBuild();
+    if (cln_scmem) ScTopCopy();
   }
   if (cln_ring) {
-    CleanRingMoments();
+    RingMoments();
   } else {
-    CleanClosureFromGd();
-    // (cubed-sphere sc rays: also the face half ranges from cln_fvi, CleanFaceHalf)
-    if (cln_consist || cln_cssc) CleanGdFaceSums();
-    if (cln_cssc && !cln_rfh) CleanFaceHalf(vgd_dir, 0, true, 0);
+    ClosureFromSc();
+    // (cubed-sphere sc rays: also the face half ranges from cln_fvi, FaceHalf)
+    if (cln_consist || cln_cssc) RayFaceSums();
+    if (cln_cssc && !cln_rfh) FaceHalf(vgd_dir, 0, true, 0);
     if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureFill
+//! \fn void RadiationVet::ClosureFill
 //! \brief cells without ray radiation take the mean closure (D, h+-, k+) of their valid
 //! neighbours, one layer per pass (clean_fill_passes passes).  clean_stag_thinf: the
 //! first layer's, next to the rays, weighted by their E, so that a neighbour the rays
 //! hardly light does not count as much as a beam; the deeper layers hold no radiation
 
-void RadiationVet::CleanClosureFill() {
+void RadiationVet::ClosureFill() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -589,22 +589,22 @@ void RadiationVet::CleanClosureFill() {
     const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
     if (!(valid(m,0,ks+k,js+j,is+idx-m*nkji-k*nji-j*ni) > 0.0)) a += 1.0;
   }, Kokkos::Sum<Real>(nbad));
-  if (CleanReduce(nbad, false) == 0.0) return;
+  if (GlobalReduce(nbad, false) == 0.0) return;
   if (thf) {   // the weight, E
     par_for("cln_fill_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       valid(m,2,k,j,i) = fmax(iw_(m,VET_IW_EN,k,j,i), efl);
     });
-    CleanGhostFill(cln_v, 2, 1);
+    GhostFill(cln_v, 2, 1);
   }
 
   constexpr int npass = 8;   // fill layers
   for (int pass = 0; pass < npass; ++pass) {
     // (only what cln_fill reads: D, h+- (and the held k+ or HO), valid(0), at depth 1;
     // callers exchange all of cln_s afterwards; the last pass also valid(1))
-    CleanGhostDefer(cln_s, 0, CLN_C1, 1);
-    if (nfl > CLN_C1) CleanGhostDefer(cln_s, CLN_KP, nfl - CLN_C1, 1);
-    CleanGhostFill(cln_v, 0, (pass + 1 < npass) ? 1 : 2, true, 0, 1);
+    GhostDefer(cln_s, 0, CLN_C1, 1);
+    if (nfl > CLN_C1) GhostDefer(cln_s, CLN_KP, nfl - CLN_C1, 1);
+    GhostFill(cln_v, 0, (pass + 1 < npass) ? 1 : 2, true, 0, 1);
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -637,18 +637,18 @@ void RadiationVet::CleanClosureFill() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStageClosure
+//! \fn void RadiationVet::StageClosure
 //! \brief the closure a stage solve starts with
 
-void RadiationVet::CleanStageClosure() {
+void RadiationVet::StageClosure() {
   // from the gas before the stage increments; clean_closure = iterate with no closure
   // in place takes the predicted one
   if (cln_extrap > 0) {
-    CleanClosureExtrap();
+    ClosureExtrap();
   } else if (!cln_closit || !cln_cip) {
-    CleanClosure();
+    BuildClosure();
   }
-  if (cln_ring == 2) CleanRingSolveSet();
+  if (cln_ring == 2) RingSolveSet();
 }
 
 }  // namespace radvet

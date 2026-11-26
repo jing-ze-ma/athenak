@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_args.hpp
-//! \brief array slots, kernel launchers and CleanArgs, what the device functions of the
+//! \brief array slots, kernel launchers and SolveArgs, what the device functions of the
 //! solve read.
 
 #include <cmath>
@@ -30,7 +30,7 @@
 #define CLEAN_DEVICE_NOINLINE
 #endif
 // HIP: face flux, stress and source forced inline (as calls they need a large scratch
-// frame); on paths a pass does not take they stay calls (CleanFaceFluxCall, ...) to
+// frame); on paths a pass does not take they stay calls (FaceFluxCall, ...) to
 // keep the register use of the taken path low
 #if defined(__HIPCC__)
 #define CLEAN_HIP_INLINE __attribute__((always_inline))
@@ -39,7 +39,7 @@
 #define CLEAN_HIP_INLINE
 #define CLEAN_HIP_NOINLINE
 #endif
-// HIP: kernels read CleanArgs from a device copy (CleanDevArgs), since a capture indexed
+// HIP: kernels read SolveArgs from a device copy (DevArgs), since a capture indexed
 // at run time is copied to each lane's stack; CUDA keeps the capture
 #if defined(KOKKOS_ENABLE_HIP)
 #define CLEAN_HIPX(...) __VA_ARGS__
@@ -53,9 +53,9 @@
 
 namespace radvet {
 
-//! \fn void CleanMaxRanks
+//! \fn void MaxOverRanks
 //! \brief max of v[0..n-1] over all ranks; non-finite -> inf so all ranks agree
-inline void CleanMaxRanks(Real *v, const int n) {
+inline void MaxOverRanks(Real *v, const int n) {
   for (int q = 0; q < n; ++q) {
     if (!std::isfinite(v[q])) v[q] = std::numeric_limits<Real>::infinity();
   }
@@ -64,18 +64,18 @@ inline void CleanMaxRanks(Real *v, const int n) {
 #endif
 }
 
-// CleanFor: a 4-D clean pass.  CUDA: launch bounds of kCudaMb blocks of 256 per SM (a
+// SolveFor: a 4-D clean pass.  CUDA: launch bounds of kCudaMb blocks of 256 per SM (a
 // register cap), par_for's index arithmetic (bitwise).  HIP: kHipMb blocks if > 0
 // (4: 128 VGPRs), else par_for.  Host: par_for
 #if defined(ATHENA_CLEAN_FOR_MB)   // build-time override (register cap only, bitwise)
-constexpr int kCleanForMb = ATHENA_CLEAN_FOR_MB;
+constexpr int kSolveForMb = ATHENA_CLEAN_FOR_MB;
 #elif defined(KOKKOS_ARCH_HOPPER90)
-constexpr int kCleanForMb = 3;
+constexpr int kSolveForMb = 3;
 #else
-constexpr int kCleanForMb = 2;
+constexpr int kSolveForMb = 2;
 #endif
-template <int kHipMb = 0, int kCudaMb = kCleanForMb, typename F>
-inline void CleanFor(const char *name, const int nmb1, const int ks, const int ke,
+template <int kHipMb = 0, int kCudaMb = kSolveForMb, typename F>
+inline void SolveFor(const char *name, const int nmb1, const int ks, const int ke,
                      const int js, const int je, const int is, const int ie,
                      const F &f) {
 #if defined(KOKKOS_ENABLE_HIP)
@@ -98,24 +98,24 @@ inline void CleanFor(const char *name, const int nmb1, const int ks, const int k
   }
 }
 
-// CleanFor with k fastest on HIP (the row order of a VgdRag slab), so adjacent lanes
+// SolveFor with k fastest on HIP (the row order of a ScRag slab), so adjacent lanes
 // read adjacent intensity rows; only for passes with independent cells (bitwise)
 template <typename F>
-inline void CleanForK(const char *name, const int nmb1, const int ks, const int ke,
+inline void SolveForK(const char *name, const int nmb1, const int ks, const int ke,
                       const int js, const int je, const int is, const int ie,
                       const F &f) {
 #if defined(KOKKOS_ENABLE_HIP)
   par_for(name, DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
   KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {f(m, k, j, i);});
 #else
-  CleanFor(name, nmb1, ks, ke, js, je, is, ie, f);
+  SolveFor(name, nmb1, ks, ke, js, je, is, ie, f);
 #endif
 }
 
 // a pass of columns (one thread per (m, k, j), marching in i); HIP: blocks of 64 with
 // k fastest to spread few columns over more CUs
 template <typename F>
-inline void CleanForCol(const char *name, const int nmb1, const int ks, const int ke,
+inline void SolveForCol(const char *name, const int nmb1, const int ks, const int ke,
                         const int js, const int je, const F &f) {
 #if defined(KOKKOS_ENABLE_HIP)
   const int nk = ke - ks + 1, njk = (je - js + 1)*nk;
@@ -149,21 +149,21 @@ constexpr int CLN_KP = 41;   // k+^d_b = K+^d_bd/J (stress of mu_d > 0), slot 3 
 constexpr int CLN_N = 50;
 // vet_rotate_avg_ema_wb on the cubed sphere (sc rays): in place of k+ (not held there)
 // each cell's half ranges about its faces' normals, h+ out of its high faces (3), h- of
-// its low ones (3) (CleanClosureFromGd), so that the ring carries them as cell moments
+// its low ones (3) (ClosureFromSc), so that the ring carries them as cell moments
 constexpr int CLN_HO = CLN_KP;
 constexpr int CLN_NHO = CLN_HO + 6;
 
 // the slots of cln_s
-inline int CleanNs(const bool cub, const bool ho = false) {
+inline int NumClosureSlots(const bool cub, const bool ho = false) {
   return cub ? (ho ? CLN_NHO : CLN_F1) : CLN_FH;
 }
 
 // cell moments (D, h+-, C1, J, k+); the others are face sums
 KOKKOS_INLINE_FUNCTION
-bool CleanCellMoment(const int n) {return n <= CLN_J || n >= CLN_KP;}
+bool CellMoment(const int n) {return n <= CLN_J || n >= CLN_KP;}
 
 // slot of restart channel n; restart files order them D h+ h- k+ C1 J F2 F1 FX F3 FH G JR
-inline int CleanRstSlot(const int n) {
+inline int RstSlot(const int n) {
   constexpr int o[9] = {0, 12, 21, 23, 27, 31, 39, 47, CLN_N};
   constexpr int s[8] = {CLN_D11, CLN_KP, CLN_C1, CLN_F2, CLN_F1, CLN_FX, CLN_FH, CLN_G};
   int g = 0;
@@ -171,7 +171,7 @@ inline int CleanRstSlot(const int n) {
   return s[g] + n - o[g];
 }
 
-// face variables (cln_fc1, cln_fc2, cln_fc3: CleanF).  Slots below CLF_NS live across a
+// face variables (cln_fc1, cln_fc2, cln_fc3: FaceVars).  Slots below CLF_NS live across a
 // closure build; the others are rebuilt after one before they are read
 constexpr int CLF_N = 0;     // clean_stag_fsolve: CLF_N .. CLF_N + 3 hold F, the
                              // dissipation term, F^H and (clean_stag_fkin) the energy
@@ -187,11 +187,11 @@ constexpr int CLF_TH = CLF_NS + 1;    // theta = 1/(1 + h c chi_f)
 constexpr int CLF_G = CLF_NS + 2;     // flux of the old vector G_f
 constexpr int CLF_HP = CLF_NS + 3;    // h+_f
 constexpr int CLF_HM = CLF_NS + 4;    // h-_f
-constexpr int CLF_QL = CLF_NS + 5;    // al, ar (CleanFaceWeights), cross factor
+constexpr int CLF_QL = CLF_NS + 5;    // al, ar (FaceWeights), cross factor
                                       // -(1-w) theta h c^2 (3)
 constexpr int CLF_PT = CLF_QL;        // outside the solve: face momentum terms
-                                      // (CleanStagDrag) and the RHS's a E (cln_rhsaf)
-constexpr int CLF_SR = CLF_QL + 1;    //   and the RHS's face sources (CleanFaceSource)
+                                      // (FaceDrag) and the RHS's a E (cln_rhsaf)
+constexpr int CLF_SR = CLF_QL + 1;    //   and the RHS's face sources (FaceSource)
 constexpr int CLF_NF = CLF_QL + 3;    // (clean_stag_xdonor, the bracket: more slots)
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: memory outflow above this share
                                      // of the donor's E_old goes upwind
@@ -230,10 +230,10 @@ constexpr int CLW_Y = 34;
 constexpr int CLW_Z = 35;
 constexpr int CLW_TM = 36;   // mg: coefficients of E_{j-1}, E_{j+1}, E_{k-1}, E_{k+1} (4)
 constexpr int CLW_L = 40;    // cubed sphere: lateral stress sums Y of face family q at
-                             // CLW_L + 3 q (CleanStagCsLateral)
+                             // CLW_L + 3 q (CsLateralStress)
 constexpr int CLW_SE = 49;   // clean_conv = budget: gross terms S of the E and gas rows
 constexpr int CLW_SG = 50;   //   (their scales), the weighted B and a preconditioner
-constexpr int CLW_BW = 51;   //   input (CleanBiCGStab)
+constexpr int CLW_BW = 51;   //   input (SolveBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
 constexpr int CLW_PD = 55;   // the rows' diagonal of the work (53, 54 unused)
@@ -242,13 +242,13 @@ constexpr int CLW_XW = 57;   //   the row's work W
 constexpr int CLW_NX = 58;
 
 //----------------------------------------------------------------------------------------
-//! \struct CleanArgs
+//! \struct SolveArgs
 //! \brief everything the device functions of the clean solve read
 
-struct CleanArgs {
+struct SolveArgs {
   DvceArray5D<Real> cs;        // closure of the stage
-  CleanW w;                    // work vectors
-  CleanF fc[3];                // face variables in x1, x2, x3
+  WorkVec w;                    // work vectors
+  FaceVars fc[3];                // face variables in x1, x2, x3
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
   DvceArray4D<Real> bstress;   // beam stress column c K_b1 at x1min (m, b, k-ks, j-js)
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
@@ -270,7 +270,7 @@ struct CleanArgs {
                                // donor part, explicit part, C(E_k) (-1: central)
   bool mcl;                    // face momentum term capped at h chi_f E (realisable)
   DvceArray1D<Real> mclc;      // (mcl: count of face terms the cap moved)
-  bool fa;                     // store the faces' momentum terms (CLF_PT, CleanStagDrag)
+  bool fa;                     // store the faces' momentum terms (CLF_PT, FaceDrag)
   bool drag;                   // clean_stag_vimp: implicit gas velocity
   bool upw;                    // clean_stag_upwind: donor-cell advective flux
   bool fwc;                    // al, ar and the cross factor from CLF_QL
@@ -290,10 +290,10 @@ struct CleanArgs {
   // cubed sphere: y in the cell's frame (r, theta, phi); g the geometry (CLG_*)
   bool cub;
   bool ys = false;    // clean_stag_lat_sums: lateral sums Y off the cubed sphere
-  bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
+  bool lwb = false;   // clean_cs_lat_wb (CsLat)
   DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
-  DvceArray4D<Real> ae0;   // cubed sphere: pcoord's radial face area (CleanDivW)
-  CleanGeo g;
+  DvceArray4D<Real> ae0;   // cubed sphere: pcoord's radial face area (DivW)
+  CsGeoArrays g;
   // the gas energy also holds d phi (<hydro>/etotgrav) and |B|^2/2 (<mhd>)
   bool etg, mhd;
   DvceArray4D<Real> phi, emag;
@@ -308,7 +308,7 @@ constexpr int CLN_ST = 19;
 constexpr int CLN_CSY = 27;
 
 KOKKOS_INLINE_FUNCTION
-constexpr int CleanStSlot(const int dk, const int dj, const int di) {
+constexpr int StSlot(const int dk, const int dj, const int di) {
   return ((dk != 0) + (dj != 0) + (di != 0) == 0) ? 0 :
          ((dk != 0) + (dj != 0) + (di != 0) == 1) ?
          1 + 2*((dk != 0) ? 2 : (dj != 0)) + (dk + dj + di > 0) :
@@ -317,7 +317,7 @@ constexpr int CleanStSlot(const int dk, const int dj, const int di) {
 }
 
 KOKKOS_INLINE_FUNCTION
-void CleanStOff(const int s, int &dk, int &dj, int &di) {   // (the offset of slot s)
+void StOff(const int s, int &dk, int &dj, int &di) {   // (the offset of slot s)
   dk = dj = di = 0;
   if (s > 0 && s < 7) {
     const int d = ((s - 1) % 2) ? 1 : -1;
@@ -330,13 +330,13 @@ void CleanStOff(const int s, int &dk, int &dj, int &di) {   // (the offset of sl
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanGasEint
+//! \fn Real GasEint
 //! \brief gas internal energy of uh at (k,j,i): total less ekin, d phi (etotgrav) and
 //! the magnetic energy, as RadiationVet::Opacity forms it
 
 KOKKOS_INLINE_FUNCTION
-Real CleanGasEint(const CleanArgs &x, const DvceArray5D<Real> &uh, const Real ekin,
-                  const int m, const int k, const int j, const int i) {
+Real GasEint(const SolveArgs &x, const DvceArray5D<Real> &uh, const Real ekin,
+             const int m, const int k, const int j, const int i) {
   Real eint = uh(m,IEN,k,j,i) - ekin;
   if (x.etg) eint -= uh(m,IDN,k,j,i)*x.phi(m,k,j,i);
   if (x.mhd) eint -= x.emag(m,k,j,i);
@@ -344,38 +344,38 @@ Real CleanGasEint(const CleanArgs &x, const DvceArray5D<Real> &uh, const Real ek
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn int CleanBc
+//! \fn int FaceBc
 //! \brief boundary type of side s of MeshBlock m: the mesh's on a physical boundary,
 //! VET_IBC_PERIODIC on a face shared with a MeshBlock or panel
 
 KOKKOS_INLINE_FUNCTION
-int CleanBc(const CleanArgs &x, const int m, const int s) {
+int FaceBc(const SolveArgs &x, const int m, const int s) {
   const BoundaryFlag f = x.mbc(m,s);
   return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
           f == BoundaryFlag::panel) ? VET_IBC_PERIODIC : x.bc[s];
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool CleanOpen
+//! \fn bool IsOpenFace
 //! \brief true if side s of MeshBlock m lets the rays' flux through (not wall or flux)
 
 KOKKOS_INLINE_FUNCTION
-bool CleanOpen(const CleanArgs &x, const int m, const int s) {
-  const int bc = CleanBc(x, m, s);
+bool IsOpenFace(const SolveArgs &x, const int m, const int s) {
+  const int bc = FaceBc(x, m, s);
   return bc != VET_IBC_REFLECT && bc != VET_IBC_FLUX;
 }
 
 //----------------------------------------------------------------------------------------
-//! \struct CleanShell
+//! \struct HaloShell
 //! \brief cells of an n3 x n2 x n1 array outside the inner box [k0,k1]x[j0,j1]x[i0,i1]
 //! (inset by g), numbered plane by plane
 
-struct CleanShell {
+struct HaloShell {
   int n1, n2, n3, i0, i1, j0, j1, k0, k1;
   int nio, ncell;
-  CleanShell(const int n3_, const int n2_, const int n1_, const int g, const int is,
-             const int ie, const int js, const int je, const int ks, const int ke,
-             const bool md, const bool td) :
+  HaloShell(const int n3_, const int n2_, const int n1_, const int g, const int is,
+            const int ie, const int js, const int je, const int ks, const int ke,
+            const bool md, const bool td) :
       n1(n1_), n2(n2_), n3(n3_), i0(is + g), i1(ie - g), j0(md ? js + g : 0),
       j1(md ? je - g : n2_ - 1), k0(td ? ks + g : 0), k1(td ? ke - g : n3_ - 1) {
     nio = n1 - (i1 - i0 + 1);
@@ -385,11 +385,11 @@ struct CleanShell {
 };
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanShellCell
+//! \fn void HaloShellCell
 //! \brief cell (k,j,i) number q of the shell s
 
 KOKKOS_INLINE_FUNCTION
-void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
+void HaloShellCell(const HaloShell &s, int q, int &k, int &j, int &i) {
   const int np = s.n2*s.n1, nj = s.j1 - s.j0 + 1;
   const int pl = np - nj*(s.i1 - s.i0 + 1), nb = s.k0*np, nm = (s.k1 - s.k0 + 1)*pl;
   if (q < nb || q >= nb + nm) {
@@ -416,7 +416,7 @@ void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanSlotAdd, CleanSlotSum
+//! \fn void SlotAdd, SlotSum
 //! \brief counters of a kernel over many faces or cells: one atomic per thread in one of
 //! CLN_NSL slots (a single counter's atomics serialise all threads on a GPU), added to
 //! dst(n) after the kernel
@@ -424,13 +424,13 @@ void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
 constexpr int CLN_NSL = 4096;
 
 KOKKOS_INLINE_FUNCTION
-void CleanSlotAdd(const DvceArray1D<Real> &v, const int n, const int m, const int k,
-                  const int j, const int i, const Real a) {
+void SlotAdd(const DvceArray1D<Real> &v, const int n, const int m, const int k,
+             const int j, const int i, const Real a) {
   Kokkos::atomic_add(&v(n*CLN_NSL + ((i + 61*j + 1021*k + 131*m) & (CLN_NSL - 1))), a);
 }
 
 template <typename T>
-void CleanSlotSum(const DvceArray1D<Real> &v, const T &dst, const int nc) {
+void SlotSum(const DvceArray1D<Real> &v, const T &dst, const int nc) {
   auto w = v;
   auto d = dst;
   Kokkos::parallel_for("cln_slot", Kokkos::RangePolicy<>(DevExeSpace(), 0, nc),
@@ -442,11 +442,11 @@ void CleanSlotSum(const DvceArray1D<Real> &v, const T &dst, const int nc) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \struct CleanLevel
+//! \struct MgLevel
 //! \brief one level of the staggered multigrid: its blocks, vectors and their slots
 
-struct CleanLevel {
-  CleanW u;                    // blocks and vectors (m, slot, k, j, i)
+struct MgLevel {
+  WorkVec u;                    // blocks and vectors (m, slot, k, j, i)
   int o[3];                    // index of the first active cell along x1, x2, x3
   int n[3];                    // active cells along x1, x2, x3
   int t[3];                    // cells of a tile along x1, x2, x3 (layout_tile)
@@ -464,23 +464,23 @@ constexpr int CLS_N = 10;
 
 // heavy per-cell reductions at 256 threads per block (HIP's 1024 default caps VGPRs at
 // 128 on gfx942 and spills); max reductions and counts are bitwise.
-using CleanRp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+using SolveRp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
 
 // heavy per-cell passes: 2 blocks of 256 per SM (<= 128 registers) on CUDA, 1 on HIP
 #if defined(KOKKOS_ENABLE_CUDA)
-static constexpr int CleanLbMb(int mb) {return mb;}
+static constexpr int SolveLbMb(int mb) {return mb;}
 #else
-static constexpr int CleanLbMb(int) {return 1;}
+static constexpr int SolveLbMb(int) {return 1;}
 #endif
 
-using CleanRpLb2 =
-    Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, CleanLbMb(2)>>;
+using SolveRpLb2 =
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, SolveLbMb(2)>>;
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanFatal
+//! \fn void RadVetFatal
 //! \brief stops the run with a message about an unsupported clean-scheme setup
 
-static inline void CleanFatal(const std::string &msg) {
+static inline void RadVetFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
   // _Exit: no static destructors behind live Kokkos views
   std::_Exit(EXIT_FAILURE);

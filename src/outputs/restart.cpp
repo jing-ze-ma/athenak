@@ -302,7 +302,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       const int nct = pradvet->Time2RstNch();
       // one MeshBlock at a time (same bytes); the clean rays'
       // intensities (the last nfv channels) are copied to the host directly
-      const int nfv = pradvet->cln_cssc ? 0 : pradvet->CleanRstNfv(), nc0 = nct - nfv;
+      const int nfv = pradvet->cln_cssc ? 0 : pradvet->RstNfv(), nc0 = nct - nfv;
       // (the staging of a MeshBlock in pinned host memory, which the device writes
       // directly: no device copy of its channels at a dump; where the host reads device
       // memory (MI300A, CPU builds) the device array itself, packed in place: no
@@ -319,7 +319,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       double nw = win_mb_*1048576.0/(sizeof(Real)*ns);
       const double na = 0.5*pradvet->marena.extent(0)/ns;
       if (na >= 1.0) nw = std::min(nw, na);
-      const int nwin = (st && pradvet->CleanRstNfv() == 0) ?
+      const int nwin = (st && pradvet->RstNfv() == 0) ?
           std::max(1, static_cast<int>(std::min(static_cast<double>(nct), nw))) : nct;
       if (um) {
         outarray_vett_d = dbuf("rst-vett-d", nst, nwin);
@@ -345,8 +345,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         }
         auto fv = Kokkos::subview(outarray_vett, m, std::make_pair(nc0, nct), AL, AL,
                                   AL);
-        if (nfv > 0 && pradvet->CleanRstFv().extent_int(0) > m) {
-          Kokkos::deep_copy(fv, Kokkos::subview(pradvet->CleanRstFv(), m, AL, AL, AL,
+        if (nfv > 0 && pradvet->RstFv().extent_int(0) > m) {
+          Kokkos::deep_copy(fv, Kokkos::subview(pradvet->RstFv(), m, AL, AL, AL,
                                                 AL));
         } else if (nfv > 0) {
           Kokkos::deep_copy(fv, 0.0);
@@ -524,7 +524,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // clean scheme: hv[2] also holds t2_ok and cln_k1ok, as bits 2 and 4; versions 4
     // and 5, the clean scheme: no zero channels, the ring dense, then also the cubed
     // sphere's sc rays, Time2RstNchWant; version 7: the ring without the cubed sphere's
-    // zero stress / CLN_G fields, CleanRingFields)
+    // zero stress / CLN_G fields, RingFields)
     const bool cl = (pradvet != nullptr);
     const bool fk = cl && pradvet->cln_fsolve && pradvet->cln_fkin;
     const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 7 : (fk ? 2 : 1)) : 0,

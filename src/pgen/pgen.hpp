@@ -142,7 +142,7 @@ class ProblemGenerator {
   DvceArray5D<Real> pgen_rst_slabs_in;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
-  // Called once per stage by RadiationVet::HydroConToPrim
+  // Called once per stage by RadiationVet::GasUpdate
   // right AFTER the VET implicit coupling wrote the gas u0 and BEFORE the fluid refresh
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).

@@ -1497,7 +1497,7 @@ void Mesh::NewTimeStep(const Real tlim) {
 
   // vet_gd_rotate_dt + vet_gd_rotate_align: land on the rotation times
   if (pmb_pack->pradvet != nullptr) {
-    dt = pmb_pack->pradvet->VetGdAlignDt(time, dt);
+    dt = pmb_pack->pradvet->RotAlignDt(time, dt);
   }
 
   // limit last time step to stop at tlim *exactly*

@@ -31,12 +31,12 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanPreflight
+//! \fn void RadiationVet::CheckKeys
 //! \brief checks the <rad_vet> / <time> keys an input names under scheme = clean: a
 //! replaced key names its clean counterpart, unread keys are listed once, and a key that
 //! would change the physics stops the run unless off.
 
-void RadiationVet::CleanPreflight(ParameterInput *pin) {
+void RadiationVet::CheckKeys(ParameterInput *pin) {
   // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal unless off, "x"
   // removed (fatal when named), "=v" fatal unless v (old restart value), "+v" too, with a
   // NOTE where a restart file of an older code has no such key; else clean key
@@ -295,17 +295,17 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
         if (ln.param_comment == ParameterInput::default_comment &&
             !(c[0] == '=' && global_variable::restart_run)) break;
         if (c == "x") {
-          CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
-                     "rays, a debug hook removed or a retired study key); remove it "
-                     "from the input");
+          RadVetFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
+                      "rays, a debug hook removed or a retired study key); remove it "
+                      "from the input");
         }
         if (c[0] == '=' && !ParameterInput::SameValue(v, c.substr(1))) {
-          CleanFatal("<" + k + "> = " + v + ": the key was removed, the code runs " +
-                     c.substr(1) + " (name " + ln.param_name + "=" + c.substr(1) +
-                     " to continue so)");
+          RadVetFatal("<" + k + "> = " + v + ": the key was removed, the code runs " +
+                      c.substr(1) + " (name " + ln.param_name + "=" + c.substr(1) +
+                      " to continue so)");
         }
         if (c == "!" && v != "false" && v != "0" && v != "off") {
-          CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
+          RadVetFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
         if (c.empty() || c == "!") none += " " + k;   // (accepted value)
         if (c != "!" && c[0] != '=' && k.compare(0, 17, "rad_vet/implicit_") == 0) {
@@ -359,7 +359,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     return nw || recipe::Fix(pin, "rad_vet", k, v, o);
   };
   {
-    CleanPreflight(pin);
+    CheckKeys(pin);
     // rst_version, recorded: a restart file without it is of an older code, whose value of
     // a key it does not hold is not the only one left; name it to continue with that
     if (!nw && !pin->DoesParameterExist("rad_vet","rst_version")) {
@@ -434,9 +434,9 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     cln_tol_nl = pin->GetOrAddReal("rad_vet","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_vet","clean_ray_min",1.0e-3);
     // clean_rot_ring = off | live | jump (live where the vet_gd rays rotate with a
-    // cross-fade, CleanInit): the rotating union swept as the current (+ next) set, older
-    // sets as moment offsets (CleanRingMoments). clean_rot_fuse: the live ring's two sets
-    // in one fused sweep (bitwise the two sweeps; a second intensity array)
+    // cross-fade, InitArrays): the rotating union swept as the current (+ next) set,
+    // older sets as moment offsets (RingMoments). clean_rot_fuse: the live ring's two
+    // sets in one fused sweep (bitwise the two sweeps; a second intensity array)
     cln_rfuse = pin->GetOrAddBoolean("rad_vet","clean_rot_fuse",
                                      fix("clean_rot_fuse", "true", "false"));
     if (pin->DoesParameterExist("rad_vet","clean_rot_ring")) {
@@ -452,14 +452,14 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
     cln_optn = pin->GetOrAddInteger("rad_vet","clean_stag_opac_passes",3);
     // fschur where it applies: F lines exact across MeshBlocks
-    // and periodic wraps (CleanStagFSchur); needs a uniform mesh and MeshBlocks of >= 3
+    // and periodic wraps (FluxSchur); needs a uniform mesh and MeshBlocks of >= 3
     // cells along a line (>= 6 on longer or open lines)
     {Mesh *pm = pmy_pack->pmesh;
     // (cubed sphere: a lateral line is a ring of four panels' MeshBlocks)
     const bool cs = pm->use_cubed_sphere;
     bool ok = !pm->multilevel, lag = false;
     for (int d = 0; d < 3; ++d) {
-      // (layout_invariant_mode = tile: tiles as MeshBlocks, CleanStagFSchurTile)
+      // (layout_invariant_mode = tile: tiles as MeshBlocks, FluxSchurTile)
       const int n = (d > 0 && repro::tile_n > 0) ? repro::tile_n :
           ((d == 0) ? pm->mb_indcs.nx1 :
                       ((d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3));
@@ -481,7 +481,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       std::cout << "<rad_vet> the F solve's line ends are lagged (mesh or MeshBlock size)"
                 << std::endl;
     }
-    // layout_tile: a periodic line joins whole MeshBlocks (CleanStagFSchurTile)
+    // layout_tile: a periodic line joins whole MeshBlocks (FluxSchurTile)
     for (int d = 1; d < 3 && cln_fschur && repro::tile_n > 0 && !cs; ++d) {
       const int nx = (d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3;
       const int nbm = ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3)/nx;
@@ -520,12 +520,12 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // faces <= c E of their donor
     cln_freal = cln_gflux;
     // clean_stag_thinf: the bracket's ray correction in the face half ranges, realisable
-    // (CleanStagBracket)
+    // (FaceBracket)
     cln_thinf = pin->GetOrAddBoolean("rad_vet","clean_stag_thinf",
                                      fix("clean_stag_thinf", "true", "false"));
     // fwb: F rows in deviation form about the rays' own state, their exact steady state
-    // (CleanStagFSolve); fwb_ring: its s of the phi faces (3-D sp, periodic x3) less its
-    // ring mean: no torque on a ring (CleanStagFwbProject)
+    // (FluxSolve); fwb_ring: its s of the phi faces (3-D sp, periodic x3) less its
+    // ring mean: no torque on a ring (FluxBalanceProject)
     cln_fwb = cln_consist;
     cln_fwbring = cln_fwb && pmy_pack->pmesh->use_spherical_polar &&
         pmy_pack->pmesh->three_d &&
@@ -533,7 +533,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     recipe::Rule(pin, "rad_vet", "clean_stag_fwb_ring", cln_fwbring ? "true" : "false");
     // clean_stag_fcone (default on with fwb, recorded): every cell's flux vector within
     // its realisable cone, |F| <= c E, by construction: the faces scaled towards 0
-    // (CleanStagFCone)
+    // (FluxCone)
     cln_fcone = pin->GetOrAddBoolean("rad_vet","clean_stag_fcone",cln_fwb &&
                                      fix("clean_stag_fcone", "true", "false"));
     if (cln_fcone && !cln_fsolve) {
@@ -542,11 +542,11 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
     // clean_stag_fcone_lz (read only when named, default off): fcone takes a cell's
-    // excess from its faces without L_z lever arm first (CleanLzFamily: spherical polar
+    // excess from its faces without L_z lever arm first (LzFamily: spherical polar
     // x1, x2; cubed sphere x1; Cartesian x3), cut and counted as now; a face with an arm
     // is scaled only where those faces alone exceed c E, and its cut is the gas's at the
     // face (as fcone_gas; clean_lz_spin: a rigid rotation), so that L_z is exact (cubed
-    // sphere: CleanCsTorque)
+    // sphere: CsTorque)
     cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
                pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
     // clean_stag_fcone_emax (read only when named; needs clean_stag_fcone): every inner
@@ -565,18 +565,18 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
-    // radiation's (CleanLzBook)
+    // radiation's (LzBook)
     if (pmy_pack->pmesh->use_cubed_sphere) cln_lza = 2;
     cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
                                     pmy_pack->pmesh->three_d);
-    // clean_cs_lz_tel: L_z by telescoping (gas phi momentum of CleanCsTorque, radiation
+    // clean_cs_lz_tel: L_z by telescoping (gas phi momentum of CsTorque, radiation
     // L_z of its face momenta), so the ledger holds the radial boundaries' torque alone
     if (cln_lza == 2 || pin->DoesParameterExist("rad_vet", "clean_cs_lz_tel")) {
       cln_lzt = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_tel",
                                      fix("clean_cs_lz_tel", "true", "false"));
     }
     // clean_cs_lat_wb: a spherically symmetric P gives the cs lateral faces no force
-    // (CleanStagCsLat).  Default on for the cubed sphere, also on a restart without it
+    // (CsLat).  Default on for the cubed sphere, also on a restart without it
     if (cln_lza == 2) {
       cln_latwb = pin->GetOrAddBoolean("rad_vet","clean_cs_lat_wb",
                                        fix("clean_cs_lat_wb", "true", "false"));
@@ -594,7 +594,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     // clean_lz_spin (read only when named; needs clean_stag_fcone_lz, on the cubed sphere
     // clean_cs_lz_tel): the L_z of the momentum that fcone's cut of the faces with an
     // arm and clean_wb_mcap's cap withhold is the gas's as one rigid rotation dOmega =
-    // X/I, I = sum rho V R^2 (CleanWriteBack), not the face's gas: L_z exact, no kick
+    // X/I, I = sum rho V R^2 (WriteBack), not the face's gas: L_z exact, no kick
     if (pin->DoesParameterExist("rad_vet","clean_lz_spin")) {
       cln_lzsp = pin->GetBoolean("rad_vet","clean_lz_spin");
       if (cln_lzsp && (!cln_fclz || (pmy_pack->pmesh->use_cubed_sphere && !cln_lzt))) {
@@ -628,7 +628,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
                                    fix("clean_clos1_budget", "true", "false"));
     // clean_bud_maxnorm (default; false: the L2 norm): the budget passes' linear test and
     // Eisenstat-Walker |r0| in the max norm over the cells, the norm of the pass's own
-    // test (CleanNewtonUpdate)
+    // test (NewtonUpdate)
     cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",
                                    fix("clean_bud_maxnorm", "true", "false"));
     // clean_wb_exch_local (default): the write-back's cell exchange
@@ -637,7 +637,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
                                    fix("clean_wb_exch_local", "true", "false"));
     // clean_wb_mcap (read only when named; default false): the write-back gives the gas
     // the face momentum terms at the Newton passes' cap h chi_f E, the momentum whose
-    // work the E row paid (CleanMomentumChange); the terms withheld are printed
+    // work the E row paid (FaceMomentumChange); the terms withheld are printed
     if (pin->DoesParameterExist("rad_vet","clean_wb_mcap")) {
       cln_wbmc = pin->GetBoolean("rad_vet","clean_wb_mcap");
     }
@@ -652,7 +652,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     if (pin->DoesParameterExist("rad_vet","clean_dbg_inf")) {
       cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
     }
-    // preconditioner: mg (CleanStagVCycle)
+    // preconditioner: mg (VCycle)
     {
     // layout_tile N: the mg acts on fixed N x N (x2, x3) tiles as on MeshBlocks, so the
     // solve is the same for every layout of whole tiles (one MeshBlock along x1)
@@ -679,7 +679,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     }
     // clean_pc_sweep = sym (the default, recorded) | rb | rbr | rbrsym: the mg's
     // smoothing on each level, a forward red-black sweep, + a second red pass (rbr), + a
-    // black-red post-sweep after the coarse correction (sym) (CleanStagVCycle)
+    // black-red post-sweep after the coarse correction (sym) (VCycle)
     const std::string sw = pin->GetOrAddString("rad_vet","clean_pc_sweep",
         fix("clean_pc_sweep", "sym", "rb") ? "sym" : "rb");
     cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
@@ -690,7 +690,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }}
     // sp / Cartesian: the faces' lateral stress from the cells' sums Y
-    // (CleanStagCsLateral), the cs form
+    // (CsLateralStress), the cs form
     cln_ysum = pmy_pack->pmesh->multi_d && !pmy_pack->pmesh->use_cubed_sphere;
     // clean_closure: predict | iterate | extrap | extrap1 | extrap2 | eddington | sphere
     {std::string cl = pin->GetOrAddString("rad_vet","clean_closure","extrap1");

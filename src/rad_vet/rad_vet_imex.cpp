@@ -67,7 +67,7 @@ bool RadiationVet::Time2Active() {
 //! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 with the Heun hydro.
 //!   which = 1 (before the stage-1 solve): the Heun-stage-1 gas U* is kept in t2hs; the
 //!     solve takes S = U^n + g (U* - U^n), the gas at t^n + g dt.
-//!   which = 2 (first in HydroConToPrim, gas Y = S + d): the gas becomes U* + d.
+//!   which = 2 (first in GasUpdate, gas Y = S + d): the gas becomes U* + d.
 //!   which = 3 (after the stage tasks): w0 is refreshed from the hydro's stage-2 flux
 //!     state U* + f d (f = 1/g non-stiff, -> 1 stiff), then u0 is U* + d again.
 //! time2_gtime_mom: momentum's f = 1/g in every cell; IEN takes its kinetic-energy
@@ -274,9 +274,9 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     in_(m,n,k,j,i) = v;
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
-  CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
+  FluxMemoryInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
   Time2FaceFct(stage, c1, c2);
-  CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
+  BoundaryEnergyAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? VET_T2S_STAGE1 : VET_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
@@ -289,15 +289,15 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
 //! memory and ray history
 
 void RadiationVet::Time2Stash() {
-  CleanDMem(true);
-  CleanRayHistory(true);
+  FluxMemoryKeep(true);
+  RayHistory(true);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRayHistory
-//! \brief save: keep the rays' history (CleanRayKeep); else restore it (a stage failed)
+//! \fn void RadiationVet::RayHistory
+//! \brief save: keep the rays' history (RayKeep); else restore it (a stage failed)
 
-void RadiationVet::CleanRayHistory(const bool save) {
+void RadiationVet::RayHistory(const bool save) {
   DvceArray5D<Real> *a[6] = {&cln_fvi, &cln_fh, &cln_top, &cln_rr, &cln_rpd, &cln_rnew};
   auto &k = cln_rk;
   auto cp = [](auto &d, const auto &s) {
@@ -369,9 +369,9 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
     hydro::AmModule *pam = hydro::AmModuleOf(pmy_pack);
     Kokkos::deep_copy(DevExeSpace(), pam->am_spin, pam->am_spin1);
   }
-  CleanDMem(false);
-  CleanRayHistory(false);
-  cln_lzp = 0.0;   // (the L_z ledger: the failed stages' pending part, CleanLzBook)
+  FluxMemoryKeep(false);
+  RayHistory(false);
+  cln_lzp = 0.0;   // (the L_z ledger: the failed stages' pending part, LzBook)
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
@@ -481,7 +481,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::Time2AutoBeBegin
-//! \brief time2_auto_be: called by the Driver at the cycle start (after VetGdRotStep).
+//! \brief time2_auto_be: called by the Driver at the cycle start (after RotNewBlock).
 //! A skip step is put in the state the stage fallback leaves (Time2Restore): no valid
 //! slope (Heun hydro, then the BESTORE solve), cold predictor.  A retried cycle calls it
 //! again with the same state.
@@ -579,7 +579,7 @@ void RadiationVet::Time2Accept(Driver *pdrive) {
   // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
   t2_solve = radvet::VET_T2S_NONE;
   t2_nstep += 1.0;
-  (void) ApplyClosureLimits(pdrive, 1);
+  (void) StageTimers(pdrive, 1);
   (void) NewTimeStep(pdrive, 1);
   t2_dtprev = pmy_pack->pmesh->dt;
 }
@@ -594,12 +594,13 @@ void RadiationVet::BackwardEuler(Driver *pdrive) {
   const bool vetbe2 = (time_scheme == VET_TIME_HESDIRK2);
   t2_solve = vetbe2 ? VET_T2S_BESTORE : VET_T2S_NONE;
   int nsub = SetSubsteps(pmy_pack->pmesh->dt);
-  CleanBndAcc(0, 0.0, 0.0, 0.0, pmy_pack->pmesh->dt);   // (history: boundary energy)
+  // (history: boundary energy)
+  BoundaryEnergyAcc(0, 0.0, 0.0, 0.0, pmy_pack->pmesh->dt);
   for (int nst=0; nst<nsub; ++nst) {
     for (int stage=1; stage<=(nstage); ++stage) {
       RunStage(pdrive, stage);
     }
-    (void) ApplyClosureLimits(pdrive, 1);
+    (void) StageTimers(pdrive, 1);
   }
   (void) NewTimeStep(pdrive, 1);
   if (vetbe2) {

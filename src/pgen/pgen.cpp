@@ -1912,7 +1912,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool t2_read = t2_acc &&
                        (!t2_h2 || static_cast<int>(pradvet->t2k1.extent(0)) >= nmb);
   // (staggered fkin: every clean file carries its state in that block, a file without
-  // it is the old scheme's, CleanRstFaces; of the old block only its slope K1, the first
+  // it is the old scheme's, RestartFaces; of the old block only its slope K1, the first
   // slabs: the first step is the stage step it would have taken)
   const bool t2_old = (pradvet != nullptr) &&
                       pradvet->cln_fsolve && pradvet->cln_fkin && !t2_acc;

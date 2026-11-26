@@ -29,7 +29,7 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagFSolve
+//! \fn void RadiationVet::FluxSolve
 //! \brief clean_stag_fsolve: with E of the solution, the face momentum F alone, one
 //! unknown per face:
 //!   (F - G)/h + c^2 [P_R - P_L]/dx_f = -c chi_f (F - A) (+ beta terms),
@@ -41,22 +41,22 @@ namespace radvet {
 //! clean_stag_fkin: the streaming share w_i takes the rays' kinetic upwind flux,
 //!   P_i = (1 - w_i) [(D E)_i - al_i [F]_i/(2c)] + w_i (h+_i F_lo + h-_i F_hi)/c,
 //! in area form on spherical polar (F r^2 of a beam steady); telescoping, M-matrix
-//! (h+ >= 0 >= h-).  Cubed sphere: a line's cell terms are the face family's (CleanFLine,
-//! CleanCsFamily), area form (A_R P_R - A_L P_L)/V_f; seams iterate (up to 64 sweeps,
+//! (h+ >= 0 >= h-).  Cubed sphere: a line's cell terms are the face family's (FluxLine,
+//! CsFamily), area form (A_R P_R - A_L P_L)/V_f; seams iterate (up to 64 sweeps,
 //! 1e-14), a shared face takes the lower gid's F (bitwise); lateral stress stays D E.
 
-void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool lat) {
+void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   // lat false: the caller's lateral sums are those of e
-  if (lat) CleanStagCsLateral(e);
-  CleanArgs x = CleanMakeArgs(), xh = x;
+  if (lat) CsLateralStress(e);
+  SolveArgs x = MakeArgs(), xh = x;
   xh.hi = true;
   auto op = opac;
-  const CleanFLine ln{cln_vf, x.cub};
+  const FluxLine ln{cln_vf, x.cub};
   const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
   const bool rms = cln_rstold && !cln_rmdone && fk && e == CLW_X && dok;
   DvceArray1D<Real> rmc("cln_rmc", 1);
@@ -77,12 +77,12 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
   const int f0 = (cub && pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
                  ? 2 : 0;
   auto yfill = [&](const int part) {
-    if (cub) {   // CleanFLine reads the faces' own cells, of the face's family (fm)
-      CleanGhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
+    if (cub) {   // FluxLine reads the faces' own cells, of the face's family (fm)
+      GhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, FluxMask(f0));
       return;
     }
-    if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
-    CleanGhostFill(cln_w, CLW_Y, std::min(x.nf, 2), part);
+    if (x.nf == 3) GhostDefer(cln_w, CLW_S, 1);
+    GhostFill(cln_w, CLW_Y, std::min(x.nf, 2), part);
   };
   // three phases (F^H and al; line solves; F), each direction with its own al and F, so
   // each exchange serves all.  clean_stag_fsweeps N: up to N line solves, each with the
@@ -97,28 +97,28 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
     if (ph == 0) {
-      // F^H of every face (CLF_N) and the cell terms of every cell (CleanFLine)
-      const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-      CleanFor<4>("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      // F^H of every face (CLF_N) and the cell terms of every cell (FluxLine)
+      const SolveArgs *px = DevArgs(x, 0), *pxh = DevArgs(xh, 1);
+      SolveFor<4>("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const CleanArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
-        CleanDirCase(dir, [&](auto d) {
+        const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
+        DirCase(dir, [&](auto d) {
           constexpr int n = decltype(d)::value;
-          fc(m,CLF_N,k,j,i) = CleanFaceFlux<n>(xh, e, n, m, k, j, i, true);
+          fc(m,CLF_N,k,j,i) = FaceFlux<n>(xh, e, n, m, k, j, i, true);
         });
-        fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // F^H for CleanStagDrag (QL is free)
+        fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // F^H for FaceDrag (QL is free)
         fc(m,CLF_N+1,k,j,i) = 0.0;
-        if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
+        if (!fk || !x.sph || dir == 2 || IsBoundaryFace(x, dir, m, k, j, i)) return;
         // spherical polar: the w share's transverse pressures (but not the normal
         // stress's, q = 4) are the rays' own (CLN_G) where the cell holds their J
-        const Real q1 = CleanStagSph(x, 1, dir, m, k, j, i);
-        const Real qn = 2.0*CleanStagSph(x, 4, dir, m, k, j, i)/q1;
+        const Real q1 = SphFaceFactor(x, 1, dir, m, k, j, i);
+        const Real qn = 2.0*SphFaceFactor(x, 4, dir, m, k, j, i)/q1;
         auto wq = [&](const int q, const int kk, const int jj, const int ii) {
           const Real ec = x.w(m,e,kk,jj,ii);
-          const Real rs = CleanSmoothStep(2.5*fmax(ec, 0.0)/
-                                          fmax(x.cs(m,CLN_J,kk,jj,ii), 1.0e-300) - 0.25);
-          return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*rs*
-                 (q1*(CleanStagSph(x, q, dir, m, k, j, i) -
+          const Real rs = SmoothStep(2.5*fmax(ec, 0.0)/
+                                     fmax(x.cs(m,CLN_J,kk,jj,ii), 1.0e-300) - 0.25);
+          return SmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*rs*
+                 (q1*(SphFaceFactor(x, q, dir, m, k, j, i) -
                       qn*x.cs(m,CLN_D11+dir,kk,jj,ii))*ec -
                   x.cs(m,CLN_G+dir,kk,jj,ii)/x.vol(m,kk,jj,ii));
         };
@@ -127,15 +127,15 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       auto v = cln_vf;
       auto f1 = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real rc;
-        const Real tau = op(m,VET_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
+        const Real tau = op(m,VET_OP_T,k,j,i)*CellFaceDistance(x, dir, m, k, j, i);
         // fkin: the streaming share is kinetic, without dissipation
-        Real a = fk ? 0.0 : CleanDissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
+        Real a = fk ? 0.0 : DissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
         for (int s = 0; s < 2; ++s) {
           const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
           if (!fk) a = fmax(a, fc(m,CLF_W,kf,jf,iff));
           const Real f = fc(m,CLF_N,kf,jf,iff);
           const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
-          if (!fk && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
+          if (!fk && !IsBoundaryFace(x, dir, m, kf, jf, iff) &&
               !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
           // cubed sphere faces: the last F solve's
           if (cub) v(m,9+2*dir+s,k,j,i) = fc(m,CLF_N+2,kf,jf,iff);
@@ -143,7 +143,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
         // fkin: w of the cell; the part of P - D E without F, -w D E, and the stress the
         // kinetic form misses for the rays' own state, (D - s^2) J (0 for a beam, J/3
         // isotropic), lagged; cubed sphere: D about the family's mean normal, area form
-        const Real wc = fk ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
+        const Real wc = fk ? SmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
                            : 0.0;
         const Real ec = x.w(m,e,k,j,i);
         const Real sr = x.cs(m,CLN_HP+dir,k,j,i) + x.cs(m,CLN_HM+dir,k,j,i);
@@ -154,12 +154,12 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
           x.w(m,CLW_L+3*dir+1,k,j,i) = wc*((dd - sr*sr)*jc - dd*ec);
           x.w(m,CLW_L+3*dir+2,k,j,i) = wc;
           // F of the low face, for the exchange (multi-D: the last F solve's)
-          x.w(m,CleanFLine::Cy(dir),k,j,i) = fc(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,
-                                                j,i);
+          x.w(m,FluxLine::Cy(dir),k,j,i) = fc(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,
+                                              j,i);
           return;
         }
         Real nd[3][3], dd = 0.0;
-        CleanCsFamily(x, m, k, j, i, nd);
+        CsFamily(x, m, k, j, i, nd);
         for (int b = 0; b < 3; ++b) {
           for (int c = 0; c < 3; ++c) {
             dd += nd[dir][b]*nd[dir][c]*x.cs(m,CLN_D11+((b == c) ? b : 2 + b + c),k,j,i);
@@ -175,23 +175,23 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       // (fm), started once the last direction's sent cells are done
       const bool pv = cub && f0 > 0 && dir == x.nf - 1;
       const std::function<void()> post = [&]() {
-        CleanGhostDefer(cln_vf, 3, 6, 1);
+        GhostDefer(cln_vf, 3, 6, 1);
         cln_hpend.back().fm = {0, 7, 070, 0};
-        CleanGhostDefer(cln_vf, 11, 4, 1);
+        GhostDefer(cln_vf, 11, 4, 1);
         cln_hpend.back().fm = {0, 3, 014, 0};
-        CleanGhostFill(cln_vf, 16, 2, true, 1, 1, {0, 1, 2, 0});
+        GhostFill(cln_vf, 16, 2, true, 1, 1, {0, 1, 2, 0});
       };
-      const std::function<void()> fin = [&]() {CleanGhostFill(cln_vf, 16, 2, true, 2, 1);};
+      const std::function<void()> fin = [&]() {GhostFill(cln_vf, 16, 2, true, 2, 1);};
       if (pv) {
-        CleanOverlapFor("cln_fs1", pmy_pack, true, f1, fin, -1, post);
+        OverlapFor("cln_fs1", pmy_pack, true, f1, fin, -1, post);
       } else {
-        CleanFor("cln_fs1", nmb1, ks, ke, js, je, is, ie, f1);
+        SolveFor("cln_fs1", nmb1, ks, ke, js, je, is, ie, f1);
       }
       if (dir == x.nf - 1 && !pv) {
         if (cub) {
-          CleanGhostFill(cln_vf, 0, 18, true, 0, 1);
+          GhostFill(cln_vf, 0, 18, true, 0, 1);
         } else {
-          CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
+          GhostDefer(cln_w, CLW_L, 3*x.nf);
           yfill(0);
         }
       }
@@ -205,9 +205,9 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
     // the absorption of F, not s, whose s V/c^2 is booked as the radiation's (L_z: dlz).
     // E and the energy flux memory G + d are unchanged.
     if (fwb && q == x.nf) {
-      const CleanArgs *pw = CleanDevArgs(x, 0);
+      const SolveArgs *pw = DevArgs(x, 0);
       // clean_stag_fwb_ring: s and its weight of the projected faces
-      // (CleanStagFwbProject)
+      // (FluxBalanceProject)
       DvceArray4D<Real> rs, rw;
       if (cln_fwbring) {
         rs = ScratchView<DvceArray4D<Real>>("cln_fwrs", nmb1 + 1, u0.extent_int(2),
@@ -217,25 +217,25 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       }
       auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
       if (wbc) Kokkos::deep_copy(sl, 0.0);
-      // the F slots of the lines (CleanFLine) hold F_ray, then the solve's start again
+      // the F slots of the lines (FluxLine) hold F_ray, then the solve's start again
       for (int pass = 0; pass < 2; ++pass) {
         for (int d = 0; d < x.nf; ++d) {
           const int ek = (d == 2), ej = (d == 1), ei = (d == 0);
           auto fd = x.fc[d];
-          CleanFor("cln_fwbs", nmb1, ks, ke, js, je, is, ie,
+          SolveFor("cln_fwbs", nmb1, ks, ke, js, je, is, ie,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-            const CleanArgs &x = *pw;
+            const SolveArgs &x = *pw;
             for (int s = 0; s < (cub ? 2 : 1); ++s) {
               const int kf = k + s*ek, jf = j + s*ej, iff = i + s*ei;
               Real f = cub ? fd(m,CLF_N+2,kf,jf,iff)
                            : fd(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,j,i);
-              if (pass == 0 && !CleanBoundaryFace(x, d, m, kf, jf, iff)) {
-                f = CleanStagFRay(x, e, d, m, kf, jf, iff);
+              if (pass == 0 && !IsBoundaryFace(x, d, m, kf, jf, iff)) {
+                f = FluxRay(x, e, d, m, kf, jf, iff);
               }
               if (cub) {
                 ln.v(m,9+2*d+s,k,j,i) = f;
               } else {
-                x.w(m,CleanFLine::Cy(d),k,j,i) = f;
+                x.w(m,FluxLine::Cy(d),k,j,i) = f;
               }
             }
           });
@@ -250,19 +250,19 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
             Kokkos::deep_copy(rs, 0.0);
             Kokkos::deep_copy(rw, 0.0);
           }
-          CleanFor("cln_fwb", nmb1, ks, ke+ek, js, je+ej, is, ie+ei,
+          SolveFor("cln_fwb", nmb1, ks, ke+ek, js, je+ej, is, ie+ei,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-            const CleanArgs &x = *pw;
+            const SolveArgs &x = *pw;
             Real lo, hi, dg, r;
-            if (CleanBoundaryFace(x, d, m, k, j, i)) return;
-            if (!CleanStagFRow(x, ln, fd, d, m, k, j, i, lo, hi, dg, r)) return;
-            const Real f0 = CleanStagFRay(x, e, d, m, k, j, i);
+            if (IsBoundaryFace(x, d, m, k, j, i)) return;
+            if (!FluxRow(x, ln, fd, d, m, k, j, i, lo, hi, dg, r)) return;
+            const Real f0 = FluxRay(x, e, d, m, k, j, i);
             const Real fm = ln.Far(x, d, m, k, j, i, k-ek, j-ej, i-ei);
             const Real fp = ln.Far(x, d, m, k, j, i, k, j, i);
             const Real qd = x.drag ? fd(m,CLF_DB,k,j,i) : 0.0;
             const Real tau = 0.5*(x.op(m,VET_OP_T,k,j,i) +
                                   x.op(m,VET_OP_T,k-ek,j-ej,i-ei))*
-                             CleanCellFaceDistance(x, d, m, k, j, i);
+                             CellFaceDistance(x, d, m, k, j, i);
             const Real s = fd(m,CLF_W,k,j,i)/(1.0 + tau)*
                 (lo*fm + dg*f0 + hi*fp - r - (1.0 - qd)*(f0 - fd(m,CLF_G,k,j,i)));
             if (pj) {
@@ -271,19 +271,19 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
               return;
             }
             fd(m,CLF_N+1,k,j,i) += s/(x.h*x.c*x.c);
-            const Real p = fd(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
-                           CleanVol(x, m, k-ek, j-ej, i-ei))/(x.c*x.c);
+            const Real p = fd(m,CLF_TH,k,j,i)*s*0.5*(CellVolume(x, m, k, j, i) +
+                           CellVolume(x, m, k-ek, j-ej, i-ei))/(x.c*x.c);
             if (!wbc) return;   // counters: the printed s, the write-back's
-            CleanSlotAdd(sl, 0, m, k, j, i, 1.0);
-            CleanSlotAdd(sl, 1, m, k, j, i, fabs(p));
-            if (d == 0) CleanSlotAdd(sl, 2, m, k, j, i, p);
+            SlotAdd(sl, 0, m, k, j, i, 1.0);
+            SlotAdd(sl, 1, m, k, j, i, fabs(p));
+            if (d == 0) SlotAdd(sl, 2, m, k, j, i, p);
           });
-          if (pj) CleanStagFwbProject(d, CLF_N + 1, rs, rw, wbc);
+          if (pj) FluxBalanceProject(d, CLF_N + 1, rs, rw, wbc);
         }
       }
-      if (wbc) CleanSlotSum(sl, fwc, 3);
+      if (wbc) SlotSum(sl, fwc, 3);
     }
-    if (cln_fschur && q == x.nf) CleanStagFSchur();
+    if (cln_fschur && q == x.nf) FluxSchur();
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
@@ -292,14 +292,14 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       // per face (coalesced): lo (CLW_AM), hi (CLW_AP), dg (CLW_A0, then the Thomas den),
       // r (CLW_R0), faces with an equation (CLW_P), and in the sweep c' (CLW_CP); E-solve
       // scratch slots shared by the directions (the x1 PCR reads them too)
-      CleanFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      SolveFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
         // face tie: a line's high face shared with another MeshBlock or the periodic
-        // wrap is its owner's (whose low face it is): an identity row (CleanStagFaceTie)
+        // wrap is its owner's (whose low face it is): an identity row (FluxTie)
         const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
         Real lo, hi, dg, r;
-        const bool eq = CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own);
+        const bool eq = FluxRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own);
         x.w(m,CLW_AM,k,j,i) = lo;
         x.w(m,CLW_AP,k,j,i) = hi;
         x.w(m,CLW_A0,k,j,i) = dg;
@@ -309,7 +309,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
     }
     if (ph == 1 && dir == 0 && fpcr) {
       // clean_stag_fs_pcr: on a GPU the x1 lines by parallel cyclic reduction, one team
-      // per line (as CleanStagLineSolve); F to round-off of the Thomas solve
+      // per line (as LineSolve); F to round-off of the Thomas solve
       const int nx = n + 1;
       int nround = 0;
       while ((1 << nround) < nx) ++nround;
@@ -373,10 +373,10 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       // periodic wrap the last F solve's (lagged); cubed sphere: also the largest face
       // change and largest F.  layout_invariant_mode = tile: each tile of a lateral line
       // solved as a MeshBlock line, its inner ends from cln_fsjt, joined
-      // (CleanStagFSchurTile) or the last sweep's; a face two tiles share is its
+      // (FluxSchurTile) or the last sweep's; a face two tiles share is its
       // non-owner's identity row
       const int nk = (dir > 0 && repro::tile_n > 0) ? n/repro::tile_n : 1, nt = n/nk;
-      if (nk > 1) CleanFsjt(cln_fsjt[dir], nmb1 + 1, na*nb, nk);
+      if (nk > 1) FluxTileArray(cln_fsjt[dir], nmb1 + 1, na*nb, nk);
       auto jt = cln_fsjt[dir];
       const bool fsc = cln_fschur, olo = !(cub && tie), ohi = cub || !tie;
       auto line = KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
@@ -466,25 +466,25 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
       // sweeps: the cubed sphere until no face changes by 1e-14 of the largest F, else
       // until the owners' high-face F changes by < 1e-12 of itself
       const bool done = nsw > 1 &&
-          (cub ? CleanReduce(fsd, true) <= 1.0e-14*CleanReduce(fsf, true)
-               : (CleanStagFSweepChange() < 1.0e-12 && q >= 2*x.nf));
+          (cub ? GlobalReduce(fsd, true) <= 1.0e-14*GlobalReduce(fsf, true)
+               : (FluxSweepChange() < 1.0e-12 && q >= 2*x.nf));
       if (done) q = (1 + nsw)*x.nf - 1;
     }
     // cubed sphere: a face shared with another MeshBlock takes the lower gid's F, and the
     // cells' slots of it
-    if (cub && q == (1 + nsw)*x.nf) CleanStagFCsShared();
+    if (cub && q == (1 + nsw)*x.nf) FluxCsShared();
     if (ph == 2) {
       // F and the dissipation term of every face
-      const CleanArgs *px = CleanDevArgs(x, 0);
+      const SolveArgs *px = DevArgs(x, 0);
       auto f3 = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const CleanArgs &x = *px;   // in device memory: no per-thread copy
-        const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
+        const SolveArgs &x = *px;   // in device memory: no per-thread copy
+        const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,FluxLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // F^H: the boundary's, kept
-        if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+        if (IsBoundaryFace(x, dir, m, k, j, i)) return;
         // fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
-        // flux's high-order part, memory G + d (CleanFaceSource): its own history, so its
+        // flux's high-order part, memory G + d (FaceSource): its own history, so its
         // steady state does not depend on h
-        if (fk && e == CLW_X && dok) {   // and its slope (CleanDInc)
+        if (fk && e == CLW_X && dok) {   // and its slope (FluxMemoryInc)
           const Real th = fc(m,CLF_TH,k,j,i);
           const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - th)*fc(m,CLF_N+3,k,j,i);
           fc(m,CLF_N+3,k,j,i) += dd;
@@ -517,29 +517,29 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
         // the kinetic stress: the cubed sphere's area form over V_f, else the F row's
         Real dp, ds = 0.0;
         if (cub) {
-          dp = (pr - pl + CleanCsNormA(x, dir, m, k, j, i)*(tr[1] - tl[1]))/
+          dp = (pr - pl + CsNormA(x, dir, m, k, j, i)*(tr[1] - tl[1]))/
                (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,k-dk,j-dj,i-di)));
         } else {
-          dp = (x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir])*(pr - pl);
-          ds = x.sph ? CleanStagSph(x, 4, dir, m, k, j, i)*(pr + pl) : 0.0;
+          dp = (x.sph ? SphFaceFactor(x, 0, dir, m, k, j, i) : x.idx[dir])*(pr - pl);
+          ds = x.sph ? SphFaceFactor(x, 4, dir, m, k, j, i)*(pr + pl) : 0.0;
         }
-        const Real dc = 2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i);
+        const Real dc = 2.0*x.c*CellFaceDistance(x, dir, m, k, j, i);
         fc(m,CLF_N+1,k,j,i) += (tr[0]*(fp - f) - tl[0]*(f - fm))/dc - dp - ds;
       };
       // x1: the faces that read no ghost while the exchange of F finishes
       const bool ov = fov && dir == 0;
       const std::function<void()> fin = [&]() {
-        if (ov) CleanGhostFill(cln_w, CLW_Y, 1, 2);
+        if (ov) GhostFill(cln_w, CLW_Y, 1, 2);
       };
-      CleanOverlapFor("cln_fs3", pmy_pack, ov, f3, fin, dir);
+      OverlapFor("cln_fs3", pmy_pack, ov, f3, fin, dir);
     }
   }
-  if (cln_fcone) CleanStagFCone(e, kd);
-  if (tie_now) CleanStagFaceTie(e, kd);
+  if (cln_fcone) FluxCone(e, kd);
+  if (tie_now) FluxTie(e, kd);
   if (fwb && e == CLW_X) {   // clean_stag_fwb: radiation momentum of the residuals
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fwbc);
-    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
-    const Real p1 = CleanReduce(h(2), false);
+    const Real n = GlobalReduce(h(0), false), p = GlobalReduce(h(1), false);
+    const Real p1 = GlobalReduce(h(2), false);
     if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(p + p1))) {
       std::printf("CLEAN %sFWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
                   "%.6e x1 faces sum dp %.6e\n", std::isfinite(p + p1) ? "" : "WARNING ",
@@ -549,7 +549,7 @@ void RadiationVet::CleanStagFSolve(const int e, const bool tie_now, const bool l
   if (rms) {   // clean_rst_mshare: once, at the old file's first solution
     cln_rmdone = true;
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rmc);
-    const Real n = CleanReduce(h(0), false);
+    const Real n = GlobalReduce(h(0), false);
     if (global_variable::my_rank == 0) {
       std::printf(
           "<rad_vet> clean_rst_mshare RESTART CONVERSION (one time): the VET share's "

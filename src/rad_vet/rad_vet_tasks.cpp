@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file rad_vet_tasks.cpp
 //! \brief the workflow of <rad_vet>, read this file first: the task lists, and the
-//! implicit stage solve (CleanSolve) as a driver of named steps.
+//! implicit stage solve (StageSolve) as a driver of named steps.
 //!
 //! One time step (Driver::Execute, driver.cpp):
 //!   dt_retry checkpoint
@@ -15,9 +15,9 @@
 //!   else, or a failed stage: BackwardEuler (rad_vet_imex.cpp), dt_sub = dt
 //!   dt_retry (a solve raised dtr_fail: the cycle again) or ledgers, outputs
 //! One implicit stage = the vet_* task lists (AssembleRadVetTasks):
-//!   InitRecv -> Opacity -> CleanSolve -> HydroConToPrim (floor caps, gas ghosts,
+//!   InitRecv -> Opacity -> StageSolve -> GasUpdate (floor caps, gas ghosts,
 //!   primitives) -> ghosts of E, F
-//! CleanSolve:
+//! StageSolve:
 //!   closure -> old vector, face coefficients -> first iterate
 //!   passes: [closure, opacity] -> right-hand side, operator -> E -> gas T -> face F, gas
 //!     momentum, drag -> settled?
@@ -60,10 +60,10 @@ void RadiationVet::AssembleRadVetTasks(std::map<std::string,
   id.irecv = tl["vet_before_stagen"]->AddTask(&RadiationVet::InitRecv, this, none);
 
   // "vet_stagen": clean stage solve, hydro inversion, ghost exchange of the moments
-  id.closure = tl["vet_stagen"]->AddTask(&RadiationVet::ApplyClosureLimits,this,none);
+  id.closure = tl["vet_stagen"]->AddTask(&RadiationVet::StageTimers,this,none);
   id.opac    = tl["vet_stagen"]->AddTask(&RadiationVet::Opacity, this, id.closure);
-  id.update  = tl["vet_stagen"]->AddTask(&RadiationVet::CleanSolve, this, id.opac);
-  id.c2p     = tl["vet_stagen"]->AddTask(&RadiationVet::HydroConToPrim,this,id.update);
+  id.update  = tl["vet_stagen"]->AddTask(&RadiationVet::StageSolve, this, id.opac);
+  id.c2p     = tl["vet_stagen"]->AddTask(&RadiationVet::GasUpdate,this,id.update);
   id.restu   = tl["vet_stagen"]->AddTask(&RadiationVet::RestrictU, this, id.c2p);
   id.sendu   = tl["vet_stagen"]->AddTask(&RadiationVet::SendU, this, id.restu);
   id.recvu   = tl["vet_stagen"]->AddTask(&RadiationVet::RecvU, this, id.sendu);
@@ -76,43 +76,43 @@ void RadiationVet::AssembleRadVetTasks(std::map<std::string,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationVet::CleanSolve
+//! \fn TaskStatus RadiationVet::StageSolve
 //! \brief the implicit solve of one stage (E in cells, F on faces, gas), as named steps:
 //! closure -> old vector -> passes { rows, E, gas T, F and momentum } -> new state
 
-TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
-  CleanSolveBegin();                  // arrays, direction sets, first faces  (_init)
+TaskStatus RadiationVet::StageSolve(Driver *pdriver, int stage) {
+  SolveBegin();                     // arrays, direction sets, first faces   (_init)
 
   // 1. what the stage starts from
-  CleanStageClosure();                // D, h+-, face sums from the rays      (_closure)
-  CleanWoBind();                      // work vectors over the rays' memory   (_init)
-  cln_xdh = false;                    // no donor hold before this solve's passes
-  CleanOldVector();                   // E_old and gas + stage increments     (_oldvector)
-  const bool opu = cln_opt && cln_feedback;   // CleanFirstPass: both, with its opacities
-  if (!opu) CleanFaceCoefficients();  // chi_f, theta, blend weight           (_solver)
-  if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);   // donors' E_old
-  if (cln_consist && !opu) CleanStagBracket();                      // gate q (_newton)
+  StageClosure();                   // D, h+-, face sums from the rays       (_closure)
+  BindWorkVecs();                   // work vectors over the rays' memory    (_init)
+  cln_xdh = false;                  // no donor hold before this solve's passes
+  OldVector();                      // E_old and gas + stage increments      (_oldvector)
+  const bool opu = cln_opt && cln_feedback;   // FirstPass: both, with its opacities
+  if (!opu) FaceCoefficients();     // chi_f, theta, blend weight            (_solver)
+  if (cln_gflux || cln_consist) GhostFill(cln_w, CLW_EO, 1);   // donors' E_old
+  if (cln_consist && !opu) FaceBracket();   // gate q                        (_newton)
 
   // 2. passes: Newton on the gas coupling, Picard on the lagged slopes and the closure
-  SolvePass p = CleanPassSetup();     // what is iterated, tolerances         (_newton)
-  CleanFirstPass();                   // first iterate, drag, donors          (_newton)
+  SolvePass p = PassSetup();        // what is iterated, tolerances          (_newton)
+  FirstPass();                      // first iterate, drag, donors           (_newton)
   for (p.n = 0; p.n < p.nmax; ++p.n) {
-    CleanPassClosure(p);              // closure, opacity, donors of E_k      (_newton)
-    CleanPassRows(p);                 // right-hand side, operator        (_rhs, _solver)
-    if (!CleanPassSolve(p)) break;    // E: BiCGStab, multigrid               (_solver)
-    CleanPassUpdate(p);               // gas T; face F, momentum, drag  (_newton, _flux)
-    if (CleanPassSettled(p)) break;   // stop test                            (_newton)
+    PassClosure(p);                 // closure, opacity, donors of E_k       (_newton)
+    PassRows(p);                    // right-hand side, operator (_rhs, _solver)
+    if (!PassSolve(p)) break;       // E: BiCGStab, multigrid                (_solver)
+    PassUpdate(p);                  // gas T; face F, momentum, drag (_newton, _flux)
+    if (PassSettled(p)) break;      // stop test                             (_newton)
   }
-  CleanSolveEnd(p);                   // counts: realizability, E < 0         (_newton)
-  CleanVerdictSolve(p);               // unconverged: dt_retry, FATAL         (_newton)
+  SolveEnd(p);                      // counts: realizability, E < 0          (_newton)
+  VerdictSolve(p);                  // unconverged: dt_retry, FATAL          (_newton)
 
   // 3. the new state: face fluxes, E, cell fluxes, gas, stage slopes, L_z books
-  CleanUpdateState(p);                // CleanWriteBack                      (_update)
-  CleanVerdictState(p);               // gas eint: t2_fail, dt_retry          (_update)
-  cln_xd_on = false;                  // the donor q is of this solve's passes only
+  UpdateState(p);                   // WriteBack                             (_update)
+  VerdictState(p);                  // gas eint: t2_fail, dt_retry           (_update)
+  cln_xd_on = false;                // the donor q is of this solve's passes only
 
   // 4. clean_closure = extrap(2): ray moments of the new state, for the next closure
-  if (cln_extrap > 0 && !t2_fail) CleanClosureAfterSolve();         //        (_closure)
+  if (cln_extrap > 0 && !t2_fail) ClosureAfterSolve();   //                  (_closure)
   return TaskStatus::complete;
 }
 
@@ -217,10 +217,10 @@ TaskStatus RadiationVet::ClearRecv(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationVet::ApplyClosureLimits
+//! \fn TaskStatus RadiationVet::StageTimers
 //! \brief first task of the stage chain: starts the implicit_timers; applies no clip
 
-TaskStatus RadiationVet::ApplyClosureLimits(Driver *pdrive, int stage) {
+TaskStatus RadiationVet::StageTimers(Driver *pdrive, int stage) {
   tmr_on = (tmr_c0 > 0) && (pmy_pack->pmesh->ncycle >= tmr_c0);
   if (tmr_on) {tmr_cnt[7] += 1.0;}
   TmrMark(-1);

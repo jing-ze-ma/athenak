@@ -169,7 +169,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   const bool rss_ = rad_signal_speed, rsi_ = rss_inertia, rsd_ = rss_diff;
   const bool rsp_ = rss_phase;
   DvceArray5D<Real> erad_, kopc_, vcel_;
-  radvet::CleanGeo gn_;
+  radvet::CsGeoArrays gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 4 vet_sc, 5 clean
   Real rss_cl = 1.0, rss_ch = 1.0;
   if (rss_) {
@@ -205,8 +205,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
         for (int a = 0; a < 3; ++a) {
           dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
-                  radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
-                                   radvet::CLG_E + 3*(a - 1), m, k, j, i) :
+                  radvet::DirDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
+                                 radvet::CLG_E + 3*(a - 1), m, k, j, i) :
                   vcel_(m,d0+a,k,j,i);
         }
       }

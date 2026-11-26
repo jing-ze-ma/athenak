@@ -1,7 +1,7 @@
 # Workflow of `<rad_vet>`: what runs, in what order, and where to read it
 
 Open **`src/rad_vet/rad_vet_tasks.cpp`** first: the task lists and the implicit stage solve
-(`CleanSolve`) as a driver of named steps. The equations are in [SCHEME.md](SCHEME.md), the keys in
+(`StageSolve`) as a driver of named steps. The equations are in [SCHEME.md](SCHEME.md), the keys in
 [KEYS.md](KEYS.md). Paths below are relative to `src/rad_vet/`.
 
 ## 1. One time step (`Driver::Execute`, `driver/driver.cpp`; `rad_vet_imex.cpp`)
@@ -28,20 +28,20 @@ flowchart TD
 ```mermaid
 flowchart TD
   T0[InitRecv] --> T2["Opacity (rad_vet_opacity)"] --> S0
-  subgraph S["CleanSolve"]
-    S0[CleanSolveBegin] --> S1["CleanStageClosure (rad_vet_closure)"] --> S2["CleanOldVector, CleanFaceCoefficients"]
-    S2 --> S3["CleanPassSetup, CleanFirstPass (rad_vet_newton)"] --> P1
-    P1["CleanPassClosure: closure, opacity, donors of the iterate"] --> P2["CleanPassRows: right-hand side, operator (rad_vet_rhs, _solver)"]
-    P2 --> P3["CleanPassSolve: E (rad_vet_solver)"] --> P4["CleanPassUpdate: gas T, face F, momentum, drag (rad_vet_newton, _flux)"]
-    P4 --> P5{CleanPassSettled?}
+  subgraph S["StageSolve"]
+    S0[SolveBegin] --> S1["StageClosure (rad_vet_closure)"] --> S2["OldVector, FaceCoefficients"]
+    S2 --> S3["PassSetup, FirstPass (rad_vet_newton)"] --> P1
+    P1["PassClosure: closure, opacity, donors of the iterate"] --> P2["PassRows: right-hand side, operator (rad_vet_rhs, _solver)"]
+    P2 --> P3["PassSolve: E (rad_vet_solver)"] --> P4["PassUpdate: gas T, face F, momentum, drag (rad_vet_newton, _flux)"]
+    P4 --> P5{PassSettled?}
     P5 -- no --> P1
-    P5 -- yes --> V1["CleanSolveEnd, CleanVerdictSolve"] --> W["CleanUpdateState = write-back (rad_vet_update)"]
-    W --> V2[CleanVerdictState: floors, gas eint] --> C2["CleanClosureAfterSolve: ray moments of the new state"]
+    P5 -- yes --> V1["SolveEnd, VerdictSolve"] --> W["UpdateState = write-back (rad_vet_update)"]
+    W --> V2[VerdictState: floors, gas eint] --> C2["ClosureAfterSolve: ray moments of the new state"]
   end
-  C2 --> T3["HydroConToPrim: floor caps, gas ghosts, primitives (rad_vet_gas)"] --> T4[ghosts of E, F] --> T5[ClearSend, ClearRecv]
+  C2 --> T3["GasUpdate: floor caps, gas ghosts, primitives (rad_vet_gas)"] --> T4[ghosts of E, F] --> T5[ClearSend, ClearRecv]
 ```
 
-The face flux solve (`CleanStagFSolve`, `rad_vet_flux.cpp`): F^H and the dissipation -> line ends across
+The face flux solve (`FluxSolve`, `rad_vet_flux.cpp`): F^H and the dissipation -> line ends across
 MeshBlocks (`rad_vet_flux_schur.cpp`) -> x1-line solve -> shared faces and panel seams (`rad_vet_flux_seam.cpp`)
 -> bound |F| <= c E and the steady balance (`rad_vet_flux_bounds.cpp`).
 
@@ -49,13 +49,13 @@ MeshBlocks (`rad_vet_flux_schur.cpp`) -> x1-line solve -> shared faces and panel
 
 ```mermaid
 flowchart TD
-  A["CleanClosure | CleanClosureExtrap | CleanClosureIterate"] --> B["CleanPredictState: E, T, opacity at t + dt"]
-  B --> C[CleanRays]
-  C -- Cartesian --> D["VetShortChar (rays/sc_cart_sweep)"] --> E["CleanClosureFromRays"]
-  C -- "spherical polar, cubed sphere" --> F["VetGdSource (rays/sc_build, sc_source)"] --> G{rotating ring?}
-  G -- no --> H["VetGdSweep (rays/sc_sph_sweep) | VetGdCsSweep (rays/sc_cs_sweep)"] --> I["CleanClosureFromGd (closure_rays), face sums (closure_faces)"]
-  G -- yes --> J["CleanRingMoments (closure_ring): sweep two sets, shift, mix"]
-  E --> K[CleanClosureFill] --> L[ghosts]
+  A["BuildClosure | ClosureExtrap | ClosureIterate"] --> B["PredictState: E, T, opacity at t + dt"]
+  B --> C[TraceRays]
+  C -- Cartesian --> D["ScCartBuild (rays/sc_cart_sweep)"] --> E["ClosureFromRays"]
+  C -- "spherical polar, cubed sphere" --> F["ScSource (rays/sc_build, sc_source)"] --> G{rotating ring?}
+  G -- no --> H["ScSweep (rays/sc_sph_sweep) | ScCsSweep (rays/sc_cs_sweep)"] --> I["ClosureFromSc (closure_rays), face sums (closure_faces)"]
+  G -- yes --> J["RingMoments (closure_ring): sweep two sets, shift, mix"]
+  E --> K[ClosureFill] --> L[ghosts]
   I --> K
   J --> K
   A -. "extrapolated: no sweep" .-> K
@@ -65,7 +65,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  S["CleanPreconditionerSetup: face weights, rows, lines, coarse levels"] --> R[r = B - A X]
+  S["PreconditionerSetup: face weights, rows, lines, coarse levels"] --> R[r = B - A X]
   R --> P[p] --> M1["y = M^-1 p: V-cycle of x1-line sweeps"] --> A1["v = A y: ghosts, rows, cross terms"] --> B1[alpha, s]
   B1 --> M2["z = M^-1 s"] --> A2["q = A z"] --> C[omega, X, r] --> T{"converged (true residual)?"}
   T -- no --> P
@@ -77,7 +77,7 @@ flowchart TD
 
 | file | what |
 |---|---|
-| `rad_vet_tasks.cpp` | task lists, `CleanSolve` |
+| `rad_vet_tasks.cpp` | task lists, `StageSolve` |
 | `rad_vet_imex.cpp`, `rad_vet_fct.cpp` | IMEX stages; limited face energy fluxes |
 | `rad_vet_opacity.cpp`, `rad_vet_gas.cpp`, `rad_vet_newdt.cpp` | opacity; gas after the solve; time step |
 | `rad_vet_closure.cpp`, `_closure_rays`, `_closure_faces`, `_closure_ring` | closure: state and choice; cells; faces; rotating sets |

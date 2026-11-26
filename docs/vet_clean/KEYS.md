@@ -320,7 +320,7 @@ Tests and diagnostics: `clean_dbg_inf`, `time2_dbg_fail`, `dbg_gas_force`, `clea
 scheme and solver 19, tests 8, pgen / state 5).
 
 Removed study and debug keys stop the run with a message when named with another value than
-their old default (`CleanPreflight` in `rad_vet/rad_vet_params.cpp` lists them); keys of the
+their old default (`CheckKeys` in `rad_vet/rad_vet_params.cpp` lists them); keys of the
 removed solvers that old decks and restart files carry are accepted without effect (listed at
 the start): also `vet_col_*` (`vet_col_axis` only `radial`, `vet_col_every` only 1), `vet_every` (only 1), `vet_source`, `vet_gd_replace`,
 `vet_gd_tangential`, `vet_gd_rotate_slope_reuse`, `time2_vet_source*` and `cs_vertex_mono*`.

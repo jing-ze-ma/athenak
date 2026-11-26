@@ -28,18 +28,18 @@
 namespace radvet {
 
 // events behind the per-shell halo pack (rays/sc_sph_halo.cpp)
-void VgdPackEvtRecord(const DevExeSpace &ex);
-void VgdPackEvtWait(const DevExeSpace &ex);
+void ScPackEvtRecord(const DevExeSpace &ex);
+void ScPackEvtWait(const DevExeSpace &ex);
 
 static inline
-void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_vet>/vet_gd: ", msg);}
+void ScFatal(const std::string &msg) {ScFatalAt(__FILE__, "<rad_vet>/vet_gd: ", msg);}
 
 KOKKOS_INLINE_FUNCTION
-static Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
+static Real ScLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
 // sp stencil accessor of the shared upwind core (rays/sc_ray.hpp): the four
 // (theta, phi) corners q = 0..3: (k0,j0), (k0,j1), (k1,j0), (k1,j1); nested bilinear
-struct VgdSt4 {
+struct ScSt4 {
   int k0, k1, j0, j1;
   Real uj, uk;
   KOKKOS_INLINE_FUNCTION int N() const {return 4;}
@@ -50,7 +50,7 @@ struct VgdSt4 {
   }
   template <typename F>
   KOKKOS_INLINE_FUNCTION Real Interp(const F &f) const {
-    return VgdLerp(VgdLerp(f(k0,j0), f(k0,j1), uj), VgdLerp(f(k1,j0), f(k1,j1), uj), uk);
+    return ScLerp(ScLerp(f(k0,j0), f(k0,j1), uj), ScLerp(f(k1,j0), f(k1,j1), uj), uk);
   }
 };
 
@@ -63,7 +63,7 @@ constexpr long long VGD_IPC_SPIN = 40000000000LL;
 // HIP: wall_clock64() runs at 100 MHz on gfx942: 2e9 ticks = 20 s
 constexpr long long VGD_IPC_SPIN_HIP = 2000000000LL;
 
-struct VgdIpcIdx {int v[VGD_IPC_NS + 1];};
+struct ScIpcIdx {int v[VGD_IPC_NS + 1];};
 
 // HIP IPC halo: flags in fine-grained device memory, system-scope atomics; the receive
 // buffer is written by the partner's pack kernel and read by my scatter kernel after
@@ -77,7 +77,7 @@ struct VgdIpcIdx {int v[VGD_IPC_NS + 1];};
 #endif
 
 KOKKOS_INLINE_FUNCTION
-static void VgdIpcWaitGE(const long long *f, const long long target, int *err) {
+static void ScIpcWaitGE(const long long *f, const long long target, int *err) {
 #if defined(__CUDA_ARCH__)
   const volatile long long *vf = f;
   const long long t0 = clock64();
@@ -98,7 +98,7 @@ static void VgdIpcWaitGE(const long long *f, const long long target, int *err) {
 }
 
 KOKKOS_INLINE_FUNCTION
-static void VgdIpcSet(long long *f, const long long v) {
+static void ScIpcSet(long long *f, const long long v) {
 #if defined(__CUDA_ARCH__)
   __threadfence_system();
   volatile long long *vf = f;
@@ -117,8 +117,8 @@ static void VgdIpcSet(long long *f, const long long v) {
 // flags), then the arrival flag v into every partner's slot; the wait: every own
 // arrival flag >= v, then one fence
 static KOKKOS_INLINE_FUNCTION
-void VgdIpcSetN(const unsigned long long *psig, const int *pslot, const int np,
-                const long long v) {
+void ScIpcSetN(const unsigned long long *psig, const int *pslot, const int np,
+               const long long v) {
 #if defined(__CUDA_ARCH__)
   __threadfence_system();
   for (int p = 0; p < np; ++p) {
@@ -137,7 +137,7 @@ void VgdIpcSetN(const unsigned long long *psig, const int *pslot, const int np,
 }
 
 static KOKKOS_INLINE_FUNCTION
-void VgdIpcWaitN(const long long *f, const int np, const long long target, int *err) {
+void ScIpcWaitN(const long long *f, const int np, const long long target, int *err) {
 #if defined(__CUDA_ARCH__)
   const long long t0 = clock64();
   for (int p = 0; p < np; ++p) {
@@ -166,8 +166,8 @@ void VgdIpcWaitN(const long long *f, const int np, const long long target, int *
 // the corners of nonzero weight > log(kVetCornerRatio)
 template <class CS>
 static KOKKOS_INLINE_FUNCTION
-bool VgdCornerEdge(const CS &csx, const int m, const int k0, const int k1, const int j0,
-                   const int j1, const int iu, const Real uk, const Real uj) {
+bool ScCornerEdge(const CS &csx, const int m, const int k0, const int k1, const int j0,
+                  const int j1, const int iu, const Real uk, const Real uj) {
   Real lmn = 1.0e300, lmx = -1.0e300;
   for (int q = 0; q < 4; ++q) {
     const Real wq = ((q < 2) ? (1.0 - uk) : uk)*((q % 2 == 0) ? (1.0 - uj) : uj);
@@ -186,12 +186,12 @@ bool VgdCornerEdge(const CS &csx, const int m, const int k0, const int k1, const
 // sth / pol / tn / c2w: stretched-theta node table and full-sphere chart (sph2.inc)
 template <class TD, class TB, class TX, class TF, class TT, class FN>
 static KOKKOS_INLINE_FUNCTION
-void VgdCand(const int m, const int k, const int j, const int d, const int i, const int l,
-             const bool inw, const int n1, const int lcut, const int js, const int ks,
-             const int jlo, const int jhi, const int klo, const int khi, const TD &dir_,
-             const TB &mbsize, const VgdLG &lg_, const TX &cx1v, const TF &cx1f,
-             const bool sth,
-             const bool pol, const TT &tn, const int c2w, const bool imir, const FN &f) {
+void ScCand(const int m, const int k, const int j, const int d, const int i, const int l,
+            const bool inw, const int n1, const int lcut, const int js, const int ks,
+            const int jlo, const int jhi, const int klo, const int khi, const TD &dir_,
+            const TB &mbsize, const ScLG &lg_, const TX &cx1v, const TF &cx1f,
+            const bool sth,
+            const bool pol, const TT &tn, const int c2w, const bool imir, const FN &f) {
   if (inw && l == n1 - 1) {return;}          // the top shell reads no intensity
   const Real twopi = 2.0*M_PI;
   const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -211,10 +211,10 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
     Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
     Real dph = atan2(yu, xu) - ph;
     dph -= twopi*floor((dph + M_PI)/twopi);
-    VgdPoleChart(pol, th, thu, dph);
-    const Real fj = sth ? (VgdThFj(tn, m, j, thu, c2w, lg_.Sj(m, js)) - lg_.Sj(m, js))
-                        : VgdLG::Fs(j, lg_.Sj(m, js), (thu - th)/lg_.Dx2(mbsize, m));
-    const Real fk = VgdLG::Fs(k, lg_.Sk(m, ks), dph/lg_.Dx3(mbsize, m));
+    ScPoleChart(pol, th, thu, dph);
+    const Real fj = sth ? (ScThFj(tn, m, j, thu, c2w, lg_.Sj(m, js)) - lg_.Sj(m, js))
+                        : ScLG::Fs(j, lg_.Sj(m, js), (thu - th)/lg_.Dx2(mbsize, m));
+    const Real fk = ScLG::Fs(k, lg_.Sk(m, ks), dph/lg_.Dx3(mbsize, m));
     const Real e = 1.0e-8;
     int ja = static_cast<int>(floor(fj - e)), jb = static_cast<int>(floor(fj + e));
     int ka = static_cast<int>(floor(fk - e)), kb = static_cast<int>(floor(fk + e));
@@ -269,9 +269,9 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
 constexpr int VGD_SCAN_CH = 4096;
 
 static inline
-void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
-              const DvceArray1D<int> &b, const size_t nb, const char *name,
-              Kokkos::View<int64_t*, DevMemSpace> &sums) {
+void ScScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
+             const DvceArray1D<int> &b, const size_t nb, const char *name,
+             Kokkos::View<int64_t*, DevMemSpace> &sums) {
   auto a_ = a;
   auto b_ = b;
   const size_t n = (na > nb) ? na : nb;
@@ -321,10 +321,10 @@ void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
 }
 
 // in-place exclusive int scan of a[0, n] (a[n] = 0 first, then the total) with CUB on
-// the instance's stream (integer sums: the positions of VgdScan2). Non-CUDA: VgdScan2.
+// the instance's stream (integer sums: the positions of ScScan2). Non-CUDA: ScScan2.
 static inline
-void VgdScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n,
-                Kokkos::View<int64_t*, DevMemSpace> &sums, DvceArray1D<char> &tmp) {
+void ScScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n,
+               Kokkos::View<int64_t*, DevMemSpace> &sums, DvceArray1D<char> &tmp) {
 #if defined(KOKKOS_ENABLE_CUDA)
   int *p = a.data();
   cudaStream_t st = ex.cuda_stream();
@@ -338,25 +338,25 @@ void VgdScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n
   size_t have = tmp.extent(0);
   cub::DeviceScan::ExclusiveSum(tmp.data(), have, p, p, static_cast<int>(n + 1), st);
 #else
-  VgdScan2(ex, a, n, a, 0, "vet_vgd_hxb_scan", sums);
+  ScScan2(ex, a, n, a, 0, "vet_vgd_hxb_scan", sums);
   (void)tmp;
 #endif
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn KOKKOS_INLINE_FUNCTION bool VgdHaloKeep
+//! \fn KOKKOS_INLINE_FUNCTION bool ScHaloKeep
 //! \brief vet_gd_halo_compact: is direction u at source cell (global gj, gk) at band
 //! depth dep needed by the reads of shell s in this pass? Global indices only, so
 //! sender and receiver agree bitwise. mode 1: the pass's branch (|n.r| < 1e-12 kept);
 //! mode 2: also the ray's lateral reach >= dep - 3 cells. wall: branch only.
 
 // the keep test at a source-cell position (theta, phi): shared by the uniform slot halo
-// (VgdHaloKeep) and the global band (VetGdGbHaloC, node table)
+// (ScHaloKeep) and the global band (ScGbHaloC, node table)
 static KOKKOS_INLINE_FUNCTION
-bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
-                   const Real ph, const bool inw, const int mode, const bool wall,
-                   const int dep, const Real rs, const Real rm, const Real rp,
-                   const bool hasm, const bool hasp, const Real gam, const Real dmin) {
+bool ScHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
+                  const Real ph, const bool inw, const int mode, const bool wall,
+                  const int dep, const Real rs, const Real rm, const Real rp,
+                  const bool hasm, const bool hasp, const Real gam, const Real dmin) {
   const Real st = sin(th);
   const Real mu = nx*st*cos(ph) + ny*st*sin(ph) + nz*cos(th);
   if (fabs(mu) < 1.0e-12) {return true;}
@@ -385,7 +385,7 @@ bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
 }
 
 // mesh theta face n (0 .. nx2), as Coordinates maps it (LeftEdgeX + ApplyThetaStretch)
-static inline double VgdThetaFace(const Mesh *pm, const int n) {
+static inline double ScThetaFace(const Mesh *pm, const int n) {
   const int nx = pm->mesh_indcs.nx2;
   const double x0 = pm->mesh_size.x2min, x1 = pm->mesh_size.x2max;
   const double rx = static_cast<double>(n)/static_cast<double>(nx);

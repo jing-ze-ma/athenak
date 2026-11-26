@@ -26,14 +26,14 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn int CleanFvMirror
+//! \fn int FvMirror
 //! \brief leaving direction of d0 .. d0+nd-1 nearest the mirror image n - 2 (n . t) t of
 //! incoming d at a wall (sg t outward; -1: d not incoming); u = |n . t|.  Ties within
 //! 1e-12 take the first (CPU/GPU independent)
 
 KOKKOS_INLINE_FUNCTION
-int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, const int d,
-                  const Real t[3], const Real sg, Real &u) {
+int FvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, const int d,
+             const Real t[3], const Real sg, Real &u) {
   const Real nt = dir_(d,0)*t[0] + dir_(d,1)*t[1] + dir_(d,2)*t[2];
   u = fabs(nt);
   int r = -1;
@@ -50,13 +50,13 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 }
 
 //----------------------------------------------------------------------------------------
-//! \struct CleanGdI
+//! \struct RayIntensity
 //! \brief sc ray intensities in the mesh layout without a copy: vgd_i, the first ghost
 //! layer from gl (side 0: j = js - 1, 1: k = ks - 1; six: also 2, 3 high j, k and 4, 5
 //! low, high i)
 
-struct CleanGdI {
-  RadiationVet::VgdRag vi;
+struct RayIntensity {
+  RadiationVet::ScRag vi;
   DvceArray5D<Real> gl;
   int ok, og, ks, js;
   bool six = false;
@@ -76,22 +76,22 @@ struct CleanGdI {
     return (s >= 0) ? gl(m,d,s,r,t) : vi(m,d,k+ok,j+og,i);
   }
   KOKKOS_INLINE_FUNCTION
-  CleanRow At(const int m, const int k, const int j, const int i) const {
+  DirRow At(const int m, const int k, const int j, const int i) const {
     int r, t;
     const int s = Side(k, j, i, r, t);
-    if (s >= 0) return CleanRow{&gl(m,0,s,r,t), static_cast<int64_t>(gl.stride(1))};
-    return VgdRow(vi, m, k+ok, j+og, i);
+    if (s >= 0) return DirRow{&gl(m,0,s,r,t), static_cast<int64_t>(gl.stride(1))};
+    return ScDirRow(vi, m, k+ok, j+og, i);
   }
 };
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanFaceHalf
+//! \fn void RadiationVet::FaceHalf
 //! \brief cubed-sphere sc rays: each face's half-range sums J_L, J_R, H+_L, H-_R about
 //! its normal (cln_fh), accumulated set by set after each sweep from vgd_i (or, for a
 //! version-5 restart, cln_fvi from row fo); union rows o of dv; zero: first set
 
-void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
-                                 const bool zero, const int fo) {
+void RadiationVet::FaceHalf(const DvceArray2D<Real> &dv, const int o,
+                            const bool zero, const int fo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, n = vgd_n, nmb1 = pmy_pack->nmb_thispack - 1;
@@ -104,21 +104,21 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
   auto gn = cln_gn;
   // (the swept set in vgd_i plus ghost layers; a version-5 restart's in cln_fvi)
   const bool fv = cln_fvi.extent_int(0) > 0;
-  const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true, ke, je,
-                    is, ie};
+  const RayIntensity gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true, ke,
+                        je, is, ie};
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    CleanForK("cln_facehalf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,   // (HIP: k fastest)
+    SolveForK("cln_facehalf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,   // (HIP: k fastest)
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
       Real jl0 = zero ? 0.0 : fh(m,4*dir,k,j,i), jr0 = zero ? 0.0 : fh(m,4*dir+1,k,j,i);
       Real hp0 = zero ? 0.0 : fh(m,4*dir+2,k,j,i), hm0 = zero ? 0.0 : fh(m,4*dir+3,k,j,i);
       // (the two cells' intensity rows once)
-      const CleanRow gl_ = fv ? CleanRow{nullptr, 0} : gi.At(m, kl, jl, il);
-      const CleanRow gr_ = fv ? CleanRow{nullptr, 0} : gi.At(m, k, j, i);
+      const DirRow gl_ = fv ? DirRow{nullptr, 0} : gi.At(m, kl, jl, il);
+      const DirRow gr_ = fv ? DirRow{nullptr, 0} : gi.At(m, k, j, i);
 #pragma unroll 4   // (several rays in flight on hipcc)
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
@@ -141,7 +141,7 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanGdFaceSums
+//! \fn void RadiationVet::RayFaceSums
 //! \brief vet_gd face fluxes (CLN_FX, F2, F3, F1): sum_d w (n_d . A_f) I_f / A_f and the
 //! stress columns in the face basis, A_f the exact closed vector area.  Lateral faces
 //! (and staggered r faces) carry the upwind intensity.  Else r faces follow the cell
@@ -151,7 +151,7 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
 //! below; a reflecting top spreads the remainder over the outermost level.  Cubed
 //! sphere: Cartesian momentum, upwind r faces
 
-void RadiationVet::CleanGdFaceSums() {
+void RadiationVet::RayFaceSums() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -171,17 +171,17 @@ void RadiationVet::CleanGdFaceSums() {
   const bool wint = vgd_wint;
   auto cs = cln_s;
   const bool f1 = cln_s.extent_int(1) > CLN_F1;   // (the cell layout's CLN_F1)
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   // (args in device memory: light launches)
-  cln_gdx = CleanDevArgs(x, 3);
-  const CleanArgs *px = cln_gdx;
+  cln_gdx = DevArgs(x, 3);
+  const SolveArgs *px = cln_gdx;
   // nx3 = 1 (axisymmetric): no phi boundary; the low phi face's upwind cell is the cell
   // itself through the wall map, the high face carries the low one's sums in its basis
   const bool axi = !pmy_pack->pmesh->three_d && x.sph;
   auto bnd = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                   const int i) {
-    const CleanArgs &x = *px;
-    return !(axi && dir == 2) && CleanBoundaryFace(x, dir, m, k, j, i);
+    const SolveArgs &x = *px;
+    return !(axi && dir == 2) && IsBoundaryFace(x, dir, m, k, j, i);
   };
   // inner face: no flux if reflecting, else outward beams from the emission (vet_bc_inner
   // emit) or the first cell, inward beams from the first cell
@@ -201,7 +201,7 @@ void RadiationVet::CleanGdFaceSums() {
   const bool six = x.cub && vgd_nb1 == 1 && !cln_scmem;
   const bool gl = (x.sph && !axi && pmy_pack->pmesh->three_d &&
                    vgd_nb1 == 1 && !cln_scmem) || six;
-  CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, six, ke, je, is, ie};
+  RayIntensity gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, six, ke, je, is, ie};
   if (gl) {
     const int ng = indcs.ng;
     // (cubed sphere: chunks of clean_halo_vars/4, the build's largest scratch)
@@ -229,16 +229,16 @@ void RadiationVet::CleanGdFaceSums() {
     for (int d0 = 0; d0 < n; d0 += nc) {
       const int nd = std::min(nc, n - d0);
       // (only the ng layers the exchange reads)
-      CleanFor("cln_gd_chc", nmb1, ks, ke, js, je, is, ie,
+      SolveFor("cln_gd_chc", nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng &&
             !(six && (i < is + ng || i > ie - ng))) {
           return;
         }
-        const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
+        const DirRow r = ScDirRow(vi_, m, k+ok, j+og, i);
         for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = r[d0+c];
       });
-      CleanGhostFill(ch, 0, nd, true, 0, 1);   // (glc, glr read the first layer)
+      GhostFill(ch, 0, nd, true, 0, 1);   // (glc, glr read the first layer)
       par_for("cln_gd_glc", DevExeSpace(), 0, nmb1, 0, nd - 1, 0, nt - 1, is, ie,
       KOKKOS_LAMBDA(const int m, const int c, const int t, const int i) {
         if (t <= ke - ks) gg(m,d0+c,0,t,i) = ch(m,c,ks+t,js-1,i);
@@ -259,11 +259,11 @@ void RadiationVet::CleanGdFaceSums() {
                       cs.extent_int(3), cs.extent_int(4));
     }
     fi_ = cln_fvi;
-    CleanFor("cln_gd_copy", nmb1, ks, ke, js, je, is, ie,
+    SolveFor("cln_gd_copy", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int d = 0; d < n; ++d) fi_(m,doff+d,k,j,i) = vi_(m,d,k+ok,j+og,i);
     });
-    CleanGhostFill(cln_fvi, doff, n);
+    GhostFill(cln_fvi, doff, n);
   }
   auto inten = [=] KOKKOS_FUNCTION (const int m, const int d, const int k, const int j,
                                     const int i) {
@@ -272,11 +272,11 @@ void RadiationVet::CleanGdFaceSums() {
   // vector area of the low face normal to dir and the local basis there
   auto face = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                    const int i, Real a[3], Real e[3][3]) {
-    const CleanArgs &x = *px;
-    CleanFaceVector(x, x3f, dir, m, k, j, i, a);
+    const SolveArgs &x = *px;
+    FaceVector(x, x3f, dir, m, k, j, i, a);
     if (x.sph) {
-      CleanLocalBasis((dir == 1) ? x.x2f(m,j) : x.x2v(m,j),
-                      (dir == 2) ? x3f(m,k) : x3v(m,k), e);
+      LocalBasis((dir == 1) ? x.x2f(m,j) : x.x2v(m,j),
+                 (dir == 2) ? x3f(m,k) : x3v(m,k), e);
       return;
     }
     for (int b = 0; b < 3; ++b) {
@@ -287,8 +287,8 @@ void RadiationVet::CleanGdFaceSums() {
   // gl: ro, ru the rows of the cell and its lower neighbour
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                   const int i, const int d, const Real a[3],
-                                  const CleanRow &ro, const CleanRow &ru) {
-    const CleanArgs &x = *px;
+                                  const DirRow &ro, const DirRow &ru) {
+    const SolveArgs &x = *px;
     const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
     const int kl = k - (dir == 2), jl = j - (dir == 1);
     if (!(f > 0.0)) return f*(gl ? ro[d] : inten(m, d, k, j, i));
@@ -315,7 +315,7 @@ void RadiationVet::CleanGdFaceSums() {
   auto seam2 = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                     const int i, const Real a[3], const Real e[3][3],
                                     const Real ar, Real q[4]) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     const int p = (dir == 2) ? 1 : 0;
     if (!(p ? wsx : wst) || (p ? (k != ks) : (j != js)) ||
         x.mbc(m, p ? 4 : 2) != BoundaryFlag::periodic ||
@@ -376,7 +376,7 @@ void RadiationVet::CleanGdFaceSums() {
   // beams that hit it (sign sg), no tangential part
   auto mirror = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                      const int ic, const Real sg, Real q[4]) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     Real a[3], e[3][3], w[4] = {0.0}, nf[3], wn = 0.0;
     face(0, m, k, j, i, a, e);
     for (int d = 0; d < n; ++d) {
@@ -384,7 +384,7 @@ void RadiationVet::CleanGdFaceSums() {
       const Real tr = inten(m, d, k, j, ic);
       if (sg*f > 0.0) add(e, x.area[0](m,k,j,i), d, 2.0*f*tr, w);
     }
-    for (int b = 0; b < 3; ++b) nf[b] = CleanNf(x, b, 0, m, k, j, i);
+    for (int b = 0; b < 3; ++b) nf[b] = NumFaceDirs(x, b, 0, m, k, j, i);
     for (int b = 0; b < 3; ++b) wn += w[1+b]*nf[b];
     q[0] = 0.0;
     for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
@@ -397,15 +397,15 @@ void RadiationVet::CleanGdFaceSums() {
   // one (CLN_FH of its last cell)
   auto latf = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                    const int dir, const int up) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
     Real q[4], sc[4] = {0.0}, a[3], e[3][3];
     face(dir, m, kf, jf, i, a, e);
     const bool bd = bnd(dir, m, kf, jf, i);
     const Real ar = x.area[dir](m,kf,jf,i);
-    const CleanRow ro = gl ? gi.At(m, kf, jf, i) : CleanRow{nullptr, 0};
-    const CleanRow ru = (gl && !bd) ? gi.At(m, kf - (dir == 2), jf - (dir == 1), i)
-                                    : CleanRow{nullptr, 0};
+    const DirRow ro = gl ? gi.At(m, kf, jf, i) : DirRow{nullptr, 0};
+    const DirRow ru = (gl && !bd) ? gi.At(m, kf - (dir == 2), jf - (dir == 1), i)
+                                    : DirRow{nullptr, 0};
     for (int d = 0; d < n; ++d) {
       addc(d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), sc);
     }
@@ -416,49 +416,49 @@ void RadiationVet::CleanGdFaceSums() {
   };
   for (int dir = 1; dir < 3 && !fs; ++dir) {
     if (!x.sph && dir >= x.nf) continue;
-    CleanForK("cln_gd_lat", nmb1, ks, ke, js, je, is, ie,
+    SolveForK("cln_gd_lat", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       latf(m, k, j, i, dir, 0);
       if (px->cub && ((dir == 1) ? j == je : k == ke)) latf(m, k, j, i, dir, 1);
     });
   }
-  if (!fs) CleanGhostFill(cln_s, CLN_F2, 4);
-  if (!fs) CleanGhostFill(cln_s, CLN_F3, 4);
+  if (!fs) GhostFill(cln_s, CLN_F2, 4);
+  if (!fs) GhostFill(cln_s, CLN_F3, 4);
   // rr (spherical polar): r faces carry the rays' own upwind fluxes, not the balance
   // march, which loses the diffusion flux of thick cells in V chi (S - J)
   const bool rr = x.sph;
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     Real a[3], e[3][3], sc[4] = {0.0};
     face(0, m, k, j, i, a, e);
-    // (reflecting x1 face: mirror images of the leaving beams, CleanFvMirror, scaled so
+    // (reflecting x1 face: mirror images of the leaving beams, FvMirror, scaled so
     // the face returns the energy it receives)
     const int ic = (i == is) ? is : ie;
     const Real sg = (i == is) ? -1.0 : 1.0, an = sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
     const Real t[3] = {a[0]/an, a[1]/an, a[2]/an};
-    const bool msc = CleanBoundaryFace(x, 0, m, k, j, i) && rwsc[i != is];
+    const bool msc = IsBoundaryFace(x, 0, m, k, j, i) && rwsc[i != is];
     Real sm = 1.0, ho = 0.0, hm = 0.0, u;
     for (int d = 0; d < n && msc; ++d) {
-      const int r = CleanFvMirror(dir_, 0, n, d, t, sg, u);
+      const int r = FvMirror(dir_, 0, n, d, t, sg, u);
       if (r < 0) ho += dir_(d,3)*u*inten(m, d, k, j, ic);
       if (r >= 0) hm += dir_(d,3)*u*inten(m, r, k, j, ic);
     }
     if (ho > 0.0 && hm > 0.0) sm = ho/hm;
-    const CleanRow rl = gl ? gi.At(m, k, j, i - 1) : CleanRow{nullptr, 0};
-    const CleanRow rh = gl ? gi.At(m, k, j, i) : CleanRow{nullptr, 0};
+    const DirRow rl = gl ? gi.At(m, k, j, i - 1) : DirRow{nullptr, 0};
+    const DirRow rh = gl ? gi.At(m, k, j, i) : DirRow{nullptr, 0};
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
       Real iv = gl ? ((f > 0.0) ? rl[d] : rh[d])
                    : inten(m, d, k, j, (f > 0.0) ? i - 1 : i);
-      if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
+      if (IsBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
         const Real s0 = exp(cw_(m,1,k+ok,j+og,is));
         iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : s0) : iv)
                        : ((f > 0.0) ? iv : ihi);
         for (int q = 0; q < bmn && i == is && f > 0.0; ++q) {
           if (d == bmr[q]) iv += bmi(m,q,(bmi.extent_int(2) > 1) ? k - ks : 0,j - js);
         }
-        const int r = msc ? CleanFvMirror(dir_, 0, n, d, t, sg, u) : -1;
+        const int r = msc ? FvMirror(dir_, 0, n, d, t, sg, u) : -1;
         if (r >= 0) iv = sm*inten(m, r, k, j, ic);
       }
       addc(d, f*iv, sc);
@@ -478,20 +478,20 @@ void RadiationVet::CleanGdFaceSums() {
                        rf_on ? ie - is + 2 : 1);
   Kokkos::deep_copy(DevExeSpace(), rf, 0.0);
   if (fs) {
-    CleanForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie,
+    SolveForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px;
+      const SolveArgs &x = *px;
       const bool rb = (i == is);
       Real a1[3], a2[3], a0[3] = {0.0}, e[3][3], q[4];
       Real s1[4] = {0.0}, s2[4] = {0.0}, s0[4] = {0.0};
       const bool b1 = bnd(1, m, k, j, i), b2 = bnd(2, m, k, j, i);
-      const CleanRow ro = gi.At(m, k, j, i);
-      const CleanRow u1 = b1 ? CleanRow{nullptr, 0} : gi.At(m, k, j - 1, i);
-      const CleanRow u2 = b2 ? CleanRow{nullptr, 0} : gi.At(m, k - 1, j, i);
-      const CleanRow rl = rb ? CleanRow{nullptr, 0} : gi.At(m, k, j, i - 1);
-      CleanFaceVector(x, x3f, 1, m, k, j, i, a1);
-      CleanFaceVector(x, x3f, 2, m, k, j, i, a2);
-      if (!rb) CleanFaceVector(x, x3f, 0, m, k, j, i, a0);
+      const DirRow ro = gi.At(m, k, j, i);
+      const DirRow u1 = b1 ? DirRow{nullptr, 0} : gi.At(m, k, j - 1, i);
+      const DirRow u2 = b2 ? DirRow{nullptr, 0} : gi.At(m, k - 1, j, i);
+      const DirRow rl = rb ? DirRow{nullptr, 0} : gi.At(m, k, j, i - 1);
+      FaceVector(x, x3f, 1, m, k, j, i, a1);
+      FaceVector(x, x3f, 2, m, k, j, i, a2);
+      if (!rb) FaceVector(x, x3f, 0, m, k, j, i, a0);
       for (int d = 0; d < n; ++d) {
         addc(d, b1 ? 0.0 : lat(1, m, k, j, i, d, a1, ro, u1), s1);
         addc(d, b2 ? 0.0 : lat(2, m, k, j, i, d, a2, ro, u2), s2);
@@ -521,7 +521,7 @@ void RadiationVet::CleanGdFaceSums() {
           if (up) {
             latf(m, k, j, i, dir, 1);
           } else if (!bnd(dir, m, k, j, i)) {
-            const CleanArgs &x = *px;
+            const SolveArgs &x = *px;
             const int nf = kp ? CLN_F3 : CLN_F2;
             Real a[3], e[3][3], q[4];
             for (int c = 0; c < 4; ++c) q[c] = cs(m,nf+c,k,j,i);
@@ -532,8 +532,8 @@ void RadiationVet::CleanGdFaceSums() {
         });
       }
     }
-    CleanGhostFill(cln_s, CLN_F2, 4);
-    CleanGhostFill(cln_s, CLN_F3, 4);
+    GhostFill(cln_s, CLN_F2, 4);
+    GhostFill(cln_s, CLN_F3, 4);
     par_for("cln_gd_rb", DevExeSpace(), 0, nmb1, i1, 1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int b, const int k, const int j) {
       const int i = b ? ie + 1 : is;
@@ -542,7 +542,7 @@ void RadiationVet::CleanGdFaceSums() {
       for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
     });
   } else if (rf_on) {
-    CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, is + i1, ie + 1,
+    SolveForK("cln_gd_rf", nmb1, ks, ke, js, je, is + i1, ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
       rflux(m, k, j, i, q);
@@ -552,7 +552,7 @@ void RadiationVet::CleanGdFaceSums() {
   // the lateral faces' part of cell (k,j,i): their sums into q, the curvature into g
   auto latg = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                    const Real e[3][3], Real q[4], Real g[2]) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     Real a[3], ef[3][3];
     for (int dir = 1; dir < 3; ++dir) {
       const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
@@ -579,9 +579,9 @@ void RadiationVet::CleanGdFaceSums() {
   // close their ends
   const bool cel = rr && !x.cub && ibc_x1max != VET_IBC_REFLECT;
   if (cel) {
-    CleanFor("cln_gd_cel", nmb1, ks, ke, js, je, is, ie,
+    SolveFor("cln_gd_cel", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px;
+      const SolveArgs &x = *px;
       Real a[3], e[3][3], q[4], g[2] = {0.0, 0.0};
       face(0, m, k, j, is, a, e);
       for (int c = 0; c < 4; ++c) q[c] = rf(m,c,k-ks,j-js,i-is);
@@ -594,10 +594,10 @@ void RadiationVet::CleanGdFaceSums() {
     });
   }
   for (int lev = 0; lev < vgd_nb1; ++lev) {
-    if (lev > 0) VetGdX1Pass(true);
-    CleanForCol("cln_gd_col", nmb1, ks, ke, js, je,
+    if (lev > 0) ScX1Pass(true);
+    SolveForCol("cln_gd_col", nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      const CleanArgs &x = *px;
+      const SolveArgs &x = *px;
       Real a[3], e[3][3], q[4] = {0.0};
       const bool in = (xf_(m) & 1);
       const int kj = (k - ks)*nj + j - js;
@@ -671,10 +671,10 @@ void RadiationVet::CleanGdFaceSums() {
   // reflecting top over several levels: remainder and volumes handed down, each level
   // takes its share
   for (int lev = vgd_nb1 - 2; lev >= 0 && ibc_x1max == VET_IBC_REFLECT; --lev) {
-    VetGdX1Pass(false);
+    ScX1Pass(false);
     par_for("cln_gd_top", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      const CleanArgs &x = *px;
+      const SolveArgs &x = *px;
       if ((xf_(m) >> 3) != lev) return;
       const int kj = (k - ks)*nj + j - js;
       const Real vt = qr_(m,4*nkj + kj);

@@ -31,12 +31,12 @@ static inline void VetFatal(const std::string &msg) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \struct VetMBState
-//! \brief state of the several-MeshBlock sweep (VetSweepMB): banded plane buffers,
+//! \struct ScCartMBState
+//! \brief state of the several-MeshBlock sweep (ScCartSweepMB): banded plane buffers,
 //! neighbour tables and message buffers.  A banded plane is (kk, jj), kk in [0, n3w),
 //! jj in [0, n2w), active cells at kk = k - ks + b3, jj = j - js + b2.
 
-struct VetMBState {
+struct ScCartMBState {
   int w2 = 0, w3 = 0;          // reach of a ray per layer in x2, x3 (w3 = 0 in 2-D)
   int b2 = 0, b3 = 0;          // band widths = w2, w3 (the ghost band of a plane)
   int nring = 2;               // intensity planes kept
@@ -126,7 +126,7 @@ static inline void VetFor(const char *name, const int n, const F &f) {
 //! \brief post the one message per neighbour rank of plan A (st.sfl / st.rfl, filled by
 //! the caller's completed pack kernel)
 
-static inline void VetAggPost(VetMBState &st, const VetMBState::Agg &A) {
+static inline void VetAggPost(ScCartMBState &st, const ScCartMBState::Agg &A) {
 #if MPI_PARALLEL_ENABLED
   const int np = static_cast<int>(A.prk.size());
   for (int p = 0; p < np; ++p) {
@@ -153,7 +153,7 @@ static inline void VetAggPost(VetMBState &st, const VetMBState::Agg &A) {
 //! pack and posts the messages; Wait completes and unpacks.
 
 static inline
-void VetBandPost(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
+void VetBandPost(ScCartMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
                  const int b0, const int nb, const int nmb, const int nx2,
                  const int nx3, const int pass) {
   const int nof = st.nof, b2 = st.b2, b3 = st.b3, mreg = st.maxreg;
@@ -212,7 +212,7 @@ void VetBandPost(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int n
 }
 
 static inline
-void VetBandWait(VetMBState &st, DvceArray5D<Real> &a, const int nmb, const int nx2,
+void VetBandWait(ScCartMBState &st, DvceArray5D<Real> &a, const int nmb, const int nx2,
                  const int nx3) {
 #if MPI_PARALLEL_ENABLED
   if (!st.hmpi || st.req.empty()) return;
@@ -246,7 +246,7 @@ void VetBandWait(VetMBState &st, DvceArray5D<Real> &a, const int nmb, const int 
 }
 
 static inline
-void VetBandExchange(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
+void VetBandExchange(ScCartMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
                      const int b0, const int nb, const int nmb, const int nx2,
                      const int nx3) {
   for (int p = 1; p <= st.npb; ++p) {
@@ -281,7 +281,7 @@ void VetRayRegion(const int d, const int nx, const int b, const int dlo, const i
 //! floor(reach) + 1 cells); same values in every cell read
 
 static inline
-void VetPlanePost(VetMBState &st, DvceArray5D<Real> &a, const int p, const int nray,
+void VetPlanePost(ScCartMBState &st, DvceArray5D<Real> &a, const int p, const int nray,
                   const int nmb, const int nx2, const int nx3, const int pass = 1) {
   const int nof = st.nof, b2 = st.b2, b3 = st.b3, mreg = st.maxreg;
   const auto oj = st.oj;
@@ -335,7 +335,7 @@ void VetPlanePost(VetMBState &st, DvceArray5D<Real> &a, const int p, const int n
 }
 
 static inline
-void VetPlaneWait(VetMBState &st, DvceArray5D<Real> &a, const int nray, const int nmb,
+void VetPlaneWait(ScCartMBState &st, DvceArray5D<Real> &a, const int nray, const int nmb,
                   const int nx2, const int nx3) {
 #if MPI_PARALLEL_ENABLED
   if (!st.hmpi || st.req.empty()) return;
@@ -376,7 +376,7 @@ void VetPlaneWait(VetMBState &st, DvceArray5D<Real> &a, const int nray, const in
 //! only blocks with lx1 == rcv receive (-2: all).  Planes are contiguous (LayoutRight).
 
 static inline
-void VetX1Move(VetMBState &st, DvceArray5D<Real> &a, const int s, const int rcv,
+void VetX1Move(ScCartMBState &st, DvceArray5D<Real> &a, const int s, const int rcv,
                const int ad, const int as, const int b0, const int nb, const int nmb) {
   const int n2w = st.n2w, n3w = st.n3w;
   auto xl_ = st.xloc;

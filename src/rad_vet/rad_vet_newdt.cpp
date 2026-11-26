@@ -43,7 +43,7 @@ int RadiationVet::RssRstMode() const {return RssMode() + 16;}
 //! \brief the closure tensor <hydro>/rad_signal_speed reads (hydro_newdt.cpp)
 
 int RadiationVet::RssMode() const {
-  // clean: its own Eddington tensor cln_s, once CleanInit ran
+  // clean: its own Eddington tensor cln_s, once InitArrays ran
   if (cln_s.extent(0) > 0 && cln_init) return 5;
   return (vet_sc && vet_full && vet_cell.extent(0) > 0) ? 4 : 0;
 }

@@ -595,7 +595,7 @@ Real DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
      Kokkos::Sum<Real>(given));
   // floor_pay = rad_column: what the cell's E_rad could not cover is taken from the E_rad
   // above e_floor of the nearest cells of its radial column, i -+ d, the pair split by
-  // their energy above the floor (implicit_pos_gas_cons's column pass, CleanWriteBack)
+  // their energy above the floor (implicit_pos_gas_cons's column pass, WriteBack)
   if (col) {
     Real cp = 0.0, cu = 0.0;
     Kokkos::parallel_reduce("duale_pay_col", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(

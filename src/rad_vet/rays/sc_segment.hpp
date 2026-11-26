@@ -47,28 +47,28 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
 
 // range policy passing the functor as a kernel argument (HintLightWeight) for the
 // per-shell vet_gd kernels; avoids the constant-memory launch and its host wait
-inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
+inline auto ScLight(const DevExeSpace &ex, const int a, const int b) {
   return Kokkos::Experimental::require(
       Kokkos::RangePolicy<>(ex, a, b),
       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 }
 
-// vet_gd shell kernel policy: VgdLight with launch bounds on HIP, so the register
+// vet_gd shell kernel policy: ScLight with launch bounds on HIP, so the register
 // allocator may use 512/VET_VGD_LB VGPRs instead of spilling (arithmetic unchanged)
 #ifndef VET_VGD_LB
 #define VET_VGD_LB 1
 #endif
-inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
+inline auto ScShellPol(const DevExeSpace &ex, const int a, const int b) {
 #if defined(KOKKOS_ENABLE_HIP) && (VET_VGD_LB > 0)
   return Kokkos::Experimental::require(
       Kokkos::RangePolicy<Kokkos::LaunchBounds<256, VET_VGD_LB>>(ex, a, b),
       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 #else
-  return VgdLight(ex, a, b);
+  return ScLight(ex, a, b);
 #endif
 }
 
-// CUDA gx-false shell kernel launch bounds (VET_VGD_CUDA_LB; 0 = plain VgdShellPol,
+// CUDA gx-false shell kernel launch bounds (VET_VGD_CUDA_LB; 0 = plain ScShellPol,
 // 2 = <128, 5> on A100)
 #if defined(KOKKOS_ENABLE_CUDA)
 #ifndef VET_VGD_CUDA_LB
@@ -79,7 +79,7 @@ inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
 #endif
 #endif
 template <unsigned T, unsigned B>
-inline auto VgdLbPol(const DevExeSpace &ex, const int a, const int b) {
+inline auto ScLbPol(const DevExeSpace &ex, const int a, const int b) {
   return Kokkos::Experimental::require(
       Kokkos::RangePolicy<Kokkos::LaunchBounds<T, B>>(ex, a, b),
       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
@@ -90,7 +90,7 @@ inline auto VgdLbPol(const DevExeSpace &ex, const int a, const int b) {
 // return its device address: the shell kernels call it through this pointer instead of
 // a ~2.7 kB kernel argument (copied to every thread's stack); deep_copy fences
 template <class F>
-inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
+inline const F *ScClosureToDevice(const F &f, DvceArray1D<char> &buf) {
   const size_t n = sizeof(F);
   if (buf.extent(0) < n) {buf = DvceArray1D<char>("vet_vgd_body", n);}
   using HostBytes = Kokkos::View<const char *, Kokkos::HostSpace,
@@ -101,8 +101,8 @@ inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
 }
 
 // fatal-error exit of the vet_gd setup: file, tag, msg
-[[noreturn]] inline void VgdFatalAt(const char *file, const char *tag,
-                                    const std::string &msg) {
+[[noreturn]] inline void ScFatalAt(const char *file, const char *tag,
+                                   const std::string &msg) {
   std::cout << "### FATAL ERROR in " << file << std::endl << tag << msg << std::endl;
   // _Exit: skip static destructors behind live Kokkos views
   std::_Exit(EXIT_FAILURE);

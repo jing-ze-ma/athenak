@@ -41,7 +41,7 @@
 namespace radvet {
 
 // <rad_vet>/vet_gd_twin_srw: weight the twin's pattern subtraction per cell by the
-// symref weight w = min(J_twin/J, 1) (VgdSrW); w = 1 cells are bitwise. Parsed in
+// symref weight w = min(J_twin/J, 1) (ScSrW); w = 1 cells are bitwise. Parsed in
 // rad_vet.cpp.
 // <rad_vet>/vet_rotate_advance: with vet_rotate_avg = K the angle set of block b does
 // not repeat with period K, so the averaged window advances through SO(3) / the azimuth
@@ -51,7 +51,7 @@ bool g_vra_adv = false;
 namespace {
 
 // HEALPix ring-scheme centres (12 ns^2) with the moment-fixed weights
-void VgdDirections(const int ns, std::vector<double> &d) {
+void ScDirections(const int ns, std::vector<double> &d) {
   d.clear();
   for (int i = 1; i < 4*ns; ++i) {
     double z, ph0, dph;
@@ -93,8 +93,8 @@ void VgdDirections(const int ns, std::vector<double> &d) {
 // product set: Gauss-Legendre in n_z (nmu nodes) x nphi uniform azimuths per ring,
 // alternate rings shifted by half a step (stagger); positive weights, sum w = 1,
 // sum w n = 0, sum w nn = I/3 exactly
-void VgdProduct(const int nmu, const int nphi, const bool stagger,
-                std::vector<double> &d) {
+void ScProduct(const int nmu, const int nphi, const bool stagger,
+               std::vector<double> &d) {
   d.clear();
   for (int q = 0; q < nmu; ++q) {       // Newton on P_nmu
     double z = std::cos(M_PI*(q + 0.75)/(nmu + 0.5));
@@ -127,8 +127,8 @@ void VgdProduct(const int nmu, const int nphi, const bool stagger,
 // vet_gd_geo = n >= 1 (stored as vgd_ls = -n): the geodesic set, the vertices of the
 // class-I subdivided icosahedron (10 n^2 + 2 directions); weight = solid angle of the
 // vertex's spherical Voronoi cell / 4 pi. Full icosahedral symmetry: sum w = 1,
-// sum w n = 0, sum w nn = I/3, 4th moments isotropic to round-off (VgdMomentCheck)
-double VgdSphTri(const double *a, const double *b, const double *c) {
+// sum w n = 0, sum w nn = I/3, 4th moments isotropic to round-off (ScMomentCheck)
+double ScSphTri(const double *a, const double *b, const double *c) {
   // the solid angle of the spherical triangle of unit vectors a, b, c (Van Oosterom)
   const double tp = a[0]*(b[1]*c[2] - b[2]*c[1]) - a[1]*(b[0]*c[2] - b[2]*c[0]) +
                     a[2]*(b[0]*c[1] - b[1]*c[0]);
@@ -138,12 +138,12 @@ double VgdSphTri(const double *a, const double *b, const double *c) {
   return 2.0*std::fabs(std::atan2(tp, 1.0 + ab + bc + ca));
 }
 
-void VgdUnit(double *v) {
+void ScUnit(double *v) {
   const double s = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
   v[0] /= s; v[1] /= s; v[2] /= s;
 }
 
-bool VgdGeodesic(const int nl, std::vector<double> &d) {
+bool ScGeodesic(const int nl, std::vector<double> &d) {
   if (nl < 1 || nl > 12) {return false;}
   const double g = 0.5*(1.0 + std::sqrt(5.0));
   const double iv[12][3] = {{-1, g, 0}, {1, g, 0}, {-1, -g, 0}, {1, -g, 0},
@@ -157,7 +157,7 @@ bool VgdGeodesic(const int nl, std::vector<double> &d) {
   std::vector<std::array<double, 3>> vx;
   std::vector<std::array<int, 3>> tr;
   auto find = [&](double *p) {
-    VgdUnit(p);
+    ScUnit(p);
     for (size_t q = 0; q < vx.size(); ++q) {
       const double dx = vx[q][0] - p[0], dy = vx[q][1] - p[1], dz = vx[q][2] - p[2];
       if (dx*dx + dy*dy + dz*dz < 1.0e-20) {return static_cast<int>(q);}
@@ -200,15 +200,15 @@ bool VgdGeodesic(const int nl, std::vector<double> &d) {
     if (cc[0]*a[0] + cc[1]*a[1] + cc[2]*a[2] < 0.0) {
       cc[0] = -cc[0]; cc[1] = -cc[1]; cc[2] = -cc[2];
     }
-    VgdUnit(cc);
+    ScUnit(cc);
     for (int e = 0; e < 3; ++e) {
       const double *p = vx[t[e]].data();
       const double *q1 = vx[t[(e + 1) % 3]].data(), *q2 = vx[t[(e + 2) % 3]].data();
       double m1[3] = {p[0] + q1[0], p[1] + q1[1], p[2] + q1[2]};
       double m2[3] = {p[0] + q2[0], p[1] + q2[1], p[2] + q2[2]};
-      VgdUnit(m1);
-      VgdUnit(m2);
-      w[t[e]] += VgdSphTri(p, m1, cc) + VgdSphTri(p, cc, m2);
+      ScUnit(m1);
+      ScUnit(m2);
+      w[t[e]] += ScSphTri(p, m1, cc) + ScSphTri(p, cc, m2);
     }
   }
   double ws = 0.0;
@@ -225,7 +225,7 @@ bool VgdGeodesic(const int nl, std::vector<double> &d) {
 
 // vet_gd_ls: level-symmetric LQ_N (Carlson; mu_1 of Lewis & Miller), positive weights
 // per permutation class from the even moments (sum w nn = I/3 by octahedral symmetry)
-bool VgdLevelSym(const int nl, std::vector<double> &d) {
+bool ScLevelSym(const int nl, std::vector<double> &d) {
   double m1;
   switch (nl) {
     case 6: m1 = 0.2666355; break;
@@ -299,19 +299,19 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdBuildSet
+//! \fn void RadiationVet::ScBuildSet
 //! \brief the vet_gd direction set of the keys: product set, vet_gd_ls, vet_gd_geo or
 //! HEALPix (vet_gd_nside); shared by vet_gd and vet_sc_set = gd
 
-void RadiationVet::VgdBuildSet(std::vector<double> &d) const {
+void RadiationVet::ScBuildSet(std::vector<double> &d) const {
   if (vgd_gl_nmu > 0) {
-    VgdProduct(vgd_gl_nmu, vgd_gl_nphi, vgd_gl_stag, d);
+    ScProduct(vgd_gl_nmu, vgd_gl_nphi, vgd_gl_stag, d);
   } else if (vgd_ls > 0) {
-    if (!VgdLevelSym(vgd_ls, d)) {VgdFatal("vet_gd_ls must be 6, 8, 10 or 12");}
+    if (!ScLevelSym(vgd_ls, d)) {ScFatal("vet_gd_ls must be 6, 8, 10 or 12");}
   } else if (vgd_ls < 0) {   // vet_gd_geo
-    if (!VgdGeodesic(-vgd_ls, d)) {VgdFatal("vet_gd_geo must be 1 .. 12");}
+    if (!ScGeodesic(-vgd_ls, d)) {ScFatal("vet_gd_geo must be 1 .. 12");}
   } else {
-    VgdDirections(vgd_nside, d);
+    ScDirections(vgd_nside, d);
   }
 }
 
@@ -375,7 +375,7 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       }
     }
   }
-  if (VgdRotOn()) {
+  if (ScRotOn()) {
     recipe::Rule(pin, "rad_vet", "vet_rotate_advance", g_vra_adv ? "true" : "false");
   }
   // the axis: sp turns the set about the polar axis (exact wall maps for HEALPix), the
@@ -388,18 +388,18 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::VetGdAngle
+//! \fn Real RadiationVet::RotAngle
 //! \brief vet_gd_rotate_every = N > 0: the z-rotation of the set for cycle c, constant
 //! per block of N cycles: alpha = P frac((c/N) g), g = (sqrt 5 - 1)/2, P the set's
 //! period (deterministic: reruns and restarts bitwise)
 
-Real RadiationVet::VetGdAngle(const int cyc) const {
-  if (!VgdRotOn()) {return 0.0;}
-  return VetGdAngleBlk(VetGdBlock(cyc));
+Real RadiationVet::RotAngle(const int cyc) const {
+  if (!ScRotOn()) {return 0.0;}
+  return RotAngleBlk(RotBlock(cyc));
 }
 
-Real RadiationVet::VetGdAngleBlk(const int64_t blk) const {
-  // vet_gd_rotate_axis = 3d: the key of block b (decoded by VgdRot3) is zigzag(b), or
+Real RadiationVet::RotAngleBlk(const int64_t blk) const {
+  // vet_gd_rotate_axis = 3d: the key of block b (decoded by ScRot3) is zigzag(b), or
   // zigzag(b mod K) with vet_rotate_avg = K. vet_rotate_advance: always zigzag(b), so
   // any K consecutive blocks are consecutive R_3 points and the window moves by one set
   // per block. vet_rotate_avg_ema: a never-repeating sequence (3d: key of b; z: golden
@@ -434,13 +434,13 @@ Real RadiationVet::VetGdAngleBlk(const int64_t blk) const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VgdRot3
+//! \fn void RadiationVet::ScRot3
 //! \brief vet_gd_rotate_axis = 3d: the rotation matrix (row major) of block key `key`.
 //! Shoemake (1992) uniform rotation from the R_3 point u_b = frac(b (1/g, 1/g^2,
 //! 1/g^3)) (Roberts 2018), times the inverse of b = 0's (block 0 unrotated). A pure
 //! function of the key: same bits on every rank and restart.
 
-void RadiationVet::VgdRot3(const Real key, double r[9]) const {
+void RadiationVet::ScRot3(const Real key, double r[9]) const {
   const int64_t z = static_cast<int64_t>(std::llround(static_cast<double>(key)));
   const int64_t b = (z % 2 == 0) ? (z/2) : (-(z + 1)/2);
   auto quat = [](const int64_t bb, double q[4]) {
@@ -506,13 +506,13 @@ double RadiationVet::RotPhase(const int64_t blk) const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn int64_t RadiationVet::VetGdBlock
+//! \fn int64_t RadiationVet::RotBlock
 //! \brief rotation block of the step of cycle cyc. Cycle clock (vet_gd_rotate_every =
 //! N): cyc/N. Physical clock (vet_gd_rotate_dt > 0): floor((t + dt/2 - t0)/dt_rot),
 //! the block of the step midpoint, shared by all stages and builds of the step. With
 //! vet_gd_rotate_align every jump sits on a step boundary. Restart-safe.
 
-int64_t RadiationVet::VetGdBlock(const int cyc) const {
+int64_t RadiationVet::RotBlock(const int cyc) const {
   if (vgd_rot_dt > 0.0) {
     const Mesh *pm = pmy_pack->pmesh;
     const Real dt = (pm->dt > 0.0 && pm->dt < vgd_rot_dt) ? pm->dt : 0.0;
@@ -529,7 +529,7 @@ int64_t RadiationVet::VetGdBlock(const int cyc) const {
 bool RadiationVet::RotLastStep() const {
   const Mesh *pm = pmy_pack->pmesh;
   if (vgd_rot_dt > 0.0) {
-    const int64_t b = VetGdBlock(pm->ncycle);
+    const int64_t b = RotBlock(pm->ncycle);
     const double tk = (static_cast<double>(b) + 1.0)*vgd_rot_dt;
     return pm->time + pm->dt >= tk - 1.0e-9*vgd_rot_dt;
   }
@@ -538,14 +538,14 @@ bool RadiationVet::RotLastStep() const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdRotStep
+//! \fn void RadiationVet::RotNewBlock
 //! \brief (Driver, before Time2RotCorrect) on the first step of a new rotation block
 //! the stored hesdirk2 slope K1 belongs to the old set; be resets it (t2_ok = false).
 //! The first call takes the block before t as the last one (restart on a boundary).
 
-void RadiationVet::VetGdRotStep() {
+void RadiationVet::RotNewBlock() {
   if (!(vgd_rot_dt > 0.0) || !(vgd_on || vsc_rot)) {return;}
-  const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+  const int64_t b = RotBlock(pmy_pack->pmesh->ncycle);
   if (vgd_rot_lastblk == INT64_MIN) {
     const Mesh *pm = pmy_pack->pmesh;
     vgd_rot_lastblk = static_cast<int64_t>(
@@ -565,12 +565,12 @@ void RadiationVet::VetGdRotStep() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::VetGdAlignDt
+//! \fn Real RadiationVet::RotAlignDt
 //! \brief vet_gd_rotate_align (Mesh::NewTimeStep, after the global min): reach the next
 //! boundary k dt_rot in n = ceil(rem/dt) equal steps, dt' = rem/n >= dt/2.
 //! vet_gd_rotate_stretch = s > 0: n - 1 steps when dt' <= (1 + s) dt.
 
-Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
+Real RadiationVet::RotAlignDt(const Real time, const Real dt) {
   // vet_gd_rotate_dt = auto: vgd_rot_auto_fac x the first global dt, recorded as a
   // number (restarts keep it)
   if (vgd_rot_auto && !(vgd_rot_dt > 0.0) && dt > 0.0) {
@@ -601,16 +601,16 @@ Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn std::vector<double> RadiationVet::VgdRotate
+//! \fn std::vector<double> RadiationVet::ScRotate
 //! \brief the set at angle (or block key) alpha, packed as vgd_base (x, y, z, w):
-//! rotated about z, or with vet_gd_rotate_axis = 3d by R_b (VgdRot3)
+//! rotated about z, or with vet_gd_rotate_axis = 3d by R_b (ScRot3)
 
-std::vector<double> RadiationVet::VgdRotate(const Real alpha) const {
+std::vector<double> RadiationVet::ScRotate(const Real alpha) const {
   const int n = vgd_n;
   std::vector<double> d(vgd_base);
   if (vgd_rot3) {
     double rm[9];
-    VgdRot3(alpha, rm);
+    ScRot3(alpha, rm);
     for (int q = 0; q < n; ++q) {
       const double x = vgd_base[4*q], y = vgd_base[4*q+1], z = vgd_base[4*q+2];
       double v[3];

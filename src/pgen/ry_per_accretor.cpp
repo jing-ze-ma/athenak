@@ -1881,7 +1881,7 @@ void RyPerLzMark(MeshBlockPack *pmbp) {
 //! are reset to floor gas AT REST after the other sources of every stage, but the VET
 //! implicit coupling that follows gives that 1e-8 floor gas the radiation momentum of the
 //! light it holds (v_r 2e5-1e6 km/s in the first back-sink row behind the
-//! nozzle, in every output and in Emsk).  This hook (RadiationVet::HydroConToPrim, after
+//! nozzle, in every output and in Emsk).  This hook (RadiationVet::GasUpdate, after
 //! the coupling, before the fluid refresh) zeroes their momentum again (the kinetic
 //! energy it removes is the coupling's unpaid work and is not booked, see the end of the
 //! function).  The hydro dt is unchanged (computed before the VET stage, and these cells

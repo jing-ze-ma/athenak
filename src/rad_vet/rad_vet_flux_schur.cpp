@@ -25,12 +25,12 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::CleanStagFSweepChange
+//! \fn Real RadiationVet::FluxSweepChange
 //! \brief clean_stag_fsweeps: the largest relative change of the F the lines' high faces
 //! took from their neighbours (CLW_Y, CLW_Z, CLW_S ghosts) since the last sweep (kept in
 //! CLW_TM + dir; the first sweep only stores it)
 
-Real RadiationVet::CleanStagFSweepChange() {
+Real RadiationVet::FluxSweepChange() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -38,7 +38,7 @@ Real RadiationVet::CleanStagFSweepChange() {
   const int nmb = pmy_pack->nmb_thispack, nx1 = indcs.nx1, nx2 = indcs.nx2;
   const int nx3 = indcs.nx3, n12 = nx1*nx2, n13 = nx1*nx3, n23 = nx2*nx3;
   const int nfc = n23 + n13 + n12;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   const int nf = x.nf;
   Real dmax = 0.0;
   Kokkos::parallel_reduce("cln_fsweep", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nfc),
@@ -50,33 +50,33 @@ Real RadiationVet::CleanStagFSweepChange() {
     if (d == 0) {i = ie + 1; j = js + q%nx2; k = ks + q/nx2;}
     if (d == 1) {j = je + 1; i = is + (q - n23)%nx1; k = ks + (q - n23)/nx1;}
     if (d == 2) {k = ke + 1; i = is + (q - n23 - n13)%nx1; j = js + (q - n23 - n13)/nx1;}
-    if (CleanBoundaryFace(x, d, m, k, j, i)) return;
+    if (IsBoundaryFace(x, d, m, k, j, i)) return;
     const int cy = (d == 2) ? CLW_S : CLW_Y + d;
     const Real f = x.w(m,cy,k,j,i), f0 = x.w(m,CLW_TM+d,k,j,i);
     mx = fmax(mx, fabs(f - f0)/fmax(fabs(f), 1.0e-300));
     x.w(m,CLW_TM+d,k,j,i) = f;
   }, Kokkos::Max<Real>(dmax));
-  return CleanReduce(dmax, true);
+  return GlobalReduce(dmax, true);
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagFSchur
+//! \fn void RadiationVet::FluxSchur
 //! \brief clean_stag_fschur (uniform mesh; with the face tie or the cubed sphere's owner
 //! rule): the F solve's lines exact across MeshBlocks and periodic wraps (cubed sphere:
 //! round the four-panel rings).  Each MeshBlock line is a segment, its end faces affine
-//! in the faces beyond (CleanStagFOwn).  Exchange rounds join segments (CleanStagFJoin):
+//! in the faces beyond (FluxRowOwn).  Exchange rounds join segments (FluxRowJoin):
 //! a MeshBlock sends right its own joined to the one from the left (and mirrored) until
 //! they span the line, or once round a periodic one; the faces beyond its ends then
 //! replace the lagged ghosts in the line solves.  A segment goes out in three slots of
 //! three cells at each end; the six free slots serve two directions at a time.  Across
-//! a cubed-sphere seam a reversed neighbour line (CleanCsSlot) is read reversed.
+//! a cubed-sphere seam a reversed neighbour line (CsSlot) is read reversed.
 
-void RadiationVet::CleanStagFSchur() {
+void RadiationVet::FluxSchur() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanArgs x = CleanMakeArgs();
-  const CleanFLine ln{cln_vf, x.cub};
+  SolveArgs x = MakeArgs();
+  const FluxLine ln{cln_vf, x.cub};
   const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
   const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
   const int fs[6] = {CLW_TM, CLW_TM+1, CLW_TM+2, CLW_TM+3, CLW_BW, CLW_PW};
@@ -98,7 +98,7 @@ void RadiationVet::CleanStagFSchur() {
   // layout_invariant_mode = tile, a lateral line of more than one tile
   const int tn = repro::tile_n;
   if (tn > 0 && (nn[1] > tn || (x.nf == 3 && nn[2] > tn))) {
-    CleanStagFSchurTile(gr, gs, per, ngd);
+    FluxSchurTile(gr, gs, per, ngd);
     return;
   }
   for (int g = 0; g == 0 || 2*g < ngd; ++g) {
@@ -145,7 +145,7 @@ void RadiationVet::CleanStagFSchur() {
             cell(he ? n : -1, k, j, i);
             cell(he ? n : 0, kc, jc, ic);
             Real sg = 1.0;
-            const int fq = cub ? CleanCsSlot(x, dir, m, kc, jc, ic, k, j, i, false, sg)/2
+            const int fq = cub ? CsSlot(x, dir, m, kc, jc, ic, k, j, i, false, sg)/2
                                : dir;
             const int o = (fq == dir) ? gs[dir] : ((fq == 1) ? g1 : g2);
             for (int q = 0; q < 8; ++q) {
@@ -159,9 +159,9 @@ void RadiationVet::CleanStagFSchur() {
           };
           int k, j, i;
           cell(0, k, j, i);
-          const bool bl = CleanBoundaryFace(x, dir, m, k, j, i);
+          const bool bl = IsBoundaryFace(x, dir, m, k, j, i);
           cell(n, k, j, i);
-          const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);
+          const bool bh = IsBoundaryFace(x, dir, m, k, j, i);
           const bool hl = r > 1 && rl > 0 && !bl, hr = r > 1 && rr > 0 && !bh;
           Real o[8], sl[8], sr[8], c[8], cr[8], ya[3], xb[3], yr[3], xr[3];
           // the own segment once, kept for the rounds in cells 0, 1 of four E-solve
@@ -169,7 +169,7 @@ void RadiationVet::CleanStagFSchur() {
           // line sends nothing: only in the last round)
           const bool r1 = r == 1 || rl == 0;
           for (int q = 0; q < 8 && !r1; ++q) o[q] = keepo(q);
-          if (r1) CleanStagFOwn(x, ln, fc, dir, m, a, b, n, o);
+          if (r1) FluxRowOwn(x, ln, fc, dir, m, a, b, n, o);
           for (int q = 0; q < 8 && r1 && !fin; ++q) keepo(q) = o[q];
           // the segment to the left in the ghosts; to the right kept after rr (cubed
           // sphere: in the faces' free CLF_N + 2, both ends send for rl rounds)
@@ -186,9 +186,9 @@ void RadiationVet::CleanStagFSchur() {
             if (!hr) sr[q] = 0.0;
             c[q] = o[q], cr[q] = o[q];
           }
-          if (hl) CleanStagFJoin(sl, o, c, ya, xb);
+          if (hl) FluxRowJoin(sl, o, c, ya, xb);
           if (!fin) {
-            if (hr && r <= rs) CleanStagFJoin(o, sr, cr, yr, xr);
+            if (hr && r <= rs) FluxRowJoin(o, sr, cr, yr, xr);
             for (int q = 0; q < 8; ++q) {
               if (r <= rl) slot(n - 1, -1, q) = c[q];
               if (r <= rs + ((hr && !cub) ? 1 : 0)) {
@@ -201,7 +201,7 @@ void RadiationVet::CleanStagFSchur() {
           for (int q = 0; q < 8 && cub && hr && r - 1 > rr; ++q) sr[q] = keep(q);
           // the whole line (periodic: determinant (1 - c2)(1 - c5) - c1 c6 as a sum)
           for (int q = 0; q < 8; ++q) cr[q] = c[q];
-          if (hr) CleanStagFJoin(c, sr, cr, yr, xr);
+          if (hr) FluxRowJoin(c, sr, cr, yr, xr);
           Real xo = 0.0, yo = 0.0;
           if (pd) {
             const Real det = cr[3]*(cr[6] + cr[7]) + cr[1]*cr[7];
@@ -228,24 +228,24 @@ void RadiationVet::CleanStagFSchur() {
           }
         });
       }
-      // the ghosts of a face take its line family's slots (CleanGSeg::fm)
+      // the ghosts of a face take its line family's slots (GSeg::fm)
       if (r <= nrt) {
         std::array<uint32_t, 4> fa = {0, 0, 0, 0}, fb = fa;
         for (int d = 0; d < x.nf; ++d) {
           if (gr[d] == g) fa[d] = (gs[d] > 0) ? 3 : 0, fb[d] = (gs[d] > 0) ? 8 : 7;
         }
-        if (nd == 2) CleanGhostDefer(cln_w, CLW_BW, 2), cln_hpend.back().fm = fa;
-        CleanGhostDefer(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
+        if (nd == 2) GhostDefer(cln_w, CLW_BW, 2), cln_hpend.back().fm = fa;
+        GhostDefer(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
         cln_hpend.back().fm = fb;
-        CleanGhostFlush();
+        GhostFlush();
       }
     }
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagFSchurTile
-//! \brief layout_invariant_mode = tile: CleanStagFSchur with the nk tiles of a lateral
+//! \fn void RadiationVet::FluxSchurTile
+//! \brief layout_invariant_mode = tile: FluxSchur with the nk tiles of a lateral
 //! MeshBlock line as MeshBlocks, so the F solve is the same for every whole-tile layout.
 //! Tile g's whole line is join(join(L, o_g), R), L the left fold of the nt/2 segments
 //! before it (periodic; else all), R the right fold of the (nt - 1)/2 after.  Joins do
@@ -254,13 +254,13 @@ void RadiationVet::CleanStagFSchur() {
 //! tile nk - 1 - p, extended by each block they pass.  Inner tile ends go to cln_fsjt,
 //! the MeshBlock's to the ghosts.
 
-void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
-                                       const bool per[3], const int ngd) {
+void RadiationVet::FluxSchurTile(const int gr[3], const int gs[3],
+                                 const bool per[3], const int ngd) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanArgs x = CleanMakeArgs();
-  const CleanFLine ln{cln_vf, x.cub};
+  SolveArgs x = MakeArgs();
+  const FluxLine ln{cln_vf, x.cub};
   const bool cub = x.cub;
   const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
   const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
@@ -276,7 +276,7 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
     if (nk[dir] == 1 && gr[dir] < 0) continue;
     const int nkd = nk[dir], nt = nn[dir]/nkd, na = (dir == 0) ? nn[1] : nn[0];
     const int nb = (dir == 2) ? nn[1] : nn[2];
-    CleanFsjt(cln_fsjt[dir], nmb1 + 1, na*nb, nkd);
+    FluxTileArray(cln_fsjt[dir], nmb1 + 1, na*nb, nkd);
     auto jt = cln_fsjt[dir];
     auto fc = x.fc[dir];
     AthFor("cln_fsjo", Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*na*nb),
@@ -284,12 +284,12 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
       const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb, l = idx%(na*nb);
       for (int u = 0; u < nkd; ++u) {
         Real s[8];
-        CleanStagFOwn(x, ln, fc, dir, m, a, b, nt, s, u*nt, u > 0, u < nkd - 1);
+        FluxRowOwn(x, ln, fc, dir, m, a, b, nt, s, u*nt, u > 0, u < nkd - 1);
         for (int q = 0; q < 8; ++q) jt(m,l,8*u+q) = s[q];
       }
     });
   }
-  // the passes of rounds of each group of directions (CleanStagFSchur)
+  // the passes of rounds of each group of directions (FluxSchur)
   for (int g = 0; g == 0 || 2*g < ngd; ++g) {
     int np = 0, nrt = 0, nd = 0;
     for (int d = 0; d < x.nf; ++d) {
@@ -326,13 +326,13 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
               cell(t0 + sg*(q%3), k, j, i);
               return x.w(m,(q < 3) ? c0 : ((q < 6) ? c1 : c2),k,j,i);
             };
-            auto ghost = [&](const bool he, Real g[8]) {   // as CleanStagFSchur
+            auto ghost = [&](const bool he, Real g[8]) {   // as FluxSchur
               int k, j, i, kc, jc, ic;
               cell(he ? n : -1, k, j, i);
               cell(he ? n : 0, kc, jc, ic);
               Real sg = 1.0;
-              const int fq = cub ? CleanCsSlot(x, dir, m, kc, jc, ic, k, j, i, false,
-                                               sg)/2 : dir;
+              const int fq = cub ? CsSlot(x, dir, m, kc, jc, ic, k, j, i, false,
+                                          sg)/2 : dir;
               const int o = (fq == dir) ? gd : ((fq == 1) ? g1 : g2);
               for (int q = 0; q < 8; ++q) {
                 cell(he ? n + q%3 : -1 - q%3, k, j, i);
@@ -345,9 +345,9 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
             };
             int k, j, i;
             cell(0, k, j, i);
-            const bool xl = r > 1 && !CleanBoundaryFace(x, dir, m, k, j, i);
+            const bool xl = r > 1 && !IsBoundaryFace(x, dir, m, k, j, i);
             cell(n, k, j, i);
-            const bool xr = r > 1 && !CleanBoundaryFace(x, dir, m, k, j, i);
+            const bool xr = r > 1 && !IsBoundaryFace(x, dir, m, k, j, i);
             Real sl[8], sr[8], f[8], h[8], s[8], ya[3], xb[3];
             if (xl) ghost(false, sl);
             if (xr) ghost(true, sr);
@@ -362,28 +362,28 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
             for (int q = 0; q < 8; ++q) f[q] = xl ? sl[q] : jt(m,l,8*u0+q);
             for (int u = xl ? 0 : u0 + 1; u < nkd; ++u) {
               for (int q = 0; q < 8; ++q) s[q] = jt(m,l,8*u+q);
-              CleanStagFJoin(f, s, h, ya, xb);
+              FluxRowJoin(f, s, h, ya, xb);
               for (int q = 0; q < 8; ++q) f[q] = h[q];
             }
             for (int q = 0; q < 8; ++q) slot(n - 1, -1, q) = f[q];
             for (int q = 0; q < 8; ++q) f[q] = xr ? sr[q] : jt(m,l,8*u1+q);
             for (int u = xr ? nkd - 1 : u1 - 1; u >= 0; --u) {
               for (int q = 0; q < 8; ++q) s[q] = jt(m,l,8*u+q);
-              CleanStagFJoin(s, f, h, ya, xb);
+              FluxRowJoin(s, f, h, ya, xb);
               for (int q = 0; q < 8; ++q) f[q] = h[q];
             }
             for (int q = 0; q < 8; ++q) slot(0, 1, q) = f[q];
           });
         }
-        if (r <= nrt) {   // as CleanStagFSchur
+        if (r <= nrt) {   // as FluxSchur
           std::array<uint32_t, 4> fa = {0, 0, 0, 0}, fb = fa;
           for (int d = 0; d < x.nf; ++d) {
             if (gr[d] == g) fa[d] = (gs[d] > 0) ? 3 : 0, fb[d] = (gs[d] > 0) ? 8 : 7;
           }
-          if (nd == 2) CleanGhostDefer(cln_w, CLW_BW, 2), cln_hpend.back().fm = fa;
-          CleanGhostDefer(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
+          if (nd == 2) GhostDefer(cln_w, CLW_BW, 2), cln_hpend.back().fm = fa;
+          GhostDefer(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
           cln_hpend.back().fm = fb;
-          CleanGhostFlush();
+          GhostFlush();
         }
       }
     }
@@ -405,22 +405,22 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
       };
       int k, j, i, kf, jf, iff;
       cell(0, k, j, i);
-      const bool bl = CleanBoundaryFace(x, dir, m, k, j, i);
+      const bool bl = IsBoundaryFace(x, dir, m, k, j, i);
       cell(n, k, j, i);
-      const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);
+      const bool bh = IsBoundaryFace(x, dir, m, k, j, i);
       for (int u = 0; u < nkd; ++u) {
         Real lf[8], rf[8], s[8], h[8], c[8], cr[8], ya[3], xb[3], yr[3], xr[3];
         Real yd[3], xd[3];
         bool hl = false, hr = false;
         auto addl = [&](const int o) {   // L = join(L, the segment at o)
           for (int q = 0; q < 8; ++q) s[q] = jt(m,l,o+q);
-          if (hl) CleanStagFJoin(lf, s, h, yd, xd);
+          if (hl) FluxRowJoin(lf, s, h, yd, xd);
           for (int q = 0; q < 8; ++q) lf[q] = hl ? h[q] : s[q];
           hl = true;
         };
         auto addr = [&](const int o) {   // R = join(the segment at o, R)
           for (int q = 0; q < 8; ++q) s[q] = jt(m,l,o+q);
-          if (hr) CleanStagFJoin(s, rf, h, yd, xd);
+          if (hr) FluxRowJoin(s, rf, h, yd, xd);
           for (int q = 0; q < 8; ++q) rf[q] = hr ? h[q] : s[q];
           hr = true;
         };
@@ -434,9 +434,9 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
           for (int t = nkd - 1; t > u; --t) addr(8*t);
         }
         for (int q = 0; q < 8; ++q) s[q] = jt(m,l,8*u+q), c[q] = s[q];
-        if (hl) CleanStagFJoin(lf, s, c, ya, xb);
+        if (hl) FluxRowJoin(lf, s, c, ya, xb);
         for (int q = 0; q < 8; ++q) cr[q] = c[q];
-        if (hr) CleanStagFJoin(c, rf, cr, yr, xr);
+        if (hr) FluxRowJoin(c, rf, cr, yr, xr);
         Real xo = 0.0, yo = 0.0;
         if (pd) {
           const Real det = cr[3]*(cr[6] + cr[7]) + cr[1]*cr[7];
@@ -449,7 +449,7 @@ void RadiationVet::CleanStagFSchurTile(const int gr[3], const int gs[3],
         if (u < nkd - 1) jt(m,l,25*nkd+u) = gR;
         Real sg;
         cell(n, k, j, i);
-        if (u == nkd - 1 && !bh) {   // cell n, as CleanStagFSchur
+        if (u == nkd - 1 && !bh) {   // cell n, as FluxSchur
           const bool on = ln.Own(x, dir, m, k, j, i, n, n, true);
           Real &f = ln.Slot(x, dir, m, k, j, i, k, j, i, on, sg);
           f = sg*gR;

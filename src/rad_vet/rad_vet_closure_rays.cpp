@@ -26,15 +26,15 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRayCut
+//! \fn void RadiationVet::RayCut
 //! \brief clean_ray_cut: first swept shell vray_icut (global min over columns); below
-//! it the closure is the diffusion limit (CleanThickI, error O(R^2),
+//! it the closure is the diffusion limit (ThickI, error O(R^2),
 //! R = |grad S|/(chi S)).
 //! A column's cut: 10 optical depths below its lowest cell with R >= 0.01 or thinner than
 //! one optical depth.  Moves down at once, up after clean_ray_cut_wait builds (both
 //! in the restart file).  sc rays only; no cut with several MeshBlocks along x1
 
-void RadiationVet::CleanRayCut() {
+void RadiationVet::RayCut() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   vray_icut = 0;
   if (!cln_rcut_on || !cln_init || pmy_pack->pmesh->mesh_indcs.nx1 != indcs.nx1) return;
@@ -42,7 +42,7 @@ void RadiationVet::CleanRayCut() {
   const int ks = indcs.ks, ke = indcs.ke, n1 = indcs.nx1;
   const int nk = ke - ks + 1, nj = je - js + 1, nf = pmy_pack->pmesh->three_d ? 3 :
                                                   (pmy_pack->pmesh->multi_d ? 2 : 1);
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   auto cs_ = vray_cs;
   int lmin = n1;
   Kokkos::parallel_reduce("cln_raycut", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -58,7 +58,7 @@ void RadiationVet::CleanRayCut() {
         Real g = 0.0;
         for (int up = 0; up < 2; ++up) {
           const int s = up ? 1 : -1;
-          if (CleanBoundaryFace(x, dir, m, k + up*dk, j + up*dj, i + up*di)) continue;
+          if (IsBoundaryFace(x, dir, m, k + up*dk, j + up*dj, i + up*di)) continue;
           g = fmax(g, fabs(cs_(m,1,k+s*dk,j+s*dj,i+s*di) - cs_(m,1,k,j,i))/
                       x.dxf[dir](m,k+up*dk,j+up*dj,i+up*di));
         }
@@ -70,7 +70,7 @@ void RadiationVet::CleanRayCut() {
     for (Real t = 0.0; lc > 0 && t < 10.0;) t += tc(is + --lc);
     lm = (lc < lm) ? lc : lm;
   }, Kokkos::Min<int>(lmin));
-  lmin = -static_cast<int>(CleanReduce(-lmin, true));
+  lmin = -static_cast<int>(GlobalReduce(-lmin, true));
   lmin = std::max(0, std::min(lmin, n1 - 2));
   const int prev = cln_rcut;
   cln_rcut_n = (lmin > cln_rcut && cln_rcut >= 0) ? cln_rcut_n + 1 : 0;
@@ -88,13 +88,13 @@ void RadiationVet::CleanRayCut() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureFromGd
+//! \fn void RadiationVet::ClosureFromSc
 //! \brief closure from the vet_gd intensities, mu_b = n . e_b in the cell's basis:
 //! J = <I>, K_bc = <I mu_b mu_c>, H+-_b = <I mu_b> over mu_b >< 0, K+^d_b = <I mu_b mu_d>
 //! over mu_d > 0, C1 = <|I - S|>/J.  Cubed sphere: Cartesian D, half ranges about the
 //! family normals
 
-void RadiationVet::CleanClosureFromGd() {
+void RadiationVet::ClosureFromSc() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -113,10 +113,10 @@ void RadiationVet::CleanClosureFromGd() {
   const bool hf = cln_rfh;   // (CLN_HO)
   const bool kp = cs.extent_int(1) > CLN_KP + 8;   // (k+, not CLN_HO)
   auto gn = cln_gn;
-  CleanArgs x = CleanMakeArgs();
-  // (in device memory, CleanGdFaceSums)
-  cln_gdx = CleanDevArgs(x, 3);
-  const CleanArgs *px = cln_gdx;
+  SolveArgs x = MakeArgs();
+  // (in device memory, RayFaceSums)
+  cln_gdx = DevArgs(x, 3);
+  const SolveArgs *px = cln_gdx;
   // clean_ray_cut: below the cut vgd_i holds the diffusion limit
   if (vgd_on && vray_icut > 0) {
     const Real ic = 1.0/c_light;
@@ -129,34 +129,34 @@ void RadiationVet::CleanClosureFromGd() {
     KOKKOS_LAMBDA(TeamMember_t tm) {
       const int t = tm.league_rank(), i = is + t % nc, j = js + (t/nc) % nj;
       const int k = ks + (t/(nc*nj)) % nk, m = t/(nc*nj*nk);
-      const CleanArgs &x = *px;
+      const SolveArgs &x = *px;
       Real e[3][3];   // (the cell's frame, F and E once, not per direction)
-      CleanThickFrame(x, x3v, m, k, j, i, e);
+      ThickFrame(x, x3v, m, k, j, i, e);
       const Real f[3] = {iw_(m,VET_IW_F1,k,j,i), iw_(m,VET_IW_F2,k,j,i),
                          iw_(m,VET_IW_F3,k,j,i)}, en = iw_(m,VET_IW_EN,k,j,i);
-      const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
+      const DirRow r = ScDirRow(vi_, m, k+ok, j+og, i);
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, n), [&](const int d) {
         const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
-        r.p[d*r.s] = CleanThickI(e, f, en, ic, nv);
+        r.p[d*r.s] = ThickI(e, f, en, ic, nv);
       });
     });
   }
-  CleanForK("cln_gd", nmb1, ks, ke, js, je, is, ie,
+  SolveForK("cln_gd", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px;
+    const SolveArgs &x = *px;
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
     const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
     const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
     // cubed sphere: Cartesian D, half ranges about the families n_d
     Real nd[3][3];
-    if (x.cub) CleanCsFamily(x, m, k, j, i, nd);
+    if (x.cub) CsFamily(x, m, k, j, i, nd);
     Real q[CLN_N] = {0.0}, hp[3] = {0.0}, hm[3] = {0.0};   // (q in registers)
     Real fh[3][3] = {{0.0}}, fl[3][3] = {{0.0}}, oh[3] = {0.0}, ol[3] = {0.0};
     for (int a = 0; a < 9 && hf; ++a) {   // (the normals of the high and low faces)
       fh[a/3][a%3] = gn.At<CLG_N>(m,a,k+(a/3 == 2),j+(a/3 == 1),i+(a/3 == 0));
       fl[a/3][a%3] = gn.At<CLG_N>(m,a,k,j,i);
     }
-    const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
+    const DirRow r = ScDirRow(vi_, m, k+ok, j+og, i);
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
@@ -198,12 +198,12 @@ void RadiationVet::CleanClosureFromGd() {
     }
     q[CLN_JR] = q[CLN_J];
     if (q[CLN_J] < ray_min*iw_(m,VET_IW_EN,k,j,i)) q[CLN_J] = 0.0;
-    CleanStoreMoments(cs, valid, q, m, k, j, i);
-    // vet_rotate_avg_ema_wb on the cubed sphere: CleanFaceHalf's half ranges per cell,
+    StoreMoments(cs, valid, q, m, k, j, i);
+    // vet_rotate_avg_ema_wb on the cubed sphere: FaceHalf's half ranges per cell,
     // each about the normal of the face it leaves through: CLN_HO + b = h+ out of the
     // high face of family b, CLN_HO + 3 + b = h- out of the low one (over the cell's J).
     // The ring carries them as cell moments, so a set change keeps a static state's; a
-    // face takes its two cells' (a ghost's in its own axes, CleanCsSlot)
+    // face takes its two cells' (a ghost's in its own axes, CsSlot)
     const bool ohk = cs(m,CLN_J,k,j,i) > 0.0 && q[CLN_JR] > 0.0;
     for (int b = 0; b < 3 && hf; ++b) {
       cs(m,CLN_HO+b,k,j,i) = ohk ? oh[b]/q[CLN_JR] : 0.25;
@@ -213,11 +213,11 @@ void RadiationVet::CleanClosureFromGd() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanClosureFromRays
+//! \fn void RadiationVet::ClosureFromRays
 //! \brief closure from the vet_sc moments where J >= clean_ray_min E (else isotropic,
 //! marked for the fill); the rays' face fluxes copied everywhere
 
-void RadiationVet::CleanClosureFromRays() {
+void RadiationVet::ClosureFromRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -231,7 +231,7 @@ void RadiationVet::CleanClosureFromRays() {
 
   const bool f2 = cln_consist;
   DvceArray1D<Real> nb("cln_raynan", 1);   // (a ray J not finite: counted, no silent D)
-  CleanFor("cln_rays", nmb1, ks, ke, js, je, is, ie,
+  SolveFor("cln_rays", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,VETRAY_J,k,j,i);
     if (!Kokkos::isfinite(jr)) Kokkos::atomic_add(&nb(0), 1.0);
@@ -270,8 +270,8 @@ void RadiationVet::CleanClosureFromRays() {
       valid(m,0,k,j,i) = 0.0;
     }
   });
-  const Real nn = CleanReduce(Kokkos::create_mirror_view_and_copy(HostMemSpace(), nb)(0),
-                              false);
+  const Real nn = GlobalReduce(Kokkos::create_mirror_view_and_copy(HostMemSpace(), nb)(0),
+                               false);
   if (nn > 0.0 && global_variable::my_rank == 0) {
     std::printf("CLEAN WARNING cycle %d: %.0f cells with a ray J not finite "
                 "(isotropic)\n", pmy_pack->pmesh->ncycle, nn);

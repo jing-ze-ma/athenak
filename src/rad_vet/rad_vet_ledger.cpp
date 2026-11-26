@@ -63,15 +63,15 @@ void RadiationVet::ReportCounters() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanLzBook
+//! \fn void RadiationVet::LzBook
 //! \brief clean_cs_lz_abs = 2: books the cells' sum s of the L_z the gas did not take (a
 //! write-back, or with start the stage start's increment) as its gas momentum enters the
 //! step: stage-1 part weighted as in the stage-2 start (Heun 1/2), stage-2 parts pending
 //! until stage 2 is accepted (s = 0; a backward-Euler redo drops them, Time2Restore).
 //! Total and K1's sum in <rad_vet> (restart).  3-D spherical polar: s is the L_z that
-//! crossed the boundaries (CleanStagMomentum's dlz), <rad_vet>/clean_lz_ledger.
+//! crossed the boundaries (CellMomentumChange's dlz), <rad_vet>/clean_lz_ledger.
 
-void RadiationVet::CleanLzBook(const Real s, const bool start) {
+void RadiationVet::LzBook(const Real s, const bool start) {
   if (t2_inprobe) return;   // a helper solve, put back (Time2RotCorrect)
   if (t2_solve == VET_T2S_STAGE1) {
     cln_lzp = (start ? 0.0 : cln_lzp) + ((t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0)*s;
@@ -93,13 +93,13 @@ void RadiationVet::CleanLzBook(const Real s, const bool start) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::CleanLzTotal
+//! \fn Real RadiationVet::LzTotal
 //! \brief history L_z: sum V R (p_phi + F_phi/c^2) of gas and radiation plus the L_z
-//! ledger (CleanLzBook); 0 before the first solve; clean_cs_lz_tel: face momenta
+//! ledger (LzBook); 0 before the first solve; clean_cs_lz_tel: face momenta
 
-Real RadiationVet::CleanLzTotal() {
+Real RadiationVet::LzTotal() {
   if (!cln_init || !(sph_geom || cs_geom || cln_lzsp)) return 0.0;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fo = fl.on;
   auto uh = fl.u0;
@@ -107,12 +107,12 @@ Real RadiationVet::CleanLzTotal() {
   auto f2 = f0x2, f3 = f0x3;
   const bool tel = cln_lzt;
   const Real ic2 = 1.0/(x.c*x.c);
-  const Real s = CleanSumExact(pmy_pack, "cln_lztot",
+  const Real s = SumExact(pmy_pack, "cln_lztot",
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     Real p[3] = {0.0, 0.0, 0.0};
-    if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
-    const Real r = CleanLzArm(x, m, k, j, i);
-    const Real v = CleanVol(x, m, k, j, i);
+    if (fo) GasMomentum(x, uh, m, k, j, i, p);
+    const Real r = LzArm(x, m, k, j, i);
+    const Real v = CellVolume(x, m, k, j, i);
     if (!tel) {   // (Cartesian: x p_y - y p_x)
       s0 += (x.sph || x.cub) ? v*r*(p[2] + ur(m,VET_F3,k,j,i)*ic2) :
             v*(x.x1v(m,i)*(p[1] + ur(m,VET_F2,k,j,i)*ic2) -
@@ -124,7 +124,7 @@ Real RadiationVet::CleanLzTotal() {
       for (int sd = 0; sd < 2; ++sd) {
         const int kf = k + sd*(qd == 2), jf = j + sd*(qd == 1);
         lr += 0.5*v*((qd == 1) ? f2(m,kf,jf,i) : f3(m,kf,jf,i))*ic2*
-              CleanCsArm(x, qd, m, kf, jf, i);
+              CsArm(x, qd, m, kf, jf, i);
       }
     }
     s0 += v*r*p[2] + lr;
@@ -225,13 +225,13 @@ const Real kT2G = imex_sdirk2::Gamma();   // shared tableau
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanBndAcc
+//! \fn void RadiationVet::BoundaryEnergyAcc
 //! \brief the history's x1 boundary energy cln_lacc, booking the flux that moved E: stage
 //! 0 starts a backward-Euler step (its solves add h A Phi); stage 1 / 2 the old vector of
 //! a hesdirk2 stage, w x (energy of Y2) + A (c1 t2pf1 + c2 t2pf2) at the donors' limiter
 //! R; the stage solve adds g dt A Phi
 
-void RadiationVet::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
+void RadiationVet::BoundaryEnergyAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   if (!(sph_geom || cs_geom)) return;
   if (cln_lacc.extent_int(0) <= nmb1) {
@@ -315,11 +315,11 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
     return dt*l3;
   };
   // clean: f0x1 is the face momentum; the energy through the physical x1 faces is
-  // CleanBndAcc's
+  // BoundaryEnergyAcc's
   Real lc[2] = {0.0, 0.0};
   if (!(cln_ldt > 0.0) && global_variable::my_rank == 0) {
     std::printf("CLEAN WARNING cycle %d: Ebnd without the step's boundary energy "
-                "(CleanBndAcc), its faces take 0\n", pmy_pack->pmesh->ncycle);
+                "(BoundaryEnergyAcc), its faces take 0\n", pmy_pack->pmesh->ncycle);
   }
   if (cln_ldt > 0.0) {
     auto la = cln_lacc;
@@ -335,7 +335,7 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
         (s ? so : si) += la(m,s,k,j);
       }
     }, Kokkos::Sum<Real>(lc[0]), Kokkos::Sum<Real>(lc[1]));
-    for (int s = 0; s < 2; ++s) lc[s] = CleanReduce(lc[s], false);
+    for (int s = 0; s < 2; ++s) lc[s] = GlobalReduce(lc[s], false);
   }
   if (ebnd_split) {
     ebnd_acc_in += lc[0];
@@ -375,7 +375,7 @@ void RadiationVet::Time2Report() {
     std::cout << " set-change slope solves=" << vgd_rot_ncorr << " failed="
               << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass;
   }
-  // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
+  // RotAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_dt > 0.0) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   if (cln_ring) {
     std::cout << " clean_rot_ring guard cells=" << cln_rguard_sum
@@ -395,9 +395,9 @@ void RadiationVet::Time2Report() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetReport
+//! \fn void RadiationVet::ScCartReport
 
-void RadiationVet::VetReport() {
+void RadiationVet::ScCartReport() {
   if (global_variable::my_rank != 0 || vet_ncall <= 0.0) return;
   std::cout << "<rad_vet> vet_sc: formal solutions=" << vet_ncall
             << " SC seconds=" << vet_time << " (" << vet_time/vet_ncall << " per call)"

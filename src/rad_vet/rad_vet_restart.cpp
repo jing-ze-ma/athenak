@@ -32,18 +32,18 @@ extern int64_t g_vgd_csgen[16];       // rays/sc_cs_setup.cpp; VET_VGD_CSCL_MAX
 extern int64_t g_vgd_csgen_save[16];
 
 //----------------------------------------------------------------------------------------
-//! \fn RadiationVet::CleanRingRst*
+//! \fn RadiationVet::RingRst*
 //! \brief clean_rot_ring in restart files (version >= 4): offsets cln_rr then Delta
-//! cln_rpd on interior cells in the file layout (CleanRingFields; 0 where cln_rr holds
-//! none; ema: 3 extra entries), flat per MeshBlock in CleanRingRstN() ghosted slabs.
-//! CleanRingRstCopy packs (pk; zeros without have) or unpacks slabs c .. of array a
+//! cln_rpd on interior cells in the file layout (RingFields; 0 where cln_rr holds
+//! none; ema: 3 extra entries), flat per MeshBlock in RingRstN() ghosted slabs.
+//! RingRstCopy packs (pk; zeros without have) or unpacks slabs c .. of array a
 //! (c < 0: channel 0 is slab -c) for MeshBlocks m0 .. m0 + nmb - 1
 
-int RadiationVet::CleanRingRstN() const {
+int RadiationVet::RingRstN() const {
   auto &id = pmy_pack->pmesh->mb_indcs;
   int fm[CLN_N];
-  const int nff = CleanRingFields(fm, true);
-  const int64_t nv = static_cast<int64_t>(CleanRingNr(nff) + CleanRingNd(nff))*id.nx1*
+  const int nff = RingFields(fm, true);
+  const int64_t nv = static_cast<int64_t>(RingNr(nff) + RingNd(nff))*id.nx1*
                      id.nx2*id.nx3;
   const int64_t ns = static_cast<int64_t>(id.nx1 + 2*id.ng)*
                      ((id.nx2 > 1) ? id.nx2 + 2*id.ng : 1)*
@@ -51,11 +51,11 @@ int RadiationVet::CleanRingRstN() const {
   return static_cast<int>((nv + ns - 1)/ns);
 }
 
-void RadiationVet::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb,
-                                    const int m0, const bool pk, const bool have) {
+void RadiationVet::RingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb,
+                               const int m0, const bool pk, const bool have) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   int fm[CLN_N], ff[CLN_N];
-  const int nf = CleanRingFields(fm), nff = CleanRingFields(ff, true);
+  const int nf = RingFields(fm), nff = RingFields(ff, true);
   Kokkos::Array<int, CLN_N> mp;   // (the file's field slot -> cln_rr's, -1: not held)
   for (int n = 0; n < CLN_N; ++n) {
     if (ff[n] >= 0) mp[ff[n]] = fm[n];
@@ -63,17 +63,17 @@ void RadiationVet::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int
   if (!pk) {   // (the writers of cln_rr bump vra_gen, DtRetry)
     vra_gen += 1;
     if (cln_rr.extent_int(0) != nmb) {
-      Kokkos::realloc(cln_rr, nmb, CleanRingNr(nf), id.nx3, id.nx2, id.nx1);
-      Kokkos::realloc(cln_rpd, nmb, CleanRingNd(nf), id.nx3, id.nx2, id.nx1);
+      Kokkos::realloc(cln_rr, nmb, RingNr(nf), id.nx3, id.nx2, id.nx1);
+      Kokkos::realloc(cln_rpd, nmb, RingNd(nf), id.nx3, id.nx2, id.nx1);
     }
   }
   // (cln_rr's field groups: K - 1 offsets or the EMA's 1; later entries copied as is)
   const int gr = vra_ema ? 1 : vra_k - 1;
   const int64_t ni = static_cast<int64_t>(id.nx1)*id.nx2*id.nx3;
-  const int64_t nr = CleanRingNr(nf)*ni, ndm = CleanRingNd(nf)*ni;
-  const int64_t nro = CleanRingNr(nff)*ni, nd = nro + CleanRingNd(nff)*ni;
+  const int64_t nr = RingNr(nf)*ni, ndm = RingNd(nf)*ni;
+  const int64_t nro = RingNr(nff)*ni, nd = nro + RingNd(nff)*ni;
   const int64_t ns = static_cast<int64_t>(a.extent(2))*a.extent(3)*a.extent(4);
-  const int64_t q0 = std::max(c, 0) - c, q1 = std::min<int64_t>(c + CleanRingRstN(),
+  const int64_t q0 = std::max(c, 0) - c, q1 = std::min<int64_t>(c + RingRstN(),
                                                                  a.extent(1)) - c;
   if (q1 <= q0) return;
   const int64_t nq = (q1 - q0)*ns, sa = a.stride(0);
@@ -141,26 +141,26 @@ bool RadiationVet::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
 using deep_copy_across::DeepCopyAcross;
 
 //----------------------------------------------------------------------------------------
-//! \fn int RadiationVet::CleanRstNq
+//! \fn int RadiationVet::RstNq
 //! \brief closure components per record of the clean extrap history and clean_rot_ring
-//! (CleanRstSlot order): all CLN_N
+//! (RstSlot order): all CLN_N
 
-int RadiationVet::CleanRstNq() const {
+int RadiationVet::RstNq() const {
   return CLN_N;
 }
 
 // clean_closure = iterate: the closure in place is restart state (none in a file of
 // another closure, Time2RstAccept)
-int RadiationVet::CleanRstNcl() const {
+int RadiationVet::RstNcl() const {
   if (t2_rcl >= 0) return t2_rcl;  // a file's (Time2RstAccept)
-  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh) : 0;
+  return cln_closit ? NumClosureSlots(pmy_pack->pmesh->use_cubed_sphere, cln_rfh) : 0;
 }
 
-int RadiationVet::CleanRstNfv() const {
+int RadiationVet::RstNfv() const {
   // cubed sphere sc rays: their cln_fvi slots (before the first sweep: the file's);
   // version >= 6: the face half ranges cln_fh instead (none where every solve rebuilds
   // them)
-  if (cln_cssc && t2_rstv >= 6) return CleanFhBuilt() ? 0 : 12;
+  if (cln_cssc && t2_rstv >= 6) return FhBuilt() ? 0 : 12;
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_cssc) return (cln_fvn > 0) ? cln_fvn : t2_nfv;
   return cln_scmem ? cln_top.extent_int(1) : 0;
@@ -173,7 +173,7 @@ int RadiationVet::CleanRstNfv() const {
 //! (read past)
 
 int RadiationVet::Time2RstNchWant() {
-  // version >= 4: no ipred2 / extrap2 channels, ring offsets dense (CleanRingRstCopy)
+  // version >= 4: no ipred2 / extrap2 channels, ring offsets dense (RingRstCopy)
   const bool sk = t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != VET_TIME_HESDIRK2) ? 0 :
@@ -181,12 +181,12 @@ int RadiationVet::Time2RstNchWant() {
          + ((t2_x2old && !sk) ? VET_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == VET_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == VET_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
-         + ((cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
-         + CleanRstNcl()                                     // iterate: the closure
-         + (cln_ring ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
+         + ((cln_extrap > 0) ? 2*RstNq() + 1 : 0)    // extrap history
+         + RstNcl()                                     // iterate: the closure
+         + (cln_ring ? (t2_rstv < 4 ? vra_k*RstNq() : RingRstN()) + 1
                                 : 0)                          // clean_rot_ring
          + ((cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
-         + CleanRstNfv();                                    // the rays' intensities
+         + RstNfv();                                    // the rays' intensities
 }
 
 bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
@@ -200,11 +200,11 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   }
   t2_rstv = ver;
   t2_rcl = -1;
-  int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
+  int nb = Time2RstNchWant() - RstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (cln_cssc || cln_scmem) ? nfile - nb : 0;
   // a file of another clean_closure: the iterate closure is skipped, or missing (the
   // first solve takes the predicted closure)
-  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
+  const int ns = NumClosureSlots(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
   auto fits = [&](const int n) {
     return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
   };
@@ -233,7 +233,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   // refused
   t2_rskip = 0;
   if (cln_cssc && ver >= 6 && t2_nfv > 12) {
-    t2_rskip = cln_ring ? -1 : CleanRingRstN() + 1;
+    t2_rskip = cln_ring ? -1 : RingRstN() + 1;
     const int nh = t2_nfv - t2_rskip;
     if (t2_rskip < 0 || (nh != 0 && nh != 12)) {
       std::cout << "### FATAL ERROR <rad_vet> restart: the clean block has " << nfile
@@ -306,7 +306,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   }
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
-  const int nq = CleanRstNq();
+  const int nq = RstNq();
   if (cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
     auto a_ = a;
@@ -314,7 +314,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
     for (int n = 0; n < 2*nq && have; ++n) {   // (ghosts and slots this mesh lacks: 0)
       auto mx = (n < nq) ? cln_mn : cln_mc;
-      const int s = CleanRstSlot(n%nq), cc = c + n - w0;
+      const int s = RstSlot(n%nq), cc = c + n - w0;
       if (cc < 0 || cc >= nw) continue;
       if (s >= mx.extent_int(1)) {
         one(c + n, 0.0);
@@ -340,18 +340,18 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     }
     c += 2*nq + 1;
   }
-  // clean_closure = iterate: the closure in place, the last iterate's (CleanRstNcl)
-  if (CleanRstNcl() > 0) {
-    if (cln_s.extent_int(0) >= m0 + nmb) put(c, CleanRstNcl(), cln_s, 0);
-    c += CleanRstNcl();
+  // clean_closure = iterate: the closure in place, the last iterate's (RstNcl)
+  if (RstNcl() > 0) {
+    if (cln_s.extent_int(0) >= m0 + nmb) put(c, RstNcl(), cln_s, 0);
+    c += RstNcl();
   }
   // clean_rot_ring: the offsets and the pending Delta of the fields the ring carries
-  // (interior cells, dense: CleanRingRstCopy), then the ring's flag, block, the pending
+  // (interior cells, dense: RingRstCopy), then the ring's flag, block, the pending
   // block and its time at i = 0..3
   if (cln_ring) {
-    const int nd = CleanRingRstN();
+    const int nd = RingRstN();
     const bool have = cln_rok && (cln_rr.extent_int(0) >= m0 + nmb);
-    CleanRingRstCopy(a, c - w0, nmb, m0, true, have);
+    RingRstCopy(a, c - w0, nmb, m0, true, have);
     auto a_ = a;
     const int cq = c + nd - w0;
     const Real v0 = have ? 1.0 : 0.0, v1 = static_cast<Real>(cln_rb);
@@ -383,21 +383,21 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   }
   // (a window that does not reach the rays' intensities: restart.cpp windows only a
   // record without them)
-  if (w0 > 0 || w1 < c + CleanRstNfv()) return;
+  if (w0 > 0 || w1 < c + RstNfv()) return;
   // the sc rays' intensities the next build reads, last (unless a has no room for them:
   // restart.cpp copies them itself)
-  if (a.extent_int(1) < c + CleanRstNfv()) return;
-  if (cln_cssc && CleanRstNfv() > 0) {   // (version 6: cln_fh)
+  if (a.extent_int(1) < c + RstNfv()) return;
+  if (cln_cssc && RstNfv() > 0) {   // (version 6: cln_fh)
     auto af = Kokkos::subview(a, mb, std::make_pair(c, c + 12), AL, AL, AL);
     if (cln_fh.extent_int(0) >= m0 + nmb) {
       Kokkos::deep_copy(af, Kokkos::subview(cln_fh, ms, AL, AL, AL, AL));
     } else {
       Kokkos::deep_copy(af, 0.0);
     }
-  } else if (CleanRstNfv() > 0 && CleanRstFv().extent_int(0) >= m0 + nmb) {
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
+  } else if (RstNfv() > 0 && RstFv().extent_int(0) >= m0 + nmb) {
+    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + RstNfv()), AL, AL,
                                       AL),
-                      Kokkos::subview(CleanRstFv(), ms, AL, AL, AL, AL));
+                      Kokkos::subview(RstFv(), ms, AL, AL, AL, AL));
   }
 }
 
@@ -417,7 +417,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   };
   // the last t2_nfv channels: the sc rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
-  const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0) + t2_rskip;
+  const int nfv0 = Time2RstNchWant() - RstNfv() - (t2_rstd3 ? 3 : 0) + t2_rskip;
   if (cln_cssc && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
     if (cln_fh.extent_int(0) != nmb) {
       Kokkos::realloc(cln_fh, nmb, 12, w.extent_int(1), w.extent_int(2), w.extent_int(3));
@@ -426,7 +426,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     return;
   }
   if ((cln_cssc || cln_scmem) && ch >= nfv0) {
-    auto &fv = CleanRstFv();
+    auto &fv = RstFv();
     if (fv.extent_int(0) != nmb || fv.extent_int(1) != t2_nfv) {
       Kokkos::realloc(fv, nmb, t2_nfv, w.extent_int(1), w.extent_int(2), w.extent_int(3));
     }
@@ -469,12 +469,12 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= nr + 1;
   }
-  const int nq = CleanRstNq();
+  const int nq = RstNq();
   if (cln_extrap > 0) {
     if (ch < 2*nq) {
       auto &mx = (ch < nq) ? cln_mn : cln_mc;
-      const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
-      const int s = CleanRstSlot(ch%nq);
+      const int ns = NumClosureSlots(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
+      const int s = RstSlot(ch%nq);
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, js = id.js, ks = id.ks;
       if (mx.extent_int(0) != nmb) {
@@ -502,44 +502,44 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= 2*nq + 1;
   }
-  if (CleanRstNcl() > 0) {   // (clean_closure = iterate: cln_s, with its ghosts)
-    if (ch < CleanRstNcl()) {
+  if (RstNcl() > 0) {   // (clean_closure = iterate: cln_s, with its ghosts)
+    if (ch < RstNcl()) {
       if (!cln_closit) return;   // (an iterate run's file, read by another closure)
       if (cln_s.extent_int(0) != nmb) {
-        Kokkos::realloc(cln_s, nmb, CleanRstNcl(), w.extent_int(1), w.extent_int(2),
+        Kokkos::realloc(cln_s, nmb, RstNcl(), w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
       }
       DeepCopyAcross(Kokkos::subview(cln_s, mb, ch, AL, AL, AL), w);
       cln_cip = true;
       return;
     }
-    ch -= CleanRstNcl();
+    ch -= RstNcl();
   }
   if (t2_rskip > 0) {  // the file's ring with the ring off: not read
     if (ch < t2_rskip) return;
     ch -= t2_rskip;
   }
-  if (cln_ring && t2_rstv >= 4) {   // (version 4, CleanRingRstCopy)
-    if (ch < CleanRingRstN()) {
+  if (cln_ring && t2_rstv >= 4) {   // (version 4, RingRstCopy)
+    if (ch < RingRstN()) {
       DvceArray5D<Real> t("vet_t2_ringrd", nmb, 1, w.extent_int(1), w.extent_int(2),
                           w.extent_int(3));
       DeepCopyAcross(Kokkos::subview(t, AL, 0, AL, AL, AL), w);
-      CleanRingRstCopy(t, -ch, nmb, 0, false, true);
+      RingRstCopy(t, -ch, nmb, 0, false, true);
       return;
     }
-    ch -= CleanRingRstN() - vra_k*nq;  // the flag slab
+    ch -= RingRstN() - vra_k*nq;  // the flag slab
   }
   if (cln_ring) {
     const int nr = (vra_k - 1)*nq;
     if (ch < nr + nq) {
-      // (the interior cells of the carried fields, CleanRingMoments)
+      // (the interior cells of the carried fields, RingMoments)
       auto &rx = (ch < nr) ? cln_rr : cln_rpd;
       vra_gen += 1;
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, js = id.js, ks = id.ks;
       Kokkos::Array<int, CLN_N> fm;
-      const int nf = CleanRingFields(fm.data());
-      const int f = fm[CleanRstSlot((ch < nr) ? ch%nq : ch - nr)];
+      const int nf = RingFields(fm.data());
+      const int f = fm[RstSlot((ch < nr) ? ch%nq : ch - nr)];
       const int nx = (ch < nr) ? (vra_k - 1)*nf : nf;
       if (rx.extent_int(0) != nmb) {
         Kokkos::realloc(rx, nmb, nx, id.nx3, id.nx2, id.nx1);
@@ -566,7 +566,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= nr + nq + 1;
   }
-  if (cln_fsolve && cln_fkin) {   // (CleanInit copies it to the face arrays)
+  if (cln_fsolve && cln_fkin) {   // (InitArrays copies it to the face arrays)
     const int nd = t2_rstd3 ? 3 : 6;
     if (ch < nd) {
       if (cln_rstd.extent_int(0) != nmb) {   // (zeroed: K1_d = 0 for a version-1 file)
@@ -626,8 +626,8 @@ void RadiationVet::DtRetryQuiesce(bool restoring) {
   if (!restoring) {
     // compact-list build generations at the checkpoint
     for (int c = 0; c < vgd_csncl; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}
-    CleanRingPreShift();
-    CleanDtrD(true);
+    RingPreShift();
+    FluxMemoryRetry(true);
     return;
   }
   if (vgd_tab_state == 1 && vgd_tabf.valid()) {vgd_tabf.wait();}
@@ -638,10 +638,10 @@ void RadiationVet::DtRetryQuiesce(bool restoring) {
 //! \fn void RadiationVet::DtRetryAfterRestore
 //! \brief after the checkpoint is put back: reset the table prefetch state (not
 //! checkpointed) to "nothing prefetched"; the next rotation computes its tables
-//! synchronously (VgdTabCompute: same numbers).
+//! synchronously (ScTabCompute: same numbers).
 
 void RadiationVet::DtRetryAfterRestore() {
-  CleanDtrD(false);
+  FluxMemoryRetry(false);
   if (vgd_tabf.valid()) {vgd_tabf.get();}
   if (vgd_on) {
     vgd_tex.fence();
@@ -666,17 +666,17 @@ void RadiationVet::DtRetryAfterRestore() {
       }
     }
     // the two read masks may hold other sets than the restored handles say: every
-    // cached set remakes its mask at its next use (VetGdCsCompact)
+    // cached set remakes its mask at its next use (ScCsCompact)
     for (auto &e : vgd_cscl) {e.msk = decltype(e.msk)();}
     // a failed attempt on the last step of a rotation block left the tables on the
     // next set while the restored vgd_alpha names the current one: remake the tables
-    // of the restored angle (VgdTabCompute: same numbers)
+    // of the restored angle (ScTabCompute: same numbers)
     if (vgd_alpha >= 0.0 && g_vgd_tab_alpha != vgd_alpha) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> dt_retry: vet_gd tables back from angle "
                   << g_vgd_tab_alpha << " to the restored " << vgd_alpha << std::endl;
       }
-      VetGdTables(vgd_alpha);
+      ScTables(vgd_alpha);
     }
   }
 }

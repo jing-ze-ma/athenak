@@ -36,26 +36,26 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagFCone
-//! \brief clean_stag_fcone: the cell flux vector (CleanStagCellVector, F_i = sum_f F_f
+//! \fn void RadiationVet::FluxCone
+//! \brief clean_stag_fcone: the cell flux vector (CellVector, F_i = sum_f F_f
 //! u_f) within the realisable cone |F_i| <= c E_i (E of work vector e), by construction.
 //! Each face is scaled towards 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i =
 //! sum_f |F_f| |u_f| >= |F_i|, so |F_i| <= l_i S_i <= c E_i.  One value per face (cubed
 //! sphere: the lower gid's) keeps flux form.  The gas takes the absorption of the scaled
 //! F (CLF_N + 1), G + d is kept, the momentum cut is booked and printed (CLEAN FCONE).
 
-void RadiationVet::CleanStagFCone(const int e, const int kd) {
+void RadiationVet::FluxCone(const int e, const int kd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
   // (clean_stag_fcone_lz: l_i of the faces without L_z arm (fa), CLW_CP >= 0 with the
   // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E;
   // clean_lz_spin: the others' cut withheld, its L_z X the gas's rigid rotation; the
   // cubed sphere's gas phi momentum is lz_tel's torque, which holds the cut already)
   const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph;
-  auto fa = KOKKOS_LAMBDA(const int q) {return !CleanLzFamily(sph, cub, q);};
+  auto fa = KOKKOS_LAMBDA(const int q) {return !LzFamily(sph, cub, q);};
   auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
     return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
   };
@@ -68,14 +68,14 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
   auto fcx = cln_fcx;
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
-  CleanFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
+  SolveFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real s = 0.0, st = 0.0;   // (st: the faces with L_z arm, clean_stag_fcone_lz)
     for (int d = 0; d < 2*x.nf; ++d) {
       const int q = d/2, h = d%2;
       Real c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, u[3];
       c[d] = 1.0;
-      CleanStagCellVector(x, m, k, j, i, c, u);
+      CellVector(x, m, k, j, i, c, u);
       const Real a = fabs(x.fc[q](m,CLF_N,k+h*(q == 2),j+h*(q == 1),i+h*(q == 0)))*
                      sqrt(SQR(u[0]) + SQR(u[1]) + SQR(u[2]));
       if (lz && !fa(q)) {
@@ -87,18 +87,18 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
     const Real ce = x.c*fmax(x.w(m,e,k,j,i), 0.0);
     x.w(m,CLW_CP,k,j,i) = (st > ce) ? -ce/st : ((s + st > ce) ? (ce - st)/s : 1.0);
   });
-  CleanGhostFill(cln_w, CLW_CP, 1);
+  GhostFill(cln_w, CLW_CP, 1);
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
-    CleanFor("cln_fcone_f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor("cln_fcone_f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // a physical boundary face: its inner cell's l, after the cubed sphere's tie; an
       // opaque face (tau_f = chi_f dx_f) keeps its share tau/(1 + tau) of F (a diffusion
       // front's face mean is no free-streaming excess)
-      const bool bd = CleanBoundaryFace(x, d, m, k, j, i);
+      const bool bd = IsBoundaryFace(x, d, m, k, j, i);
       const Real tau = 0.5*(x.op(m,VET_OP_T,k,j,i) + x.op(m,VET_OP_T,k-dk,j-dj,i-di))*
-                       CleanCellFaceDistance(x, d, m, k, j, i);
+                       CellFaceDistance(x, d, m, k, j, i);
       const Real l = fmin(lf(x.w(m,CLW_CP,k-dk,j-dj,i-di), d),
                           lf(x.w(m,CLW_CP,k,j,i), d));
       Real fs = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
@@ -111,7 +111,7 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
   }
   if (cub) {   // a face two MeshBlocks share: its lower gid's value
     auto v = cln_vf;
-    CleanFor("cln_fcone_v", nmb1, ks, ke, js, je, is, ie,
+    SolveFor("cln_fcone_v", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int q = 0; q < 3; ++q) {
         v(m,9+2*q,k,j,i) = x.fc[q](m,CLF_N+2,k,j,i);
@@ -120,19 +120,19 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
     });
     const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
                    ? 2 : 0;
-    CleanGhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
-    CleanStagFCsShared();
+    GhostFill(cln_vf, 9 + f0, 6 - f0, true, 0, 1, FluxMask(f0));
+    FluxCsShared();
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
   if (wbc) Kokkos::deep_copy(sl, 0.0);
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
-    CleanFor("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // a physical boundary face has no F equation: the gas takes its half cell's
-      // absorption of fs (CleanMomentumChange)
-      const bool bd = CleanBoundaryFace(x, d, m, k, j, i);
+      // absorption of fs (FaceMomentumChange)
+      const bool bd = IsBoundaryFace(x, d, m, k, j, i);
       const bool lin = (d == 0) ? (i > is) : ((d == 1) ? (j > js) : (k > ks));
       const Real f = fc(m,CLF_N,k,j,i);
       const Real fs = !bd ? fc(m,CLF_N+2,k,j,i) :
@@ -141,7 +141,7 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       if (spn) fcx(m,d,k,j,i) = 0.0;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-      // (clean_lz_spin: the arm faces' cut withheld from the gas per face, CleanWriteBack)
+      // (clean_lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
       if (spn && !bd && !fa(d) && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
       if (!bd && !(lz && !fa(d) && !(spn && !cub))) {
         fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
@@ -152,25 +152,25 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       }
       fc(m,CLF_N,k,j,i) = fs;
       if (!wbc) return;   // counters: the write-back's, as printed
-      CleanSlotAdd(sl, 0, m, k, j, i, 1.0);
-      const Real dp = (f - fs)*it*0.5*(CleanVol(x, m, k, j, i) +
-                      CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
-      CleanSlotAdd(sl, 1, m, k, j, i, fabs(dp));
+      SlotAdd(sl, 0, m, k, j, i, 1.0);
+      const Real dp = (f - fs)*it*0.5*(CellVolume(x, m, k, j, i) +
+                      CellVolume(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
+      SlotAdd(sl, 1, m, k, j, i, fabs(dp));
       // (fcone_lz: the momentum removed along each face family, signed, the gas's not)
-      if (lz && !bd && fa(d)) CleanSlotAdd(sl, 2 + d, m, k, j, i, dp);
+      if (lz && !bd && fa(d)) SlotAdd(sl, 2 + d, m, k, j, i, dp);
     });
   }
-  if (wbc) CleanSlotSum(sl, fcc, 5);
+  if (wbc) SlotSum(sl, fcc, 5);
   if (e == CLW_X) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fconc);
-    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
+    const Real n = GlobalReduce(h(0), false), p = GlobalReduce(h(1), false);
     if (global_variable::my_rank == 0 && cln_verbose > 0 && n > 0.0) {
       std::printf("CLEAN FCONE cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
     if (n > 0.0 && cln_fclz) {
       Real q[3];   // (every rank: the sums are collective)
-      for (int d = 0; d < 3; ++d) q[d] = CleanReduce(h(2+d), false);
+      for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h(2+d), false);
       if (global_variable::my_rank == 0) {
         std::printf("CLEAN FCONE_LZ cycle %d t2s %d momentum removed (signed, V/c^2) x1 "
                     "%.6e x2 %.6e x3 %.6e\n", pmy_pack->pmesh->ncycle, t2_solve, q[0],
@@ -181,12 +181,12 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanRingMatesInit
+//! \fn void RadiationVet::RingMatesInit
 //! \brief the MeshBlocks of each local block's line along d, position by position
-//! (CleanStagFwbProject): src(m, p) >= 0 the local block, else -1 - slot of a received
+//! (FluxBalanceProject): src(m, p) >= 0 the local block, else -1 - slot of a received
 //! one; snd / rcv the blocks exchanged (block or slot, rank, gid), one message each
 
-void RadiationVet::CleanRingMatesInit(const int d, CleanRingMates &rm) {
+void RadiationVet::RingMatesInit(const int d, RingMates &rm) {
   Mesh *pm = pmy_pack->pmesh;
   const int nr[3] = {pm->nmb_rootx1, pm->nmb_rootx2, pm->nmb_rootx3};
   const int nmb = pmy_pack->nmb_thispack, me = global_variable::my_rank;
@@ -211,7 +211,7 @@ void RadiationVet::CleanRingMatesInit(const int d, CleanRingMates &rm) {
       w[d] = p;
       int g = 0;
       while (g < pm->nmb_total && loc(g) != w) ++g;
-      if (g == pm->nmb_total) CleanFatal("fwb: no MeshBlock at a line's position");
+      if (g == pm->nmb_total) RadVetFatal("fwb: no MeshBlock at a line's position");
       const int rk = pm->rank_eachmb[g];
       if (rk == me) {
         h(m,p) = g - pm->gids_eachrank[me];
@@ -232,9 +232,9 @@ void RadiationVet::CleanRingMatesInit(const int d, CleanRingMates &rm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagFwbProject
+//! \fn void RadiationVet::FluxBalanceProject
 //! \brief clean_stag_fwb_ring (d = 2): fwb's residual s of
-//! the faces along d (rs, its weight w/(1 + tau) rw, CleanStagFSolve) less mu rw,
+//! the faces along d (rs, its weight w/(1 + tau) rw, FluxSolve) less mu rw,
 //! mu = sum V_f s/sum V_f rw over the whole line through the mesh (a radial line, a phi
 //! ring), added to face slot slot.  A radial line's faces share their direction, a
 //! ring's their lever arm R sin(theta): the net s V of each line is 0, so fwb gives no
@@ -245,9 +245,9 @@ void RadiationVet::CleanRingMatesInit(const int d, CleanRingMates &rm) {
 //! sums of each tile along a lateral d, then the tiles in order, so mu does not depend on
 //! the MeshBlocks either
 
-void RadiationVet::CleanStagFwbProject(const int d, const int slot,
-                                       const DvceArray4D<Real> &rs,
-                                       const DvceArray4D<Real> &rw, const bool cnt) {
+void RadiationVet::FluxBalanceProject(const int d, const int slot,
+                                      const DvceArray4D<Real> &rs,
+                                      const DvceArray4D<Real> &rw, const bool cnt) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks, nmb = pmy_pack->nmb_thispack;
   Mesh *pm = pmy_pack->pmesh;
@@ -257,7 +257,7 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
   const int n = nx[d], na = nx[da], nb = nx[db];
   const int dk = (d == 2), dj = (d == 1), di = (d == 0);
   const bool wrap = nr[d] == 1 && pm->mesh_bcs[2*d] == BoundaryFlag::periodic;
-  CleanArgs x = CleanMakeArgs();
+  SolveArgs x = MakeArgs();
   auto fc = x.fc[d];
   auto fwc = cln_fwbc;
   const int tn = (d > 0 && repro::tile_n > 0) ? repro::tile_n : n, nc = n/tn;
@@ -276,7 +276,7 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
       for (int t = c*tn; t < (c + 1)*tn; ++t) {   // (V_f: the face's weight, own faces)
         int k, j, i;
         face(t, a, b, k, j, i);
-        const Real vf = CleanVol(x, m, k, j, i) + CleanVol(x, m, k-dk, j-dj, i-di);
+        const Real vf = CellVolume(x, m, k, j, i) + CellVolume(x, m, k-dk, j-dj, i-di);
         ss += vf*rs(m,k,j,i);
         sw += vf*rw(m,k,j,i);
       }
@@ -287,8 +287,8 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
   int nq = nc;
   auto mq = mu;
   if (nr[d] > 1) {   // (the other MeshBlocks' sums, then all positions in order)
-    CleanRingMates &rm = cln_fwr[d];
-    if (rm.nmb != nmb || rm.nt != pm->nmb_total) CleanRingMatesInit(d, rm);
+    RingMates &rm = cln_fwr[d];
+    if (rm.nmb != nmb || rm.nt != pm->nmb_total) RingMatesInit(d, rm);
     auto rb = ScratchView<DvceArray4D<Real>>("cln_fwrb" + std::to_string(d),
                                              std::max(rm.nslot, 1), nb, na, 2*nc);
     mq = ScratchView<DvceArray4D<Real>>("cln_fwmq" + std::to_string(d), nmb, nb, na, 2);
@@ -339,8 +339,8 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
       const Real s = rs(m,kr,jr,ir) - q*rw(m,kr,jr,ir);
       fc(m,slot,k,j,i) += s/(x.h*x.c*x.c);
       if (!cnt || t == n) continue;   // counters: the printed s, the write-back's
-      const Real p = fc(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
-                     CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
+      const Real p = fc(m,CLF_TH,k,j,i)*s*0.5*(CellVolume(x, m, k, j, i) +
+                     CellVolume(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
       cn += 1.0;
       cp += fabs(p);
       c1 += p;

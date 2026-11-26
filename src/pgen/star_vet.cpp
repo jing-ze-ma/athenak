@@ -347,7 +347,7 @@ Real StarCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
 [[noreturn]] void StarFatal(const std::string &msg, const int line) {
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << line << std::endl
             << "star_vet: " << msg << std::endl;
-  // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
+  // (_Exit: no static destructors behind live Kokkos views, as ScFatalAt)
   std::_Exit(EXIT_FAILURE);
 }
 
@@ -3063,7 +3063,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "= wb, <rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) "
                 "and star_ic_rad_atm_post = false", __LINE__);
     }
-    // (scheme = clean: each round's relax is CleanSteadyStart, E and the face F at the
+    // (scheme = clean: each round's relax is SteadyStart, E and the face F at the
     // scheme's own fixed point with the gas T, and its force pass the last steady pass;
     // the x1 shells of the force, its radial component: spherical polar or the cubed
     // sphere)
@@ -4255,7 +4255,7 @@ void StarBC(Mesh *pm) {
 //! StarWallFlux), Min_top the inflow that was removed.
 //! M_hflx, E_hflx, Lz_hflx: the hydro's mass, energy (IEN) and L_z leaving through the
 //! physical x1 faces over the step, as rates (am_bflx, hydro_am.hpp: the RK-weighted
-//! fluxes); Lz_tot: the L_z of gas + radiation (CleanLzTotal, incl. the L_z ledger), so
+//! fluxes); Lz_tot: the L_z of gas + radiation (LzTotal, incl. the L_z ledger), so
 //! that d M_tot/dt = -M_hflx and d Lz_tot/dt = -Lz_hflx close in the history.
 
 void StarHist(HistoryData *pdata, Mesh *pm) {
@@ -4303,7 +4303,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
   auto &volume = pmbp->pcoord->volume;
   const Real rint = star_rint_, fin = star_fin_;   // hg262-drive
   // clean staggered: L_in / L_top = the energy the step's solves put through the x1
-  // faces over dt (CleanBndAcc), the flux that moved E
+  // faces over dt (BoundaryEnergyAcc), the flux that moved E
   const bool lac = pvet->cln_ldt > 0.0 && pvet->cln_lacc.extent_int(0) > 0;
   const bool hpf = pvet->t2pf1_ok && pvet->t2pf1.extent_int(0) > 0;
   auto pf1 = pvet->t2pf1;
@@ -4419,7 +4419,7 @@ void StarHist(HistoryData *pdata, Mesh *pm) {
     for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = fsum.the_array[n]/pam->am_bdt;
   }
   // (a global value: rank 0 contributes)
-  const Real lzt = pvet->CleanLzTotal();
+  const Real lzt = pvet->LzTotal();
   pdata->hdata[nb+5] = (global_variable::my_rank == 0) ? lzt : 0.0;
   if (star_mlt_) {
     // host values, summed over ranks by the history output: rank 0 contributes

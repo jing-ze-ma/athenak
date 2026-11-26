@@ -192,13 +192,13 @@ void VetLayReduce(const char *name, const int n, const int nkji, DvceArray1D<Rea
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn std::array<Real, 2> CleanSums
+//! \fn std::array<Real, 2> GlobalSums
 //! \brief the n <= 2 sums f(m, k, j, i, s0, s1) adds over the active cells and ranks
 //! (f may also update vectors); layout_invariant: via VetLayReduce
 
 template <typename F>
-std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
-                              const F &f) {
+std::array<Real, 2> GlobalSums(MeshBlockPack *pp, const char *name, const int n,
+                               const F &f) {
   auto &indcs = pp->pmesh->mb_indcs;
   int is = indcs.is, js = indcs.js, ks = indcs.ks;
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -231,12 +231,12 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanSumExact
-//! \brief CleanSums' s0 by the exact accumulator (utils/repro_sum.hpp): no round-off of
+//! \fn Real SumExact
+//! \brief GlobalSums' s0 by the exact accumulator (utils/repro_sum.hpp): no round-off of
 //! the sum, the same for every layout and rank count
 
 template <typename F>
-Real CleanSumExact(MeshBlockPack *pp, const char *name, const F &f) {
+Real SumExact(MeshBlockPack *pp, const char *name, const F &f) {
   auto &indcs = pp->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nji = indcs.nx2*nx1, nkji = indcs.nx3*nji;

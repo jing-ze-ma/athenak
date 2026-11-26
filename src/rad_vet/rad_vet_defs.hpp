@@ -27,18 +27,18 @@
 #include "utils/time_table.hpp"
 
 namespace radvet {
-struct CleanArgs;   // rad_vet_args.hpp
-struct CleanLevel;  // rad_vet_args.hpp
+struct SolveArgs;   // rad_vet_args.hpp
+struct MgLevel;  // rad_vet_args.hpp
 
-//! \struct CleanW
+//! \struct WorkVec
 //! \brief the clean work vectors cln_w (CLW_*): slots n < ns in s, the layout's own
 //! slots in o (n - ns; staggered: in mem_arena, MemArenaSeal)
 
-struct CleanW {
+struct WorkVec {
   DvceArray5D<Real> s, o;
   int ns = 1 << 30;
-  CleanW() = default;
-  CleanW(const DvceArray5D<Real> &a) : s(a) {}   // NOLINT (one array)
+  WorkVec() = default;
+  WorkVec(const DvceArray5D<Real> &a) : s(a) {}   // NOLINT (one array)
   KOKKOS_FORCEINLINE_FUNCTION
   Real &operator()(const int m, const int n, const int k, const int j,
                    const int i) const {
@@ -46,13 +46,13 @@ struct CleanW {
   }
 };
 
-//! \struct CleanF
+//! \struct FaceVars
 //! \brief the face variables of one direction (CLF_*): slots n < CLF_NS in s, the others
 //! (dead across a closure build) in o (n - CLF_NS; over the intensities, MemArenaBind)
 
 constexpr int CLF_NS = 11;
 
-struct CleanF {
+struct FaceVars {
   DvceArray5D<Real> s, o;
   KOKKOS_FORCEINLINE_FUNCTION
   Real &operator()(const int m, const int n, const int k, const int j,
@@ -72,18 +72,18 @@ constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (
 constexpr int CLG_F = 27;    // staggered, exchanged: normal of the lower x2 face, volume
                              // (+3), normal of the lower x3 face (+4), MeshBlock gid (+7)
 constexpr int CLG_A = 35;    // staggered, exchanged: mean area of the two faces of family
-                             // x1, x2, x3 (+2), CleanStagArea
+                             // x1, x2, x3 (+2), AreaStream
 constexpr int CLG_Q = 38;    // staggered: face family and orientation in the owner's axes
-                             // (CleanCsSlotQ), 4 bits per x2 (low) and x3 face
+                             // (CsSlotQ), 4 bits per x2 (low) and x3 face
 constexpr int CLG_NV = 39;
-constexpr int CLG_NA = 25;   // components of CleanGeo::a
+constexpr int CLG_NA = 25;   // components of CsGeoArrays::a
 
-//! \struct CleanGeo
+//! \struct CsGeoArrays
 //! \brief cln_gn (CLG_*) in two arrays: components constant along x1 (CLG_N, CLG_R,
 //! CLG_E, CLG_F, CLG_F + 4..6) once per (m,k,j) and x1 range (low ghosts, active, high
 //! ghosts) in a; the others (CLG_X, CLG_M, CLG_F + 3, CLG_F + 7, CLG_A) in r
 
-struct CleanGeo {
+struct CsGeoArrays {
   DvceArray5D<Real> r, a;
   int is = 0, ie = 0;
   KOKKOS_FORCEINLINE_FUNCTION
@@ -184,7 +184,7 @@ constexpr int VETRAY_NC  = 28;
 // scheme = clean: K+^d_bd = sum w I Omega_b mu_d over mu_d > 0 (slot KP + 3 d + b)
 constexpr int VETRAY_KP  = 28;
 constexpr int VETRAY_NKP = 9;
-// clean_consistency (VetShortCharSweep): ray fluxes sum w g Phi, sum w g Phi Omega_b
+// clean_consistency (ScCartSweep): ray fluxes sum w g Phi, sum w g Phi Omega_b
 // (g = |mu_1| dx2/dx1) through the low x2 face; sum w mu_1 I, sum w mu_1 I Omega_b
 // through the x1 boundary face and the low x1 face; low x3 face as x2
 constexpr int VETRAY_F2  = 37;
@@ -192,7 +192,7 @@ constexpr int VETRAY_F1  = 41;
 constexpr int VETRAY_FX  = 45;
 constexpr int VETRAY_F3  = 49;
 constexpr int VETRAY_NFS = 16;  // the face sums F2, F1, FX, F3
-// extra vgd_hr components of the vet_gd thin switch (VetGdHalfRange)
+// extra vgd_hr components of the vet_gd thin switch (ScHalfRange)
 constexpr int VET_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J
 constexpr int VET_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
 constexpr int VET_VGD_HRJ  = 8;     // J (E units)
@@ -284,15 +284,16 @@ constexpr int VET_NCNT = 5;
 //! \struct RadiationVetTaskIDs
 //! \brief container to hold TaskIDs of all rad_vet tasks
 
-//! \struct CleanRingMates
-//! \brief the MeshBlocks of each local block's line along a direction (CleanRingMatesInit)
-struct CleanRingMates {
+//! \struct RingMates
+//! \brief the MeshBlocks of each local block's line along a direction (RingMatesInit)
+struct RingMates {
   int nmb = -1, nt = -1, nslot = 0;   // blocks here and in the mesh; received blocks
   DvceArray2D<int> src;               // (m, position): local block or -1 - received slot
   std::vector<std::array<int, 3>> snd, rcv;   // (block or slot, rank, source gid)
 };
 
-struct VetMBState;   // multi-block short-characteristics sweep (rays/sc_cart_sweep.cpp)
+// multi-block short-characteristics sweep (rays/sc_cart_sweep.cpp)
+struct ScCartMBState;
 
 struct RadiationVetTaskIDs {
   TaskID irecv;
@@ -315,7 +316,7 @@ struct RadiationVetTaskIDs {
 };
 //----------------------------------------------------------------------------------------
 //! \struct SolvePass
-//! \brief state of the passes of one stage solve (CleanSolve); host only
+//! \brief state of the passes of one stage solve (StageSolve); host only
 
 struct SolvePass {
   int n = 0, nmax = 1;         // pass, cap of the passes

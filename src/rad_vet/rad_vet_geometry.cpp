@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file rad_vet_geometry.cpp
 //! \brief Option checks for implicit VET on curvilinear meshes (spherical-polar wedge or
-//! full sphere, cubed sphere) and the cubed-sphere seam set-up (CubedS1Init).
+//! full sphere, cubed sphere) and the cubed-sphere seam set-up (CubedInit).
 //!
 //! The geometry lives in the implicit kernels: the E row takes dt A_f/V_i per face and
 //! each face equation the centre-to-centre distance dxface (dr, r dtheta, r sin dphi).
@@ -38,7 +38,7 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanCsGeometry
+//! \fn void RadiationVet::CsGeometry
 //! \brief cubed sphere: the cell geometry of the finite-volume divergence in Cartesian y.
 //! Lateral face: in the great-circle plane of its edge points P, P' on the cube surface,
 //! normal along P x P', area (r_r^2 - r_l^2) th/2 (th the angle P, P'), first moment
@@ -48,9 +48,9 @@ namespace radvet {
 //! Cube points come from the global panel index (exactly +-1 on edges), so both panels at
 //! a seam build a face from the same numbers, bitwise.  The frame of y is the hydro's:
 //! r_hat and the panel tangents e_xi, e_eta.  Centroids, r_hat, the owner's x2/x3
-//! normals, volume and gid (CLG_F, for CleanCsSlot) take the halo exchange.
+//! normals, volume and gid (CLG_F, for CsSlot) take the halo exchange.
 
-void RadiationVet::CleanCsGeometry() {
+void RadiationVet::CsGeometry() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = indcs.js, ks = indcs.ks, nmb1 = pmy_pack->nmb_thispack - 1;
   const int n1 = indcs.nx1 + 2*indcs.ng, n2 = indcs.nx2 + 2*indcs.ng;
@@ -145,16 +145,16 @@ void RadiationVet::CleanCsGeometry() {
       gn(m,CLG_E+3+c,k,j,i) = e2[c];
     }
   });
-  CleanGhostFill(gn, CLG_X, 6, false);
-  CleanGhostFill(gn, CLG_F, 11, false);
+  GhostFill(gn, CLG_X, 6, false);
+  GhostFill(gn, CLG_F, 11, false);
   par_for("cln_csq", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     int b = 0;
     for (int d = 1; d < 3; ++d) {
       for (int lo = 0; lo < 2 && (lo == 0 || (d == 1 ? j : k) > 0); ++lo) {
         Real s;
-        const int q = CleanCsSlotQ(gn, d, m, k, j, i, k - lo*(d == 2), j - lo*(d == 1),
-                                   i, s);
+        const int q = CsSlotQ(gn, d, m, k, j, i, k - lo*(d == 2), j - lo*(d == 1),
+                              i, s);
         b += ((q - 1) + 2*(s > 0.0)) << (4*(d - 1) + 2*lo);
       }
     }
@@ -172,7 +172,7 @@ void RadiationVet::CleanCsGeometry() {
       gd(m,k,j,i) = std::sqrt(s);
     }
   });
-  // the directions of CleanGeo::a are bitwise the same along each x1 range of a line
+  // the directions of CsGeoArrays::a are bitwise the same along each x1 range of a line
   const int is = indcs.is, ie = indcs.ie;
   Kokkos::realloc(cln_gn.r, nmb1 + 1, CLG_NV - CLG_NA, n3, n2, n1);
   Kokkos::realloc(cln_gn.a, nmb1 + 1, CLG_NA, n3, n2, 3);
@@ -186,7 +186,7 @@ void RadiationVet::CleanCsGeometry() {
       {0, 0, 0, 0}, {nmb1 + 1, n3, n2, n1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nb) {
     for (int n = 0; n < CLG_NV; ++n) {
-      const int s = CleanGeo::Slot(n);
+      const int s = CsGeoArrays::Slot(n);
       const int c = (i < is) ? 0 : ((i > ie) ? 2 : 1), i0 = (c == 0) ? 0 : ((c == 1) ? is
                                                                         : ie + 1);
       const Real v = gn(m,n,k,j,i), v0 = gn(m,n,k,j,i0);
@@ -200,8 +200,8 @@ void RadiationVet::CleanCsGeometry() {
     }
   }, nbad);
   if (nbad > 0) {
-    CleanFatal("<rad_vet> clean cubed sphere: " + std::to_string(nbad) +
-               " geometry directions change along x1 (CleanGeo)");
+    RadVetFatal("<rad_vet> clean cubed sphere: " + std::to_string(nbad) +
+                " geometry directions change along x1 (CsGeoArrays)");
   }
 }
 
@@ -224,7 +224,7 @@ Real RadiationVet::MeshBlock0Dx(const int d) const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanSeamImage
+//! \fn void RadiationVet::SeamImage
 //! \brief vet_gd_theta_seam_sym: the geometry the clean scheme reads, with the ghost rows
 //! of a theta-periodic seam (MeshBlocks at x2min / x2max) taking that of the cells they
 //! hold, their periodic images.  On a theta wedge centred on the equator the image of the
@@ -235,7 +235,7 @@ Real RadiationVet::MeshBlock0Dx(const int d) const {
 //! one copy of the face computed on the x2min side sees a ghost nearer the pole than the
 //! cell it holds (a net F_theta that grows with the wedge)
 
-void RadiationVet::CleanSeamImage() {
+void RadiationVet::SeamImage() {
   auto *pc = pmy_pack->pcoord;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = indcs.js, je = indcs.je, ng = indcs.ng, nmb = pmy_pack->nmb_thispack;
@@ -317,10 +317,10 @@ void RadiationVet::CleanSeamImage() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::SphericalS1Check
+//! \fn void RadiationVet::SphericalCheck
 //! \brief fatal on any option the sp / cs implicit operator does not support
 
-void RadiationVet::SphericalS1Check(ParameterInput *pin) {
+void RadiationVet::SphericalCheck(ParameterInput *pin) {
   std::string why;
   auto *pm = pmy_pack->pmesh;
   if (pm->multilevel) {why += " SMR/AMR;";}
@@ -386,12 +386,12 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CubedS1Init
+//! \fn void RadiationVet::CubedInit
 //! \brief cubed sphere, after ImplicitInit: open the panel seams of the implicit
 //! operator, tabulate the seam geometry (VetCsSeamGeom, incl. ghost rows), effective
 //! transverse distances/areas and the face and cell-centre normals
 
-void RadiationVet::CubedS1Init() {
+void RadiationVet::CubedInit() {
   auto *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -548,7 +548,7 @@ void RadiationVet::CubedS1Init() {
 void RadiationVet::CheckGeometry(ParameterInput *pin) {
   MeshBlockPack *ppack = pmy_pack;
   // geometry guard: uniform Cartesian, a spherical-polar wedge or full sphere, or the
-  // cubed sphere (checks in SphericalS1Check, VetRayInit); no relativistic coordinates
+  // cubed sphere (checks in SphericalCheck, VetRayInit); no relativistic coordinates
   sph_geom = false;
   cs_geom = false;
   {

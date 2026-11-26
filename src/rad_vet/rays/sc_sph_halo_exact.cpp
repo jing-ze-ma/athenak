@@ -39,20 +39,20 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VetGdHxKey
+//! \fn bool RadiationVet::ScHxKey
 //! \brief vet_gd_halo_exact: record e (exact lists or fallback) was made for the
 //! current direction set, cut and depth (same answer on every rank)
 
-bool RadiationVet::VetGdHxKey(const int e, const int ws) const {
+bool RadiationVet::ScHxKey(const int e, const int ws) const {
   if (e < 0 || e >= static_cast<int>(vgd_hxe.size())) {return false;}
-  const VgdHlEntry &X = vgd_hxe[e];
-  return X.gen != -1 && X.alpha == vgd_alpha && VetGdHxCut(e, X) && X.ws == ws;
+  const ScHlEntry &X = vgd_hxe[e];
+  return X.gen != -1 && X.alpha == vgd_alpha && ScHxCut(e, X) && X.ws == ws;
 }
 
 // record X of (pass, shell l) = entry e holds for the current ray cut: made for it, or
 // the move crosses neither l nor l + 1 (its reads are shells l - 1 .. l + 1), so a cut
 // move remakes only the lists of the shells it crosses
-bool RadiationVet::VetGdHxCut(const int e, const VgdHlEntry &X) const {
+bool RadiationVet::ScHxCut(const int e, const ScHlEntry &X) const {
   if (X.scut == vgd_scut) {return true;}
   if (X.scut < 0 || vgd_scut < 0) {return false;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -62,14 +62,14 @@ bool RadiationVet::VetGdHxCut(const int e, const VgdHlEntry &X) const {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHxBuild2
+//! \fn void RadiationVet::ScHxBuild2
 //! \brief vet_gd_halo_exact = 2: the exact lists of record e from the read marks
 //! vgd_hx_mk alone (no masks, no dense exchange); collective. (1) sources of marked
 //! ghosts, (2) their compact positions, (3) per partner the count and ascending wanted
 //! offsets, (4) a global vote (no mark outside depth ws, byte budget), (5) send
 //! addresses and read ghosts. Every source of a read ghost is sent.
 
-void RadiationVet::VetGdHxBuild2(const int e, const int i, const int ws) {
+void RadiationVet::ScHxBuild2(const int e, const int i, const int ws) {
 #if MPI_PARALLEL_ENABLED
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -82,7 +82,7 @@ void RadiationVet::VetGdHxBuild2(const int e, const int i, const int ws) {
   const int np = static_cast<int>(vgd_prk.size());
   const size_t rtot = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
                       (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()))*nv;
-  VgdHlEntry &E = vgd_hxe[e];
+  ScHlEntry &E = vgd_hxe[e];
   auto hl_ = vgd_hloc;
   auto ro_ = vgd_roff;
   auto wl_ = vgd_wall;
@@ -153,8 +153,8 @@ void RadiationVet::VetGdHxBuild2(const int e, const int i, const int ws) {
     f1_(q) = (rd && wa) ? 1 : 0;
   });
   // (2) compact receive positions of the needed sources and of the read ghosts
-  VgdScan2(ex_, nd_, rtot, nd_, 0, "vet_vgd_hx_scan2", vgd_scan_sums);
-  VgdScan2(ex_, f0_, rtot, f1_, rtot, "vet_vgd_hx_scan2", vgd_scan_sums);
+  ScScan2(ex_, nd_, rtot, nd_, 0, "vet_vgd_hx_scan2", vgd_scan_sums);
+  ScScan2(ex_, f0_, rtot, f1_, rtot, "vet_vgd_hx_scan2", vgd_scan_sums);
   // per partner: needed counts (scanned need at the piece bounds), host
   std::vector<int> rpx(np + 1), spx(np + 1);
   int nrx = 0, nwx = 0;
@@ -373,15 +373,15 @@ void RadiationVet::VetGdHxBuild2(const int e, const int i, const int ws) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHxBatch
+//! \fn void RadiationVet::ScHxBatch
 //! \brief the exact lists (vet_gd_halo_exact = 2) of every (pass, shell) job, built up
-//! front in VetGdSweep in groups of G shells: per group (1) device-only marks, flags,
+//! front in ScSweep in groups of G shells: per group (1) device-only marks, flags,
 //! scans, counts and offsets, one fence; (2) one count message per partner, the
 //! offsets, one vote (MPI_Allreduce of G flags); (3) send / receive lists, one fence.
-//! Same expressions as VetGdHxBuild2 (bitwise). G <= 64 from a 256 MB pool (same on
+//! Same expressions as ScHxBuild2 (bitwise). G <= 64 from a 256 MB pool (same on
 //! every rank); the budget is checked on the group's sum (a shell over it: dense path).
 
-void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
+void RadiationVet::ScHxBatch(const std::vector<std::array<int, 4>> &jobs) {
 #if MPI_PARALLEL_ENABLED
   if (jobs.empty()) {return;}
   Mesh *pm = pmy_pack->pmesh;
@@ -411,7 +411,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   auto m3_ = vgd_m3;
   auto dir_ = vgd_dir;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  const VgdLG lg_ = vgd_lg;
+  const ScLG lg_ = vgd_lg;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool wint = vgd_wint;
@@ -491,7 +491,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
       }
       std::sort(pc.begin(), pc.end());
       if (static_cast<int>(pc.size()) != npc) {
-        VgdFatal("vet_gd_halo_exact batch: the send pieces differ between depths");
+        ScFatal("vet_gd_halo_exact batch: the send pieces differ between depths");
       }
       for (int q = 0; q < npc; ++q) {pcs_h(ws,q) = pc[q][0]; pci_h(ws,q) = pc[q][1];}
     }
@@ -539,7 +539,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
       vgd_hx_stamp += 1;
       const int stamp = vgd_hx_stamp;
       const int wsx = ws;
-      // marks (VetGdSweep hx_mark): ghosts of shell i's band read by the stencils of
+      // marks (ScSweep hx_mark): ghosts of shell i's band read by the stencils of
       // the shells reading this exchange
       auto mark = [&](const int pr, const int ir, const int lr) {
         const bool inwr = (pr == 0);
@@ -555,8 +555,8 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_,
+          ScCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
+                 mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb,
               const int dr) {
             if (iu != i) {return;}
@@ -566,16 +566,16 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
                 if (ej != 0 && wl_(m,kk,jj) >= 2) {
-                  // the main sweep reads the mirror row (flag 2) or the edge row
-                  // (extrap, 4) through the phi-edge slot; vacuum (3) reads nothing.
-                  // Flags 3, 4: the twin's periodic reads below too
-                  const int wf = wl_(m,kk,jj);
-                  const int o2 = 3*(ek + 1) + 1;
-                  if (wf != 3 && ek != 0 && hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) < 0) {
+                 // the main sweep reads the mirror row (flag 2) or the edge row
+                 // (extrap, 4) through the phi-edge slot; vacuum (3) reads nothing.
+                 // Flags 3, 4: the twin's periodic reads below too
+                 const int wf = wl_(m,kk,jj);
+                 const int o2 = 3*(ek + 1) + 1;
+                 if (wf != 3 && ek != 0 && hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) < 0) {
                     const bool hi = (ej > 0);
                     const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
-                                             : VgdMirRow(g, hi, wb, nx2b);
+                                             : ScMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
                       if (t > 0 && w3_(m,kk,jj,dr,t) == 0.0) {continue;}
                       const int dq = (wf == 4) ? dr : (wint ? m3_(m,kk,jj,dr,t)
@@ -585,15 +585,15 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                     if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
                       Kokkos::atomic_add(&ocv_(so), 1);
                     }
-                  }
-                  if (wf == 2) {continue;}
+                 }
+                 if (wf == 2) {continue;}
                 }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
                 mk_(((m*n + dr)*c3 + kk)*c2 + jj) = stamp;
                 if (jj < wb - wsx || jj >= wb + nx2b + wsx || kk < wb - wsx ||
                     kk >= wb + nx3b + wsx) {
-                  Kokkos::atomic_add(&ocv_(so), 1);
+                 Kokkos::atomic_add(&ocv_(so), 1);
                 }
               }
             }
@@ -608,7 +608,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
       }
       (void) is;
       Kokkos::deep_copy(ex_, nd_, 0);
-      // sources of the marked ghosts and read-ghost flags (VetGdHxBuild2 (1))
+      // sources of the marked ghosts and read-ghost flags (ScHxBuild2 (1))
       par_for("vet_vgd_hxb_need", ex_, 0, nmb1, 0, 7, 0, mx - 1,
       KOKKOS_LAMBDA(const int m, const int o, const int t) {
         if (hl_(8*m + o) >= 0) {return;}
@@ -638,9 +638,9 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           nd_(rb0 + (vs*kn + kk)*jn + jj) = 1;
         }
       });
-      VgdScanOne(ex_, nd_, rtot, vgd_scan_sums, vgd_hxb_tmp);
-      VgdScanOne(ex_, f0_, rtot, vgd_scan_sums, vgd_hxb_tmp);
-      VgdScanOne(ex_, f1_, rtot, vgd_scan_sums, vgd_hxb_tmp);
+      ScScanOne(ex_, nd_, rtot, vgd_scan_sums, vgd_hxb_tmp);
+      ScScanOne(ex_, f0_, rtot, vgd_scan_sums, vgd_hxb_tmp);
+      ScScanOne(ex_, f1_, rtot, vgd_scan_sums, vgd_hxb_tmp);
       // needed counts at the partner bounds, read-ghost counts, out count
       {
         const int np_ = np, so = s, nb_ = nb;
@@ -714,7 +714,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
         dsto[s][p] = sc[2*p*gn + gn + s];
       }
       if (static_cast<size_t>(spx[s][np]) + 1 > scap) {
-        VgdFatal("vet_gd_halo_exact batch: more requested values than the send layout");
+        ScFatal("vet_gd_halo_exact batch: more requested values than the send layout");
       }
     }
     {
@@ -746,7 +746,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
     if (vgd_hl_cap == 0) {vgd_hl_cap = static_cast<size_t>(vgd_hl_mb) << 20;}
     for (int s = 0; s < gn; ++s) {
       const int e = jobs[g0+s][0]*n1c + jobs[g0+s][1];
-      VgdHlEntry &E = vgd_hxe[e];
+      ScHlEntry &E = vgd_hxe[e];
       const size_t nsz[5] = {static_cast<size_t>(std::max(spx[s][np], 1)),
                              static_cast<size_t>(std::max(nrx[s], 1)),
                              static_cast<size_t>(std::max(nrx[s], 1)),
@@ -775,7 +775,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
     for (int s = 0; s < gn; ++s) {
       const int pass = jobs[g0+s][0], i = jobs[g0+s][1], ws = jobs[g0+s][3];
       const int e = pass*n1c + i;
-      VgdHlEntry &E = vgd_hxe[e];
+      ScHlEntry &E = vgd_hxe[e];
       vgd_hx_nout += nout[s];
       E.alpha = vgd_alpha;
       E.scut = vgd_scut;
@@ -804,7 +804,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
       auto sw_ = E.sw;
       const int nsx = spx[s][np];
       for (int p = 0; p <= np; ++p) {spp_(s*(np + 1) + p) = spx[s][p];}
-      // send addresses (VetGdHxBuild2 (5))
+      // send addresses (ScHxBuild2 (5))
       {
         const int np_ = np, so = s;
         Kokkos::parallel_for("vet_vgd_hxb_slist", Kokkos::RangePolicy<>(ex_, 0, nsx),

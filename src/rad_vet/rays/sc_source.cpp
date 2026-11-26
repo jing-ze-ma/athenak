@@ -43,7 +43,7 @@ void VrayFatal(const std::string &msg) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRayInit
-//! \brief checks, buffers, exchange objects and the direction set (VetGdInit)
+//! \brief checks, buffers, exchange objects and the direction set (ScInit)
 
 void RadiationVet::VetRayInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -113,7 +113,7 @@ void RadiationVet::VetRayInit() {
   // follow <mesh>/cs_seam_blockend as pbval_u does
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   vray_ready = true;
-  VetGdInit();
+  ScInit();
 }
 
 //----------------------------------------------------------------------------------------
@@ -136,7 +136,7 @@ void RadiationVet::VetRayExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 
 void RadiationVet::VetRaySourceEnd() {
   VetRayExchange(vray_cs, vray_cs_c, pbval_vs);
-  CleanRayCut();
+  RayCut();
 }
 
 //----------------------------------------------------------------------------------------

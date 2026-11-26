@@ -43,80 +43,80 @@
 namespace radvet {
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanGhostFill
+//! \fn void RadiationVet::GhostFill
 //! \brief fill the ghosts of components [c0, c0+nc) by the cell-centred exchange
 //! (cubed-sphere seams without resample), then (phys) copy the edge cell on physical
 //! boundaries.  part 1 starts, part 2 finishes (inner cells may run between).  Deferred
-//! fills (CleanGhostDefer) join the next exchange where they fit.  D12, D13, D23 are odd
+//! fills (GhostDefer) join the next exchange where they fit.  D12, D13, D23 are odd
 //! across a reflecting wall normal to one of their axes and D_r,theta, D_r,phi across
 //! the pole, so d_b(D E) puts no shear traction on the wall
 
-void RadiationVet::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                                  const bool phys, const int part, const int dep,
-                                  const std::array<uint32_t, 4> fm) {
-  CleanGhostFillT(a, c0, nc, phys, part, dep, fm);
+void RadiationVet::GhostFill(DvceArray5D<Real> a, const int c0, const int nc,
+                             const bool phys, const int part, const int dep,
+                             const std::array<uint32_t, 4> fm) {
+  GhostFillT(a, c0, nc, phys, part, dep, fm);
 }
 
-void RadiationVet::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc,
-                                   const int dep) {
+void RadiationVet::GhostDefer(DvceArray5D<Real> a, const int c0, const int nc,
+                              const int dep) {
   int np = nc;
   for (auto &s : cln_hpend) np += s.nc;
-  if (np > cln_hmax) CleanGhostFlush();
+  if (np > cln_hmax) GhostFlush();
   cln_hpend.push_back({a, c0, nc, true, dep});
 }
 
 // (a range lies in one of the two arrays: CLW_NS)
-void RadiationVet::CleanGhostFill(const CleanW &a, const int c0, const int nc,
-                                  const int part, const int dep,
-                                  const std::array<uint32_t, 4> fm) {
-  CleanGhostFillT((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, true, part,
-                  dep, fm);
+void RadiationVet::GhostFill(const WorkVec &a, const int c0, const int nc,
+                             const int part, const int dep,
+                             const std::array<uint32_t, 4> fm) {
+  GhostFillT((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, true, part,
+             dep, fm);
 }
 
-void RadiationVet::CleanGhostDefer(const CleanW &a, const int c0, const int nc,
-                                   const int dep) {
-  CleanGhostDefer((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, dep);
+void RadiationVet::GhostDefer(const WorkVec &a, const int c0, const int nc,
+                              const int dep) {
+  GhostDefer((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, dep);
 }
 
-void RadiationVet::CleanGhostFlush() {
+void RadiationVet::GhostFlush() {
   if (cln_hpend.empty()) return;
-  std::vector<CleanGSeg<Real>> sg;
+  std::vector<GSeg<Real>> sg;
   sg.swap(cln_hpend);
-  CleanGhostExchange(sg, 0);
+  GhostExchange(sg, 0);
 }
 
 template <typename T>
-void RadiationVet::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
-                                   const bool phys, const int part, const int dep,
-                                   const std::array<uint32_t, 4> fm) {
+void RadiationVet::GhostFillT(DvceArray5D<T> a, const int c0, const int nc,
+                              const bool phys, const int part, const int dep,
+                              const std::array<uint32_t, 4> fm) {
   if (nc > cln_hmax) {   // (the exchange moves at most cln_hmax variables at once)
     const int h = cln_hmax;
     // (a full mask stays full for every chunk)
     auto sh = [&](const uint32_t m) {return (m == ~0u || h >= 32) ? m : m >> h;};
-    CleanGhostFillT(a, c0, h, phys, 0, dep, fm);
-    CleanGhostFillT(a, c0 + h, nc - h, phys, 0, dep, {sh(fm[0]), sh(fm[1]), sh(fm[2]),
+    GhostFillT(a, c0, h, phys, 0, dep, fm);
+    GhostFillT(a, c0 + h, nc - h, phys, 0, dep, {sh(fm[0]), sh(fm[1]), sh(fm[2]),
                                                        sh(fm[3])});
     return;
   }
-  std::vector<CleanGSeg<T>> sg;
+  std::vector<GSeg<T>> sg;
   if constexpr (std::is_same<T, Real>::value) {
     int np = nc;
     for (auto &s : cln_hpend) np += s.nc;
     // (part 2: the segments part 1 left in cln_hpend, nothing deferred in between)
     if (part == 2 || np <= cln_hmax) sg.swap(cln_hpend);
-    if (part == 2) return CleanGhostExchange(sg, 2);
+    if (part == 2) return GhostExchange(sg, 2);
   }
-  CleanGhostFlush();   // (those that do not fit: on their own first)
+  GhostFlush();   // (those that do not fit: on their own first)
   sg.push_back({a, c0, nc, phys, dep, fm});
-  CleanGhostExchange(sg, part);
+  GhostExchange(sg, part);
   if constexpr (std::is_same<T, Real>::value) {
     if (part == 1) cln_hpend.swap(sg);
   }
 }
 
 template <typename T>
-void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
-                                      const int part) {
+void RadiationVet::GhostExchange(const std::vector<GSeg<T>> &sg,
+                                 const int part) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -135,11 +135,11 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     // (16 teams per buffer instead of one per MeshBlock face; bitwise)
     cln_hpb->cc_split = 16;
   }
-  if (cln_hdl.state == 0) CleanHaloInit(n3, n2, n1);
+  if (cln_hdl.state == 0) HaloInit(n3, n2, n1);
   const bool dl = (cln_hdl.state == 1);
   if (dl && (n1 != cln_hdl.n1 || n2 != cln_hdl.n2 || n3 != cln_hdl.n3)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "CleanGhostExchange: an array of another shape than the "
+              << std::endl << "GhostExchange: an array of another shape than the "
               << "lists of clean_halo_direct" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -147,10 +147,10 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     int d = 0;
     for (auto &s : sg) d = (s.dep <= 0) ? ng : std::max(d, s.dep);
     cln_hdl.dcur = std::min(std::max(d, 1), ng);
-    CleanHaloPost(sg);
+    HaloPost(sg);
   }
   if (dl && part == 1) return;
-  if (dl) CleanHaloFinish(sg);
+  if (dl) HaloFinish(sg);
   const bool cs = pmy_pack->pmesh->use_cubed_sphere;
   // one MeshBlock and one Real array: exchange on the array itself, no copies
   bool own = false;
@@ -162,7 +162,7 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     Kokkos::realloc(cln_hbuf, nmb1 + 1, nc, n3, n2, n1);
     cln_halo.clear();
   }
-  CleanHalo &hl = cln_halo[nc];
+  SolveHalo &hl = cln_halo[nc];
   if (hl.ca.extent_int(0) == 0) {
     hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
     Kokkos::realloc(hl.ca, nmb1 + 1, nc, 1, 1, 1);
@@ -178,7 +178,7 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   // (only the shell outside the inner box is copied; clean_halo_direct: only on the
   // cubed sphere, for the cube-vertex corners)
   if (!own && !dc && (dl ? cs : part != 2)) {
-    const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
+    const HaloShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
     int o = 0;
     for (auto &s : sg) {
       auto a = s.a;
@@ -192,7 +192,7 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
         par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sc.ncell-1,
         KOKKOS_LAMBDA(const int m, const int n, const int q) {
           int k, j, i;
-          CleanShellCell(sc, q, k, j, i);
+          HaloShellCell(sc, q, k, j, i);
           h(m,o+n,k,j,i) = a(m,c0+n,k,j,i);
         });
       }
@@ -218,7 +218,7 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     while (pb->ClearSend() == TaskStatus::incomplete) {}
     while (pb->ClearRecv() == TaskStatus::incomplete) {}
   }
-  const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
+  const HaloShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
   int o = 0;
   for (auto &s : sg) {
     if (own || (dl && !cs) || dc) break;
@@ -227,25 +227,25 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sb.ncell-1,
     KOKKOS_LAMBDA(const int m, const int n, const int q) {
       int k, j, i;
-      CleanShellCell(sb, q, k, j, i);
+      HaloShellCell(sb, q, k, j, i);
       a(m,c0+n,k,j,i) = h(m,o+n,k,j,i);
     });
     o += s.nc;
   }
   for (auto &s : sg) {
-    if (s.phys) CleanGhostPhys(s.a, s.c0, s.nc);
+    if (s.phys) GhostPhys(s.a, s.c0, s.nc);
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanHaloInit
+//! \fn void RadiationVet::HaloInit
 //! \brief clean_halo_direct: build the ghost exchange's cell lists by sending cell ids
 //! through cln_hpb: on-rank pairs make the copy kernel, off-rank ghosts are grouped by
 //! rank (pack lists in the receiver's order, no headers).  Self-check: a test field must
 //! come out bitwise equal through both paths, else the run stops
 
-void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
-  CleanHaloList &q = cln_hdl;
+void RadiationVet::HaloInit(const int n3, const int n2, const int n1) {
+  SolveHaloList &q = cln_hdl;
   auto *pm = pmy_pack->pmesh;
   const int me = global_variable::my_rank;
   auto &indcs = pm->mb_indcs;
@@ -262,7 +262,7 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
   q.ng = ng;
   DvceArray5D<Real> x("cln_hdl_x", nmb, 1, n3, n2, n1),
                     y("cln_hdl_y", nmb, 1, n3, n2, n1);
-  const std::vector<CleanGSeg<Real>> sx = {{x, 0, 1, false}}, sy = {{y, 0, 1, false}};
+  const std::vector<GSeg<Real>> sx = {{x, 0, 1, false}}, sy = {{y, 0, 1, false}};
   // (pass 0: the ids; pass 1: other values, the check)
   for (int pass = 0; pass < 2; ++pass) {
     par_for("cln_hd_id", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -272,10 +272,10 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
       y(m,0,k,j,i) = x(m,0,k,j,i);
     });
     q.state = -1;
-    CleanGhostExchange(sx, 0);
+    GhostExchange(sx, 0);
     if (pass == 1) {
       q.state = 1;
-      CleanGhostExchange(sy, 0);
+      GhostExchange(sy, 0);
       break;
     }
     auto hx = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x);
@@ -429,7 +429,7 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
   if (bad != 0) {
     if (me == 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "CleanHaloInit: the self-check of clean_halo_direct "
+                << std::endl << "HaloInit: the self-check of clean_halo_direct "
                 << "failed: its cell lists give " << bad << " cells other than the "
                 << "MeshBoundaryValuesCC exchange (array " << n3 << " x " << n2 << " x "
                 << n1 << ", " << global_variable::nranks << " ranks)" << std::endl;
@@ -453,19 +453,19 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn RadiationVet::CleanHaloKey, CleanHaloMask
-//! \brief clean_halo_direct: the masks of an exchange (CleanGSeg::fm per family, then
+//! \fn RadiationVet::HaloKey, HaloMask
+//! \brief clean_halo_direct: the masks of an exchange (GSeg::fm per family, then
 //! nc) and their packed buffer layout
 
 template <typename T>
-std::array<uint32_t, 5> RadiationVet::CleanHaloKey(const std::vector<CleanGSeg<T>> &sg) {
+std::array<uint32_t, 5> RadiationVet::HaloKey(const std::vector<GSeg<T>> &sg) {
   std::array<uint32_t, 5> k = {0, 0, 0, 0, 0};
   for (auto &s : sg) {
     const uint32_t a = (s.nc < 32) ? (1u << s.nc) - 1 : ~0u;
     for (int f = 0; f < 4; ++f) k[f] |= (s.fm[f] & a) << k[4];
     if (((s.fm[0] | s.fm[1] | s.fm[2] | s.fm[3]) & a) != a) {   // (no silent skip)
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "CleanHaloKey: a ghost fill whose masks leave a "
+                << std::endl << "HaloKey: a ghost fill whose masks leave a "
                 << "component out of every face family" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -474,9 +474,9 @@ std::array<uint32_t, 5> RadiationVet::CleanHaloKey(const std::vector<CleanGSeg<T
   return k;
 }
 
-RadiationVet::CleanHaloList::Mask &RadiationVet::CleanHaloMask(
+RadiationVet::SolveHaloList::Mask &RadiationVet::HaloMask(
     const std::array<uint32_t, 5> &key) {
-  CleanHaloList &q = cln_hdl;
+  SolveHaloList &q = cln_hdl;
   auto &h = q.mask[key];
   if (h.so.extent(0) > 0) return h;
   const int nc = static_cast<int>(key[4]), nseg = static_cast<int>(q.rank.size());
@@ -503,24 +503,24 @@ RadiationVet::CleanHaloList::Mask &RadiationVet::CleanHaloMask(
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanHaloPost
+//! \fn void RadiationVet::HaloPost
 //! \brief clean_halo_direct, first half: post receives (alternate buffer halves), pack,
 //! fence, on-rank copy, one send per neighbour rank.  Entry p, component n at p nc + n
 
 template <typename T>
-void RadiationVet::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
-  CleanHaloList &q = cln_hdl;
+void RadiationVet::HaloPost(const std::vector<GSeg<T>> &sg) {
+  SolveHaloList &q = cln_hdl;
   int nc = 0;
   for (auto &s : sg) nc += s.nc;
   const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
   q.par = 1 - q.par;
   // (fm: a ghost takes component b if bit b of its family's mask is set, msk)
-  const std::array<uint32_t, 5> ky = CleanHaloKey(sg);
+  const std::array<uint32_t, 5> ky = HaloKey(sg);
   const uint32_t k0 = ky[0], k1 = ky[1], k2 = ky[2], k3 = ky[3];
 #if MPI_PARALLEL_ENABLED
   const uint32_t all = (nc < 32) ? (1u << nc) - 1 : ~0u;
   const bool msk = (k0 & k1 & k2 & k3) != all;
-  CleanHaloList::Mask *mh = msk ? &CleanHaloMask(ky) : nullptr;
+  SolveHaloList::Mask *mh = msk ? &HaloMask(ky) : nullptr;
   const int nseg = static_cast<int>(q.rank.size());
   q.rq.assign(nseg, MPI_REQUEST_NULL);
   q.sq.assign(nseg, MPI_REQUEST_NULL);
@@ -592,23 +592,23 @@ void RadiationVet::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanHaloFinish
+//! \fn void RadiationVet::HaloFinish
 //! \brief clean_halo_direct, second half: wait, unpack, wait for the sends
 
 template <typename T>
-void RadiationVet::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
+void RadiationVet::HaloFinish(const std::vector<GSeg<T>> &sg) {
 #if MPI_PARALLEL_ENABLED
-  CleanHaloList &q = cln_hdl;
+  SolveHaloList &q = cln_hdl;
   int nc = 0;
   for (auto &s : sg) nc += s.nc;
   const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
   const int nseg = static_cast<int>(q.rank.size());
   MPI_Waitall(nseg, q.rq.data(), MPI_STATUSES_IGNORE);
-  const std::array<uint32_t, 5> ky = CleanHaloKey(sg);
+  const std::array<uint32_t, 5> ky = HaloKey(sg);
   const uint32_t all = (nc < 32) ? (1u << nc) - 1 : ~0u;
   const bool msk = (ky[0] & ky[1] & ky[2] & ky[3]) != all;
   const uint32_t k0 = ky[0], k1 = ky[1], k2 = ky[2], k3 = ky[3];
-  auto ro = msk ? CleanHaloMask(ky).ro : q.rc, rf = q.rf;
+  auto ro = msk ? HaloMask(ky).ro : q.rc, rf = q.rf;
   auto rb = q.rbuf;
   const size_t b = static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
   const int dc = q.dcur;
@@ -641,7 +641,7 @@ void RadiationVet::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
 }
 
 template <typename T>
-void RadiationVet::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) {
+void RadiationVet::GhostPhys(DvceArray5D<T> a, const int c0, const int nc) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -715,10 +715,10 @@ void RadiationVet::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::CleanReduce
+//! \fn Real RadiationVet::GlobalReduce
 //! \brief maximum (max) or sum of v over all ranks
 
-Real RadiationVet::CleanReduce(Real v, const bool max) {
+Real RadiationVet::GlobalReduce(Real v, const bool max) {
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &v, 1, MPI_ATHENA_REAL, max ? MPI_MAX : MPI_SUM,
                 MPI_COMM_WORLD);
@@ -727,26 +727,26 @@ Real RadiationVet::CleanReduce(Real v, const bool max) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::CleanSumCells
-//! \brief the sum of a over the active cells (CleanSums)
+//! \fn Real RadiationVet::SumCells
+//! \brief the sum of a over the active cells (GlobalSums)
 
-Real RadiationVet::CleanSumCells(const DvceArray4D<Real> &a) {
+Real RadiationVet::SumCells(const DvceArray4D<Real> &a) {
   auto a_ = a;
-  return CleanSums(pmy_pack, "cln_sumc", 1,
+  return GlobalSums(pmy_pack, "cln_sumc", 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     s0 += a_(m,k,j,i);
   })[0];
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn std::array<Real, 2> RadiationVet::CleanDots
+//! \fn std::array<Real, 2> RadiationVet::GlobalDots
 //! \brief the n <= 2 dot products of w(ab[2q]) and w(ab[2q+1]) over nc components, one
 //! pass and one reduction
 
-std::array<Real, 2> RadiationVet::CleanDots(CleanW w, const int nc, const int n,
-                                            const std::array<int, 4> ab) {
+std::array<Real, 2> RadiationVet::GlobalDots(WorkVec w, const int nc, const int n,
+                                             const std::array<int, 4> ab) {
   const int a0 = ab[0], a1 = ab[1], a2 = ab[2], a3 = ab[3];   // (std::array is host-only)
-  return CleanSums(pmy_pack, "cln_dot", n,
+  return GlobalSums(pmy_pack, "cln_dot", n,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     for (int c = 0; c < nc; ++c) {
       s0 += w(m,a0+c,k,j,i)*w(m,a1+c,k,j,i);

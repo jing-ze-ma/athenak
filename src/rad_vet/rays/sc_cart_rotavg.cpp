@@ -685,7 +685,7 @@ bool RadiationVet::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
                                  const int nmb) {
   // not averaged through vra_d (no rotation, or the clean ring): skip; cln_rhist records
   // an EMA history under the clean ring (its closure is converged)
-  if (!VgdRotOn() || cln_ring) {
+  if (!ScRotOn() || cln_ring) {
     cln_rhist = cln_ring && vra_ema && h[0] == 1;
     return false;
   }
