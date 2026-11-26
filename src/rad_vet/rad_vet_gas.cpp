@@ -188,7 +188,7 @@ void RadiationVet::FloorGasCap() {
     if (lx != 0.0) dom = lx/li;
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
-  Kokkos::deep_copy(sl, 0.0);
+  Kokkos::deep_copy(DevExeSpace(), sl, 0.0);
   par_for("vet_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
