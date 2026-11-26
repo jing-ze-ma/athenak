@@ -29,7 +29,7 @@ parameters are put together in this order (`main.cpp`):
    first cycle (FATAL); a block that does not exist stops it at once.
 
 **On a restart, a key that is not given in the deck or on the command line takes the value
-stored in the restart file, not the code default.** If the file does not hold the key either,
+stored in the restart file, not the code default.** When a `-i` deck is given, each such key whose stored value differs from the code default prints one `CLEAN WARNING restart: block/key = value from the restart file (code default d; the deck does not name it)` after the first cycle; the value is still used (name the key in the deck to choose; a restart without `-i` prints none). If the file does not hold the key either,
 a key that corrects the scheme takes the fresh default, with a `### NOTE: ... the fix applies`
 (name the old value to keep the old behaviour), and a stored old value of `merge_lat_mom`,
 `merge_lat_blockend`, `fofc_flag_exchange`, `clean_cs_lat_wb`, `time2_gtime_slope`,
@@ -97,6 +97,7 @@ with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
 | `rad_vet/transport` | Radiation transport; the scheme needs `implicit`. | `implicit` on a fresh run with a `<rad_vet>` block | all: `implicit` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/closure` | Only `sc`: the Eddington tensor from the short-characteristics rays, on Cartesian meshes and by the global sweep on spherical polar and the cubed sphere. An older name is read as `sc` (NOTE) only where it ran the same closure: `vet_sc` on a Cartesian mesh, `vet_col` with `vet_gd = true` on a curved one; every other value stops the run. | `sc` | - | `rad_vet/rad_vet_params_closure.cpp` (constructor) |
 | `rad_vet/clean_closure` | How the closure follows the solution in time: `extrap1` (one ray sweep per step; recommended), `iterate`, `predict`, `eddington` (D = I/3, no rays; for tests). | `extrap1` | all: `extrap1` | `rad_vet/rad_vet_params.cpp` (constructor) |
+| `hydro/reconstruct`, `mhd/reconstruct` | Reconstruction of the fluid sweeps (`dc`, `plm`, `ppm4`, `ppmx`, `wenoz`) on Cartesian meshes and in the cubed sphere's lateral sweeps (its radial sweep is the grid PLM). On spherical polar every sweep is the grid PLM, and with `wb_dirs = all` the well-balanced PLM: there a value other than `plm` stops the run (FATAL). `wb_x1`, `wb_rho`, `wall_wb_onesided` set without `wellbalance_dynamic = true`, `wb_guard_ideal` / `wb_clamp_ideal` with a general EOS, `mhd/fofc_rsolver = hlle` without `fofc`, `mhd/polar_emf_diss` without `use_polar_boundary` stop the run too (they would not act). `time/dt_retry_views = all` stops the run on the cubed sphere (its retried step differs at a ray-set change). | `plm` | not named | `hydro/hydro.cpp`, `mhd/mhd.cpp` |
 
 ## Rays
 
@@ -154,7 +155,7 @@ from a file written before these keys must name both on the command line.
 | `rad_vet/implicit_bc_x1min`, `implicit_bc_x1max` | Radiation x1 boundaries: `marshak`, `outflow`, `reflect`, `periodic`, and on x1 an imposed `flux`. The ray sweep needs `x1max = marshak` or `reflect`. | `auto` (from the mesh boundary); star_vet with `implicit_flux_x1min`: x1min `flux` | all: `flux`, `marshak` | `rad_vet/rad_vet_params_implicit.cpp` (`ImplicitInit`) |
 | `rad_vet/implicit_flux_x1min` | Flux through the inner face (= L/(4 pi r_in^2) for a star). | 0 | per deck | `rad_vet/rad_vet_params_implicit.cpp` (`ImplicitInit`) |
 | `rad_vet/implicit_flux_x1max` | Incoming bath at the outer Marshak face (0 = vacuum). | 0 | all: `0.0` | `rad_vet/rad_vet_params_implicit.cpp` (`ImplicitInit`) |
-| `mesh/ix1_bc` ... `ox3_bc` | Hydro boundaries (the templates: `user` in x1, `periodic` in theta and phi). | required | see the decks | `mesh/mesh.cpp` |
+| `mesh/ix1_bc` ... `ox3_bc` | Hydro boundaries (the templates: `user` in x1, `periodic` in theta and phi). `ix2_bc` = `ox2_bc` = `polar` needs `use_polar_boundary = true`, which needs both on spherical polar (FATAL otherwise). | required | see the decks | `mesh/mesh.cpp` |
 | `problem/star_wall_zero_flux` | star_vet (hydro): the inner x1 wall's mass, transverse-momentum, energy and scalar fluxes are 0 before the update (not with `star_bc_inner = inflow`); so are the top's where the mass flux is inflow or exactly 0 at that point. `dfloor_flux_limit` acts later: a top face that it makes massless stays open to FOFC's diffusive L_z and E (booked, conserved). | true | all: `true` | `pgen/star_vet.cpp` (`StarWallFlux`) |
 
 Transverse Marshak faces are not supported by the ray sweep (FATAL).

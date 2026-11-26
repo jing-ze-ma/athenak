@@ -570,6 +570,15 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       }
   }
 
+  // the x1 dynamic well-balance keys act only with that scheme (wb_*_ideal: ideal EOS)
+  if (!use_wellbalance_dynamic ? (use_wb_x1 || use_wb_rho || wall_wb_onesided) :
+      ((wb_guard_ideal || wb_clamp_ideal) && !wbi_path)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<hydro>/wb_x1, wb_rho, wall_wb_onesided act only with "
+      << "wellbalance_dynamic = true, wb_guard_ideal and wb_clamp_ideal only with it "
+      << "and an ideal EOS: set them false here" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // determine if static wellbalance is enabled
   use_wellbalance_static = pin->GetOrAddBoolean("hydro","wellbalance_static",false);
   use_wellbalance_static_reconst_perturb =
@@ -639,6 +648,15 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("hydro","reconstruct","plm");
+    if ((pmy_pack->pmesh->use_spherical_polar || wb_all) &&
+        xorder.compare("plm") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<hydro>/reconstruct = '" << xorder << "' is not used on a "
+        << "spherical-polar mesh or with wb_dirs = all: every sweep takes the grid PLM "
+        << "or the well-balanced PLM there (hydro_fluxes.cpp). "
+        << "Accepted: plm (or drop the line)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (xorder.compare("dc") == 0) {
       recon_method = ReconstructionMethod::dc;
     } else if (xorder.compare("plm") == 0) {

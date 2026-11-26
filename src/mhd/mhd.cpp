@@ -651,6 +651,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         }
     }
 
+    // the x1 dynamic well-balance keys act only with that scheme (wb_*_ideal: ideal EOS)
+    if (!use_wellbalance_dynamic ? (use_wb_x1 || use_wb_rho || wall_wb_onesided) :
+        ((wb_guard_ideal || wb_clamp_ideal) && !wbi_path)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<mhd>/wb_x1, wb_rho, wall_wb_onesided act only with "
+        << "wellbalance_dynamic = true, wb_guard_ideal and wb_clamp_ideal only with it "
+        << "and an ideal EOS: set them false here" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // determine if static wellbalance is enabled
     use_wellbalance_static = pin->GetOrAddBoolean("mhd","wellbalance_static",false);
     use_wellbalance_static_reconst_perturb =
@@ -722,6 +731,12 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<mhd>/fofc_rsolver = '" << fofc_rs
                   << "' not implemented; choose llf or hlle" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (fofc_hlle && !use_fofc) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/fofc_rsolver = hlle acts only with fofc = true"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (fofc_hlle && (pmy_pack->pcoord->is_special_relativistic ||
@@ -867,6 +882,12 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   }
     use_polar_emf_diss = pin->GetOrAddBoolean("mhd","polar_emf_diss",
                                               pmy_pack->pmesh->use_polar_boundary);
+    if (use_polar_emf_diss && !pmy_pack->pmesh->use_polar_boundary) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/polar_emf_diss acts only with <mesh>/"
+                << "use_polar_boundary = true" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is
     // what stops it, so this defaults ON there -- there is no correct answer below that
     // beta to preserve. Off (0) by default on every other grid; G8: a named
@@ -876,6 +897,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");
+    if ((pmy_pack->pmesh->use_spherical_polar || wb_all) &&
+        xorder.compare("plm") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<mhd>/reconstruct = '" << xorder << "' is not used on a "
+        << "spherical-polar mesh or with wb_dirs = all: every sweep takes the grid PLM "
+        << "or the well-balanced PLM there (mhd_fluxes.cpp). "
+        << "Accepted: plm (or drop the line)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (xorder.compare("dc") == 0) {
       recon_method = ReconstructionMethod::dc;
     } else if (xorder.compare("plm") == 0) {

@@ -996,6 +996,23 @@ void ParameterInput::PrintNonDefault() {
 //  only: no value, dump, or restart content is changed.
 
 void ParameterInput::ReportUnreadParameters() {
+  // a restart whose -i deck does not name a key runs with the value stored in the file:
+  // one CLEAN WARNING per such key whose stored value differs from the code default
+  // (not the run's state that Set* wrote: ledgers, output counters)
+  bool deck = false;
+  for (auto &b : block) {
+    for (auto &l : b.line) {deck = deck || l.origin == kOriginFile;}
+  }
+  for (auto &b : block) {
+    for (auto &l : b.line) {
+      if (!deck || global_variable::my_rank != 0 || l.origin != kOriginRestart ||
+          l.def.empty() || SameValue(l.param_value, l.def) ||
+          l.param_comment == "# Updated during run time") continue;
+      std::cout << "CLEAN WARNING restart: " << b.block_name << "/" << l.param_name
+                << " = " << l.param_value << " from the restart file (code default "
+                << l.def << "; the deck does not name it)" << std::endl;
+    }
+  }
   std::vector<int> unread;
   std::vector<std::string> names;
   std::vector<bool> added;   // fresh start: on the command line only
