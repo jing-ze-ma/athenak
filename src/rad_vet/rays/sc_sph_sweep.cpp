@@ -44,6 +44,7 @@
 #include "rad_vet/rays/sc_segment.hpp"
 #include "rad_vet/rays/sc_ray.hpp"
 #include "rad_vet/rays/sc_halo.hpp"
+#include "rad_vet/rays/sc_cs.hpp"
 
 namespace radvet {
 
@@ -461,7 +462,8 @@ void RadiationVet::ScSweep() {
     // c in [c0, c1), deferring those whose stencil reaches the band to the list vgd_edl;
     // edge = true runs that list (the codes are independent: same bits as one launch)
     auto run_split = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
-                         const int i, const int l, const bool edge) {
+                         const int i, const int l, const bool edge,
+                         const DevExeSpace &ex) {
       if (c1 <= c0) {return;}
       if (vgd_edl.extent_int(0) < c1 - c0) {Kokkos::realloc(vgd_edl, c1 - c0);}
       if (!vgd_edn.is_allocated()) {
@@ -488,7 +490,7 @@ void RadiationVet::ScSweep() {
         j = js + (t % nj);
       };
       if (edge) {
-        Kokkos::parallel_for("vet_vgd_shell_edge", ScShellPol(vgd_cur, 0, c1 - c0),
+        Kokkos::parallel_for("vet_vgd_shell_edge", ScShellPol(ex, 0, c1 - c0),
         KOKKOS_LAMBDA(const int c) {
           if (c >= En_()) {return;}
           int m, k, j, d;
@@ -501,8 +503,8 @@ void RadiationVet::ScSweep() {
         });
         return;
       }
-      Kokkos::deep_copy(vgd_cur, vgd_edn, 0);
-      Kokkos::parallel_for("vet_vgd_shell_int", ScShellPol(vgd_cur, c0, c1),
+      Kokkos::deep_copy(ex, vgd_edn, 0);
+      Kokkos::parallel_for("vet_vgd_shell_int", ScShellPol(ex, c0, c1),
       KOKKOS_LAMBDA(const int c) {
         int m, k, j, d;
         item(L_(c), m, k, j, d);
@@ -606,7 +608,16 @@ void RadiationVet::ScSweep() {
     const int nst = vgd_nb1;
     // remote partners over MPI: the interior / edge split (vgd_mid), so the next shell's
     // interior runs while this shell's messages travel
-    const bool ppl = vgd_hmpi && vgd_ipc_state != 1 && !xffs && nst == 1;
+    // IPC (CUDA): the interior runs on the second stream vgd_es2, concurrent with the
+    // exchange kernel on the sweep stream (events order the two)
+#if defined(KOKKOS_ENABLE_CUDA)
+    const bool pipc = vgd_hmpi && vgd_ipc_state == 1 && !xffs && nst == 1;
+#else
+    const bool pipc = false;
+#endif
+    const bool ppl = vgd_hmpi && (vgd_ipc_state != 1 || pipc) && !xffs && nst == 1;
+    if (pipc) {ScEs2Make();}
+    ScCsEv ego, eint;   // interior may start (sweep stream) / interior done (vgd_es2)
     for (int qq = 0; qq < nst*nsh; ++qq) {
       const int q = qq % nsh, lv = inw ? (nst - 1 - qq/nsh) : qq/nsh;
       if (nst > 1 && q == 0 && qq > 0) {ScX1Hand(!inw);}
@@ -646,7 +657,9 @@ void RadiationVet::ScSweep() {
         run_xff(i, l);
       } else if (ppl && q > 0) {
         // the interior ran behind the previous exchange: the deferred edge items
-        run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l, true);
+        if (pipc) {eint.StreamWait(vgd_cur);}
+        run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l, true,
+                  vgd_cur);
       } else {
         // shell list: only this pass's (and level's) (m, k, j, d)
         run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
@@ -684,8 +697,19 @@ void RadiationVet::ScSweep() {
         const int ln = inw ? (l - 1) : (l + 1);
         vgd_mid = [&, ln, lv]() {
           run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], is + ln,
-                    ln, false);
+                    ln, false, vgd_cur);
         };
+        if (pipc) {
+          // the ring ops (they lend the next shell its slab) first, then the interior
+          // on vgd_es2 while this shell's exchange runs on the sweep stream
+          ScRingFlush();
+          ego.Record(vgd_cur);
+          ego.StreamWait(vgd_es2);
+          run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], is + ln,
+                    ln, false, vgd_es2);
+          eint.Record(vgd_es2);
+          vgd_mid = nullptr;
+        }
       }
       // the shell is complete on every block: its lateral band (exact, not lagged)
       Kokkos::Timer th;
