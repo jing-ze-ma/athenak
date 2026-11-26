@@ -1,0 +1,800 @@
+CLEAN FCONE cycle 29657 t2s 2 faces 97 momentum cut sum |dF| V/c^2 3.983000e+22
+CLEAN FCONE_LZ cycle 29657 t2s 2 momentum removed (signed, V/c^2) x1 3.650496e+22 x2 -8.221955e+20 x3 0.000000e+00
+CLEAN LZSPIN cycle 29657 t2s 2: L_z of the cut and capped momentum X -1.625910e+32, the gas's as dOmega -2.295185e-24 (I 7.084004e+55)
+CLEAN FCONE cycle 29657 t2s 3 faces 2320 momentum cut sum |dF| V/c^2 4.959499e+24
+CLEAN FCONE_LZ cycle 29657 t2s 3 momentum removed (signed, V/c^2) x1 4.168929e+24 x2 6.797958e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29657 t2s 3: L_z of the cut and capped momentum X -1.429380e+36, the gas's as dOmega -2.017758e-20 (I 7.084003e+55)
+CLEAN LZB cycle 29657 t2s 3 ledger -5.6850574397459866e+42
+CLEAN PLEDGER cycle 29657 dt 1.636277e+02 hflx -1.792217e+34 ntel -1.803777e+18 src -1.796645e+34 rad 4.225006e+31 flr 2.816235e+26 mrg 1.409201e+16 gap 0.000000e+00 P -6.6985695856413136e+33 END -4.381102e+19 gross 1.108492e+36
+CLEAN FCONE cycle 29658 t2s 2 faces 2803 momentum cut sum |dF| V/c^2 6.323727e+24
+CLEAN FCONE_LZ cycle 29658 t2s 2 momentum removed (signed, V/c^2) x1 5.497559e+24 x2 5.012680e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29658 t2s 2: L_z of the cut and capped momentum X -1.538090e+36, the gas's as dOmega -2.171216e-20 (I 7.084003e+55)
+CLEAN FCONE cycle 29658 t2s 3 faces 5166 momentum cut sum |dF| V/c^2 1.080980e+25
+CLEAN FCONE_LZ cycle 29658 t2s 3 momentum removed (signed, V/c^2) x1 9.371756e+24 x2 4.066165e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29658 t2s 3: L_z of the cut and capped momentum X -2.741501e+36, the gas's as dOmega -3.869988e-20 (I 7.084003e+55)
+CLEAN LZB cycle 29658 t2s 3 ledger -5.6834213214108293e+42
+CLEAN PLEDGER cycle 29658 dt 1.636599e+02 hflx -1.792218e+34 ntel 1.803422e+18 src -1.796645e+34 rad 4.225424e+31 flr 2.698168e+26 mrg 7.044617e+15 gap 0.000000e+00 P -7.0283287498636719e+33 END 4.219693e+20 gross 1.108387e+36
+CLEAN FCONE cycle 29659 t2s 2 faces 6316 momentum cut sum |dF| V/c^2 1.255187e+25
+CLEAN FCONE_LZ cycle 29659 t2s 2 momentum removed (signed, V/c^2) x1 1.098538e+25 x2 3.031901e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29659 t2s 2: L_z of the cut and capped momentum X -2.911312e+36, the gas's as dOmega -4.109699e-20 (I 7.084003e+55)
+CLEAN FCONE cycle 29659 t2s 3 faces 8877 momentum cut sum |dF| V/c^2 1.717972e+25
+CLEAN FCONE_LZ cycle 29659 t2s 3 momentum removed (signed, V/c^2) x1 1.523015e+25 x2 2.232544e+20 x3 0.000000e+00
+CLEAN LZSPIN cycle 29659 t2s 3: L_z of the cut and capped momentum X -3.128738e+36, the gas's as dOmega -4.416624e-20 (I 7.084003e+55)
+CLEAN LZB cycle 29659 t2s 3 ledger -5.6817937539429079e+42
+CLEAN PLEDGER cycle 29659 dt 1.637364e+02 hflx -1.792219e+34 ntel 1.802579e+18 src -1.796645e+34 rad 4.225847e+31 flr 2.698201e+26 mrg 2.816530e+16 gap 0.000000e+00 P -7.3559121342734610e+33 END 8.439385e+20 gross 1.108282e+36
+CLEAN FCONE cycle 29660 t2s 2 faces 10014 momentum cut sum |dF| V/c^2 1.924581e+25
+CLEAN FCONE_LZ cycle 29660 t2s 2 momentum removed (signed, V/c^2) x1 1.710302e+25 x2 -4.022953e+21 x3 0.000000e+00
+CLEAN LZSPIN cycle 29660 t2s 2: L_z of the cut and capped momentum X -3.439812e+36, the gas's as dOmega -4.855747e-20 (I 7.084002e+55)
+CLEAN FCONE cycle 29660 t2s 3 faces 12161 momentum cut sum |dF| V/c^2 2.440998e+25
+CLEAN FCONE_LZ cycle 29660 t2s 3 momentum removed (signed, V/c^2) x1 2.194688e+25 x2 -1.368261e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29660 t2s 3: L_z of the cut and capped momentum X -3.519490e+36, the gas's as dOmega -4.968223e-20 (I 7.084002e+55)
+CLEAN LZB cycle 29660 t2s 3 ledger -5.6801745334270036e+42
+CLEAN PLEDGER cycle 29660 dt 1.636544e+02 hflx -1.792220e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.226278e+31 flr 2.698245e+26 mrg 2.113456e+16 gap 0.000000e+00 P -7.6809597765644971e+33 END -3.147476e+20 gross 1.108176e+36
+CLEAN FCONE cycle 29661 t2s 2 faces 13216 momentum cut sum |dF| V/c^2 2.699361e+25
+CLEAN FCONE_LZ cycle 29661 t2s 2 momentum removed (signed, V/c^2) x1 2.425744e+25 x2 -2.436655e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29661 t2s 2: L_z of the cut and capped momentum X -3.889927e+36, the gas's as dOmega -5.491143e-20 (I 7.084002e+55)
+CLEAN FCONE cycle 29661 t2s 3 faces 15138 momentum cut sum |dF| V/c^2 3.219581e+25
+CLEAN FCONE_LZ cycle 29661 t2s 3 momentum removed (signed, V/c^2) x1 2.907787e+25 x2 -4.329352e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29661 t2s 3: L_z of the cut and capped momentum X -4.155143e+36, the gas's as dOmega -5.865530e-20 (I 7.084002e+55)
+CLEAN LZB cycle 29661 t2s 3 ledger -5.6785636504626751e+42
+CLEAN PLEDGER cycle 29661 dt 1.635770e+02 hflx -1.792221e+34 ntel -1.804336e+18 src -1.796645e+34 rad 4.226718e+31 flr 2.697597e+26 mrg 2.114456e+16 gap 0.000000e+00 P -8.0034411041078890e+33 END 2.282785e+20 gross 1.108070e+36
+CLEAN FCONE cycle 29662 t2s 2 faces 15900 momentum cut sum |dF| V/c^2 3.449124e+25
+CLEAN FCONE_LZ cycle 29662 t2s 2 momentum removed (signed, V/c^2) x1 3.110921e+25 x2 -5.627317e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29662 t2s 2: L_z of the cut and capped momentum X -4.543901e+36, the gas's as dOmega -6.414314e-20 (I 7.084002e+55)
+CLEAN FCONE cycle 29662 t2s 3 faces 17553 momentum cut sum |dF| V/c^2 3.862374e+25
+CLEAN FCONE_LZ cycle 29662 t2s 3 momentum removed (signed, V/c^2) x1 3.496819e+25 x2 -8.098353e+22 x3 0.000000e+00
+CLEAN LZSPIN cycle 29662 t2s 3: L_z of the cut and capped momentum X -4.675096e+36, the gas's as dOmega -6.599513e-20 (I 7.084001e+55)
+CLEAN LZB cycle 29662 t2s 3 ledger -5.6769622181006444e+42
+CLEAN PLEDGER cycle 29662 dt 1.635485e+02 hflx -1.792222e+34 ntel -3.609301e+18 src -1.796645e+34 rad 4.227165e+31 flr 2.697634e+26 mrg 3.524708e+16 gap 0.000000e+00 P -8.3234177602953730e+33 END 5.072855e+19 gross 1.107963e+36
+CLEAN FCONE cycle 29663 t2s 2 faces 18344 momentum cut sum |dF| V/c^2 4.088971e+25
+CLEAN FCONE_LZ cycle 29663 t2s 2 momentum removed (signed, V/c^2) x1 3.695097e+25 x2 -1.031755e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29663 t2s 2: L_z of the cut and capped momentum X -5.073321e+36, the gas's as dOmega -7.161660e-20 (I 7.084001e+55)
+CLEAN FCONE cycle 29663 t2s 3 faces 19734 momentum cut sum |dF| V/c^2 4.419239e+25
+CLEAN FCONE_LZ cycle 29663 t2s 3 momentum removed (signed, V/c^2) x1 4.005707e+25 x2 -1.276793e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29663 t2s 3: L_z of the cut and capped momentum X -4.955417e+36, the gas's as dOmega -6.995223e-20 (I 7.084001e+55)
+CLEAN LZB cycle 29663 t2s 3 ledger -5.6753697468827268e+42
+CLEAN PLEDGER cycle 29663 dt 1.635019e+02 hflx -1.792223e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.227621e+31 flr 2.698160e+26 mrg 2.820570e+16 gap 0.000000e+00 P -8.6408182129711062e+33 END -1.879262e+20 gross 1.107857e+36
+CLEAN FCONE cycle 29664 t2s 2 faces 20364 momentum cut sum |dF| V/c^2 4.603171e+25
+CLEAN FCONE_LZ cycle 29664 t2s 2 momentum removed (signed, V/c^2) x1 4.164103e+25 x2 -1.429129e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29664 t2s 2: L_z of the cut and capped momentum X -5.298895e+36, the gas's as dOmega -7.480088e-20 (I 7.084001e+55)
+CLEAN FCONE cycle 29664 t2s 3 faces 21560 momentum cut sum |dF| V/c^2 4.843298e+25
+CLEAN FCONE_LZ cycle 29664 t2s 3 momentum removed (signed, V/c^2) x1 4.398814e+25 x2 -1.561624e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29664 t2s 3: L_z of the cut and capped momentum X -5.125071e+36, the gas's as dOmega -7.234714e-20 (I 7.084000e+55)
+CLEAN LZB cycle 29664 t2s 3 ledger -5.6737877421281644e+42
+CLEAN PLEDGER cycle 29664 dt 1.634518e+02 hflx -1.792224e+34 ntel 1.805718e+18 src -1.796645e+34 rad 4.228083e+31 flr 2.698026e+26 mrg 2.116076e+16 gap 0.000000e+00 P -8.9556011415870470e+33 END 4.819212e+20 gross 1.107750e+36
+CLEAN FCONE cycle 29665 t2s 2 faces 22201 momentum cut sum |dF| V/c^2 5.037687e+25
+CLEAN FCONE_LZ cycle 29665 t2s 2 momentum removed (signed, V/c^2) x1 4.566238e+25 x2 -1.731874e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29665 t2s 2: L_z of the cut and capped momentum X -5.436229e+36, the gas's as dOmega -7.673954e-20 (I 7.084000e+55)
+CLEAN FCONE cycle 29665 t2s 3 faces 23030 momentum cut sum |dF| V/c^2 5.241644e+25
+CLEAN FCONE_LZ cycle 29665 t2s 3 momentum removed (signed, V/c^2) x1 4.768223e+25 x2 -1.822774e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29665 t2s 3: L_z of the cut and capped momentum X -5.185354e+36, the gas's as dOmega -7.319811e-20 (I 7.084000e+55)
+CLEAN LZB cycle 29665 t2s 3 ledger -5.6722148040854300e+42
+CLEAN PLEDGER cycle 29665 dt 1.634180e+02 hflx -1.792225e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.228553e+31 flr 2.698483e+26 mrg 1.411009e+16 gap 0.000000e+00 P -9.2677642401008588e+33 END 6.087426e+20 gross 1.107644e+36
+CLEAN FCONE cycle 29666 t2s 2 faces 23650 momentum cut sum |dF| V/c^2 5.420435e+25
+CLEAN FCONE_LZ cycle 29666 t2s 2 momentum removed (signed, V/c^2) x1 4.920517e+25 x2 -1.967543e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29666 t2s 2: L_z of the cut and capped momentum X -5.501966e+36, the gas's as dOmega -7.766752e-20 (I 7.083999e+55)
+CLEAN FCONE cycle 29666 t2s 3 faces 24405 momentum cut sum |dF| V/c^2 5.570247e+25
+CLEAN FCONE_LZ cycle 29666 t2s 3 momentum removed (signed, V/c^2) x1 5.076068e+25 x2 -1.958414e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29666 t2s 3: L_z of the cut and capped momentum X -5.292630e+36, the gas's as dOmega -7.471245e-20 (I 7.083999e+55)
+CLEAN LZB cycle 29666 t2s 3 ledger -5.6706517504224464e+42
+CLEAN PLEDGER cycle 29666 dt 1.634016e+02 hflx -1.792227e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.229029e+31 flr 2.698250e+26 mrg 7.055754e+15 gap 0.000000e+00 P -9.5773115549658104e+33 END 6.075896e+20 gross 1.107539e+36
+CLEAN FCONE cycle 29667 t2s 2 faces 24988 momentum cut sum |dF| V/c^2 5.749888e+25
+CLEAN FCONE_LZ cycle 29667 t2s 2 momentum removed (signed, V/c^2) x1 5.226904e+25 x2 -2.081624e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29667 t2s 2: L_z of the cut and capped momentum X -5.641147e+36, the gas's as dOmega -7.963224e-20 (I 7.083999e+55)
+CLEAN FCONE cycle 29667 t2s 3 faces 25583 momentum cut sum |dF| V/c^2 5.850384e+25
+CLEAN FCONE_LZ cycle 29667 t2s 3 momentum removed (signed, V/c^2) x1 5.339238e+25 x2 -2.014591e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29667 t2s 3: L_z of the cut and capped momentum X -5.419032e+36, the gas's as dOmega -7.649680e-20 (I 7.083999e+55)
+CLEAN LZB cycle 29667 t2s 3 ledger -5.6690972029663605e+42
+CLEAN PLEDGER cycle 29667 dt 1.634081e+02 hflx -1.792228e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.229512e+31 flr 2.698667e+26 mrg 2.116642e+16 gap 0.000000e+00 P -9.8842621338678112e+33 END -3.262768e+20 gross 1.107435e+36
+CLEAN FCONE cycle 29668 t2s 2 faces 26082 momentum cut sum |dF| V/c^2 6.026170e+25
+CLEAN FCONE_LZ cycle 29668 t2s 2 momentum removed (signed, V/c^2) x1 5.486198e+25 x2 -2.117881e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29668 t2s 2: L_z of the cut and capped momentum X -5.752918e+36, the gas's as dOmega -8.121005e-20 (I 7.083998e+55)
+CLEAN FCONE cycle 29668 t2s 3 faces 26489 momentum cut sum |dF| V/c^2 6.103212e+25
+CLEAN FCONE_LZ cycle 29668 t2s 3 momentum removed (signed, V/c^2) x1 5.574609e+25 x2 -2.122117e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29668 t2s 3: L_z of the cut and capped momentum X -5.574225e+36, the gas's as dOmega -7.868756e-20 (I 7.083998e+55)
+CLEAN LZB cycle 29668 t2s 3 ledger -5.6675513935599432e+42
+CLEAN PLEDGER cycle 29668 dt 1.634512e+02 hflx -1.792229e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.230002e+31 flr 2.698836e+26 mrg 2.116083e+16 gap 0.000000e+00 P -1.0188659388495763e+34 END 3.643232e+20 gross 1.107330e+36
+CLEAN FCONE cycle 29669 t2s 2 faces 27017 momentum cut sum |dF| V/c^2 6.267461e+25
+CLEAN FCONE_LZ cycle 29669 t2s 2 momentum removed (signed, V/c^2) x1 5.712071e+25 x2 -2.281557e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29669 t2s 2: L_z of the cut and capped momentum X -5.920614e+36, the gas's as dOmega -8.357730e-20 (I 7.083998e+55)
+CLEAN FCONE cycle 29669 t2s 3 faces 27250 momentum cut sum |dF| V/c^2 6.312573e+25
+CLEAN FCONE_LZ cycle 29669 t2s 3 momentum removed (signed, V/c^2) x1 5.769885e+25 x2 -2.259654e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29669 t2s 3: L_z of the cut and capped momentum X -5.740321e+36, the gas's as dOmega -8.103222e-20 (I 7.083997e+55)
+CLEAN LZB cycle 29669 t2s 3 ledger -5.6660153131184491e+42
+CLEAN PLEDGER cycle 29669 dt 1.635325e+02 hflx -1.792230e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.230498e+31 flr 2.699386e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.0490544491308976e+34 END -2.997596e+19 gross 1.107226e+36
+CLEAN FCONE cycle 29670 t2s 2 faces 27732 momentum cut sum |dF| V/c^2 6.460955e+25
+CLEAN FCONE_LZ cycle 29670 t2s 2 momentum removed (signed, V/c^2) x1 5.891351e+25 x2 -2.388873e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29670 t2s 2: L_z of the cut and capped momentum X -6.048652e+36, the gas's as dOmega -8.538474e-20 (I 7.083997e+55)
+CLEAN FCONE cycle 29670 t2s 3 faces 27903 momentum cut sum |dF| V/c^2 6.481082e+25
+CLEAN FCONE_LZ cycle 29670 t2s 3 momentum removed (signed, V/c^2) x1 5.926338e+25 x2 -2.336444e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29670 t2s 3: L_z of the cut and capped momentum X -5.760264e+36, the gas's as dOmega -8.131376e-20 (I 7.083997e+55)
+CLEAN LZB cycle 29670 t2s 3 ledger -5.6644883231009673e+42
+CLEAN PLEDGER cycle 29670 dt 1.636128e+02 hflx -1.792231e+34 ntel 1.803941e+18 src -1.796645e+34 rad 4.231000e+31 flr 2.699003e+26 mrg 1.409329e+16 gap 0.000000e+00 P -1.0789887901037445e+34 END -5.499436e+20 gross 1.107121e+36
+CLEAN FCONE cycle 29671 t2s 2 faces 28405 momentum cut sum |dF| V/c^2 6.619963e+25
+CLEAN FCONE_LZ cycle 29671 t2s 2 momentum removed (signed, V/c^2) x1 6.038824e+25 x2 -2.447840e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29671 t2s 2: L_z of the cut and capped momentum X -6.063318e+36, the gas's as dOmega -8.559178e-20 (I 7.083996e+55)
+CLEAN FCONE cycle 29671 t2s 3 faces 28629 momentum cut sum |dF| V/c^2 6.626059e+25
+CLEAN FCONE_LZ cycle 29671 t2s 3 momentum removed (signed, V/c^2) x1 6.061959e+25 x2 -2.406757e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29671 t2s 3: L_z of the cut and capped momentum X -5.785431e+36, the gas's as dOmega -8.166903e-20 (I 7.083996e+55)
+CLEAN LZB cycle 29671 t2s 3 ledger -5.6629724587835997e+42
+CLEAN PLEDGER cycle 29671 dt 1.635620e+02 hflx -1.792232e+34 ntel -1.804501e+18 src -1.796645e+34 rad 4.231508e+31 flr 2.699934e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.1086427267137951e+34 END -9.223372e+19 gross 1.107016e+36
+CLEAN FCONE cycle 29672 t2s 2 faces 29044 momentum cut sum |dF| V/c^2 6.763476e+25
+CLEAN FCONE_LZ cycle 29672 t2s 2 momentum removed (signed, V/c^2) x1 6.172877e+25 x2 -2.491229e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29672 t2s 2: L_z of the cut and capped momentum X -6.082275e+36, the gas's as dOmega -8.585938e-20 (I 7.083996e+55)
+CLEAN FCONE cycle 29672 t2s 3 faces 29219 momentum cut sum |dF| V/c^2 6.754751e+25
+CLEAN FCONE_LZ cycle 29672 t2s 3 momentum removed (signed, V/c^2) x1 6.184315e+25 x2 -2.413876e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29672 t2s 3: L_z of the cut and capped momentum X -5.780893e+36, the gas's as dOmega -8.160499e-20 (I 7.083995e+55)
+CLEAN LZB cycle 29672 t2s 3 ledger -5.6614675236819034e+42
+CLEAN PLEDGER cycle 29672 dt 1.635492e+02 hflx -1.792234e+34 ntel 1.804643e+18 src -1.796645e+34 rad 4.232021e+31 flr 2.701134e+26 mrg 2.114816e+16 gap 0.000000e+00 P -1.1380207988216886e+34 END -1.129863e+20 gross 1.106910e+36
+CLEAN FCONE cycle 29673 t2s 2 faces 29579 momentum cut sum |dF| V/c^2 6.896609e+25
+CLEAN FCONE_LZ cycle 29673 t2s 2 momentum removed (signed, V/c^2) x1 6.296692e+25 x2 -2.438339e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29673 t2s 2: L_z of the cut and capped momentum X -6.098197e+36, the gas's as dOmega -8.608416e-20 (I 7.083995e+55)
+CLEAN FCONE cycle 29673 t2s 3 faces 29609 momentum cut sum |dF| V/c^2 6.870798e+25
+CLEAN FCONE_LZ cycle 29673 t2s 3 momentum removed (signed, V/c^2) x1 6.292171e+25 x2 -2.313656e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29673 t2s 3: L_z of the cut and capped momentum X -5.749415e+36, the gas's as dOmega -8.116063e-20 (I 7.083995e+55)
+CLEAN LZB cycle 29673 t2s 3 ledger -5.6599717638997816e+42
+CLEAN PLEDGER cycle 29673 dt 1.635701e+02 hflx -1.792235e+34 ntel 1.804412e+18 src -1.796645e+34 rad 4.232539e+31 flr 2.701183e+26 mrg 1.409697e+16 gap 0.000000e+00 P -1.1671264127808406e+34 END -3.055242e+20 gross 1.106805e+36
+CLEAN FCONE cycle 29674 t2s 2 faces 30017 momentum cut sum |dF| V/c^2 7.000936e+25
+CLEAN FCONE_LZ cycle 29674 t2s 2 momentum removed (signed, V/c^2) x1 6.395612e+25 x2 -2.333536e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29674 t2s 2: L_z of the cut and capped momentum X -6.041977e+36, the gas's as dOmega -8.529054e-20 (I 7.083994e+55)
+CLEAN FCONE cycle 29674 t2s 3 faces 30054 momentum cut sum |dF| V/c^2 6.968077e+25
+CLEAN FCONE_LZ cycle 29674 t2s 3 momentum removed (signed, V/c^2) x1 6.384014e+25 x2 -2.233120e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29674 t2s 3: L_z of the cut and capped momentum X -5.728329e+36, the gas's as dOmega -8.086299e-20 (I 7.083994e+55)
+CLEAN LZB cycle 29674 t2s 3 ledger -5.6584869503432697e+42
+CLEAN PLEDGER cycle 29674 dt 1.636111e+02 hflx -1.792236e+34 ntel 0.000000e+00 src -1.796645e+34 rad 4.233062e+31 flr 2.701263e+26 mrg 1.409344e+16 gap 0.000000e+00 P -1.1959607872649841e+34 END 3.689349e+19 gross 1.106699e+36
+CLEAN FCONE cycle 29675 t2s 2 faces 30383 momentum cut sum |dF| V/c^2 7.095072e+25
+CLEAN FCONE_LZ cycle 29675 t2s 2 momentum removed (signed, V/c^2) x1 6.484475e+25 x2 -2.265277e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29675 t2s 2: L_z of the cut and capped momentum X -6.011227e+36, the gas's as dOmega -8.485647e-20 (I 7.083994e+55)
+CLEAN FCONE cycle 29675 t2s 3 faces 30362 momentum cut sum |dF| V/c^2 7.052582e+25
+CLEAN FCONE_LZ cycle 29675 t2s 3 momentum removed (signed, V/c^2) x1 6.463145e+25 x2 -2.227124e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29675 t2s 3: L_z of the cut and capped momentum X -5.691719e+36, the gas's as dOmega -8.034620e-20 (I 7.083993e+55)
+CLEAN LZB cycle 29675 t2s 3 ledger -5.6570119634563239e+42
+CLEAN PLEDGER cycle 29675 dt 1.636308e+02 hflx -1.792237e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.233589e+31 flr 2.700387e+26 mrg 2.113761e+16 gap 0.000000e+00 P -1.2245179774852534e+34 END -1.729382e+19 gross 1.106593e+36
+CLEAN FCONE cycle 29676 t2s 2 faces 30687 momentum cut sum |dF| V/c^2 7.181130e+25
+CLEAN FCONE_LZ cycle 29676 t2s 2 momentum removed (signed, V/c^2) x1 6.565002e+25 x2 -2.270674e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29676 t2s 2: L_z of the cut and capped momentum X -5.957767e+36, the gas's as dOmega -8.410182e-20 (I 7.083993e+55)
+CLEAN FCONE cycle 29676 t2s 3 faces 30670 momentum cut sum |dF| V/c^2 7.136299e+25
+CLEAN FCONE_LZ cycle 29676 t2s 3 momentum removed (signed, V/c^2) x1 6.541065e+25 x2 -2.187289e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29676 t2s 3: L_z of the cut and capped momentum X -5.593458e+36, the gas's as dOmega -7.895911e-20 (I 7.083992e+55)
+CLEAN LZB cycle 29676 t2s 3 ledger -5.6555478679690091e+42
+CLEAN PLEDGER cycle 29676 dt 1.636412e+02 hflx -1.792239e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.234121e+31 flr 2.699154e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.2527944742879562e+34 END 4.127459e+20 gross 1.106486e+36
+CLEAN FCONE cycle 29677 t2s 2 faces 31077 momentum cut sum |dF| V/c^2 7.261820e+25
+CLEAN FCONE_LZ cycle 29677 t2s 2 momentum removed (signed, V/c^2) x1 6.639113e+25 x2 -2.242557e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29677 t2s 2: L_z of the cut and capped momentum X -5.831971e+36, the gas's as dOmega -8.232606e-20 (I 7.083992e+55)
+CLEAN FCONE cycle 29677 t2s 3 faces 31006 momentum cut sum |dF| V/c^2 7.197554e+25
+CLEAN FCONE_LZ cycle 29677 t2s 3 momentum removed (signed, V/c^2) x1 6.597300e+25 x2 -2.214197e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29677 t2s 3: L_z of the cut and capped momentum X -5.481922e+36, the gas's as dOmega -7.738465e-20 (I 7.083992e+55)
+CLEAN LZB cycle 29677 t2s 3 ledger -5.6540944008562399e+42
+CLEAN PLEDGER cycle 29677 dt 1.636551e+02 hflx -1.792240e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.234656e+31 flr 2.699620e+26 mrg 1.408965e+16 gap 0.000000e+00 P -1.2807893346851014e+34 END 4.346514e+20 gross 1.106379e+36
+CLEAN FCONE cycle 29678 t2s 2 faces 31358 momentum cut sum |dF| V/c^2 7.322531e+25
+CLEAN FCONE_LZ cycle 29678 t2s 2 momentum removed (signed, V/c^2) x1 6.693874e+25 x2 -2.304980e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29678 t2s 2: L_z of the cut and capped momentum X -5.680037e+36, the gas's as dOmega -8.018131e-20 (I 7.083991e+55)
+CLEAN FCONE cycle 29678 t2s 3 faces 31405 momentum cut sum |dF| V/c^2 7.258495e+25
+CLEAN FCONE_LZ cycle 29678 t2s 3 momentum removed (signed, V/c^2) x1 6.652521e+25 x2 -2.313668e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29678 t2s 3: L_z of the cut and capped momentum X -5.360980e+36, the gas's as dOmega -7.567740e-20 (I 7.083991e+55)
+CLEAN LZB cycle 29678 t2s 3 ledger -5.6526507942975788e+42
+CLEAN PLEDGER cycle 29678 dt 1.636574e+02 hflx -1.792241e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.235195e+31 flr 2.699662e+26 mrg 2.113418e+16 gap 0.000000e+00 P -1.3084995766357862e+34 END 1.902320e+20 gross 1.106273e+36
+CLEAN FCONE cycle 29679 t2s 2 faces 31720 momentum cut sum |dF| V/c^2 7.394613e+25
+CLEAN FCONE_LZ cycle 29679 t2s 2 momentum removed (signed, V/c^2) x1 6.759057e+25 x2 -2.435603e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29679 t2s 2: L_z of the cut and capped momentum X -5.580054e+36, the gas's as dOmega -7.876992e-20 (I 7.083991e+55)
+CLEAN FCONE cycle 29679 t2s 3 faces 31494 momentum cut sum |dF| V/c^2 7.320645e+25
+CLEAN FCONE_LZ cycle 29679 t2s 3 momentum removed (signed, V/c^2) x1 6.707663e+25 x2 -2.413214e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29679 t2s 3: L_z of the cut and capped momentum X -5.315631e+36, the gas's as dOmega -7.503725e-20 (I 7.083990e+55)
+CLEAN LZB cycle 29679 t2s 3 ledger -5.6512172572591896e+42
+CLEAN PLEDGER cycle 29679 dt 1.636552e+02 hflx -1.792243e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.235737e+31 flr 2.699446e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.3359235489449849e+34 END -4.819212e+20 gross 1.106166e+36
+CLEAN FCONE cycle 29680 t2s 2 faces 31805 momentum cut sum |dF| V/c^2 7.461734e+25
+CLEAN FCONE_LZ cycle 29680 t2s 2 momentum removed (signed, V/c^2) x1 6.817497e+25 x2 -2.583441e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29680 t2s 2: L_z of the cut and capped momentum X -5.523223e+36, the gas's as dOmega -7.796769e-20 (I 7.083990e+55)
+CLEAN FCONE cycle 29680 t2s 3 faces 31692 momentum cut sum |dF| V/c^2 7.389653e+25
+CLEAN FCONE_LZ cycle 29680 t2s 3 momentum removed (signed, V/c^2) x1 6.767185e+25 x2 -2.623561e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29680 t2s 3: L_z of the cut and capped momentum X -5.286563e+36, the gas's as dOmega -7.462691e-20 (I 7.083989e+55)
+CLEAN LZB cycle 29680 t2s 3 ledger -5.6497937829768791e+42
+CLEAN PLEDGER cycle 29680 dt 1.636545e+02 hflx -1.792244e+34 ntel -1.803482e+18 src -1.796646e+34 rad 4.236282e+31 flr 2.700195e+26 mrg 1.408970e+16 gap 0.000000e+00 P -1.3630604601777796e+34 END 6.341068e+20 gross 1.106060e+36
+CLEAN FCONE cycle 29681 t2s 2 faces 32100 momentum cut sum |dF| V/c^2 7.528256e+25
+CLEAN FCONE_LZ cycle 29681 t2s 2 momentum removed (signed, V/c^2) x1 6.875172e+25 x2 -2.809451e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29681 t2s 2: L_z of the cut and capped momentum X -5.502585e+36, the gas's as dOmega -7.767637e-20 (I 7.083989e+55)
+CLEAN FCONE cycle 29681 t2s 3 faces 31951 momentum cut sum |dF| V/c^2 7.459324e+25
+CLEAN FCONE_LZ cycle 29681 t2s 3 momentum removed (signed, V/c^2) x1 6.827918e+25 x2 -2.746101e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29681 t2s 3: L_z of the cut and capped momentum X -5.287117e+36, the gas's as dOmega -7.463475e-20 (I 7.083989e+55)
+CLEAN LZB cycle 29681 t2s 3 ledger -5.6483816177347575e+42
+CLEAN PLEDGER cycle 29681 dt 1.636573e+02 hflx -1.792245e+34 ntel 1.803450e+18 src -1.796646e+34 rad 4.236829e+31 flr 2.700894e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.3899098738509713e+34 END -1.429623e+20 gross 1.105953e+36
+CLEAN FCONE cycle 29682 t2s 2 faces 32353 momentum cut sum |dF| V/c^2 7.597576e+25
+CLEAN FCONE_LZ cycle 29682 t2s 2 momentum removed (signed, V/c^2) x1 6.934741e+25 x2 -2.875317e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29682 t2s 2: L_z of the cut and capped momentum X -5.489343e+36, the gas's as dOmega -7.748945e-20 (I 7.083988e+55)
+CLEAN FCONE cycle 29682 t2s 3 faces 32154 momentum cut sum |dF| V/c^2 7.508119e+25
+CLEAN FCONE_LZ cycle 29682 t2s 3 momentum removed (signed, V/c^2) x1 6.868957e+25 x2 -2.778593e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29682 t2s 3: L_z of the cut and capped momentum X -5.279825e+36, the gas's as dOmega -7.453182e-20 (I 7.083988e+55)
+CLEAN LZB cycle 29682 t2s 3 ledger -5.6469793146724155e+42
+CLEAN PLEDGER cycle 29682 dt 1.636764e+02 hflx -1.792246e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.237378e+31 flr 2.701011e+26 mrg 1.408781e+16 gap 0.000000e+00 P -1.4164734442076794e+34 END -4.254280e+20 gross 1.105846e+36
+CLEAN FCONE cycle 29683 t2s 2 faces 32519 momentum cut sum |dF| V/c^2 7.643307e+25
+CLEAN FCONE_LZ cycle 29683 t2s 2 momentum removed (signed, V/c^2) x1 6.973396e+25 x2 -2.883760e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29683 t2s 2: L_z of the cut and capped momentum X -5.510478e+36, the gas's as dOmega -7.778780e-20 (I 7.083987e+55)
+CLEAN FCONE cycle 29683 t2s 3 faces 32337 momentum cut sum |dF| V/c^2 7.551016e+25
+CLEAN FCONE_LZ cycle 29683 t2s 3 momentum removed (signed, V/c^2) x1 6.907179e+25 x2 -2.778295e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29683 t2s 3: L_z of the cut and capped momentum X -5.348192e+36, the gas's as dOmega -7.549692e-20 (I 7.083987e+55)
+CLEAN LZB cycle 29683 t2s 3 ledger -5.6455868395729106e+42
+CLEAN PLEDGER cycle 29683 dt 1.637096e+02 hflx -1.792248e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.237930e+31 flr 2.701984e+26 mrg 2.112743e+16 gap 0.000000e+00 P -1.4427526065590857e+34 END 2.847716e+20 gross 1.105738e+36
+CLEAN FCONE cycle 29684 t2s 2 faces 32727 momentum cut sum |dF| V/c^2 7.687656e+25
+CLEAN FCONE_LZ cycle 29684 t2s 2 momentum removed (signed, V/c^2) x1 7.012406e+25 x2 -2.877804e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29684 t2s 2: L_z of the cut and capped momentum X -5.582272e+36, the gas's as dOmega -7.880128e-20 (I 7.083987e+55)
+CLEAN FCONE cycle 29684 t2s 3 faces 32680 momentum cut sum |dF| V/c^2 7.586988e+25
+CLEAN FCONE_LZ cycle 29684 t2s 3 momentum removed (signed, V/c^2) x1 6.938180e+25 x2 -2.813312e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29684 t2s 3: L_z of the cut and capped momentum X -5.413899e+36, the gas's as dOmega -7.642448e-20 (I 7.083986e+55)
+CLEAN LZB cycle 29684 t2s 3 ledger -5.6442050023615377e+42
+CLEAN PLEDGER cycle 29684 dt 1.637559e+02 hflx -1.792249e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.238483e+31 flr 2.701617e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.4687486263992732e+34 END -1.060688e+20 gross 1.105629e+36
+CLEAN FCONE cycle 29685 t2s 2 faces 32970 momentum cut sum |dF| V/c^2 7.724840e+25
+CLEAN FCONE_LZ cycle 29685 t2s 2 momentum removed (signed, V/c^2) x1 7.044704e+25 x2 -2.950218e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29685 t2s 2: L_z of the cut and capped momentum X -5.622898e+36, the gas's as dOmega -7.937478e-20 (I 7.083986e+55)
+CLEAN FCONE cycle 29685 t2s 3 faces 32842 momentum cut sum |dF| V/c^2 7.613473e+25
+CLEAN FCONE_LZ cycle 29685 t2s 3 momentum removed (signed, V/c^2) x1 6.959793e+25 x2 -2.871981e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29685 t2s 3: L_z of the cut and capped momentum X -5.393972e+36, the gas's as dOmega -7.614319e-20 (I 7.083985e+55)
+CLEAN LZB cycle 29685 t2s 3 ledger -5.6428345448735722e+42
+CLEAN PLEDGER cycle 29685 dt 1.637030e+02 hflx -1.792250e+34 ntel 3.605895e+18 src -1.796646e+34 rad 4.239038e+31 flr 2.700777e+26 mrg 1.408553e+16 gap 0.000000e+00 P -1.4944451707675895e+34 END -3.504881e+20 gross 1.105519e+36
+CLEAN FCONE cycle 29686 t2s 2 faces 33250 momentum cut sum |dF| V/c^2 7.747335e+25
+CLEAN FCONE_LZ cycle 29686 t2s 2 momentum removed (signed, V/c^2) x1 7.063108e+25 x2 -2.996527e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29686 t2s 2: L_z of the cut and capped momentum X -5.606288e+36, the gas's as dOmega -7.914032e-20 (I 7.083985e+55)
+CLEAN FCONE cycle 29686 t2s 3 faces 33080 momentum cut sum |dF| V/c^2 7.626474e+25
+CLEAN FCONE_LZ cycle 29686 t2s 3 momentum removed (signed, V/c^2) x1 6.970538e+25 x2 -2.853847e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29686 t2s 3: L_z of the cut and capped momentum X -5.408274e+36, the gas's as dOmega -7.634509e-20 (I 7.083984e+55)
+CLEAN LZB cycle 29686 t2s 3 ledger -5.6414752435201325e+42
+CLEAN PLEDGER cycle 29686 dt 1.636426e+02 hflx -1.792252e+34 ntel 0.000000e+00 src -1.796646e+34 rad 4.239593e+31 flr 2.700243e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5198411061731046e+34 END -1.464210e+20 gross 1.105408e+36
+CLEAN FCONE cycle 29687 t2s 2 faces 33376 momentum cut sum |dF| V/c^2 7.757869e+25
+CLEAN FCONE_LZ cycle 29687 t2s 2 momentum removed (signed, V/c^2) x1 7.071676e+25 x2 -2.992053e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29687 t2s 2: L_z of the cut and capped momentum X -5.631725e+36, the gas's as dOmega -7.949940e-20 (I 7.083984e+55)
+CLEAN FCONE cycle 29687 t2s 3 faces 33255 momentum cut sum |dF| V/c^2 7.630069e+25
+CLEAN FCONE_LZ cycle 29687 t2s 3 momentum removed (signed, V/c^2) x1 6.972682e+25 x2 -2.892131e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29687 t2s 3: L_z of the cut and capped momentum X -5.400552e+36, the gas's as dOmega -7.623610e-20 (I 7.083983e+55)
+CLEAN LZB cycle 29687 t2s 3 ledger -5.6401272890045027e+42
+CLEAN PLEDGER cycle 29687 dt 1.636008e+02 hflx -1.792253e+34 ntel 1.804073e+18 src -1.796647e+34 rad 4.240149e+31 flr 2.700273e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5449398005417675e+34 END 5.245793e+20 gross 1.105296e+36
+CLEAN FCONE cycle 29688 t2s 2 faces 33633 momentum cut sum |dF| V/c^2 7.760923e+25
+CLEAN FCONE_LZ cycle 29688 t2s 2 momentum removed (signed, V/c^2) x1 7.073193e+25 x2 -3.015576e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29688 t2s 2: L_z of the cut and capped momentum X -5.633204e+36, the gas's as dOmega -7.952030e-20 (I 7.083983e+55)
+CLEAN FCONE cycle 29688 t2s 3 faces 33465 momentum cut sum |dF| V/c^2 7.620506e+25
+CLEAN FCONE_LZ cycle 29688 t2s 3 momentum removed (signed, V/c^2) x1 6.961751e+25 x2 -2.745839e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29688 t2s 3: L_z of the cut and capped momentum X -5.387057e+36, the gas's as dOmega -7.604560e-20 (I 7.083982e+55)
+CLEAN LZB cycle 29688 t2s 3 ledger -5.6387910749477649e+42
+CLEAN PLEDGER cycle 29688 dt 1.635518e+02 hflx -1.792254e+34 ntel 1.804614e+18 src -1.796647e+34 rad 4.240705e+31 flr 2.700358e+26 mrg 2.114782e+16 gap 0.000000e+00 P -1.5697407614573328e+34 END -4.358043e+20 gross 1.105184e+36
+CLEAN FCONE cycle 29689 t2s 2 faces 33748 momentum cut sum |dF| V/c^2 7.744536e+25
+CLEAN FCONE_LZ cycle 29689 t2s 2 momentum removed (signed, V/c^2) x1 7.057087e+25 x2 -2.869063e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29689 t2s 2: L_z of the cut and capped momentum X -5.609883e+36, the gas's as dOmega -7.919110e-20 (I 7.083982e+55)
+CLEAN FCONE cycle 29689 t2s 3 faces 33467 momentum cut sum |dF| V/c^2 7.600085e+25
+CLEAN FCONE_LZ cycle 29689 t2s 3 momentum removed (signed, V/c^2) x1 6.944954e+25 x2 -2.680516e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29689 t2s 3: L_z of the cut and capped momentum X -5.373034e+36, the gas's as dOmega -7.584766e-20 (I 7.083981e+55)
+CLEAN LZB cycle 29689 t2s 3 ledger -5.6374663702438673e+42
+CLEAN PLEDGER cycle 29689 dt 1.634930e+02 hflx -1.792256e+34 ntel 0.000000e+00 src -1.796647e+34 rad 4.241261e+31 flr 2.700196e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.5942435605932859e+34 END -6.802237e+19 gross 1.105072e+36
+CLEAN FCONE cycle 29690 t2s 2 faces 33846 momentum cut sum |dF| V/c^2 7.728623e+25
+CLEAN FCONE_LZ cycle 29690 t2s 2 momentum removed (signed, V/c^2) x1 7.044241e+25 x2 -2.780593e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29690 t2s 2: L_z of the cut and capped momentum X -5.602301e+36, the gas's as dOmega -7.908408e-20 (I 7.083981e+55)
+CLEAN FCONE cycle 29690 t2s 3 faces 33488 momentum cut sum |dF| V/c^2 7.585229e+25
+CLEAN FCONE_LZ cycle 29690 t2s 3 momentum removed (signed, V/c^2) x1 6.931243e+25 x2 -2.519955e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29690 t2s 3: L_z of the cut and capped momentum X -5.346396e+36, the gas's as dOmega -7.547164e-20 (I 7.083980e+55)
+CLEAN LZB cycle 29690 t2s 3 ledger -5.6361531361185843e+42
+CLEAN PLEDGER cycle 29690 dt 1.634378e+02 hflx -1.792257e+34 ntel 0.000000e+00 src -1.796647e+34 rad 4.241816e+31 flr 2.701215e+26 mrg 1.410838e+16 gap 0.000000e+00 P -1.6184498922082167e+34 END -1.729382e+20 gross 1.104958e+36
+CLEAN FCONE cycle 29691 t2s 2 faces 33793 momentum cut sum |dF| V/c^2 7.707819e+25
+CLEAN FCONE_LZ cycle 29691 t2s 2 momentum removed (signed, V/c^2) x1 7.023944e+25 x2 -2.543492e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29691 t2s 2: L_z of the cut and capped momentum X -5.552356e+36, the gas's as dOmega -7.837905e-20 (I 7.083980e+55)
+CLEAN FCONE cycle 29691 t2s 3 faces 33358 momentum cut sum |dF| V/c^2 7.562115e+25
+CLEAN FCONE_LZ cycle 29691 t2s 3 momentum removed (signed, V/c^2) x1 6.907674e+25 x2 -2.314144e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29691 t2s 3: L_z of the cut and capped momentum X -5.318850e+36, the gas's as dOmega -7.508280e-20 (I 7.083979e+55)
+CLEAN LZB cycle 29691 t2s 3 ledger -5.6348506392825617e+42
+CLEAN PLEDGER cycle 29691 dt 1.633977e+02 hflx -1.792258e+34 ntel 0.000000e+00 src -1.796647e+34 rad 4.242371e+31 flr 2.700662e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.6423630744837312e+34 END 3.989108e+20 gross 1.104845e+36
+CLEAN FCONE cycle 29692 t2s 2 faces 33580 momentum cut sum |dF| V/c^2 7.689246e+25
+CLEAN FCONE_LZ cycle 29692 t2s 2 momentum removed (signed, V/c^2) x1 7.004578e+25 x2 -2.370063e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29692 t2s 2: L_z of the cut and capped momentum X -5.525713e+36, the gas's as dOmega -7.800295e-20 (I 7.083979e+55)
+CLEAN FCONE cycle 29692 t2s 3 faces 33304 momentum cut sum |dF| V/c^2 7.554388e+25
+CLEAN FCONE_LZ cycle 29692 t2s 3 momentum removed (signed, V/c^2) x1 6.899883e+25 x2 -2.303011e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29692 t2s 3: L_z of the cut and capped momentum X -5.271145e+36, the gas's as dOmega -7.440938e-20 (I 7.083978e+55)
+CLEAN LZB cycle 29692 t2s 3 ledger -5.6335583128707566e+42
+CLEAN PLEDGER cycle 29692 dt 1.633810e+02 hflx -1.792259e+34 ntel -1.806501e+18 src -1.796647e+34 rad 4.242925e+31 flr 2.700074e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.6659872269183061e+34 END -9.338664e+19 gross 1.104731e+36
+CLEAN FCONE cycle 29693 t2s 2 faces 33608 momentum cut sum |dF| V/c^2 7.689722e+25
+CLEAN FCONE_LZ cycle 29693 t2s 2 momentum removed (signed, V/c^2) x1 7.003957e+25 x2 -2.442565e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29693 t2s 2: L_z of the cut and capped momentum X -5.469469e+36, the gas's as dOmega -7.720900e-20 (I 7.083978e+55)
+CLEAN FCONE cycle 29693 t2s 3 faces 33412 momentum cut sum |dF| V/c^2 7.562720e+25
+CLEAN FCONE_LZ cycle 29693 t2s 3 momentum removed (signed, V/c^2) x1 6.906916e+25 x2 -2.483316e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29693 t2s 3: L_z of the cut and capped momentum X -5.185624e+36, the gas's as dOmega -7.320215e-20 (I 7.083977e+55)
+CLEAN LZB cycle 29693 t2s 3 ledger -5.6322756135246898e+42
+CLEAN PLEDGER cycle 29693 dt 1.633912e+02 hflx -1.792261e+34 ntel 1.806389e+18 src -1.796647e+34 rad 4.243478e+31 flr 2.700892e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.6893270504395152e+34 END -2.167492e+20 gross 1.104617e+36
+CLEAN FCONE cycle 29694 t2s 2 faces 33706 momentum cut sum |dF| V/c^2 7.705573e+25
+CLEAN FCONE_LZ cycle 29694 t2s 2 momentum removed (signed, V/c^2) x1 7.015218e+25 x2 -2.552162e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29694 t2s 2: L_z of the cut and capped momentum X -5.396882e+36, the gas's as dOmega -7.618436e-20 (I 7.083977e+55)
+CLEAN FCONE cycle 29694 t2s 3 faces 33386 momentum cut sum |dF| V/c^2 7.560936e+25
+CLEAN FCONE_LZ cycle 29694 t2s 3 momentum removed (signed, V/c^2) x1 6.902515e+25 x2 -2.434393e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29694 t2s 3: L_z of the cut and capped momentum X -5.044876e+36, the gas's as dOmega -7.121531e-20 (I 7.083976e+55)
+CLEAN LZB cycle 29694 t2s 3 ledger -5.6310031222867726e+42
+CLEAN PLEDGER cycle 29694 dt 1.634254e+02 hflx -1.792262e+34 ntel 1.806010e+18 src -1.796647e+34 rad 4.244029e+31 flr 2.700813e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.7123871394243314e+34 END -2.790070e+20 gross 1.104504e+36
+CLEAN FCONE cycle 29695 t2s 2 faces 33813 momentum cut sum |dF| V/c^2 7.705029e+25
+CLEAN FCONE_LZ cycle 29695 t2s 2 momentum removed (signed, V/c^2) x1 7.013049e+25 x2 -2.691788e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29695 t2s 2: L_z of the cut and capped momentum X -5.214649e+36, the gas's as dOmega -7.361189e-20 (I 7.083976e+55)
+CLEAN FCONE cycle 29695 t2s 3 faces 33420 momentum cut sum |dF| V/c^2 7.573443e+25
+CLEAN FCONE_LZ cycle 29695 t2s 3 momentum removed (signed, V/c^2) x1 6.910749e+25 x2 -2.743613e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29695 t2s 3: L_z of the cut and capped momentum X -4.870116e+36, the gas's as dOmega -6.874835e-20 (I 7.083975e+55)
+CLEAN LZB cycle 29695 t2s 3 ledger -5.6297419679084837e+42
+CLEAN PLEDGER cycle 29695 dt 1.634949e+02 hflx -1.792263e+34 ntel -1.805242e+18 src -1.796647e+34 rad 4.244579e+31 flr 2.701488e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.7351736954632666e+34 END -2.305843e+18 gross 1.104389e+36
+CLEAN FCONE cycle 29696 t2s 2 faces 33728 momentum cut sum |dF| V/c^2 7.710830e+25
+CLEAN FCONE_LZ cycle 29696 t2s 2 momentum removed (signed, V/c^2) x1 7.015783e+25 x2 -2.967721e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29696 t2s 2: L_z of the cut and capped momentum X -5.024628e+36, the gas's as dOmega -7.092950e-20 (I 7.083975e+55)
+CLEAN FCONE cycle 29696 t2s 3 faces 33409 momentum cut sum |dF| V/c^2 7.580754e+25
+CLEAN FCONE_LZ cycle 29696 t2s 3 momentum removed (signed, V/c^2) x1 6.917044e+25 x2 -2.989332e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29696 t2s 3: L_z of the cut and capped momentum X -4.705376e+36, the gas's as dOmega -6.642283e-20 (I 7.083974e+55)
+CLEAN LZB cycle 29696 t2s 3 ledger -5.6284934369059435e+42
+CLEAN PLEDGER cycle 29696 dt 1.634213e+02 hflx -1.792265e+34 ntel -1.806055e+18 src -1.796647e+34 rad 4.245128e+31 flr 2.701508e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.7576681604568041e+34 END -3.458765e+19 gross 1.104276e+36
+CLEAN FCONE cycle 29697 t2s 2 faces 33689 momentum cut sum |dF| V/c^2 7.726826e+25
+CLEAN FCONE_LZ cycle 29697 t2s 2 momentum removed (signed, V/c^2) x1 7.029416e+25 x2 -3.344638e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29697 t2s 2: L_z of the cut and capped momentum X -4.842019e+36, the gas's as dOmega -6.835174e-20 (I 7.083974e+55)
+CLEAN FCONE cycle 29697 t2s 3 faces 33378 momentum cut sum |dF| V/c^2 7.599152e+25
+CLEAN FCONE_LZ cycle 29697 t2s 3 momentum removed (signed, V/c^2) x1 6.933472e+25 x2 -3.291660e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29697 t2s 3: L_z of the cut and capped momentum X -4.500898e+36, the gas's as dOmega -6.353636e-20 (I 7.083973e+55)
+CLEAN LZB cycle 29697 t2s 3 ledger -5.6272574892500947e+42
+CLEAN PLEDGER cycle 29697 dt 1.633802e+02 hflx -1.792266e+34 ntel 3.613019e+18 src -1.796648e+34 rad 4.245673e+31 flr 2.701518e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.7798770466444369e+34 END -8.254918e+20 gross 1.104162e+36
+CLEAN FCONE cycle 29698 t2s 2 faces 33723 momentum cut sum |dF| V/c^2 7.743906e+25
+CLEAN FCONE_LZ cycle 29698 t2s 2 momentum removed (signed, V/c^2) x1 7.044388e+25 x2 -3.529040e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29698 t2s 2: L_z of the cut and capped momentum X -4.611121e+36, the gas's as dOmega -6.509230e-20 (I 7.083973e+55)
+CLEAN FCONE cycle 29698 t2s 3 faces 33399 momentum cut sum |dF| V/c^2 7.607018e+25
+CLEAN FCONE_LZ cycle 29698 t2s 3 momentum removed (signed, V/c^2) x1 6.939731e+25 x2 -3.424439e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29698 t2s 3: L_z of the cut and capped momentum X -4.214014e+36, the gas's as dOmega -5.948659e-20 (I 7.083972e+55)
+CLEAN LZB cycle 29698 t2s 3 ledger -5.6260340507347758e+42
+CLEAN PLEDGER cycle 29698 dt 1.633699e+02 hflx -1.792267e+34 ntel 0.000000e+00 src -1.796648e+34 rad 4.246217e+31 flr 2.701943e+26 mrg 4.234274e+16 gap 0.000000e+00 P -1.8018066500111839e+34 END -1.256684e+20 gross 1.104049e+36
+CLEAN FCONE cycle 29699 t2s 2 faces 33736 momentum cut sum |dF| V/c^2 7.753644e+25
+CLEAN FCONE_LZ cycle 29699 t2s 2 momentum removed (signed, V/c^2) x1 7.052051e+25 x2 -3.636922e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29699 t2s 2: L_z of the cut and capped momentum X -4.327025e+36, the gas's as dOmega -6.108191e-20 (I 7.083972e+55)
+CLEAN FCONE cycle 29699 t2s 3 faces 33391 momentum cut sum |dF| V/c^2 7.594298e+25
+CLEAN FCONE_LZ cycle 29699 t2s 3 momentum removed (signed, V/c^2) x1 6.924515e+25 x2 -3.455319e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29699 t2s 3: L_z of the cut and capped momentum X -3.944181e+36, the gas's as dOmega -5.567755e-20 (I 7.083971e+55)
+CLEAN LZB cycle 29699 t2s 3 ledger -5.6248235549694611e+42
+CLEAN PLEDGER cycle 29699 dt 1.633883e+02 hflx -1.792268e+34 ntel 1.806420e+18 src -1.796648e+34 rad 4.246757e+31 flr 2.700860e+26 mrg 1.411265e+16 gap 0.000000e+00 P -1.8234625870321800e+34 END -1.060688e+20 gross 1.103935e+36
+CLEAN FCONE cycle 29700 t2s 2 faces 33724 momentum cut sum |dF| V/c^2 7.737907e+25
+CLEAN FCONE_LZ cycle 29700 t2s 2 momentum removed (signed, V/c^2) x1 7.033169e+25 x2 -3.644021e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29700 t2s 2: L_z of the cut and capped momentum X -4.056230e+36, the gas's as dOmega -5.725928e-20 (I 7.083971e+55)
+CLEAN FCONE cycle 29700 t2s 3 faces 33342 momentum cut sum |dF| V/c^2 7.579310e+25
+CLEAN FCONE_LZ cycle 29700 t2s 3 momentum removed (signed, V/c^2) x1 6.907066e+25 x2 -3.441536e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29700 t2s 3: L_z of the cut and capped momentum X -3.752018e+36, the gas's as dOmega -5.296491e-20 (I 7.083970e+55)
+CLEAN LZB cycle 29700 t2s 3 ledger -5.6236268498820879e+42
+CLEAN PLEDGER cycle 29700 dt 1.633339e+02 hflx -1.792270e+34 ntel 0.000000e+00 src -1.796648e+34 rad 4.247295e+31 flr 2.700850e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.8448365388897871e+34 END 2.305843e+18 gross 1.103822e+36
+CLEAN FCONE cycle 29701 t2s 2 faces 33707 momentum cut sum |dF| V/c^2 7.731725e+25
+CLEAN FCONE_LZ cycle 29701 t2s 2 momentum removed (signed, V/c^2) x1 7.023306e+25 x2 -3.657306e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29701 t2s 2: L_z of the cut and capped momentum X -3.854224e+36, the gas's as dOmega -5.440769e-20 (I 7.083970e+55)
+CLEAN FCONE cycle 29701 t2s 3 faces 33445 momentum cut sum |dF| V/c^2 7.577927e+25
+CLEAN FCONE_LZ cycle 29701 t2s 3 momentum removed (signed, V/c^2) x1 6.899293e+25 x2 -3.468625e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29701 t2s 3: L_z of the cut and capped momentum X -3.530256e+36, the gas's as dOmega -4.983444e-20 (I 7.083969e+55)
+CLEAN LZB cycle 29701 t2s 3 ledger -5.6224442439474871e+42
+CLEAN PLEDGER cycle 29701 dt 1.632319e+02 hflx -1.792271e+34 ntel 1.808151e+18 src -1.796648e+34 rad 4.247830e+31 flr 2.699775e+26 mrg 1.412618e+16 gap 0.000000e+00 P -1.8659241976640954e+34 END 9.569248e+19 gross 1.103708e+36
+CLEAN FCONE cycle 29702 t2s 2 faces 33747 momentum cut sum |dF| V/c^2 7.722738e+25
+CLEAN FCONE_LZ cycle 29702 t2s 2 momentum removed (signed, V/c^2) x1 7.010715e+25 x2 -3.547083e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29702 t2s 2: L_z of the cut and capped momentum X -3.660252e+36, the gas's as dOmega -5.166952e-20 (I 7.083968e+55)
+CLEAN FCONE cycle 29702 t2s 3 faces 33365 momentum cut sum |dF| V/c^2 7.570708e+25
+CLEAN FCONE_LZ cycle 29702 t2s 3 momentum removed (signed, V/c^2) x1 6.892544e+25 x2 -3.320982e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29702 t2s 3: L_z of the cut and capped momentum X -3.380830e+36, the gas's as dOmega -4.772510e-20 (I 7.083968e+55)
+CLEAN LZB cycle 29702 t2s 3 ledger -5.6212769109748606e+42
+CLEAN PLEDGER cycle 29702 dt 1.631220e+02 hflx -1.792272e+34 ntel -3.618738e+18 src -1.796648e+34 rad 4.248361e+31 flr 2.699405e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.8867273517807865e+34 END 5.245793e+20 gross 1.103595e+36
+CLEAN FCONE cycle 29703 t2s 2 faces 33719 momentum cut sum |dF| V/c^2 7.715641e+25
+CLEAN FCONE_LZ cycle 29703 t2s 2 momentum removed (signed, V/c^2) x1 7.003316e+25 x2 -3.433464e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29703 t2s 2: L_z of the cut and capped momentum X -3.507782e+36, the gas's as dOmega -4.951720e-20 (I 7.083967e+55)
+CLEAN FCONE cycle 29703 t2s 3 faces 33321 momentum cut sum |dF| V/c^2 7.555284e+25
+CLEAN FCONE_LZ cycle 29703 t2s 3 momentum removed (signed, V/c^2) x1 6.876434e+25 x2 -3.246429e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29703 t2s 3: L_z of the cut and capped momentum X -3.240635e+36, the gas's as dOmega -4.574606e-20 (I 7.083966e+55)
+CLEAN LZB cycle 29703 t2s 3 ledger -5.6201230077350556e+42
+CLEAN PLEDGER cycle 29703 dt 1.630141e+02 hflx -1.792273e+34 ntel -1.810567e+18 src -1.796648e+34 rad 4.248888e+31 flr 2.700116e+26 mrg 5.658023e+16 gap 0.000000e+00 P -1.9072495590101946e+34 END -8.612324e+20 gross 1.103483e+36
+CLEAN FCONE cycle 29704 t2s 2 faces 33641 momentum cut sum |dF| V/c^2 7.705027e+25
+CLEAN FCONE_LZ cycle 29704 t2s 2 momentum removed (signed, V/c^2) x1 6.991473e+25 x2 -3.337069e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29704 t2s 2: L_z of the cut and capped momentum X -3.346060e+36, the gas's as dOmega -4.723427e-20 (I 7.083966e+55)
+CLEAN FCONE cycle 29704 t2s 3 faces 33175 momentum cut sum |dF| V/c^2 7.544388e+25
+CLEAN FCONE_LZ cycle 29704 t2s 3 momentum removed (signed, V/c^2) x1 6.864148e+25 x2 -3.160520e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29704 t2s 3: L_z of the cut and capped momentum X -3.031388e+36, the gas's as dOmega -4.279225e-20 (I 7.083965e+55)
+CLEAN LZB cycle 29704 t2s 3 ledger -5.6189833373051422e+42
+CLEAN PLEDGER cycle 29704 dt 1.629181e+02 hflx -1.792275e+34 ntel 1.811634e+18 src -1.796648e+34 rad 4.249411e+31 flr 2.699801e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.9274957118879405e+34 END 4.761566e+20 gross 1.103371e+36
+CLEAN FCONE cycle 29705 t2s 2 faces 33411 momentum cut sum |dF| V/c^2 7.688500e+25
+CLEAN FCONE_LZ cycle 29705 t2s 2 momentum removed (signed, V/c^2) x1 6.974430e+25 x2 -3.318508e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29705 t2s 2: L_z of the cut and capped momentum X -3.182090e+36, the gas's as dOmega -4.491962e-20 (I 7.083965e+55)
+CLEAN FCONE cycle 29705 t2s 3 faces 32913 momentum cut sum |dF| V/c^2 7.521341e+25
+CLEAN FCONE_LZ cycle 29705 t2s 3 momentum removed (signed, V/c^2) x1 6.841484e+25 x2 -3.238353e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29705 t2s 3: L_z of the cut and capped momentum X -2.904309e+36, the gas's as dOmega -4.099835e-20 (I 7.083964e+55)
+CLEAN LZB cycle 29705 t2s 3 ledger -5.6178578977799926e+42
+CLEAN PLEDGER cycle 29705 dt 1.628408e+02 hflx -1.792276e+34 ntel 1.812494e+18 src -1.796648e+34 rad 4.249929e+31 flr 2.700501e+26 mrg 1.416011e+16 gap 0.000000e+00 P -1.9474710815400180e+34 END -5.384143e+20 gross 1.103260e+36
+CLEAN FCONE cycle 29706 t2s 2 faces 33188 momentum cut sum |dF| V/c^2 7.662300e+25
+CLEAN FCONE_LZ cycle 29706 t2s 2 momentum removed (signed, V/c^2) x1 6.948710e+25 x2 -3.373362e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29706 t2s 2: L_z of the cut and capped momentum X -3.036209e+36, the gas's as dOmega -4.286031e-20 (I 7.083964e+55)
+CLEAN FCONE cycle 29706 t2s 3 faces 32876 momentum cut sum |dF| V/c^2 7.489786e+25
+CLEAN FCONE_LZ cycle 29706 t2s 3 momentum removed (signed, V/c^2) x1 6.811827e+25 x2 -3.300736e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29706 t2s 3: L_z of the cut and capped momentum X -2.772798e+36, the gas's as dOmega -3.914190e-20 (I 7.083963e+55)
+CLEAN LZB cycle 29706 t2s 3 ledger -5.6167439920860979e+42
+CLEAN PLEDGER cycle 29706 dt 1.627862e+02 hflx -1.792277e+34 ntel 1.813102e+18 src -1.796649e+34 rad 4.250444e+31 flr 2.701280e+26 mrg 1.416486e+16 gap 0.000000e+00 P -1.9671810754759818e+34 END 6.917529e+19 gross 1.103149e+36
+CLEAN FCONE cycle 29707 t2s 2 faces 33196 momentum cut sum |dF| V/c^2 7.629250e+25
+CLEAN FCONE_LZ cycle 29707 t2s 2 momentum removed (signed, V/c^2) x1 6.917618e+25 x2 -3.474415e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29707 t2s 2: L_z of the cut and capped momentum X -2.888396e+36, the gas's as dOmega -4.077373e-20 (I 7.083963e+55)
+CLEAN FCONE cycle 29707 t2s 3 faces 32784 momentum cut sum |dF| V/c^2 7.456038e+25
+CLEAN FCONE_LZ cycle 29707 t2s 3 momentum removed (signed, V/c^2) x1 6.778548e+25 x2 -3.444860e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29707 t2s 3: L_z of the cut and capped momentum X -2.604937e+36, the gas's as dOmega -3.677231e-20 (I 7.083962e+55)
+CLEAN LZB cycle 29707 t2s 3 ledger -5.6156432670518961e+42
+CLEAN PLEDGER cycle 29707 dt 1.627631e+02 hflx -1.792278e+34 ntel 0.000000e+00 src -1.796649e+34 rad 4.250953e+31 flr 2.701823e+26 mrg 0.000000e+00 gap 0.000000e+00 P -1.9866320397428948e+34 END -4.946033e+20 gross 1.103037e+36
+CLEAN FCONE cycle 29708 t2s 2 faces 33153 momentum cut sum |dF| V/c^2 7.595191e+25
+CLEAN FCONE_LZ cycle 29708 t2s 2 momentum removed (signed, V/c^2) x1 6.883319e+25 x2 -3.628123e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29708 t2s 2: L_z of the cut and capped momentum X -2.719612e+36, the gas's as dOmega -3.839111e-20 (I 7.083961e+55)
+CLEAN FCONE cycle 29708 t2s 3 faces 32772 momentum cut sum |dF| V/c^2 7.418065e+25
+CLEAN FCONE_LZ cycle 29708 t2s 3 momentum removed (signed, V/c^2) x1 6.741393e+25 x2 -3.562756e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29708 t2s 3: L_z of the cut and capped momentum X -2.519997e+36, the gas's as dOmega -3.557328e-20 (I 7.083960e+55)
+CLEAN LZB cycle 29708 t2s 3 ledger -5.6145560092836222e+42
+CLEAN PLEDGER cycle 29708 dt 1.627626e+02 hflx -1.792279e+34 ntel 0.000000e+00 src -1.796649e+34 rad 4.251458e+31 flr 2.701315e+26 mrg 4.250074e+16 gap 0.000000e+00 P -2.0058294006821261e+34 END -5.534023e+19 gross 1.102926e+36
+CLEAN FCONE cycle 29709 t2s 2 faces 33097 momentum cut sum |dF| V/c^2 7.560094e+25
+CLEAN FCONE_LZ cycle 29709 t2s 2 momentum removed (signed, V/c^2) x1 6.848491e+25 x2 -3.775066e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29709 t2s 2: L_z of the cut and capped momentum X -2.623191e+36, the gas's as dOmega -3.703001e-20 (I 7.083960e+55)
+CLEAN FCONE cycle 29709 t2s 3 faces 32690 momentum cut sum |dF| V/c^2 7.389322e+25
+CLEAN FCONE_LZ cycle 29709 t2s 3 momentum removed (signed, V/c^2) x1 6.712678e+25 x2 -3.801732e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29709 t2s 3: L_z of the cut and capped momentum X -2.431650e+36, the gas's as dOmega -3.432615e-20 (I 7.083959e+55)
+CLEAN LZB cycle 29709 t2s 3 ledger -5.6134830938272769e+42
+CLEAN PLEDGER cycle 29709 dt 1.626277e+02 hflx -1.792281e+34 ntel 1.814869e+18 src -1.796649e+34 rad 4.251959e+31 flr 2.699751e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0247608226186118e+34 END -1.579502e+20 gross 1.102814e+36
+CLEAN FCONE cycle 29710 t2s 2 faces 33053 momentum cut sum |dF| V/c^2 7.534442e+25
+CLEAN FCONE_LZ cycle 29710 t2s 2 momentum removed (signed, V/c^2) x1 6.820746e+25 x2 -3.990396e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29710 t2s 2: L_z of the cut and capped momentum X -2.523723e+36, the gas's as dOmega -3.562589e-20 (I 7.083959e+55)
+CLEAN FCONE cycle 29710 t2s 3 faces 32630 momentum cut sum |dF| V/c^2 7.370808e+25
+CLEAN FCONE_LZ cycle 29710 t2s 3 momentum removed (signed, V/c^2) x1 6.690996e+25 x2 -3.970007e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29710 t2s 3: L_z of the cut and capped momentum X -2.318178e+36, the gas's as dOmega -3.272433e-20 (I 7.083958e+55)
+CLEAN LZB cycle 29710 t2s 3 ledger -5.6124230075327733e+42
+CLEAN PLEDGER cycle 29710 dt 1.625193e+02 hflx -1.792282e+34 ntel 0.000000e+00 src -1.796649e+34 rad 4.252453e+31 flr 2.699578e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0434330808499254e+34 END -6.225776e+19 gross 1.102702e+36
+CLEAN FCONE cycle 29711 t2s 2 faces 32946 momentum cut sum |dF| V/c^2 7.520114e+25
+CLEAN FCONE_LZ cycle 29711 t2s 2 momentum removed (signed, V/c^2) x1 6.803524e+25 x2 -4.166201e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29711 t2s 2: L_z of the cut and capped momentum X -2.376921e+36, the gas's as dOmega -3.355357e-20 (I 7.083958e+55)
+CLEAN FCONE cycle 29711 t2s 3 faces 32544 momentum cut sum |dF| V/c^2 7.359197e+25
+CLEAN FCONE_LZ cycle 29711 t2s 3 momentum removed (signed, V/c^2) x1 6.676725e+25 x2 -4.225951e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29711 t2s 3: L_z of the cut and capped momentum X -2.204504e+36, the gas's as dOmega -3.111967e-20 (I 7.083957e+55)
+CLEAN LZB cycle 29711 t2s 3 ledger -5.6113771506864918e+42
+CLEAN PLEDGER cycle 29711 dt 1.624399e+02 hflx -1.792283e+34 ntel 0.000000e+00 src -1.796649e+34 rad 4.252943e+31 flr 2.699640e+26 mrg 1.419505e+16 gap 0.000000e+00 P -2.0618531309775267e+34 END -9.177255e+20 gross 1.102590e+36
+CLEAN FCONE cycle 29712 t2s 2 faces 32874 momentum cut sum |dF| V/c^2 7.506790e+25
+CLEAN FCONE_LZ cycle 29712 t2s 2 momentum removed (signed, V/c^2) x1 6.787479e+25 x2 -4.431542e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29712 t2s 2: L_z of the cut and capped momentum X -2.273859e+36, the gas's as dOmega -3.209872e-20 (I 7.083956e+55)
+CLEAN FCONE cycle 29712 t2s 3 faces 32461 momentum cut sum |dF| V/c^2 7.343227e+25
+CLEAN FCONE_LZ cycle 29712 t2s 3 momentum removed (signed, V/c^2) x1 6.659298e+25 x2 -4.370704e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29712 t2s 3: L_z of the cut and capped momentum X -2.115698e+36, the gas's as dOmega -2.986605e-20 (I 7.083955e+55)
+CLEAN LZB cycle 29712 t2s 3 ledger -5.6103442316947223e+42
+CLEAN PLEDGER cycle 29712 dt 1.623884e+02 hflx -1.792284e+34 ntel 0.000000e+00 src -1.796649e+34 rad 4.253427e+31 flr 2.699818e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0800277093472170e+34 END -1.152922e+18 gross 1.102479e+36
+CLEAN FCONE cycle 29713 t2s 2 faces 32746 momentum cut sum |dF| V/c^2 7.488581e+25
+CLEAN FCONE_LZ cycle 29713 t2s 2 momentum removed (signed, V/c^2) x1 6.767727e+25 x2 -4.567802e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29713 t2s 2: L_z of the cut and capped momentum X -2.173473e+36, the gas's as dOmega -3.068163e-20 (I 7.083955e+55)
+CLEAN FCONE cycle 29713 t2s 3 faces 32367 momentum cut sum |dF| V/c^2 7.313474e+25
+CLEAN FCONE_LZ cycle 29713 t2s 3 momentum removed (signed, V/c^2) x1 6.629517e+25 x2 -4.426705e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29713 t2s 3: L_z of the cut and capped momentum X -2.014417e+36, the gas's as dOmega -2.843633e-20 (I 7.083954e+55)
+CLEAN LZB cycle 29713 t2s 3 ledger -5.6093248253710969e+42
+CLEAN PLEDGER cycle 29713 dt 1.623433e+02 hflx -1.792285e+34 ntel 0.000000e+00 src -1.796649e+34 rad 4.253905e+31 flr 2.700872e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.0979610156772331e+34 END -6.110484e+19 gross 1.102368e+36
+CLEAN FCONE cycle 29714 t2s 2 faces 32679 momentum cut sum |dF| V/c^2 7.454720e+25
+CLEAN FCONE_LZ cycle 29714 t2s 2 momentum removed (signed, V/c^2) x1 6.734195e+25 x2 -4.647166e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29714 t2s 2: L_z of the cut and capped momentum X -2.072088e+36, the gas's as dOmega -2.925044e-20 (I 7.083954e+55)
+CLEAN FCONE cycle 29714 t2s 3 faces 32226 momentum cut sum |dF| V/c^2 7.276082e+25
+CLEAN FCONE_LZ cycle 29714 t2s 3 momentum removed (signed, V/c^2) x1 6.592298e+25 x2 -4.502555e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29714 t2s 3: L_z of the cut and capped momentum X -1.955515e+36, the gas's as dOmega -2.760485e-20 (I 7.083953e+55)
+CLEAN LZB cycle 29714 t2s 3 ledger -5.6083194211268861e+42
+CLEAN PLEDGER cycle 29714 dt 1.622885e+02 hflx -1.792286e+34 ntel -1.818662e+18 src -1.796650e+34 rad 4.254378e+31 flr 2.700947e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1156556540028434e+34 END -1.083746e+20 gross 1.102257e+36
+CLEAN FCONE cycle 29715 t2s 2 faces 32558 momentum cut sum |dF| V/c^2 7.420979e+25
+CLEAN FCONE_LZ cycle 29715 t2s 2 momentum removed (signed, V/c^2) x1 6.700670e+25 x2 -4.723585e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29715 t2s 2: L_z of the cut and capped momentum X -2.009466e+36, the gas's as dOmega -2.836645e-20 (I 7.083953e+55)
+CLEAN FCONE cycle 29715 t2s 3 faces 32059 momentum cut sum |dF| V/c^2 7.243969e+25
+CLEAN FCONE_LZ cycle 29715 t2s 3 momentum removed (signed, V/c^2) x1 6.561741e+25 x2 -4.521282e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29715 t2s 3: L_z of the cut and capped momentum X -1.836862e+36, the gas's as dOmega -2.592991e-20 (I 7.083952e+55)
+CLEAN LZB cycle 29715 t2s 3 ledger -5.6073279931097982e+42
+CLEAN PLEDGER cycle 29715 dt 1.622272e+02 hflx -1.792287e+34 ntel -1.819349e+18 src -1.796650e+34 rad 4.254845e+31 flr 2.700225e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1331146808071543e+34 END 1.028406e+21 gross 1.102146e+36
+CLEAN FCONE cycle 29716 t2s 2 faces 32454 momentum cut sum |dF| V/c^2 7.398410e+25
+CLEAN FCONE_LZ cycle 29716 t2s 2 momentum removed (signed, V/c^2) x1 6.678134e+25 x2 -4.727791e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29716 t2s 2: L_z of the cut and capped momentum X -1.895952e+36, the gas's as dOmega -2.676404e-20 (I 7.083951e+55)
+CLEAN FCONE cycle 29716 t2s 3 faces 31978 momentum cut sum |dF| V/c^2 7.225738e+25
+CLEAN FCONE_LZ cycle 29716 t2s 3 momentum removed (signed, V/c^2) x1 6.540130e+25 x2 -4.491585e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29716 t2s 3: L_z of the cut and capped momentum X -1.640501e+36, the gas's as dOmega -2.315800e-20 (I 7.083950e+55)
+CLEAN LZB cycle 29716 t2s 3 ledger -5.6063503613294878e+42
+CLEAN PLEDGER cycle 29716 dt 1.621688e+02 hflx -1.792288e+34 ntel 0.000000e+00 src -1.796650e+34 rad 4.255306e+31 flr 2.699826e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1503421781308992e+34 END 3.343472e+19 gross 1.102036e+36
+CLEAN FCONE cycle 29717 t2s 2 faces 32369 momentum cut sum |dF| V/c^2 7.372967e+25
+CLEAN FCONE_LZ cycle 29717 t2s 2 momentum removed (signed, V/c^2) x1 6.650094e+25 x2 -4.619540e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29717 t2s 2: L_z of the cut and capped momentum X -1.702371e+36, the gas's as dOmega -2.403139e-20 (I 7.083950e+55)
+CLEAN FCONE cycle 29717 t2s 3 faces 31904 momentum cut sum |dF| V/c^2 7.191816e+25
+CLEAN FCONE_LZ cycle 29717 t2s 3 momentum removed (signed, V/c^2) x1 6.507484e+25 x2 -4.351874e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29717 t2s 3: L_z of the cut and capped momentum X -1.435613e+36, the gas's as dOmega -2.026572e-20 (I 7.083949e+55)
+CLEAN LZB cycle 29717 t2s 3 ledger -5.6053871152279059e+42
+CLEAN PLEDGER cycle 29717 dt 1.620770e+02 hflx -1.792289e+34 ntel 0.000000e+00 src -1.796650e+34 rad 4.255761e+31 flr 2.699438e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1673386197730062e+34 END -2.029142e+20 gross 1.101926e+36
+CLEAN FCONE cycle 29718 t2s 2 faces 32323 momentum cut sum |dF| V/c^2 7.344621e+25
+CLEAN FCONE_LZ cycle 29718 t2s 2 momentum removed (signed, V/c^2) x1 6.620689e+25 x2 -4.512179e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29718 t2s 2: L_z of the cut and capped momentum X -1.492302e+36, the gas's as dOmega -2.106597e-20 (I 7.083949e+55)
+CLEAN FCONE cycle 29718 t2s 3 faces 31928 momentum cut sum |dF| V/c^2 7.182365e+25
+CLEAN FCONE_LZ cycle 29718 t2s 3 momentum removed (signed, V/c^2) x1 6.494341e+25 x2 -4.467823e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29718 t2s 3: L_z of the cut and capped momentum X -1.265047e+36, the gas's as dOmega -1.785794e-20 (I 7.083948e+55)
+CLEAN LZB cycle 29718 t2s 3 ledger -5.6044394380447440e+42
+CLEAN PLEDGER cycle 29718 dt 1.619201e+02 hflx -1.792290e+34 ntel 0.000000e+00 src -1.796650e+34 rad 4.256210e+31 flr 2.698864e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.1841007725037927e+34 END -4.819212e+20 gross 1.101817e+36
+CLEAN FCONE cycle 29719 t2s 2 faces 32331 momentum cut sum |dF| V/c^2 7.344056e+25
+CLEAN FCONE_LZ cycle 29719 t2s 2 momentum removed (signed, V/c^2) x1 6.615865e+25 x2 -4.734083e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29719 t2s 2: L_z of the cut and capped momentum X -1.323149e+36, the gas's as dOmega -1.867813e-20 (I 7.083947e+55)
+CLEAN FCONE cycle 29719 t2s 3 faces 32031 momentum cut sum |dF| V/c^2 7.198097e+25
+CLEAN FCONE_LZ cycle 29719 t2s 3 momentum removed (signed, V/c^2) x1 6.502226e+25 x2 -4.652963e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29719 t2s 3: L_z of the cut and capped momentum X -1.069272e+36, the gas's as dOmega -1.509430e-20 (I 7.083946e+55)
+CLEAN LZB cycle 29719 t2s 3 ledger -5.6035072900766418e+42
+CLEAN PLEDGER cycle 29719 dt 1.617834e+02 hflx -1.792291e+34 ntel -1.824340e+18 src -1.796650e+34 rad 4.256653e+31 flr 2.698487e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2006341606148492e+34 END 4.035225e+20 gross 1.101708e+36
+CLEAN FCONE cycle 29720 t2s 2 faces 32355 momentum cut sum |dF| V/c^2 7.365391e+25
+CLEAN FCONE_LZ cycle 29720 t2s 2 momentum removed (signed, V/c^2) x1 6.627286e+25 x2 -4.960253e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29720 t2s 2: L_z of the cut and capped momentum X -1.093288e+36, the gas's as dOmega -1.543332e-20 (I 7.083946e+55)
+CLEAN FCONE cycle 29720 t2s 3 faces 31981 momentum cut sum |dF| V/c^2 7.227068e+25
+CLEAN FCONE_LZ cycle 29720 t2s 3 momentum removed (signed, V/c^2) x1 6.522137e+25 x2 -4.918893e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29720 t2s 3: L_z of the cut and capped momentum X -8.160027e+35, the gas's as dOmega -1.151904e-20 (I 7.083945e+55)
+CLEAN LZB cycle 29720 t2s 3 ledger -5.6025910364229949e+42
+CLEAN PLEDGER cycle 29720 dt 1.616706e+02 hflx -1.792292e+34 ntel 1.825613e+18 src -1.796650e+34 rad 4.257089e+31 flr 2.697890e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2169451334273464e+34 END -1.452681e+20 gross 1.101600e+36
+CLEAN FCONE cycle 29721 t2s 2 faces 32386 momentum cut sum |dF| V/c^2 7.392251e+25
+CLEAN FCONE_LZ cycle 29721 t2s 2 momentum removed (signed, V/c^2) x1 6.645277e+25 x2 -5.237117e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29721 t2s 2: L_z of the cut and capped momentum X -8.325532e+35, the gas's as dOmega -1.175268e-20 (I 7.083945e+55)
+CLEAN FCONE cycle 29721 t2s 3 faces 32092 momentum cut sum |dF| V/c^2 7.242098e+25
+CLEAN FCONE_LZ cycle 29721 t2s 3 momentum removed (signed, V/c^2) x1 6.527303e+25 x2 -5.223747e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29721 t2s 3: L_z of the cut and capped momentum X -5.969869e+35, the gas's as dOmega -8.427324e-21 (I 7.083944e+55)
+CLEAN LZB cycle 29721 t2s 3 ledger -5.6016918381017619e+42
+CLEAN PLEDGER cycle 29721 dt 1.615895e+02 hflx -1.792293e+34 ntel 0.000000e+00 src -1.796650e+34 rad 4.257519e+31 flr 2.697620e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2330409393445655e+34 END 6.214247e+20 gross 1.101493e+36
+CLEAN FCONE cycle 29722 t2s 2 faces 32390 momentum cut sum |dF| V/c^2 7.396822e+25
+CLEAN FCONE_LZ cycle 29722 t2s 2 momentum removed (signed, V/c^2) x1 6.641690e+25 x2 -5.451063e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29722 t2s 2: L_z of the cut and capped momentum X -5.954321e+35, the gas's as dOmega -8.405377e-21 (I 7.083943e+55)
+CLEAN FCONE cycle 29722 t2s 3 faces 31940 momentum cut sum |dF| V/c^2 7.215634e+25
+CLEAN FCONE_LZ cycle 29722 t2s 3 momentum removed (signed, V/c^2) x1 6.498484e+25 x2 -5.346925e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29722 t2s 3: L_z of the cut and capped momentum X -3.239149e+35, the gas's as dOmega -4.572523e-21 (I 7.083942e+55)
+CLEAN LZB cycle 29722 t2s 3 ledger -5.6008095984762718e+42
+CLEAN PLEDGER cycle 29722 dt 1.615211e+02 hflx -1.792294e+34 ntel 0.000000e+00 src -1.796651e+34 rad 4.257943e+31 flr 2.698767e+26 mrg 2.855159e+16 gap 0.000000e+00 P -2.2489268716932805e+34 END 6.882941e+20 gross 1.101386e+36
+CLEAN FCONE cycle 29723 t2s 2 faces 32243 momentum cut sum |dF| V/c^2 7.351535e+25
+CLEAN FCONE_LZ cycle 29723 t2s 2 momentum removed (signed, V/c^2) x1 6.596659e+25 x2 -5.567841e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29723 t2s 2: L_z of the cut and capped momentum X -3.569845e+35, the gas's as dOmega -5.039348e-21 (I 7.083942e+55)
+CLEAN FCONE cycle 29723 t2s 3 faces 31772 momentum cut sum |dF| V/c^2 7.168053e+25
+CLEAN FCONE_LZ cycle 29723 t2s 3 momentum removed (signed, V/c^2) x1 6.453971e+25 x2 -5.545683e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29723 t2s 3: L_z of the cut and capped momentum X -1.849062e+35, the gas's as dOmega -2.610216e-21 (I 7.083941e+55)
+CLEAN LZB cycle 29723 t2s 3 ledger -5.5999446040918619e+42
+CLEAN PLEDGER cycle 29723 dt 1.613269e+02 hflx -1.792295e+34 ntel 0.000000e+00 src -1.796651e+34 rad 4.258360e+31 flr 2.698969e+26 mrg 2.858597e+16 gap 0.000000e+00 P -2.2645947550752681e+34 END -4.957562e+20 gross 1.101278e+36
+CLEAN FCONE cycle 29724 t2s 2 faces 32093 momentum cut sum |dF| V/c^2 7.319998e+25
+CLEAN FCONE_LZ cycle 29724 t2s 2 momentum removed (signed, V/c^2) x1 6.566820e+25 x2 -5.807961e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29724 t2s 2: L_z of the cut and capped momentum X -1.450671e+35, the gas's as dOmega -2.047831e-21 (I 7.083940e+55)
+CLEAN FCONE cycle 29724 t2s 3 faces 31709 momentum cut sum |dF| V/c^2 7.163129e+25
+CLEAN FCONE_LZ cycle 29724 t2s 3 momentum removed (signed, V/c^2) x1 6.449820e+25 x2 -5.762400e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29724 t2s 3: L_z of the cut and capped momentum X 6.202801e+34, the gas's as dOmega 8.756146e-22 (I 7.083939e+55)
+CLEAN LZB cycle 29724 t2s 3 ledger -5.5990976661042232e+42
+CLEAN PLEDGER cycle 29724 dt 1.611610e+02 hflx -1.792296e+34 ntel 0.000000e+00 src -1.796651e+34 rad 4.258771e+31 flr 2.699153e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.2800517703974617e+34 END -7.148113e+19 gross 1.101171e+36
+CLEAN FCONE cycle 29725 t2s 2 faces 32117 momentum cut sum |dF| V/c^2 7.327302e+25
+CLEAN FCONE_LZ cycle 29725 t2s 2 momentum removed (signed, V/c^2) x1 6.575971e+25 x2 -6.040109e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29725 t2s 2: L_z of the cut and capped momentum X 5.560985e+34, the gas's as dOmega 7.850132e-22 (I 7.083939e+55)
+CLEAN FCONE cycle 29725 t2s 3 faces 31747 momentum cut sum |dF| V/c^2 7.184390e+25
+CLEAN FCONE_LZ cycle 29725 t2s 3 momentum removed (signed, V/c^2) x1 6.470842e+25 x2 -5.801185e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29725 t2s 3: L_z of the cut and capped momentum X 2.013765e+35, the gas's as dOmega 2.842720e-21 (I 7.083938e+55)
+CLEAN LZB cycle 29725 t2s 3 ledger -5.5982688887639470e+42
+CLEAN PLEDGER cycle 29725 dt 1.610265e+02 hflx -1.792297e+34 ntel 0.000000e+00 src -1.796651e+34 rad 4.259176e+31 flr 2.697771e+26 mrg 1.431965e+16 gap 0.000000e+00 P -2.2953050361248564e+34 END -1.007653e+21 gross 1.101065e+36
+CLEAN FCONE cycle 29726 t2s 2 faces 32078 momentum cut sum |dF| V/c^2 7.340585e+25
+CLEAN FCONE_LZ cycle 29726 t2s 2 momentum removed (signed, V/c^2) x1 6.588631e+25 x2 -5.971885e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29726 t2s 2: L_z of the cut and capped momentum X 1.976997e+35, the gas's as dOmega 2.790817e-21 (I 7.083938e+55)
+CLEAN FCONE cycle 29726 t2s 3 faces 31698 momentum cut sum |dF| V/c^2 7.189397e+25
+CLEAN FCONE_LZ cycle 29726 t2s 3 momentum removed (signed, V/c^2) x1 6.475938e+25 x2 -5.756863e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29726 t2s 3: L_z of the cut and capped momentum X 2.822212e+35, the gas's as dOmega 3.983960e-21 (I 7.083937e+55)
+CLEAN LZB cycle 29726 t2s 3 ledger -5.5974552969669048e+42
+CLEAN PLEDGER cycle 29726 dt 1.609139e+02 hflx -1.792298e+34 ntel 0.000000e+00 src -1.796651e+34 rad 4.259574e+31 flr 2.697519e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3103604992986195e+34 END -8.762203e+19 gross 1.100958e+36
+CLEAN FCONE cycle 29727 t2s 2 faces 32055 momentum cut sum |dF| V/c^2 7.347024e+25
+CLEAN FCONE_LZ cycle 29727 t2s 2 momentum removed (signed, V/c^2) x1 6.595118e+25 x2 -5.932248e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29727 t2s 2: L_z of the cut and capped momentum X 3.297921e+35, the gas's as dOmega 4.655492e-21 (I 7.083936e+55)
+CLEAN FCONE cycle 29727 t2s 3 faces 31697 momentum cut sum |dF| V/c^2 7.201173e+25
+CLEAN FCONE_LZ cycle 29727 t2s 3 momentum removed (signed, V/c^2) x1 6.484900e+25 x2 -5.754698e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29727 t2s 3: L_z of the cut and capped momentum X 4.017269e+35, the gas's as dOmega 5.670956e-21 (I 7.083935e+55)
+CLEAN LZB cycle 29727 t2s 3 ledger -5.5966600705364364e+42
+CLEAN PLEDGER cycle 29727 dt 1.608106e+02 hflx -1.792299e+34 ntel 0.000000e+00 src -1.796651e+34 rad 4.259966e+31 flr 2.697314e+26 mrg 1.433888e+16 gap 0.000000e+00 P -2.3252231043698655e+34 END 9.269489e+20 gross 1.100852e+36
+CLEAN FCONE cycle 29728 t2s 2 faces 32005 momentum cut sum |dF| V/c^2 7.354172e+25
+CLEAN FCONE_LZ cycle 29728 t2s 2 momentum removed (signed, V/c^2) x1 6.601754e+25 x2 -5.900010e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29728 t2s 2: L_z of the cut and capped momentum X 3.411467e+35, the gas's as dOmega 4.815779e-21 (I 7.083935e+55)
+CLEAN FCONE cycle 29728 t2s 3 faces 31587 momentum cut sum |dF| V/c^2 7.186120e+25
+CLEAN FCONE_LZ cycle 29728 t2s 3 momentum removed (signed, V/c^2) x1 6.476320e+25 x2 -5.409712e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29728 t2s 3: L_z of the cut and capped momentum X 3.637650e+35, the gas's as dOmega 5.135071e-21 (I 7.083934e+55)
+CLEAN LZB cycle 29728 t2s 3 ledger -5.5958811883108841e+42
+CLEAN PLEDGER cycle 29728 dt 1.606944e+02 hflx -1.792300e+34 ntel -1.836703e+18 src -1.796651e+34 rad 4.260352e+31 flr 2.697108e+26 mrg 2.869849e+16 gap 0.000000e+00 P -2.3398954682821461e+34 END 2.582544e+20 gross 1.100749e+36
+CLEAN FCONE cycle 29729 t2s 2 faces 31930 momentum cut sum |dF| V/c^2 7.350555e+25
+CLEAN FCONE_LZ cycle 29729 t2s 2 momentum removed (signed, V/c^2) x1 6.601806e+25 x2 -5.405847e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29729 t2s 2: L_z of the cut and capped momentum X 4.108215e+35, the gas's as dOmega 5.799342e-21 (I 7.083933e+55)
+CLEAN FCONE cycle 29729 t2s 3 faces 31588 momentum cut sum |dF| V/c^2 7.177575e+25
+CLEAN FCONE_LZ cycle 29729 t2s 3 momentum removed (signed, V/c^2) x1 6.471448e+25 x2 -4.811395e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29729 t2s 3: L_z of the cut and capped momentum X 5.036781e+35, the gas's as dOmega 7.110148e-21 (I 7.083932e+55)
+CLEAN LZB cycle 29729 t2s 3 ledger -5.5951176432967716e+42
+CLEAN PLEDGER cycle 29729 dt 1.605775e+02 hflx -1.792301e+34 ntel -1.838040e+18 src -1.796652e+34 rad 4.260731e+31 flr 2.696525e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3543814786870528e+34 END 2.686307e+20 gross 1.100646e+36
+CLEAN FCONE cycle 29730 t2s 2 faces 31959 momentum cut sum |dF| V/c^2 7.327354e+25
+CLEAN FCONE_LZ cycle 29730 t2s 2 momentum removed (signed, V/c^2) x1 6.585783e+25 x2 -4.825133e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29730 t2s 2: L_z of the cut and capped momentum X 4.860190e+35, the gas's as dOmega 6.860865e-21 (I 7.083932e+55)
+CLEAN FCONE cycle 29730 t2s 3 faces 31586 momentum cut sum |dF| V/c^2 7.184535e+25
+CLEAN FCONE_LZ cycle 29730 t2s 3 momentum removed (signed, V/c^2) x1 6.477987e+25 x2 -4.697013e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29730 t2s 3: L_z of the cut and capped momentum X 5.933582e+35, the gas's as dOmega 8.376116e-21 (I 7.083931e+55)
+CLEAN LZB cycle 29730 t2s 3 ledger -5.5943716016517073e+42
+CLEAN PLEDGER cycle 29730 dt 1.604786e+02 hflx -1.792301e+34 ntel 0.000000e+00 src -1.796652e+34 rad 4.261105e+31 flr 2.696637e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3686869046877906e+34 END -2.190551e+20 gross 1.100543e+36
+CLEAN FCONE cycle 29731 t2s 2 faces 31979 momentum cut sum |dF| V/c^2 7.330448e+25
+CLEAN FCONE_LZ cycle 29731 t2s 2 momentum removed (signed, V/c^2) x1 6.588149e+25 x2 -4.800780e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29731 t2s 2: L_z of the cut and capped momentum X 5.695142e+35, the gas's as dOmega 8.039523e-21 (I 7.083930e+55)
+CLEAN FCONE cycle 29731 t2s 3 faces 31591 momentum cut sum |dF| V/c^2 7.166712e+25
+CLEAN FCONE_LZ cycle 29731 t2s 3 momentum removed (signed, V/c^2) x1 6.463012e+25 x2 -4.549318e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29731 t2s 3: L_z of the cut and capped momentum X 5.437865e+35, the gas's as dOmega 7.676340e-21 (I 7.083929e+55)
+CLEAN LZB cycle 29731 t2s 3 ledger -5.5936427869285194e+42
+CLEAN PLEDGER cycle 29731 dt 1.604020e+02 hflx -1.792302e+34 ntel 0.000000e+00 src -1.796652e+34 rad 4.261473e+31 flr 2.697184e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3828173979156593e+34 END 1.418093e+20 gross 1.100440e+36
+CLEAN FCONE cycle 29732 t2s 2 faces 31935 momentum cut sum |dF| V/c^2 7.318488e+25
+CLEAN FCONE_LZ cycle 29732 t2s 2 momentum removed (signed, V/c^2) x1 6.579390e+25 x2 -4.633275e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29732 t2s 2: L_z of the cut and capped momentum X 5.745798e+35, the gas's as dOmega 8.111033e-21 (I 7.083929e+55)
+CLEAN FCONE cycle 29732 t2s 3 faces 31564 momentum cut sum |dF| V/c^2 7.155434e+25
+CLEAN FCONE_LZ cycle 29732 t2s 3 momentum removed (signed, V/c^2) x1 6.452580e+25 x2 -4.468296e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29732 t2s 3: L_z of the cut and capped momentum X 6.691953e+35, the gas's as dOmega 9.446670e-21 (I 7.083928e+55)
+CLEAN LZB cycle 29732 t2s 3 ledger -5.5929308620650682e+42
+CLEAN PLEDGER cycle 29732 dt 1.603496e+02 hflx -1.792303e+34 ntel 0.000000e+00 src -1.796652e+34 rad 4.261835e+31 flr 2.696622e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.3967783344421049e+34 END -5.949075e+20 gross 1.100339e+36
+CLEAN FCONE cycle 29733 t2s 2 faces 31769 momentum cut sum |dF| V/c^2 7.294697e+25
+CLEAN FCONE_LZ cycle 29733 t2s 2 momentum removed (signed, V/c^2) x1 6.556577e+25 x2 -4.591729e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29733 t2s 2: L_z of the cut and capped momentum X 6.632045e+35, the gas's as dOmega 9.362102e-21 (I 7.083927e+55)
+CLEAN FCONE cycle 29733 t2s 3 faces 31394 momentum cut sum |dF| V/c^2 7.116151e+25
+CLEAN FCONE_LZ cycle 29733 t2s 3 momentum removed (signed, V/c^2) x1 6.419933e+25 x2 -4.407279e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29733 t2s 3: L_z of the cut and capped momentum X 6.466466e+35, the gas's as dOmega 9.128364e-21 (I 7.083926e+55)
+CLEAN LZB cycle 29733 t2s 3 ledger -5.5922355786007851e+42
+CLEAN PLEDGER cycle 29733 dt 1.603262e+02 hflx -1.792304e+34 ntel 0.000000e+00 src -1.796652e+34 rad 4.262192e+31 flr 2.697191e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4105754028046620e+34 END -4.173576e+20 gross 1.100238e+36
+CLEAN FCONE cycle 29734 t2s 2 faces 31711 momentum cut sum |dF| V/c^2 7.259560e+25
+CLEAN FCONE_LZ cycle 29734 t2s 2 momentum removed (signed, V/c^2) x1 6.526538e+25 x2 -4.480058e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29734 t2s 2: L_z of the cut and capped momentum X 7.268881e+35, the gas's as dOmega 1.026109e-20 (I 7.083926e+55)
+CLEAN FCONE cycle 29734 t2s 3 faces 31448 momentum cut sum |dF| V/c^2 7.100616e+25
+CLEAN FCONE_LZ cycle 29734 t2s 3 momentum removed (signed, V/c^2) x1 6.406739e+25 x2 -4.285270e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29734 t2s 3: L_z of the cut and capped momentum X 7.538001e+35, the gas's as dOmega 1.064099e-20 (I 7.083925e+55)
+CLEAN LZB cycle 29734 t2s 3 ledger -5.5915565180802246e+42
+CLEAN PLEDGER cycle 29734 dt 1.603325e+02 hflx -1.792305e+34 ntel -1.840849e+18 src -1.796652e+34 rad 4.262543e+31 flr 2.697041e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4242140949153469e+34 END -7.493990e+19 gross 1.100139e+36
+CLEAN FCONE cycle 29735 t2s 2 faces 31789 momentum cut sum |dF| V/c^2 7.246062e+25
+CLEAN FCONE_LZ cycle 29735 t2s 2 momentum removed (signed, V/c^2) x1 6.517084e+25 x2 -4.350683e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29735 t2s 2: L_z of the cut and capped momentum X 7.333953e+35, the gas's as dOmega 1.035295e-20 (I 7.083924e+55)
+CLEAN FCONE cycle 29735 t2s 3 faces 31429 momentum cut sum |dF| V/c^2 7.094093e+25
+CLEAN FCONE_LZ cycle 29735 t2s 3 momentum removed (signed, V/c^2) x1 6.404082e+25 x2 -4.261513e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29735 t2s 3: L_z of the cut and capped momentum X 7.794743e+35, the gas's as dOmega 1.100343e-20 (I 7.083923e+55)
+CLEAN LZB cycle 29735 t2s 3 ledger -5.5908939730392493e+42
+CLEAN PLEDGER cycle 29735 dt 1.602349e+02 hflx -1.792305e+34 ntel 0.000000e+00 src -1.796652e+34 rad 4.262889e+31 flr 2.696883e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4376886052079348e+34 END 2.236668e+20 gross 1.100039e+36
+CLEAN FCONE cycle 29736 t2s 2 faces 31709 momentum cut sum |dF| V/c^2 7.242111e+25
+CLEAN FCONE_LZ cycle 29736 t2s 2 momentum removed (signed, V/c^2) x1 6.515385e+25 x2 -4.431501e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29736 t2s 2: L_z of the cut and capped momentum X 7.983197e+35, the gas's as dOmega 1.126946e-20 (I 7.083923e+55)
+CLEAN FCONE cycle 29736 t2s 3 faces 31333 momentum cut sum |dF| V/c^2 7.085342e+25
+CLEAN FCONE_LZ cycle 29736 t2s 3 momentum removed (signed, V/c^2) x1 6.395247e+25 x2 -4.326021e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29736 t2s 3: L_z of the cut and capped momentum X 6.475506e+35, the gas's as dOmega 9.141131e-21 (I 7.083922e+55)
+CLEAN LZB cycle 29736 t2s 3 ledger -5.5902491707792907e+42
+CLEAN PLEDGER cycle 29736 dt 1.601296e+02 hflx -1.792306e+34 ntel -1.843181e+18 src -1.796653e+34 rad 4.263229e+31 flr 2.697187e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4510014913631370e+34 END -6.663886e+20 gross 1.099941e+36
+CLEAN FCONE cycle 29737 t2s 2 faces 31608 momentum cut sum |dF| V/c^2 7.235843e+25
+CLEAN FCONE_LZ cycle 29737 t2s 2 momentum removed (signed, V/c^2) x1 6.508618e+25 x2 -4.451899e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29737 t2s 2: L_z of the cut and capped momentum X 6.643877e+35, the gas's as dOmega 9.378813e-21 (I 7.083921e+55)
+CLEAN FCONE cycle 29737 t2s 3 faces 31209 momentum cut sum |dF| V/c^2 7.073104e+25
+CLEAN FCONE_LZ cycle 29737 t2s 3 momentum removed (signed, V/c^2) x1 6.386033e+25 x2 -4.239462e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29737 t2s 3: L_z of the cut and capped momentum X 7.272667e+35, the gas's as dOmega 1.026644e-20 (I 7.083920e+55)
+CLEAN LZB cycle 29737 t2s 3 ledger -5.5896215554610411e+42
+CLEAN PLEDGER cycle 29737 dt 1.600599e+02 hflx -1.792307e+34 ntel 0.000000e+00 src -1.796653e+34 rad 4.263564e+31 flr 2.696066e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4641590077730935e+34 END 6.421773e+20 gross 1.099844e+36
+CLEAN FCONE cycle 29738 t2s 2 faces 31524 momentum cut sum |dF| V/c^2 7.226734e+25
+CLEAN FCONE_LZ cycle 29738 t2s 2 momentum removed (signed, V/c^2) x1 6.502192e+25 x2 -4.378520e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29738 t2s 2: L_z of the cut and capped momentum X 6.925416e+35, the gas's as dOmega 9.776249e-21 (I 7.083920e+55)
+CLEAN FCONE cycle 29738 t2s 3 faces 31154 momentum cut sum |dF| V/c^2 7.068620e+25
+CLEAN FCONE_LZ cycle 29738 t2s 3 momentum removed (signed, V/c^2) x1 6.382105e+25 x2 -4.188094e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29738 t2s 3: L_z of the cut and capped momentum X 7.144768e+35, the gas's as dOmega 1.008590e-20 (I 7.083919e+55)
+CLEAN LZB cycle 29738 t2s 3 ledger -5.5890115894122539e+42
+CLEAN PLEDGER cycle 29738 dt 1.600186e+02 hflx -1.792308e+34 ntel 0.000000e+00 src -1.796653e+34 rad 4.263893e+31 flr 2.695765e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4771669804833221e+34 END -3.343472e+19 gross 1.099746e+36
+CLEAN FCONE cycle 29739 t2s 2 faces 31474 momentum cut sum |dF| V/c^2 7.226406e+25
+CLEAN FCONE_LZ cycle 29739 t2s 2 momentum removed (signed, V/c^2) x1 6.503125e+25 x2 -4.247290e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29739 t2s 2: L_z of the cut and capped momentum X 7.564704e+35, the gas's as dOmega 1.067870e-20 (I 7.083918e+55)
+CLEAN FCONE cycle 29739 t2s 3 faces 31042 momentum cut sum |dF| V/c^2 7.069928e+25
+CLEAN FCONE_LZ cycle 29739 t2s 3 momentum removed (signed, V/c^2) x1 6.383591e+25 x2 -4.037915e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29739 t2s 3: L_z of the cut and capped momentum X 7.981212e+35, the gas's as dOmega 1.126666e-20 (I 7.083917e+55)
+CLEAN LZB cycle 29739 t2s 3 ledger -5.5884182768125649e+42
+CLEAN PLEDGER cycle 29739 dt 1.599800e+02 hflx -1.792308e+34 ntel 0.000000e+00 src -1.796653e+34 rad 4.264218e+31 flr 2.695270e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.4900289475836661e+34 END 6.894471e+20 gross 1.099649e+36
+CLEAN FCONE cycle 29740 t2s 2 faces 31335 momentum cut sum |dF| V/c^2 7.225923e+25
+CLEAN FCONE_LZ cycle 29740 t2s 2 momentum removed (signed, V/c^2) x1 6.501625e+25 x2 -4.126411e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29740 t2s 2: L_z of the cut and capped momentum X 8.466402e+35, the gas's as dOmega 1.195158e-20 (I 7.083917e+55)
+CLEAN FCONE cycle 29740 t2s 3 faces 30911 momentum cut sum |dF| V/c^2 7.064003e+25
+CLEAN FCONE_LZ cycle 29740 t2s 3 momentum removed (signed, V/c^2) x1 6.378311e+25 x2 -3.958392e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29740 t2s 3: L_z of the cut and capped momentum X 8.414102e+35, the gas's as dOmega 1.187776e-20 (I 7.083916e+55)
+CLEAN LZB cycle 29740 t2s 3 ledger -5.5878416055112781e+42
+CLEAN PLEDGER cycle 29740 dt 1.599303e+02 hflx -1.792309e+34 ntel 0.000000e+00 src -1.796653e+34 rad 4.264537e+31 flr 2.695414e+26 mrg 1.441780e+16 gap 0.000000e+00 P -2.5027469041594705e+34 END -8.070451e+18 gross 1.099552e+36
+CLEAN FCONE cycle 29741 t2s 2 faces 31255 momentum cut sum |dF| V/c^2 7.218726e+25
+CLEAN FCONE_LZ cycle 29741 t2s 2 momentum removed (signed, V/c^2) x1 6.495362e+25 x2 -4.033198e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29741 t2s 2: L_z of the cut and capped momentum X 9.304033e+35, the gas's as dOmega 1.313403e-20 (I 7.083915e+55)
+CLEAN FCONE cycle 29741 t2s 3 faces 30763 momentum cut sum |dF| V/c^2 7.060818e+25
+CLEAN FCONE_LZ cycle 29741 t2s 3 momentum removed (signed, V/c^2) x1 6.377116e+25 x2 -3.844905e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29741 t2s 3: L_z of the cut and capped momentum X 1.026549e+36, the gas's as dOmega 1.449127e-20 (I 7.083914e+55)
+CLEAN LZB cycle 29741 t2s 3 ledger -5.5872803155362811e+42
+CLEAN PLEDGER cycle 29741 dt 1.598759e+02 hflx -1.792310e+34 ntel 0.000000e+00 src -1.796653e+34 rad 4.264852e+31 flr 2.694725e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5153227750870639e+34 END -2.190551e+19 gross 1.099455e+36
+CLEAN FCONE cycle 29742 t2s 2 faces 31075 momentum cut sum |dF| V/c^2 7.207532e+25
+CLEAN FCONE_LZ cycle 29742 t2s 2 momentum removed (signed, V/c^2) x1 6.486463e+25 x2 -3.921236e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29742 t2s 2: L_z of the cut and capped momentum X 1.165442e+36, the gas's as dOmega 1.645195e-20 (I 7.083914e+55)
+CLEAN FCONE cycle 29742 t2s 3 faces 30653 momentum cut sum |dF| V/c^2 7.041031e+25
+CLEAN FCONE_LZ cycle 29742 t2s 3 momentum removed (signed, V/c^2) x1 6.356230e+25 x2 -3.724086e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29742 t2s 3: L_z of the cut and capped momentum X 1.240919e+36, the gas's as dOmega 1.751742e-20 (I 7.083913e+55)
+CLEAN LZB cycle 29742 t2s 3 ledger -5.5867358259823104e+42
+CLEAN PLEDGER cycle 29742 dt 1.598390e+02 hflx -1.792310e+34 ntel 0.000000e+00 src -1.796653e+34 rad 4.265162e+31 flr 2.694855e+26 mrg 2.885207e+16 gap 0.000000e+00 P -2.5277603514512408e+34 END 2.098317e+20 gross 1.099359e+36
+CLEAN FCONE cycle 29743 t2s 2 faces 30933 momentum cut sum |dF| V/c^2 7.188388e+25
+CLEAN FCONE_LZ cycle 29743 t2s 2 momentum removed (signed, V/c^2) x1 6.466312e+25 x2 -3.818334e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29743 t2s 2: L_z of the cut and capped momentum X 1.323126e+36, the gas's as dOmega 1.867789e-20 (I 7.083912e+55)
+CLEAN FCONE cycle 29743 t2s 3 faces 30536 momentum cut sum |dF| V/c^2 7.034686e+25
+CLEAN FCONE_LZ cycle 29743 t2s 3 momentum removed (signed, V/c^2) x1 6.346048e+25 x2 -3.704215e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29743 t2s 3: L_z of the cut and capped momentum X 1.325279e+36, the gas's as dOmega 1.870830e-20 (I 7.083911e+55)
+CLEAN LZB cycle 29743 t2s 3 ledger -5.5862073092245342e+42
+CLEAN PLEDGER cycle 29743 dt 1.598166e+02 hflx -1.792311e+34 ntel 1.846792e+18 src -1.796654e+34 rad 4.265467e+31 flr 2.695384e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5400632068197776e+34 END 7.493990e+19 gross 1.099261e+36
+CLEAN FCONE cycle 29744 t2s 2 faces 30907 momentum cut sum |dF| V/c^2 7.184733e+25
+CLEAN FCONE_LZ cycle 29744 t2s 2 momentum removed (signed, V/c^2) x1 6.459016e+25 x2 -3.785819e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29744 t2s 2: L_z of the cut and capped momentum X 1.412843e+36, the gas's as dOmega 1.994440e-20 (I 7.083910e+55)
+CLEAN FCONE cycle 29744 t2s 3 faces 30352 momentum cut sum |dF| V/c^2 7.034778e+25
+CLEAN FCONE_LZ cycle 29744 t2s 3 momentum removed (signed, V/c^2) x1 6.343602e+25 x2 -3.598107e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29744 t2s 3: L_z of the cut and capped momentum X 1.375445e+36, the gas's as dOmega 1.941647e-20 (I 7.083909e+55)
+CLEAN LZB cycle 29744 t2s 3 ledger -5.5856944026676891e+42
+CLEAN PLEDGER cycle 29744 dt 1.598190e+02 hflx -1.792312e+34 ntel 0.000000e+00 src -1.796654e+34 rad 4.265768e+31 flr 2.695338e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5522360337441840e+34 END 2.617132e+20 gross 1.099164e+36
+CLEAN FCONE cycle 29745 t2s 2 faces 30730 momentum cut sum |dF| V/c^2 7.191751e+25
+CLEAN FCONE_LZ cycle 29745 t2s 2 momentum removed (signed, V/c^2) x1 6.463861e+25 x2 -3.664709e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29745 t2s 2: L_z of the cut and capped momentum X 1.426717e+36, the gas's as dOmega 2.014025e-20 (I 7.083909e+55)
+CLEAN FCONE cycle 29745 t2s 3 faces 30288 momentum cut sum |dF| V/c^2 7.043670e+25
+CLEAN FCONE_LZ cycle 29745 t2s 3 momentum removed (signed, V/c^2) x1 6.351566e+25 x2 -3.531325e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29745 t2s 3: L_z of the cut and capped momentum X 1.369617e+36, the gas's as dOmega 1.933420e-20 (I 7.083908e+55)
+CLEAN LZB cycle 29745 t2s 3 ledger -5.5851969800817431e+42
+CLEAN PLEDGER cycle 29745 dt 1.598503e+02 hflx -1.792312e+34 ntel 1.846401e+18 src -1.796654e+34 rad 4.266064e+31 flr 2.695759e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5642840222799164e+34 END 9.038905e+20 gross 1.099067e+36
+CLEAN FCONE cycle 29746 t2s 2 faces 30570 momentum cut sum |dF| V/c^2 7.185966e+25
+CLEAN FCONE_LZ cycle 29746 t2s 2 momentum removed (signed, V/c^2) x1 6.458226e+25 x2 -3.578847e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29746 t2s 2: L_z of the cut and capped momentum X 1.415981e+36, the gas's as dOmega 1.998871e-20 (I 7.083907e+55)
+CLEAN FCONE cycle 29746 t2s 3 faces 30218 momentum cut sum |dF| V/c^2 7.029946e+25
+CLEAN FCONE_LZ cycle 29746 t2s 3 momentum removed (signed, V/c^2) x1 6.339405e+25 x2 -3.437899e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29746 t2s 3: L_z of the cut and capped momentum X 1.370840e+36, the gas's as dOmega 1.935146e-20 (I 7.083906e+55)
+CLEAN LZB cycle 29746 t2s 3 ledger -5.5847143190167907e+42
+CLEAN PLEDGER cycle 29746 dt 1.599119e+02 hflx -1.792313e+34 ntel 1.845691e+18 src -1.796654e+34 rad 4.266356e+31 flr 2.695541e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5762123742241368e+34 END 1.810087e+20 gross 1.098970e+36
+CLEAN FCONE cycle 29747 t2s 2 faces 30571 momentum cut sum |dF| V/c^2 7.174872e+25
+CLEAN FCONE_LZ cycle 29747 t2s 2 momentum removed (signed, V/c^2) x1 6.448966e+25 x2 -3.467750e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29747 t2s 2: L_z of the cut and capped momentum X 1.386972e+36, the gas's as dOmega 1.957919e-20 (I 7.083906e+55)
+CLEAN FCONE cycle 29747 t2s 3 faces 30164 momentum cut sum |dF| V/c^2 7.025522e+25
+CLEAN FCONE_LZ cycle 29747 t2s 3 momentum removed (signed, V/c^2) x1 6.332222e+25 x2 -3.293515e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29747 t2s 3: L_z of the cut and capped momentum X 1.360869e+36, the gas's as dOmega 1.921072e-20 (I 7.083905e+55)
+CLEAN LZB cycle 29747 t2s 3 ledger -5.5842473759669421e+42
+CLEAN PLEDGER cycle 29747 dt 1.599578e+02 hflx -1.792314e+34 ntel 1.845161e+18 src -1.796654e+34 rad 4.266643e+31 flr 2.694530e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5880231313357591e+34 END 3.908404e+20 gross 1.098875e+36
+CLEAN FCONE cycle 29748 t2s 2 faces 30554 momentum cut sum |dF| V/c^2 7.171030e+25
+CLEAN FCONE_LZ cycle 29748 t2s 2 momentum removed (signed, V/c^2) x1 6.443247e+25 x2 -3.343458e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29748 t2s 2: L_z of the cut and capped momentum X 1.326780e+36, the gas's as dOmega 1.872950e-20 (I 7.083904e+55)
+CLEAN FCONE cycle 29748 t2s 3 faces 30168 momentum cut sum |dF| V/c^2 7.008874e+25
+CLEAN FCONE_LZ cycle 29748 t2s 3 momentum removed (signed, V/c^2) x1 6.318500e+25 x2 -3.129875e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29748 t2s 3: L_z of the cut and capped momentum X 1.367718e+36, the gas's as dOmega 1.930740e-20 (I 7.083903e+55)
+CLEAN LZB cycle 29748 t2s 3 ledger -5.5837959842521351e+42
+CLEAN PLEDGER cycle 29748 dt 1.598898e+02 hflx -1.792314e+34 ntel 0.000000e+00 src -1.796654e+34 rad 4.266927e+31 flr 2.693808e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.5997107218114311e+34 END 4.842270e+20 gross 1.098780e+36
+CLEAN FCONE cycle 29749 t2s 2 faces 30489 momentum cut sum |dF| V/c^2 7.142358e+25
+CLEAN FCONE_LZ cycle 29749 t2s 2 momentum removed (signed, V/c^2) x1 6.418886e+25 x2 -3.171002e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29749 t2s 2: L_z of the cut and capped momentum X 1.353763e+36, the gas's as dOmega 1.911042e-20 (I 7.083902e+55)
+CLEAN FCONE cycle 29749 t2s 3 faces 30067 momentum cut sum |dF| V/c^2 6.976628e+25
+CLEAN FCONE_LZ cycle 29749 t2s 3 momentum removed (signed, V/c^2) x1 6.289702e+25 x2 -3.019613e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29749 t2s 3: L_z of the cut and capped momentum X 1.428967e+36, the gas's as dOmega 2.017204e-20 (I 7.083901e+55)
+CLEAN LZB cycle 29749 t2s 3 ledger -5.5833602878550871e+42
+CLEAN PLEDGER cycle 29749 dt 1.598723e+02 hflx -1.792315e+34 ntel 0.000000e+00 src -1.796654e+34 rad 4.267206e+31 flr 2.694249e+26 mrg 1.442303e+16 gap 0.000000e+00 P -2.6112818009681354e+34 END -1.902320e+20 gross 1.098686e+36
+CLEAN FCONE cycle 29750 t2s 2 faces 30458 momentum cut sum |dF| V/c^2 7.111114e+25
+CLEAN FCONE_LZ cycle 29750 t2s 2 momentum removed (signed, V/c^2) x1 6.392234e+25 x2 -3.111689e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29750 t2s 2: L_z of the cut and capped momentum X 1.356425e+36, the gas's as dOmega 1.914800e-20 (I 7.083901e+55)
+CLEAN FCONE cycle 29750 t2s 3 faces 30120 momentum cut sum |dF| V/c^2 6.942897e+25
+CLEAN FCONE_LZ cycle 29750 t2s 3 momentum removed (signed, V/c^2) x1 6.262452e+25 x2 -2.980949e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29750 t2s 3: L_z of the cut and capped momentum X 1.337517e+36, the gas's as dOmega 1.888108e-20 (I 7.083900e+55)
+CLEAN LZB cycle 29750 t2s 3 ledger -5.5829397220698578e+42
+CLEAN PLEDGER cycle 29750 dt 1.598748e+02 hflx -1.792315e+34 ntel -1.846119e+18 src -1.796655e+34 rad 4.267481e+31 flr 2.694059e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6227404264794803e+34 END 3.781583e+20 gross 1.098594e+36
+CLEAN FCONE cycle 29751 t2s 2 faces 30519 momentum cut sum |dF| V/c^2 7.081378e+25
+CLEAN FCONE_LZ cycle 29751 t2s 2 momentum removed (signed, V/c^2) x1 6.367931e+25 x2 -3.124184e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29751 t2s 2: L_z of the cut and capped momentum X 1.288589e+36, the gas's as dOmega 1.819039e-20 (I 7.083899e+55)
+CLEAN FCONE cycle 29751 t2s 3 faces 30273 momentum cut sum |dF| V/c^2 6.920485e+25
+CLEAN FCONE_LZ cycle 29751 t2s 3 momentum removed (signed, V/c^2) x1 6.244180e+25 x2 -2.997182e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29751 t2s 3: L_z of the cut and capped momentum X 1.290017e+36, the gas's as dOmega 1.821055e-20 (I 7.083898e+55)
+CLEAN LZB cycle 29751 t2s 3 ledger -5.5825342879579521e+42
+CLEAN PLEDGER cycle 29751 dt 1.597998e+02 hflx -1.792316e+34 ntel 0.000000e+00 src -1.796655e+34 rad 4.267753e+31 flr 2.693310e+26 mrg 1.442957e+16 gap 0.000000e+00 P -2.6340828517099969e+34 END 1.152922e+19 gross 1.098502e+36
+CLEAN FCONE cycle 29752 t2s 2 faces 30630 momentum cut sum |dF| V/c^2 7.056515e+25
+CLEAN FCONE_LZ cycle 29752 t2s 2 momentum removed (signed, V/c^2) x1 6.349237e+25 x2 -3.119621e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29752 t2s 2: L_z of the cut and capped momentum X 1.220205e+36, the gas's as dOmega 1.722505e-20 (I 7.083897e+55)
+CLEAN FCONE cycle 29752 t2s 3 faces 30260 momentum cut sum |dF| V/c^2 6.914903e+25
+CLEAN FCONE_LZ cycle 29752 t2s 3 momentum removed (signed, V/c^2) x1 6.242698e+25 x2 -2.993353e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29752 t2s 3: L_z of the cut and capped momentum X 1.249857e+36, the gas's as dOmega 1.764364e-20 (I 7.083896e+55)
+CLEAN LZB cycle 29752 t2s 3 ledger -5.5821441944364820e+42
+CLEAN PLEDGER cycle 29752 dt 1.597608e+02 hflx -1.792317e+34 ntel -1.847436e+18 src -1.796655e+34 rad 4.268021e+31 flr 2.693323e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6453139310906936e+34 END -6.156601e+20 gross 1.098411e+36
+CLEAN FCONE cycle 29753 t2s 2 faces 30659 momentum cut sum |dF| V/c^2 7.046974e+25
+CLEAN FCONE_LZ cycle 29753 t2s 2 momentum removed (signed, V/c^2) x1 6.345383e+25 x2 -3.073270e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29753 t2s 2: L_z of the cut and capped momentum X 1.191974e+36, the gas's as dOmega 1.682654e-20 (I 7.083896e+55)
+CLEAN FCONE cycle 29753 t2s 3 faces 30231 momentum cut sum |dF| V/c^2 6.902748e+25
+CLEAN FCONE_LZ cycle 29753 t2s 3 momentum removed (signed, V/c^2) x1 6.237683e+25 x2 -2.869696e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29753 t2s 3: L_z of the cut and capped momentum X 1.210449e+36, the gas's as dOmega 1.708733e-20 (I 7.083895e+55)
+CLEAN LZB cycle 29753 t2s 3 ledger -5.5817689793674009e+42
+CLEAN PLEDGER cycle 29753 dt 1.597196e+02 hflx -1.792317e+34 ntel 3.695826e+18 src -1.796655e+34 rad 4.268285e+31 flr 2.692850e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6564355293395605e+34 END 3.308885e+20 gross 1.098321e+36
+CLEAN FCONE cycle 29754 t2s 2 faces 30592 momentum cut sum |dF| V/c^2 7.040164e+25
+CLEAN FCONE_LZ cycle 29754 t2s 2 momentum removed (signed, V/c^2) x1 6.345756e+25 x2 -2.930089e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29754 t2s 2: L_z of the cut and capped momentum X 1.173852e+36, the gas's as dOmega 1.657071e-20 (I 7.083894e+55)
+CLEAN FCONE cycle 29754 t2s 3 faces 30159 momentum cut sum |dF| V/c^2 6.883423e+25
+CLEAN FCONE_LZ cycle 29754 t2s 3 momentum removed (signed, V/c^2) x1 6.224913e+25 x2 -2.754583e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29754 t2s 3: L_z of the cut and capped momentum X 1.261521e+36, the gas's as dOmega 1.780830e-20 (I 7.083893e+55)
+CLEAN LZB cycle 29754 t2s 3 ledger -5.5814085063710403e+42
+CLEAN PLEDGER cycle 29754 dt 1.596693e+02 hflx -1.792318e+34 ntel 0.000000e+00 src -1.796655e+34 rad 4.268546e+31 flr 2.692916e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6674486016606309e+34 END -3.170534e+20 gross 1.098231e+36
+CLEAN FCONE cycle 29755 t2s 2 faces 30584 momentum cut sum |dF| V/c^2 7.017378e+25
+CLEAN FCONE_LZ cycle 29755 t2s 2 momentum removed (signed, V/c^2) x1 6.330529e+25 x2 -2.812453e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29755 t2s 2: L_z of the cut and capped momentum X 1.222169e+36, the gas's as dOmega 1.725279e-20 (I 7.083892e+55)
+CLEAN FCONE cycle 29755 t2s 3 faces 30253 momentum cut sum |dF| V/c^2 6.867494e+25
+CLEAN FCONE_LZ cycle 29755 t2s 3 momentum removed (signed, V/c^2) x1 6.215831e+25 x2 -2.614909e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29755 t2s 3: L_z of the cut and capped momentum X 1.297113e+36, the gas's as dOmega 1.831075e-20 (I 7.083891e+55)
+CLEAN LZB cycle 29755 t2s 3 ledger -5.5810622681409374e+42
+CLEAN PLEDGER cycle 29755 dt 1.596210e+02 hflx -1.792318e+34 ntel 0.000000e+00 src -1.796655e+34 rad 4.268804e+31 flr 2.692562e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6783553179834080e+34 END -6.640828e+20 gross 1.098140e+36
+CLEAN FCONE cycle 29756 t2s 2 faces 30584 momentum cut sum |dF| V/c^2 7.000989e+25
+CLEAN FCONE_LZ cycle 29756 t2s 2 momentum removed (signed, V/c^2) x1 6.321414e+25 x2 -2.659373e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29756 t2s 2: L_z of the cut and capped momentum X 1.297138e+36, the gas's as dOmega 1.831109e-20 (I 7.083891e+55)
+CLEAN FCONE cycle 29756 t2s 3 faces 30226 momentum cut sum |dF| V/c^2 6.861102e+25
+CLEAN FCONE_LZ cycle 29756 t2s 3 momentum removed (signed, V/c^2) x1 6.215786e+25 x2 -2.425332e+23 x3 0.000000e+00
+CLEAN LZSPIN cycle 29756 t2s 3: L_z of the cut and capped momentum X 1.343363e+36, the gas's as dOmega 1.896363e-20 (I 7.083890e+55)
+CLEAN LZB cycle 29756 t2s 3 ledger -5.5807313350252113e+42
+CLEAN PLEDGER cycle 29756 dt 1.595842e+02 hflx -1.792319e+34 ntel 0.000000e+00 src -1.796656e+34 rad 4.269058e+31 flr 2.692198e+26 mrg 0.000000e+00 gap 0.000000e+00 P -2.6891584114901729e+34 END 3.804641e+19 gross 1.098050e+36

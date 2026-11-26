@@ -1,0 +1,2 @@
+2026-11-25 23:35:32 start X-bsg hpc-sm-02-17 BIN athena_mix_bd1503bef md5=bbc5dcbd21ed225881e3dbea1a9df39f ARGS: -i /resnick/groups/carnegie_poc/jingze/lzab_1127/deck_mix_bsg.athinput time/nlim=300 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 output1/dcycle=1 output2/dcycle=300 hydro/p_ledger=true
+2026-11-25 23:40:16 rc=0 ended: Terminating on cycle limit wall=284 s CW 0 FATAL 0 DT_RETRY 0
