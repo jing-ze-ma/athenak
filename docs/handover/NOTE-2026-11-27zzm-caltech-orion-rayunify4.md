@@ -191,3 +191,10 @@
       0.029610        534 vet_lay_red2
       0.021744        144 cln_fs0
 ```
+
+## Reading
+- cart2 slab path, sum of the shell-path kernels (fenced, 6 cycles, 128^3):
+  - 1 GPU: RU 0.240 s; SF 1.178 s (shell 0.279 + slab_fs 0.898); FS **0.732 s** (shell 0.279 + slab_phi 0.275 + slab_fs 0.178). So FS is 1.6x faster than SF but still 3.0x RU. Elapsed at cycle 6: 1.71 / 2.58 / 2.48 s.
+  - 4 GPUs: RU 0.111 s (shell_int + edge); SF 0.855 s; FS **0.384 s** (slab_fs 0.139 + slab_phi 0.099 + shell_int/edge 0.146), 3.5x RU. Elapsed 2.10 / 2.84 / 2.38 s.
+- sp2: identical in all three binaries (1 GPU 0.418 s, 4 GPUs 0.146-0.150 s), as intended.
+- The face-sum split helped (slab_fs 0.898 -> 0.178 s on 1 GPU). The new per-ray phi kernel now costs as much as the shell kernel itself (0.275 vs 0.279 s).
