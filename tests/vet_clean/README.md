@@ -33,7 +33,7 @@ is a FAIL with the path of its `run.log`.
 
 | test | deck | what | criterion |
 |---|---|---|---|
-| `conservation_sp` | `shell_sp` | closed rotating shell, 3-D spherical polar, 40 cycles (16 quick): total energy (gas + radiation), mass, total L_z | dE/E, dM/M, dLz <= 1e-13 |
+| `conservation_sp` | `shell_sp` | closed rotating shell, 3-D spherical polar, 40 cycles (16 quick): total energy (gas + radiation), mass, total L_z, gas + radiation L_z (`dLz_gr`, no ledger) | dE/E, dM/M, dLz, dLz_gr <= 1e-13 |
 | `conservation_cs` | `shell_cs` | the same on a cubed sphere, 12 cycles | as above |
 | `mpi_ranks` | `shell_sp`, `shell_cs` | 2 MPI ranks against 1 on the same MeshBlocks, 6 / 4 cycles: the `floorcap_spin` keys on both meshes (every `CLEAN` counter and report line on) and `floor_pay` with `floor_audit_worst`; dumps and hydro histories bitwise. Needs an MPI build and launcher (`--mpirun`), else skipped | maxdiff = 0, `CLEAN FCONE_LZ` lines present |
 | `conservation_lz` | `shell_sp`, `shell_cs` | the rotating shells with every L_z-exact cap / cut on (`clean_stag_fcone_lz`, `clean_lz_spin`, `clean_stag_fcone_emax`, `clean_wb_mcap`, `floor_from_ekin` with `vceil = 5e-3`, `floorcap_lz` on every cell), 40 / 12 cycles; restart 8 + 8 and a forced dt_retry (factor 1) with the same keys | dE, dM, dLz <= 1e-13 on both, dLz_gr <= 1e-13 on sp (cs: reported, as conservation_cs); restart and retry bitwise; no `CLEAN WARNING` |
@@ -166,9 +166,8 @@ Notes on the results of this release:
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the radiation
   solve). It is round-off (2e-16) by construction: the ledger books what the step does not
   conserve, so `dLz` checks the bookkeeping, not the conservation. The conservation error
-  is the ledger's growth, `dLz_gr` (gas + radiation alone): 6e-7 on `shell_sp`, from the
-  face-flux cone cut `clean_stag_fcone` (without the cut 2e-15 with `clean_stag_fwb_ring =
-  1`). On the cubed
+  is the ledger's growth, `dLz_gr` (gas + radiation alone): 1e-15 on `shell_sp` (6e-7, from
+  the face-flux cone cut, with `clean_stag_fcone_lz = clean_lz_spin = false`). On the cubed
   sphere the ledger stays at round-off; there `dLz_gr` (6e-5) is not a conservation measure,
   because the history's `Lrz` is the cell vector u0 F while the scheme's radiation momentum
   is its face momenta (`LzTotal`; ~0.6 % of the radiation's L_z apart).
