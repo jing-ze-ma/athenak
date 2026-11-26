@@ -402,6 +402,7 @@ void RadiationVet::ScHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   const bool sth_ = vgd_sth, pol_ = vgd_pol;
   auto thn_ = vgd_thn;
   const int c2w_ = indcs.nx2 + 2*wb;
+  const int xr_ = vgd_xr;
   const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
   const int nx2b = nx2, nx3b = nx3;
   auto hl_ = vgd_hloc;
@@ -556,7 +557,7 @@ void RadiationVet::ScHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           ScCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                 mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_,
+                 mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_, xr_,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb,
               const int dr) {
             if (iu != i) {return;}

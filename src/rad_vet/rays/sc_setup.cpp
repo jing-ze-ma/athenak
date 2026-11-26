@@ -440,7 +440,7 @@ void RadiationVet::ScInit() {
           const double aout = !up ? 0.0 : slb ? (x1v_h(m,l+1) - r)
                                       : std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r);
           auto cells = [&](const double a) {
-            return static_cast<int>(std::ceil(slb ? a*tsl : a/(rlo*dmin))) + 2;
+            return static_cast<int>(std::ceil(slb ? a*tsl : a/(rlo*dmin))) + 2 + vgd_xr;
           };
           const int wl = cells(std::max(ain, aout));
           wneed = std::max(wneed, wl);

@@ -1651,6 +1651,10 @@ class RadiationVet {
   bool ScHlBegin(V &a, const int nv, const int i0, const int ws);
   void ScHlEnd();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
+  // lateral cells a solve reads beyond its 2x2 upwind stencil (the max over the
+  // features that read further); widens the band depth, the read boxes (ScCand: exact
+  // lists, keep test) and the interior / edge split alike
+  int vgd_xr = 0;
   std::vector<int> vgd_wsi, vgd_wso;   // (i): same per pass (inward, outward)
   template <class V>
   void ScHalo(V &a, const int nv, const int i0, const int i1, const int ws,

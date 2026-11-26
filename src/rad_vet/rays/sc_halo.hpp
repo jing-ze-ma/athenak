@@ -191,7 +191,8 @@ void ScCand(const int m, const int k, const int j, const int d, const int i, con
             const int jlo, const int jhi, const int klo, const int khi, const TD &dir_,
             const TB &mbsize, const ScLG &lg_, const TX &cx1v, const TF &cx1f,
             const bool sth,
-            const bool pol, const TT &tn, const int c2w, const bool imir, const FN &f) {
+            const bool pol, const TT &tn, const int c2w, const bool imir, const int xr,
+            const FN &f) {
   if (inw && l == n1 - 1) {return;}          // the top shell reads no intensity
   const Real twopi = 2.0*M_PI;
   const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -222,7 +223,12 @@ void ScCand(const int m, const int k, const int j, const int d, const int i, con
     jb = (jb < jlo) ? jlo : ((jb > jhi) ? jhi : jb);
     ka = (ka < klo) ? klo : ((ka > khi) ? khi : ka);
     kb = (kb < klo) ? klo : ((kb > khi) ? khi : kb);
-    f(iu, ka, kb + 1, ja, jb + 1, dq);
+    // xr: reads beyond the 2x2 stencil (vgd_xr), inside the band
+    const int kx0 = (ka - xr < klo) ? klo : (ka - xr);
+    const int kx1 = (kb + 1 + xr > khi + 1) ? (khi + 1) : (kb + 1 + xr);
+    const int jx0 = (ja - xr < jlo) ? jlo : (ja - xr);
+    const int jx1 = (jb + 1 + xr > jhi + 1) ? (jhi + 1) : (jb + 1 + xr);
+    f(iu, kx0, kx1, jx0, jx1, dq);
   };
   if (inw) {
     const Real ru = cx1v(m,i+1);

@@ -202,7 +202,8 @@
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             int j1 = j0 + 1, k1 = (slb_ && nx3b == 1) ? k0 : (k0 + 1);
             // interior launch: an item whose stencil reaches the band waits for it
-            if (dfr && (k0 < wb || k1 >= wb + nx3b || j0 < wb || j1 >= wb + nx2b)) {
+            if (dfr && (k0 - xr_ < wb || k1 + xr_ >= wb + nx3b || j0 - xr_ < wb ||
+                        j1 + xr_ >= wb + nx2b)) {
               dfd = true;
               return 0.0;
             }
