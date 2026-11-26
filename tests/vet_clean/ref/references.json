@@ -133,7 +133,10 @@
    "diff_sp": 0,
    "diff_cs": 0,
    "maxdiff_sp": 0.0,
-   "maxdiff_cs": 0.0
+   "maxdiff_cs": 0.0,
+   "diff_df": 0,
+   "maxdiff_df": 0.0,
+   "df_tile16": 2
   },
   "min": {
    "files_sp": 2,

@@ -487,7 +487,9 @@ def t_hst_ranks(c):
     histories byte for byte (diff_*: the number of files that differ), the dumps' values
     (maxdiff_*).  sp: the rotating shell of layout_tile, 8 x 8 tiles, MeshBlocks 16 x 64
     (1 rank), 16 x 32 (2), 16 x 8 (2 ranks x 4), 16 x 16 (4), 16 x 8 (8) along phi; cs: the am_wb FOFC shell (fofc_cs), 8 x 8
-    tiles, one MeshBlock per panel (1 rank) vs 2 x 2 per panel (2, 4, 8 ranks)."""
+    tiles, one MeshBlock per panel (1 rank) vs 2 x 2 per panel (2, 4, 8 ranks); df: the
+    sp shell with no layout_tile named (the fresh default 16, df_tile16: runs that logged
+    it), 16 x 64 (1 rank) vs 16 x 16 (4)."""
     o = dict(LAYOUT_OFF, **{'time/nlim': 6, 'mesh/nghost': 3, 'mesh/nx2': 16,
                             'mesh/nx3': 64, 'mesh/layout_tile': 8, 'meshblock/nx2': 16,
                             'rad_vet/vet_gd_theta_wall': 'mirror'})
@@ -496,7 +498,9 @@ def t_hst_ranks(c):
             ('sp', 'shell_sp.athinput', o,
              ((1, 64), (2, 32), (2, 8), (4, 16), (8, 8))),
             ('cs', 'fofc_cs.athinput', {'time/nlim': 6, 'mesh/layout_tile': 8},
-             ((1, 16), (2, 8), (4, 8), (8, 8)))):
+             ((1, 16), (2, 8), (4, 8), (8, 8))),
+            ('df', 'shell_sp.athinput', dict(o, **{'mesh/layout_tile': None}),
+             ((1, 64), (4, 16)))):
         ds = [c.run(deck, '%s_r%d_mb%d' % (tag, r, n), dict(o, **{
             'meshblock/nx3': n, 'meshblock/nx2': o.get('meshblock/nx2', n)}),
             ranks=r, timeout=900) for r, n in runs]
@@ -509,6 +513,8 @@ def t_hst_ranks(c):
         out['maxdiff_' + tag] = max(vett.compare_dirs(ds[0], d)[1] for d in ds[1:])
         out['warnings'] += sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
                                for d in ds)
+    out['df_tile16'] = sum('layout_tile = 16 (fresh default)' in open(os.path.join(
+        c.dir, 'df_r%d_mb%d' % rn, 'run.log')).read() for rn in ((1, 64), (4, 16)))
     return out
 
 

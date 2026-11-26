@@ -121,18 +121,19 @@ def read_hst(path):
 
 
 def make_deck(src, dst, overrides=None, drop=()):
-    """Copy deck src to dst with block/key = value overrides (added if absent) and the
-    blocks named in drop (e.g. 'output3') removed."""
+    """Copy deck src to dst with block/key = value overrides (added if absent; value None:
+    the key removed) and the blocks named in drop (e.g. 'output3') removed."""
     want = {}
     for bk, v in (overrides or {}).items():
         b, k = bk.split('/', 1)
-        want.setdefault(b, {})[k] = str(v)
+        want.setdefault(b, {})[k] = None if v is None else str(v)
     out, blk, seen = [], None, set()
     for ln in open(src).read().splitlines():
         m = re.match(r'\s*<(\w+)>', ln)
         if m:
             if blk in want:
-                out += ['%s = %s' % kv for kv in want[blk].items() if (blk, kv[0]) not in seen]
+                out += ['%s = %s' % kv for kv in want[blk].items()
+                    if (blk, kv[0]) not in seen and kv[1] is not None]
             blk = m.group(1)
             if blk in drop:
                 continue
@@ -142,16 +143,19 @@ def make_deck(src, dst, overrides=None, drop=()):
             continue
         m = re.match(r'\s*(\w+)\s*=', ln)
         if m and blk in want and m.group(1) in want[blk]:
-            out.append('%s = %s' % (m.group(1), want[blk][m.group(1)]))
+            if want[blk][m.group(1)] is not None:
+                out.append('%s = %s' % (m.group(1), want[blk][m.group(1)]))
             seen.add((blk, m.group(1)))
             continue
         out.append(ln)
     if blk in want:
-        out += ['%s = %s' % kv for kv in want[blk].items() if (blk, kv[0]) not in seen]
+        out += ['%s = %s' % kv for kv in want[blk].items()
+                if (blk, kv[0]) not in seen and kv[1] is not None]
     have = set(re.findall(r'^\s*<(\w+)>', '\n'.join(out), re.M))
     for b in want:
         if b not in have:
-            out += ['<%s>' % b] + ['%s = %s' % kv for kv in want[b].items()]
+            out += ['<%s>' % b] + ['%s = %s' % kv for kv in want[b].items()
+                                   if kv[1] is not None]
     with open(dst, 'w') as f:
         f.write('\n'.join(out) + '\n')
 

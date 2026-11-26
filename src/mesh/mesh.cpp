@@ -882,15 +882,35 @@ Mesh::Mesh(ParameterInput *pin) :
   repro::tile_nx2 = mb_indcs.nx2;   // (layout_invariant_mode = tile: HistSums)
   // tile: fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (repro::tile_n;
   // one MeshBlock along x1, checked by rad_vet). <mesh>/layout_tile default on a fresh
-  // start: the square lateral MeshBlock, recorded, so a restart on another layout of
-  // whole tiles gives the same answer; without it the MeshBlock is the tile. A tile of
+  // start: 16, so every layout of whole 16 x 16 tiles gives the same answer (8: as many
+  // Krylov iterations, +18 % passes on star3d_sp); the square lateral MeshBlock where
+  // such tiles do not fit (not a multiple of 16, more than one
+  // MeshBlock along x1, SMR/AMR, an odd periodic line of MeshBlocks: FluxSchurTile).
+  // Recorded; without it (older restart files) the MeshBlock is the tile. A tile of
   // the MeshBlock's size is the MeshBlock (tile_n 0: the same sums and preconditioner).
   if (layout_invariant && repro::block_mode) {
     const int b2 = mb_indcs.nx2, b3 = three_d ? mb_indcs.nx3 : b2;
     if (lay_blk && b3 == b2) {
       pin->SetInteger("mesh", "layout_tile", b2);
-    } else if (!global_variable::restart_run && b3 == b2) {
-      pin->GetOrAddInteger("mesh", "layout_tile", b2);
+    } else if (!global_variable::restart_run &&
+               !pin->DoesParameterExist("mesh", "layout_tile")) {
+      constexpr int nd = 16;   // (the fresh default tile)
+      bool fit = multi_d && !multilevel && mesh_indcs.nx1 == mb_indcs.nx1 &&
+                 b2 % nd == 0 && b3 % nd == 0;
+      for (int d = 2; d <= (three_d ? 3 : 2) && multi_d && !use_cubed_sphere; ++d) {
+        const int b = (d == 2) ? b2 : b3;
+        const int nb = ((d == 2) ? mesh_indcs.nx2 : mesh_indcs.nx3)/b;
+        const auto f = (d == 2) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
+        if (mesh_bcs[f] == BoundaryFlag::periodic && b > nd && nb > 1 && nb % 2 == 1) {
+          fit = false;
+        }
+      }
+      if (fit || b3 == b2) {
+        pin->SetInteger("mesh", "layout_tile", fit ? nd : b2);
+        recipe::Log("<mesh>/layout_tile = " + std::to_string(fit ? nd : b2) +
+                    (fit ? " (fresh default)" : " (fresh default: the MeshBlock, 16 x 16 "
+                     "tiles do not fit its layout)"));
+      }
     }
     const int nt = (pin->DoesParameterExist("mesh", "layout_tile") && !lay_blk) ?
                    pin->GetInteger("mesh", "layout_tile") : 0;
