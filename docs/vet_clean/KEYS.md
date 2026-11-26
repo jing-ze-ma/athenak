@@ -105,6 +105,7 @@ with `<mhd>`) stops the run. `fofc_retest` is hydro only too.
 | `rad_vet/vet_gd_gl_nmu`, `vet_gd_gl_nphi`, `vet_gd_gl_stagger` | Product direction set: nmu Gauss-Legendre polar nodes times nphi azimuths, alternate rings shifted with `stagger`. 2 pi/nphi must divide the phi extent (FATAL otherwise). Takes precedence over the other sets. | 7, 18, `true` on a fresh 3-D spherical-polar run; else `vet_gd_geo = 3` (3-D) | all: 7, 18, `true` (126 directions) | `rad_vet/rad_vet_params_closure.cpp` (constructor) |
 | `rad_vet/vet_gd_ls` | Level-symmetric set LQ_N, N = 6, 8, 10, 12 (N = 10: 120 directions). Naming it together with the product set (`vet_gd_gl_nmu` > 0) is FATAL: name one set (0 = off). | 0 (off) | not named | `rad_vet/rad_vet_params_closure.cpp` (constructor) |
 | `rad_vet/vet_gd_geo` | Geodesic set, 10 n^2 + 2 directions. | 3 when no set is named | not named | `rad_vet/rad_vet_params_closure.cpp` (constructor) |
+| `rad_vet/vet_sc_set` | Cartesian meshes: `gd` sweeps the global direction set of the curved meshes (`vet_gd_gl_nmu`, `vet_gd_gl_nphi`, `vet_gd_gl_stagger`, `vet_gd_ls` or `vet_gd_geo`; with none named the geodesic set 4, 162 directions) with its pole on x1, instead of the double-Gauss set about x1. Replaces `vet_ring` (FATAL with it); a mirrored x1 end needs a set with x1 mirror pairs (FATAL otherwise). Read only when named. | double-Gauss set about x1 | not named | `rad_vet/rays/sc_cart_setup.cpp` (constructor) |
 | `rad_vet/vet_gd_rotate_dt` | Rotate the direction set every dt_rot of physical time (`auto` = 20 x the first dt; 0 = fixed set). | `0` on spherical polar, else `auto` (fresh runs that name no rotation key) | all: `0` | `rad_vet/rad_vet_params.cpp` (constructor) |
 | `rad_vet/vet_rotate_avg` | With rotation: average the closure over the last K sets (0 = off). | 4 with a rotating set on a fresh run | all: `0` | `rad_vet/rad_vet_params_closure.cpp` (`RotAvgParse`) |
 | `rad_vet/vet_rotate_avg_ema` | With rotation: the closure is an exponential moving average over the rotated sets, weight 1/N per block (0 = off; then `vet_rotate_avg` is the K-set window). | 128 on a fresh run with a rotating set; read only when named on a restart | RSG, HG: `128`; all: `0` (fixed rays) | `rad_vet/rad_vet_params_closure.cpp` (`RotAvgParse`) |
@@ -281,7 +282,7 @@ Removed without effect (named: listed at the start, any value): `advect_split`, 
 `implicit_cs2_vimp_npass`, `implicit_vimp*`, `implicit_recon`, `implicit_solver`, `implicit_offdiag`,
 `implicit_trans_limit`, `clean_stag_upwind_central`, `time2_enth_be`, `time2_accept_fallback`, `time2_adm_poslim`,
 `time2_one_pass_safety`, `time2_pred_cap`, `time2_vet*`, `cs_seam_avg`, and `vet_gd_twin_*`.
-Removed choices: `vet_sc_set`, `vet_sc_kernel` (FATAL when named).
+Removed choices: `vet_sc_kernel` (FATAL when named).
 
 ## Appendix: advanced and internal keys
 

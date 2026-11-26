@@ -163,7 +163,10 @@ class RadiationVet {
   int vet_ring_n = 0, vet_ring_g = 1;   // vet_ring, vet_ring_groups (0: double-Gauss)
   bool vsc_rot = false;                 // vet_sc rotates (physical clock)
   Real vsc_beta = 0.0;                  // current rotation of the vet_sc set
+  bool vsc_gd = false;       // vet_sc_set = gd: the vet_gd direction set, pole on x1
+  int vsc_gdmir = 0;         // ray r + nray/2 is the x1 mirror of ray r (1) or not (-1)
   void ScCartAngles(const Real beta);
+  void ScGdAngles(const Real beta);
   void ScBuildSet(std::vector<double> &d) const;
   void VetRotInit(ParameterInput *pin);   // (rays/sc_directions.cpp)
   void VetRotUpdate();

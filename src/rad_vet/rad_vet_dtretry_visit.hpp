@@ -97,6 +97,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_ring_g", vet_ring_g);
   v.value("vsc_rot", vsc_rot);
   v.value("vsc_beta", vsc_beta);
+  v.value("vsc_gd", vsc_gd);
+  v.value("vsc_gdmir", vsc_gdmir);
   v.value("vet_axis_flux", vet_axis_flux);
   v.value("vet_full", vet_full);
   v.value("vet_nguard", vet_nguard);

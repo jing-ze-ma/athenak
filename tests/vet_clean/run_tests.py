@@ -1611,6 +1611,15 @@ def t_idort_shadow_gl(c):
     return t_idort_shadow(c, 'idort_shadow_gl.athinput')
 
 
+def t_idort_shadow_gd(c):
+    """as idort_shadow_gl with vet_sc_set = gd: the global set of the curved meshes
+    (default geodesic 4, 162 rays) with its pole on x1, on the Cartesian mesh"""
+    d = c.run('idort_shadow_gl.athinput', 'run', {'rad_vet/vet_sc_set': 'gd'})
+    n = re.search(r'vet_sc_set = gd: (\d+) rays', open(os.path.join(d, 'run.log')).read())
+    return dict(L1=l1(vett.last_bin(d, 'vet')['vet_e'][0], shadow_exact(d)),
+                nray=int(n.group(1)) if n else 0)
+
+
 def t_idort_cylinder(c):
     """homogeneous emitting cylinder: E inside and outside, the energy flux Phi_x (vet_phi1)
     and the face momentum F_x (vet_f1, FH_out) outside, along y = 0 against the exact
@@ -2011,6 +2020,7 @@ TESTS = [  # name, function, in --quick
     ('idort_beams_mb', t_idort_beams_mb, False),
     ('idort_shadow', t_idort_shadow, True),
     ('idort_shadow_gl', t_idort_shadow_gl, True),
+    ('idort_shadow_gd', t_idort_shadow_gd, False),
     ('idort_cylinder', t_idort_cylinder, False),
     ('idort_radshock_m2', t_idort_radshock_m2, False),
     ('idort_radshock_m5', t_idort_radshock_m5, False),

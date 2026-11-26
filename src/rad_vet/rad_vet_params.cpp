@@ -182,7 +182,7 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/vet_seg", "+jump"}, {"rad_vet/vet_seg_plateau", "=false"},
     {"rad_vet/vet_scatter_form", "=ma"}, {"rad_vet/vet_scatter_j", "=relaxed"},
     {"rad_vet/vet_source_noesrc_h2be", "=true"}, {"rad_vet/vet_tensor", "+full"},
-    {"rad_vet/vet_sc_kernel", "!"}, {"rad_vet/vet_sc_set", "!"},
+    {"rad_vet/vet_sc_kernel", "!"},
     {"rad_vet/vet_col_lat_cut_thin", "+1"},
     // early files' names of clean_stag_fs_line
     {"rad_vet/clean_stag_fs_pcr", "=true"}, {"rad_vet/clean_stag_fs_pcr_cs", "=true"},

@@ -72,7 +72,7 @@ formal solution along each ray segment (the source linear in optical depth, upwi
 interpolated from the neighbouring cells) and the same boundary rules. Only the order of the
 sweep and the direction set follow the mesh: shell by shell on spherical-polar and
 cubed-sphere meshes, with a global set (a Gauss-Legendre product set, level-symmetric,
-geodesic or HEALPix set), and layer by layer along x1 on Cartesian meshes, with a double-Gauss set about x1 or a ring. The source
+geodesic or HEALPix set), and layer by layer along x1 on Cartesian meshes, with a double-Gauss set about x1, a ring, or the same global set. The source
 function is the state's own ($\epsilon\,aT^4 + (1-\epsilon)E$, or an absorption/scattering
 split), so the closure does not depend on $\Delta t$. Besides $\mathsf D$, the rays give the
 half-range fluxes (outgoing and incoming parts of the flux) and the rays' own flux through
