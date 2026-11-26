@@ -1744,7 +1744,7 @@ def t_p_ledger(c):
             out['%s_%s' % (t, k)] = rel(L, k)
         out[t + '_ncyc'] = len(L)
         w += vett.warnings(open(os.path.join(d, 'run.log')).read())
-    b = c.run('shell_sp.athinput', 'sp_off', {'time/nlim': n})
+    b = c.run('shell_sp.athinput', 'sp_off', {'time/nlim': n, 'rad_vet/fwb_line': 'true'})
     a = os.path.join(c.dir, 'sp')
     mx = 0.0
     for fa, fb in zip(vett.bins(a), vett.bins(b)):
@@ -1754,7 +1754,7 @@ def t_p_ledger(c):
     mx = max(mx, float(np.abs(ha[:, :len(lb)] - hb).max()) if la[:len(lb)] == lb else np.inf)
     out['hst_cols'] = int('Pr_tot' in la and 'Pr_gap' in la)
     out['bitwise'] = mx
-    lz = c.run('shell_sp.athinput', 'sp_lz', {'time/nlim': n,
+    lz = c.run('shell_sp.athinput', 'sp_lz', {'time/nlim': n, 'rad_vet/fwb_line': 'true',
                                               'hydro/p_ledger_lz': 'true'})
     lg = open(os.path.join(lz, 'run.log')).read()
     zl = [[float(v) for v in re.findall(r' ([-+0-9.e]+)(?= |$)', ' ' + s)] for s in
@@ -1773,7 +1773,8 @@ def t_p_ledger(c):
     os.makedirs(os.path.join(c.dir, 'rst'), exist_ok=True)   # (4 + 4 against 8: the lines)
     sub = copy.copy(c)
     sub.dir = os.path.join(c.dir, 'rst')
-    restart_pair(sub, 'shell_sp.athinput', n, n//2, {'hydro/p_ledger': 'true'})
+    restart_pair(sub, 'shell_sp.athinput', n, n//2, {'hydro/p_ledger': 'true',
+                                                     'rad_vet/fwb_line': 'true'})
     pl = lambda d: re.findall(r'CLEAN PLEDGER cycle (\d+) (.*)', open(os.path.join(
         sub.dir, d, 'run.log')).read())
     st = dict(pl('straight'))
