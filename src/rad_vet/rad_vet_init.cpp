@@ -20,6 +20,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -395,6 +396,12 @@ const void *RadiationVet::DevCopy(const void *p, const size_t n, const int s) {
     std::exit(EXIT_FAILURE);
   }
   if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
+  // the slot holds these bytes already (only DevCopy writes it): no copy
+  std::string &last = cln_xdev_h[s];
+  if (last.size() == n && std::memcmp(last.data(), p, n) == 0) {
+    return cln_xdev.data() + s*slot;
+  }
+  last.assign(static_cast<const char *>(p), n);
   Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
       h(static_cast<const char *>(p), n);
   auto d = Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n));

@@ -1009,6 +1009,7 @@ class RadiationVet {
   };
   std::map<int, SolveHalo> cln_halo;   // by nc
   DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (DevCopy)
+  std::array<std::string, 8> cln_xdev_h;   // their bytes last copied (DevCopy)
   // exchange object of every clean ghost fill (a fill sends only its own variables);
   // fills deferred to the next exchange (GhostDefer)
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
