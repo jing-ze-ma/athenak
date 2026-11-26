@@ -48,6 +48,7 @@
 #include "mhd/mhd.hpp"
 #include "outputs/outputs.hpp"
 #include "pgen/pgen.hpp"
+#include "utils/repro_sum.hpp"
 
 namespace {
 struct AmWbVars {
@@ -354,9 +355,8 @@ void AmWbHistory(HistoryData *pdata, Mesh *pm) {
   const bool cart = !(csm || pm->use_spherical_polar);
   const Real rlo = 1.1*pm->mesh_size.x1min, rhi = 0.9*pm->mesh_size.x1max;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  const int nmkji = pmbp->nmb_thispack*nkji;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("AmWbHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("AmWbHist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -391,6 +391,6 @@ void AmWbHistory(HistoryData *pdata, Mesh *pm) {
     hv.the_array[5] = v*ke;
     hv.the_array[6] = (r > rlo && r < rhi) ? v*ke : 0.0;
     mb_sum += hv;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  }, sum_this_mb);
   for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
 }

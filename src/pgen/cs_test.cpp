@@ -72,6 +72,7 @@
 #include "coordinates/cubed_sphere.hpp"
 #include "coordinates/grid_stretch.hpp"
 #include "pgen.hpp"
+#include "utils/repro_sum.hpp"
 
 namespace {
 
@@ -4808,11 +4809,10 @@ void CSTestHistory(HistoryData *pdata, Mesh *pm) {
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const Real d0 = cs_d0;   // the exact density of iprob=3 is uniformly d0
 
-  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("CSHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("CSHist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
@@ -4843,7 +4843,7 @@ void CSTestHistory(HistoryData *pdata, Mesh *pm) {
       }
     }
     mb_sum += hv;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  }, sum_this_mb);
 
   for (int n=0; n<pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
   return;
@@ -8109,10 +8109,10 @@ void CSIvanHist(HistoryData *pdata, Mesh *pm) {
   auto &w0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
   const CSIvanPar P = cs_iv;
   const int iprob = cs_iprob;
-  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1, nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  Real sum = 0.0;
-  Kokkos::parallel_reduce("CSIvanHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-  KOKKOS_LAMBDA(const int &idx, Real &ls) {
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  array_sum::GlobalSum sum;
+  repro::HistSums("CSIvanHist", pmbp->nmb_thispack, nkji, nx1,
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &ls) {
     const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
     const int i = idx - m*nkji - k*nji - j*nx1;
     const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
@@ -8133,7 +8133,8 @@ void CSIvanHist(HistoryData *pdata, Mesh *pm) {
     IvanExact(P, iprob, mbpanel.d_view(m), 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx),
               0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx), RadialCentroid(rl, rr),
               dn, pr, v1, v2, v3, bb);
-    ls += fabs(w0(m,IDN,k+ks,j+js,i+is) - dn)*(rr*rr*rr - rl*rl*rl)/3.0*dom/vsh;
-  }, Kokkos::Sum<Real>(sum));
-  pdata->hdata[0] = sum;
+    ls.the_array[0] += fabs(w0(m,IDN,k+ks,j+js,i+is) - dn)*(rr*rr*rr - rl*rl*rl)/3.0*dom/
+                       vsh;
+  }, sum);
+  pdata->hdata[0] = sum.the_array[0];
 }

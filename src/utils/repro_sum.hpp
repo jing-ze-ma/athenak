@@ -38,7 +38,8 @@
 #endif
 
 namespace repro {
-//! <mesh>/layout_invariant_mode: true = "block" (DEFAULT): every sum is taken
+//! <mesh>/layout_invariant_mode: true = "tile" (DEFAULT; tile_n 0: the MeshBlock is the
+//! tile, the former "block"): every sum is taken
 //! per MeshBlock in a FIXED order set by the code (independent of how many MeshBlocks a
 //! rank holds and of the launch configuration), and only the per-MeshBlock partials go
 //! into the exact accumulator below (a restart changes the rank assignment of the

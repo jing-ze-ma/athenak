@@ -158,11 +158,13 @@ Mesh::Mesh(ParameterInput *pin) :
   // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
   // from the GLOBAL cell index (<mesh>/sp_phi_global follows it unless named). Default
   // true on a fresh start and on a restart whose input lacks the key (recorded);
-  // <mesh>/layout_invariant_mode = block (default) | exact:
-  // block = every sum per MeshBlock in a fixed order, only the per-MeshBlock partials
-  // summed exactly (repro::block_mode; +~0 % cost); exact = every cell term deposited
-  // exactly (+8 % per cycle on HG). Both are layout / rank-count invariant; they differ
-  // from each other at round-off. Recorded for restarts.
+  // <mesh>/layout_invariant_mode = tile (default) | exact:
+  // tile = every sum per N x N lateral tile (<mesh>/layout_tile N) in a fixed order, only
+  // the per-tile partials summed exactly (repro::block_mode; +~0 % cost), the mg on the
+  // tiles; exact = every cell term deposited exactly (+8 % per cycle on HG). Both are
+  // rank-count invariant, tile also for every layout of whole tiles; they differ from
+  // each other at round-off. Recorded for restarts. block (older files): tile with the
+  // MeshBlock as the tile.
   // A RESTART of an SMR/AMR mesh keeps false (the sp vet_gd global geometry is
   // single-level only and would be fatal).
   if (!pin->DoesParameterExist("mesh", "layout_invariant")) {
@@ -179,23 +181,22 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   layout_invariant = pin->DoesParameterExist("mesh", "layout_invariant") &&
                      pin->GetBoolean("mesh", "layout_invariant");
+  bool lay_blk = false;   // (block: the MeshBlock is the tile, below)
   if (layout_invariant) {
-    // (default of a fresh run that names layout_tile: tile)
-    const bool ltn = !global_variable::restart_run &&
-                     pin->DoesParameterExist("mesh", "layout_tile");
-    const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode",
-                                                ltn ? "tile" : "block");
-    // tile (with <mesh>/layout_tile N): block mode with fixed N x N (x2, x3) tiles of the
-    // mesh in place of MeshBlocks (repro::tile_n; one MeshBlock along x1, checked with
-    // the MeshBlock size by rad_vet)
-    if (lim != "block" && lim != "exact" && lim != "tile") {
+    std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode", "tile");
+    if (lim == "block") {
+      lim = "tile";
+      lay_blk = true;
+      pin->SetString("mesh", "layout_invariant_mode", lim);
+      recipe::Log("<mesh>/layout_invariant_mode = block read as tile (the same sums)");
+    }
+    if (lim != "exact" && lim != "tile") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/layout_invariant_mode = '" << lim
                 << "' is not a choice (block | exact | tile)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     repro::block_mode = (lim != "exact");
-    if (lim == "tile") repro::tile_n = pin->GetInteger("mesh", "layout_tile");
     repro::hist_exact = true;
   }
   cs_seam_fc_nolimit = use_cubed_sphere &&
@@ -879,6 +880,29 @@ Mesh::Mesh(ParameterInput *pin) :
     mb_indcs.nx3 = mesh_indcs.nx3;
   }
   repro::tile_nx2 = mb_indcs.nx2;   // (layout_invariant_mode = tile: HistSums)
+  // tile: fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (repro::tile_n;
+  // one MeshBlock along x1, checked by rad_vet). <mesh>/layout_tile default on a fresh
+  // start: the square lateral MeshBlock, recorded, so a restart on another layout of
+  // whole tiles gives the same answer; without it the MeshBlock is the tile. A tile of
+  // the MeshBlock's size is the MeshBlock (tile_n 0: the same sums and preconditioner).
+  if (layout_invariant && repro::block_mode) {
+    const int b2 = mb_indcs.nx2, b3 = three_d ? mb_indcs.nx3 : b2;
+    if (lay_blk && b3 == b2) {
+      pin->SetInteger("mesh", "layout_tile", b2);
+    } else if (!global_variable::restart_run && b3 == b2) {
+      pin->GetOrAddInteger("mesh", "layout_tile", b2);
+    }
+    const int nt = (pin->DoesParameterExist("mesh", "layout_tile") && !lay_blk) ?
+                   pin->GetInteger("mesh", "layout_tile") : 0;
+    if (nt != 0 && (nt < 1 || b2 % nt != 0 || b3 % nt != 0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/layout_tile " << nt << " must divide meshblock "
+                << "nx2 and nx3 (" << b2 << ", " << b3 << "): name the new lateral "
+                << "MeshBlock size" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    repro::tile_n = (nt == b2 && nt == b3) ? 0 : nt;
+  }
 
   // error check consistency of the block and mesh
   if (mesh_indcs.nx1 % mb_indcs.nx1 != 0 ||

@@ -150,8 +150,8 @@ def t_mpi_ranks(c):
     """2 MPI ranks against 1 on the same MeshBlocks, every reduced print and the keys that
     have one on: the conservation_lz keys with floorcap_lz_spin on spherical polar (2
     blocks along phi) and the cubed sphere, and floor_pay with floor_audit_worst: the dumps
-    and hydro histories bitwise (maxdiff), no CLEAN WARNING; fcone_lz: its lines in the
-    2-rank logs.  A collective that only one rank calls hangs (the run is stopped)."""
+    and histories (hydro, user) bitwise (maxdiff), no CLEAN WARNING; fcone_lz: its lines
+    in the 2-rank logs.  A collective that only one rank calls hangs (the run is stopped)."""
     fc = dict(LZ_FC, **{'rad_vet/floorcap_rho': 100.0, 'rad_vet/floorcap_lz_spin': 'true',
                         'rad_vet/floorcap_report': 1, 'rad_vet/verbose': 2,
                         'rad_vet/update_floor_diag': 8, 'hydro/floor_audit': 1,
@@ -172,9 +172,6 @@ def t_mpi_ranks(c):
             ('pay', 'shell_sp.athinput', dict(pay, **sp))):
         a = c.run(deck, tag + '1', o, timeout=600)
         b = c.run(deck, tag + '2', o, ranks=2, timeout=600)
-        for d in (a, b):   # (user.hst: sums in the ranks' order, equal to round-off)
-            for f in glob.glob(os.path.join(d, '*.user.hst')):
-                os.remove(f)
         n, out['maxdiff_' + tag], _ = vett.compare_dirs(a, b)
         out['files'] += n
         log = open(os.path.join(b, 'run.log'), errors='replace').read()
@@ -481,6 +478,37 @@ def t_layout_tile(c):
     out.update({k + '_fofc': v for k, v in am_budget(b, 'sp').items() if k != 'dLz_gr'})
     lg = open(os.path.join(b, 'run.log')).read()
     out['fo_fofc'] = float(re.findall(r'FOFC first-order cell-stages=(\S+)', lg)[-1])
+    return out
+
+
+def t_hst_ranks(c):
+    """the history files (hydro.hst and the problem's user.hst, %24.16e) and dumps of one
+    deck on 1, 2, 4 and 8 ranks with different MeshBlock splits of whole tiles: the
+    histories byte for byte (diff_*: the number of files that differ), the dumps' values
+    (maxdiff_*).  sp: the rotating shell of layout_tile, 8 x 8 tiles, MeshBlocks 16 x 64
+    (1 rank), 16 x 32 (2), 16 x 8 (2 ranks x 4), 16 x 16 (4), 16 x 8 (8) along phi; cs: the am_wb FOFC shell (fofc_cs), 8 x 8
+    tiles, one MeshBlock per panel (1 rank) vs 2 x 2 per panel (2, 4, 8 ranks)."""
+    o = dict(LAYOUT_OFF, **{'time/nlim': 6, 'mesh/nghost': 3, 'mesh/nx2': 16,
+                            'mesh/nx3': 64, 'mesh/layout_tile': 8, 'meshblock/nx2': 16,
+                            'rad_vet/vet_gd_theta_wall': 'mirror'})
+    out = {'warnings': 0}
+    for tag, deck, o, runs in (
+            ('sp', 'shell_sp.athinput', o,
+             ((1, 64), (2, 32), (2, 8), (4, 16), (8, 8))),
+            ('cs', 'fofc_cs.athinput', {'time/nlim': 6, 'mesh/layout_tile': 8},
+             ((1, 16), (2, 8), (4, 8), (8, 8)))):
+        ds = [c.run(deck, '%s_r%d_mb%d' % (tag, r, n), dict(o, **{
+            'meshblock/nx3': n, 'meshblock/nx2': o.get('meshblock/nx2', n)}),
+            ranks=r, timeout=900) for r, n in runs]
+        fs = [os.path.basename(f) for f in vett.hsts(ds[0])]
+        out['files_' + tag] = len(fs)
+        out['diff_' + tag] = sum(not os.path.exists(os.path.join(d, f)) or
+                                 open(os.path.join(ds[0], f), 'rb').read() !=
+                                 open(os.path.join(d, f), 'rb').read()
+                                 for d in ds[1:] for f in fs)
+        out['maxdiff_' + tag] = max(vett.compare_dirs(ds[0], d)[1] for d in ds[1:])
+        out['warnings'] += sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
+                               for d in ds)
     return out
 
 
@@ -2065,6 +2093,7 @@ TESTS = [  # name, function, in --quick
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),
     ('layout_tile', t_layout_tile, True),
+    ('hst_ranks', t_hst_ranks, False),
     ('layout_cs', t_layout_cs, True),
     ('fofc_layout_cs', t_fofc_layout_cs, True),
     ('order_time', t_order_time, True),
@@ -2203,7 +2232,7 @@ def main():
                       '-D PROBLEM=star_vet)' % n)
         sel = [t for t in sel if t[0] not in
                ('star_smoke', 'star_cs_ring', 'ray_cut_slab', 'wb_star', 'mlt_time')]
-    for n in ('mpi_ranks', 'star_cs_ring', 'ray_cut_slab'):
+    for n in ('mpi_ranks', 'hst_ranks', 'star_cs_ring', 'ray_cut_slab'):
         if any(t[0] == n for t in sel) and not has_mpi(a):
             print('SKIP %-16s        needs an MPI build and an MPI launcher (--mpirun)' % n)
             sel = [t for t in sel if t[0] != n]

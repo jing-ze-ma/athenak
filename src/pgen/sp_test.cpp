@@ -102,6 +102,7 @@
 #include "outputs/outputs.hpp"
 #include "pgen.hpp"
 #include "hydro/hydro.hpp"
+#include "utils/repro_sum.hpp"
 
 namespace {
 Real sp_b0 = 1.0, sp_p0 = 1.0, sp_d0 = 1.0, sp_omega = 0.2, sp_alpha = 1.0;
@@ -868,11 +869,10 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
   const Real isvol = 1.0/sp_svol;
 
-  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("SPHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("SPHist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
@@ -944,7 +944,7 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
     }
     for (int n=5; n<NREDUCTION_VARIABLES; ++n) { hv.the_array[n] = 0.0; }
     mb_sum += hv;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  }, sum_this_mb);
   for (int n=0; n<pdata->nhist; ++n) { pdata->hdata[n] = sum_this_mb.the_array[n]; }
   return;
 }

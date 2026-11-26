@@ -128,6 +128,21 @@
    "dLz_fofc": 1e-13
   }
  },
+ "hst_ranks": {
+  "equal": {
+   "diff_sp": 0,
+   "diff_cs": 0,
+   "maxdiff_sp": 0.0,
+   "maxdiff_cs": 0.0
+  },
+  "min": {
+   "files_sp": 2,
+   "files_cs": 2
+  },
+  "max": {
+   "warnings": 0
+  }
+ },
  "layout_cs": {
   "equal": {
    "maxdiff": 0.0,

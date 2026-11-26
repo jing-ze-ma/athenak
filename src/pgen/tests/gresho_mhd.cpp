@@ -45,6 +45,7 @@
 #include "mhd/mhd.hpp"
 #include "pgen/pgen.hpp"
 #include "outputs/outputs.hpp"
+#include "utils/repro_sum.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn Real GreshoVphi(const Real r)
@@ -126,10 +127,10 @@ void GreshoPUHistory(HistoryData *pdata, Mesh *pm) {
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, nx1 = indcs.nx1, js = indcs.js, nx2 = indcs.nx2;
   const int ks = indcs.ks, nx3 = indcs.nx3;
-  const int nmkji = pmbp->nmb_thispack*nx3*nx2*nx1, nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   auto &size = pmbp->pmb->mb_size;
   array_sum::GlobalSum sum_this_mb;
-  Kokkos::parallel_reduce("GreshoPUHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("GreshoPUHist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -170,7 +171,7 @@ void GreshoPUHistory(HistoryData *pdata, Mesh *pm) {
     h.the_array[15] = vol*dp*std::cos(8.0*ph); h.the_array[16] = vol*dp*std::sin(8.0*ph);
     h.the_array[17] = vol;
     mb_sum += h;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  }, sum_this_mb);
   for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
 }
 
