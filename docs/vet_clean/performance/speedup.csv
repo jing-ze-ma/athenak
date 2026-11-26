@@ -1,0 +1,5 @@
+star,model_time_d,athenapp_wall_h,athenapp_nodes,athenapp_node_h,athenak_wall_h,athenak_node_h,wall_ratio,node_hour_ratio,source_athenapp
+bsg,57.0,504,20,10080,6.027,6.027,84,1670,"estimate: 3 weeks (21 days) on 20 CPU nodes; not in the paper (Ma, Bildsten, Jiang 2026, arXiv 2609.28656); run reference: Ma, Bildsten, Jiang 2026"
+m35mms,10.0,960,75,72000,19.886,19.886,48,3620,"Schultz, Bildsten, Jiang 2022 (arXiv 2110.13944): 3000 Skylake cores, 4 days per day of model time, not separated by star; 40 cores per node assumed"
+m35zams,10.0,960,75,72000,20.076,20.076,48,3590,"as m35mms"
+t9l62,31.04,,,1250000,21.985,21.985,,56800,"Jiang et al. 2018 (arXiv 1809.10187): 60 million CPU hours on Mira for three stars; an equal third, 16 cores per node assumed; wall time not stated"
