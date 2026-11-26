@@ -223,30 +223,55 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
                    (suq != nullptr) ? exp(lu) : -1.0, sdd);
 }
 
-// second-order foot of the transverse interpolation: PLM remap of the upwind plane with
-// van Leer slopes.  Adds a(1 - a)/2 (s_a - s_b) along x2 and x3 to the donor-cell
-// (linear) value; the part a(1 - a)/2 s_a crosses the cell's low face (fl[0] x2, fl[1]
-// x3), keeping the update in flux form.  ip(dk, dj) = I at (ka + dk, ja + dj).
+// second-order foot of the transverse interpolation: PLM remap of the upwind plane.  Each
+// corner cell (dk, dj) in {0, 1}^2 has van Leer slopes along x2 and x3, scaled together
+// so that its linear profile stays inside [min, max] of the cell and its 4 neighbours
+// (the multi-D limiter; in 2-D van Leer alone does that): the remap, the window mean of
+// the profiles, is bounded by the plane, I >= 0 by construction.  Returns the correction
+// dv to the bilinear value; dq[2*dk + dj] = a corner's profile at the centroid of its
+// part of the window minus its value (sum w dq = dv); fl[0] (x2), fl[1] (x3) = the part
+// crossing the cell's low face, keeping the update in flux form.  ip(dk, dj) = I at
+// (ka + dk, ja + dj).
 template <class IP>
 KOKKOS_INLINE_FUNCTION
-Real VetPlmFoot(const IP &ip, const Real a2, const Real a3, const bool thrd, Real fl[2]) {
+Real VetPlmFoot(const IP &ip, const Real a2, const Real a3, const bool thrd, Real fl[2],
+                Real dq[4]) {
   auto sl = [](const Real m, const Real c, const Real p) {
     const Real dl = c - m, dr = p - c;
     return (dl*dr > 0.0) ? 2.0*dl*dr/(dl + dr) : 0.0;
   };
+  Real s2[2][2] = {{0.0, 0.0}, {0.0, 0.0}}, s3[2][2] = {{0.0, 0.0}, {0.0, 0.0}};
+  for (int c = 0; c < (thrd ? 2 : 1); ++c) {
+    for (int b = 0; b < 2; ++b) {
+      const Real v = ip(c,b), w = ip(c,b-1), e = ip(c,b+1);
+      const Real s = thrd ? ip(c-1,b) : v, n = thrd ? ip(c+1,b) : v;
+      s2[c][b] = sl(w, v, e);
+      s3[c][b] = thrd ? sl(s, v, n) : 0.0;
+      const Real h = 0.5*(fabs(s2[c][b]) + fabs(s3[c][b]));
+      const Real d = fmin(v - fmin(fmin(v, w), fmin(e, fmin(s, n))),
+                          fmax(fmax(v, w), fmax(e, fmax(s, n))) - v);
+      if (h > d) {
+        s2[c][b] *= d/h;
+        s3[c][b] *= d/h;
+      }
+    }
+  }
   const Real k2 = 0.5*a2*(1.0 - a2), k3 = 0.5*a3*(1.0 - a3);
   Real dv = 0.0;
   fl[0] = 0.0;
   fl[1] = 0.0;
   for (int b = 0; b < (thrd ? 2 : 1); ++b) {
     const Real wr = (b == 0) ? 1.0 - a3 : a3, wc = (b == 0) ? 1.0 - a2 : a2;
-    const Real sa = sl(ip(b,-1), ip(b,0), ip(b,1));
-    dv += wr*k2*(sa - sl(ip(b,0), ip(b,1), ip(b,2)));
-    fl[0] += wr*k2*sa;
+    dv += wr*k2*(s2[b][0] - s2[b][1]);
+    fl[0] += wr*k2*s2[b][0];
     if (!thrd) continue;
-    const Real ta = sl(ip(-1,b), ip(0,b), ip(1,b));
-    dv += wc*k3*(ta - sl(ip(0,b), ip(1,b), ip(2,b)));
-    fl[1] += wc*k3*ta;
+    dv += wc*k3*(s3[0][b] - s3[1][b]);
+    fl[1] += wc*k3*s3[0][b];
+  }
+  for (int q = 0; q < 4; ++q) {
+    const int c = q/2, b = q%2;
+    dq[q] = s2[c][b]*((b == 0) ? 0.5*a2 : 0.5*(a2 - 1.0))
+            + s3[c][b]*((c == 0) ? 0.5*a3 : 0.5*(a3 - 1.0));
   }
   return dv;
 }

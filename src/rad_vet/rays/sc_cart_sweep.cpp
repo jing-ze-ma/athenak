@@ -329,6 +329,7 @@ void RadiationVet::ScCartSweep() {
   auto vc_ = vet_cell;
   auto ip_ = vet_ipl;
   auto ang_ = vet_ang;
+  auto cnt_ = vray_cnt;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const Real cl = c_light;
   const Real ar = arad;
@@ -547,11 +548,11 @@ void RadiationVet::ScCartSweep() {
           }
           return ip_(m,pr,rb,thrd ? ks + VetWrap(qk, nx3) : k,js + VetWrap(qj, nx2));
         };
-        Real dv = 0.0, fl[2] = {0.0, 0.0};
+        Real dv = 0.0, fl[2] = {0.0, 0.0}, dq[4] = {0.0, 0.0, 0.0, 0.0};
         if (plm_) {
           dv = VetPlmFoot([&](const int dk, const int dj) {
             return ipq(o3 + dk, o2 + dj);
-          }, a2, a3, thrd, fl);
+          }, a2, a3, thrd, fl, dq);
         }
         if (f2s_) {
           // Phi: the upwind plane's intensity carried across the low x2 (x3) face by the
@@ -621,8 +622,11 @@ void RadiationVet::ScCartSweep() {
         if (vim != 0) {   // vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
           // a corner outside a vacuum face carries I = 0 and the edge cell's chi and S
-          const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
-                              gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
+          // (each its own part of the PLM foot, dq: >= 0)
+          const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dq[0],
+                              gab*ip_(m,pr,rb,ka,jb) + dq[1],
+                              gba*ip_(m,pr,rb,kb,ja) + dq[2],
+                              gbb*ip_(m,pr,rb,kb,jb) + dq[3]};
           const Real cq[4] = {vc_(m,VETRAY_CHX,ka,ja,iup), vc_(m,VETRAY_CHX,ka,jb,iup),
                               vc_(m,VETRAY_CHX,kb,ja,iup), vc_(m,VETRAY_CHX,kb,jb,iup)};
           const Real sq[4] = {vc_(m,VETRAY_SRC,ka,ja,iup), vc_(m,VETRAY_SRC,ka,jb,iup),
@@ -647,6 +651,7 @@ void RadiationVet::ScCartSweep() {
         // face crossing of the single segment: a face flux
         if (f2s_ && !mimg) g[3] = wr*m1*fmax(ifc, 0.0);
       }
+      if (iv < 0.0) Kokkos::atomic_add(&cnt_(0), 1.0);   // (none by construction)
       iv = fmax(iv, 0.0);
       ip_(m,pw,r,k,j) = iv;
       if (f2s_ && !x1per && i == (up ? ie : is)) {

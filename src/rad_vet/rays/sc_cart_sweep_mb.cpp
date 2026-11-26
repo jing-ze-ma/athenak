@@ -55,6 +55,7 @@ void RadiationVet::ScCartSweepMB() {
   auto ip_ = st.ipl;
   auto lx_ = st.lx1;
   auto ang_ = vet_ang;
+  auto cnt_ = vray_cnt;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const Real cl = c_light;
   const Real efl = e_floor;
@@ -190,11 +191,11 @@ void RadiationVet::ScCartSweepMB() {
             ka = kc + o3;
             kb = ka + 1;
           }
-          Real dv = 0.0, fl[2] = {0.0, 0.0};
+          Real dv = 0.0, fl[2] = {0.0, 0.0}, dq[4] = {0.0, 0.0, 0.0, 0.0};
           if (plm_) {
             dv = VetPlmFoot([&](const int dk, const int dj) {
               return ip_(m,pr,r,ka + dk,ja + dj);
-            }, a2, a3, thrd, fl);
+            }, a2, a3, thrd, fl, dq);
           }
           if (f2s_) {
             // upwind plane's intensity carried across the low x2 (x3) face by the foot
@@ -241,8 +242,8 @@ void RadiationVet::ScCartSweepMB() {
           const Real sdd = juu ? cs_(m,up ? (li + 2) : (li - 2),1,kc,jc) : -1.0;
           if (vim != 0) {   // vet_interp: log | corner
             const Real wq[4] = {waa, wab, wba, wbb};
-            const Real iq[4] = {ip_(m,pr,r,ka,ja) + dv, ip_(m,pr,r,ka,jb) + dv,
-                                ip_(m,pr,r,kb,ja) + dv, ip_(m,pr,r,kb,jb) + dv};
+            const Real iq[4] = {ip_(m,pr,r,ka,ja) + dq[0], ip_(m,pr,r,ka,jb) + dq[1],
+                                ip_(m,pr,r,kb,ja) + dq[2], ip_(m,pr,r,kb,jb) + dq[3]};
             const Real cq[4] = {cs_(m,li,0,ka,ja), cs_(m,li,0,ka,jb), cs_(m,li,0,kb,ja),
                                 cs_(m,li,0,kb,jb)};
             const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
@@ -266,6 +267,7 @@ void RadiationVet::ScCartSweepMB() {
           }
           if (f2s_) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
         }
+        if (iv < 0.0) Kokkos::atomic_add(&cnt_(0), 1.0);   // (none by construction)
         iv = fmax(iv, 0.0);
         ip_(m,pw,r,kc,jc) = iv;
         if (f2s_ && !x1per && l == nx1g - 1) {

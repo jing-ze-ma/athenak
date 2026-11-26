@@ -278,6 +278,15 @@ void RadiationVet::ClosureFromRays() {
     std::printf("CLEAN WARNING cycle %d: %.0f cells with a ray J not finite "
                 "(isotropic)\n", pmy_pack->pmesh->ncycle, nn);
   }
+  // Cartesian sweep: ray intensities < 0 set to 0 (none by construction: the PLM foot is
+  // bounded, the segment weights >= 0)
+  const Real nc = GlobalReduce(Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                                   vray_cnt)(0), false);
+  if (nc > 0.0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d: %.0f ray intensities < 0 set to 0\n",
+                pmy_pack->pmesh->ncycle, nc);
+  }
+  Kokkos::deep_copy(vray_cnt, 0.0);
 }
 
 }  // namespace radvet
