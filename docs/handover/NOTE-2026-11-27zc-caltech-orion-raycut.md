@@ -38,3 +38,12 @@
 - B against A (means of the two pairs): cpu time +0.9 % (17.91 -> 18.08 s), stage-step wall +1.1 % (14.32 -> 14.48 s), fenced sweeps +8.5 % (1.612 -> 1.753 s), Krylov sum +1.8 % (677 -> 689 per 20 cycles), cut shell 131 -> 118 (13 shells deeper). A prints no ray-cut line because its cut stays at the stored 131; its log has the NOTE "clean_ray_cut_r = 0.01 ... is the old behaviour". Each pair repeats to 0.5 %. 0 CLEAN WARNING, 0 FATAL in all four arms.
 - The restarts still wrote the four t-start dumps (hydro_w/vet 00115, vet_vet/vet_face 00030) per arm despite dt 1e30; they were removed from rcut_1127 only (nothing under prod_*).
 - Verdict: CUDA build OK, gate 3.720e-11 PASS, quick 25/25 identical to rel6, cost of 0.003 on the bsg restart about +1 % per cycle (orion CPU: +1.0 %).
+
+## Wall per arm (your 27zd; no rerun needed: the logs have it, also in the corrected section above, 1446b66f8)
+| arm | ray_cut_r | cpu time used [s] | zone-cycles/cpu_second | per cycle [s] | clean stage steps [s] | sacct step elapsed [s] |
+|---|---|---|---|---|---|---|
+| A1 | 0.01 | 17.9533 | 1.86898e+07 | 0.898 | 14.3238 | 38 |
+| B1 | 0.003 | 18.1048 | 1.85334e+07 | 0.905 | 14.5 | 44 |
+| A2 | 0.01 | 17.8729 | 1.87739e+07 | 0.894 | 14.3189 | 38 |
+| B2 | 0.003 | 18.0596 | 1.85799e+07 | 0.903 | 14.4683 | 38 |
+- cpu time = the whole loop over 20 cycles (incl. the first-step dumps); sacct elapsed adds the 22 GB restart read (B1's 44 s is the read; B2 38 s). Change per cycle B vs A: +0.9 % (cpu time), +1.1 % (stage-step wall).
