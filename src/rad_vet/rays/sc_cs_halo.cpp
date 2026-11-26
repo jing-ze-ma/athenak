@@ -630,6 +630,7 @@ void RadiationVet::ScCsHalo(V &a, const int nv, const int i0, const int i1,
   }
 #if MPI_PARALLEL_ENABLED
   if (vgd_hmpi) {
+    ScGraphGuard();
     const int nent = std::max(std::max(vgd_csnsnd, vgd_csnrcv), 1);
     // full-sphere global band: device buffers (CUDA-aware MPI); cubed sphere: pinned host
     const int cap = static_cast<int>((dp ? vgd_sbuf.extent(0) : vgd_cssb.extent(0))/nent);

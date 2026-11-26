@@ -30,6 +30,7 @@
 #include "utils/time_table.hpp"
 #include "rad_vet/rad_vet_defs.hpp"
 #include "rad_vet/rays/sc_band.hpp"
+#include "rad_vet/rays/sc_graph.hpp"
 
 // forward declarations
 class Driver;
@@ -1721,6 +1722,14 @@ class RadiationVet {
 #if defined(KOKKOS_ENABLE_CUDA)
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // CUDA gx-false closures
 #endif
+  // the shell loop of each pass as one GPU graph (rays/sc_graph.hpp); the reason a
+  // loop runs launch by launch, logged once each (ScSweep)
+  ScGraph vgd_graph[2];
+  int vgd_graph_log = 0;
+  int ScGraphStart(const int pass, std::vector<int64_t> &gk);
+  void ScGraphHost(const int pass, const int mode, const bool after);
+  bool ScGraphCap() const {return vgd_graph[0].Capturing() || vgd_graph[1].Capturing();}
+  void ScGraphGuard() const;   // fatal inside a capture (host-synchronised exchange)
   int vgd_scut = 0;            // vray_icut the running sweep uses (sync: = vray_icut)
   DevExeSpace vgd_cur;         // instance the sweep/halo use
 #if MPI_PARALLEL_ENABLED

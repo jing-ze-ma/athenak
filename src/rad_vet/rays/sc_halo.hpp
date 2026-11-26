@@ -58,6 +58,11 @@ struct ScSt4 {
 // partner slot, [NS, 2 NS) acks; a spin gives up after ~20 s and raises the error flag
 constexpr int VGD_IPC_NS = 32;
 
+// slot 2 NS of my flag buffer: the number of my last exchange, written by its wait
+// kernel; the kernels of the next exchange read it (seq + 1), so a replayed graph runs
+// with the current numbers (rays/sc_graph.hpp)
+constexpr int VGD_IPC_SEQ = 2*VGD_IPC_NS;
+
 constexpr long long VGD_IPC_SPIN = 40000000000LL;
 
 // HIP: wall_clock64() runs at 100 MHz on gfx942: 2e9 ticks = 20 s

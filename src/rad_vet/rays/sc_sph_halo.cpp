@@ -125,6 +125,7 @@ void RadiationVet::ScHalo(V &a, const int nv, const int i0, const int i1, const 
   }  // !hcomp
 #if MPI_PARALLEL_ENABLED
   if (mpi && !hcomp) {
+    ScGraphGuard();
     vgd_cur.fence();
     Kokkos::Timer tq;
     std::vector<MPI_Request> req;
@@ -634,9 +635,11 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
     // parity, gather my values into their receive buffers, set their arrival flags,
     // wait for mine; all on the sweep stream (bitwise the MPI path)
     if (xe && vgd_ipc_state == 1 && static_cast<int>(X.dsto.size()) == np) {
+      // the number of this exchange: (device) the last one's + 1 (VGD_IPC_SEQ); the
+      // host count follows it
       const long long seq = ++vgd_ipc_seq;
-      const long long par = seq & 1;
       long long *sig = vgd_ipc_sig;
+      long long *dsq = vgd_ipc_sig + VGD_IPC_SEQ;
       int *err = vgd_ipc_err;
       auto psig = vgd_ipc_psig.d_view;
       auto pslot = vgd_ipc_pslot.d_view;
@@ -659,9 +662,8 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
           vgd_hlp.cnt = Kokkos::View<int, DevMemSpace>("vet_vgd_ipc_cnt");
         }
         auto cnt_ = vgd_hlp.cnt;
-        long long *sig = vgd_ipc_sig;
-        int *err = vgd_ipc_err;
-        const Real *rb_ = vgd_ipc_rbuf + par*vgd_ipc_half;
+        const Real *rb0 = vgd_ipc_rbuf;
+        const long long hf = vgd_ipc_half;
         const int ns_ = X.ns, nr = X.nr, nw = X.nw;
         auto dl_ = X.dl;
         auto sr_ = X.sr;
@@ -677,6 +679,10 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
             Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA(const TeamMember_t &tm) {
           const int c0 = tm.league_rank()*kT + tm.team_rank(), dc = tm.league_size()*kT;
+          // every team reads the number before its count below; the last team writes
+          // it after all counts
+          const long long sq = *dsq + 1, par = sq & 1;
+          const Real *rb_ = rb0 + par*hf;
           for (int c = c0; c < ns_; c += dc) {
             int p = 0;
             while (p + 1 < np_ && spi.v[p+1] <= c) {++p;}
@@ -696,11 +702,13 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
 #endif
           tm.team_barrier();
           if (tm.team_rank() == 0) {
+            Kokkos::memory_fence();
             if (Kokkos::atomic_fetch_add(&cnt_(), 1) == tm.league_size() - 1) {
               cnt_() = 0;
-              ScIpcSetN(psig.data(), pslot.data(), np_, seq);
+              *dsq = sq;
+              ScIpcSetN(psig.data(), pslot.data(), np_, sq);
             }
-            ScIpcWaitN(sig, np_, seq, err);
+            ScIpcWaitN(sig, np_, sq, err);
           }
           tm.team_barrier();
           for (int c = c0; c < nr + nw; c += dc) {
@@ -731,6 +739,7 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
       if (X.ns > 0) {
         Kokkos::parallel_for("vet_vgd_ipc_pack", ScLight(vgd_cur, 0, X.ns),
         KOKKOS_LAMBDA(const int c) {
+          const long long par = (*dsq + 1) & 1;
           int p = 0;
           while (p + 1 < np_ && spi.v[p+1] <= c) {++p;}
           int ad = sl_(c);
@@ -751,8 +760,10 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
       if (!vgd_hlp.done) {
       Kokkos::parallel_for("vet_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
       KOKKOS_LAMBDA(const int) {
-        ScIpcSetN(psig.data(), pslot.data(), np_, seq);
-        ScIpcWaitN(sig, np_, seq, err);
+        const long long sq = *dsq + 1;
+        ScIpcSetN(psig.data(), pslot.data(), np_, sq);
+        ScIpcWaitN(sig, np_, sq, err);
+        *dsq = sq;
       });
       }
       vgd_hlp.on = true;
@@ -768,6 +779,7 @@ bool RadiationVet::ScHlBegin(V &a, const int nv, const int i0, const int ws) {
       return true;
     }
 #endif
+    ScGraphGuard();
     if (X.ns > 0) {
       Kokkos::parallel_for("vet_vgd_hl_pack", ScLight(vgd_cur, 0, X.ns),
       KOKKOS_LAMBDA(const int c) {
@@ -861,13 +873,16 @@ void RadiationVet::ScHlEnd() {
   auto &tq = vgd_hlp.tq;
   auto *gwa = vgd_hlp.gwa;
   const int np = static_cast<int>(vgd_prk.size());
+  const long long *dsq = nullptr;   // IPC: the exchange number (parity half)
+  long long hf = 0;
   const ScHlEntry &X = vgd_hlp.xe ? vgd_hxe[vgd_hlp.ex] : vgd_hle[vgd_hlp.ex];
   const std::vector<int> &sp = X.sp, &rp_ = X.rp;
   if (vgd_hlp.ipc) {
-    // vet_gd_halo_ipc: the values are in my IPC buffer of this parity (k2 waited for
-    // them); the scatter reads it in place of crb
-    const long long par = vgd_hlp.seq & 1;
-    crb_ = DvceArray1D<Real>(vgd_ipc_rbuf + par*vgd_ipc_half, vgd_ipc_cs);
+    // vet_gd_halo_ipc: the values are in my IPC buffer of this exchange's parity (k2
+    // waited for them and wrote the number); the scatter reads it in place of crb
+    dsq = vgd_ipc_sig + VGD_IPC_SEQ;
+    crb_ = DvceArray1D<Real>(vgd_ipc_rbuf, 2*vgd_ipc_half);
+    hf = vgd_ipc_half;
     vgd_nexch += 1.0;
     for (int p = 0; p < np; ++p) {
       vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
@@ -897,6 +912,7 @@ void RadiationVet::ScHlEnd() {
     Kokkos::parallel_for("vet_vgd_hl_scatter",
                          ScLight(vgd_cur, 0, nr + nw),
     KOKKOS_LAMBDA(const int c) {
+      const Real *cb = crb_.data() + ((dsq != nullptr) ? ((*dsq) & 1)*hf : 0);
       int ad = (c < nr) ? dl_(c) : dw_(c - nr);
       const int jb = ad % c2_;
       ad /= c2_;
@@ -908,14 +924,14 @@ void RadiationVet::ScHlEnd() {
         // exact lists: sr = -1 is a read ghost the masks do not send: 0, as the dense
         // path
         const int s = sr_(c);
-        a_(m,v,kb,jb,i) = (s >= 0) ? crb_(s) : 0.0;
+        a_(m,v,kb,jb,i) = (s >= 0) ? cb[s] : 0.0;
         return;
       }
       const int cw = c - nr;
       Real val = 0.0;
       for (int u = 0; u < 3; ++u) {
         const int s = sw_(3*cw + u);
-        val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s) : 0.0);
+        val += w3_(m,kb,jb,v,u)*((s >= 0) ? cb[s] : 0.0);
       }
       a_(m,v,kb,jb,i) = val;
     });
@@ -1000,6 +1016,7 @@ bool RadiationVet::ScHaloCompact(V &a, const int nv, const int i0, const int ws)
     return true;
   }
   vgd_hlp.now = false;
+  ScGraphGuard();
   // ---- the dense path ----
   // the slot holding this shell's mask (prepared by the previous exchange), else now
   auto tagged = [&](const int sl) {

@@ -823,16 +823,16 @@ void RadiationVet::ScIpcInit(const std::vector<int> &prk, size_t cs, size_t half
         != VETG(Success)) {ok = 0;}
 #if defined(KOKKOS_ENABLE_HIP)
     if (ok && hipExtMallocWithFlags(reinterpret_cast<void **>(&vgd_ipc_sig),
-                                    2*VGD_IPC_NS*sizeof(long long),
+                                    (2*VGD_IPC_NS + 1)*sizeof(long long),
                                     hipDeviceMallocUncached) != hipSuccess) {ok = 0;}
 #else
     if (ok && cudaMalloc(reinterpret_cast<void **>(&vgd_ipc_sig),
-                         2*VGD_IPC_NS*sizeof(long long)) != cudaSuccess) {ok = 0;}
+                         (2*VGD_IPC_NS + 1)*sizeof(long long)) != cudaSuccess) {ok = 0;}
 #endif
     if (ok && VETG(Malloc)(reinterpret_cast<void **>(&vgd_ipc_err), sizeof(int))
         != VETG(Success)) {ok = 0;}
     if (ok) {
-      (void)VETG(Memset)(vgd_ipc_sig, 0, 2*VGD_IPC_NS*sizeof(long long));
+      (void)VETG(Memset)(vgd_ipc_sig, 0, (2*VGD_IPC_NS + 1)*sizeof(long long));
       (void)VETG(Memset)(vgd_ipc_err, 0, sizeof(int));
       (void)VETG(Memset)(vgd_ipc_rbuf, 0, 2*vgd_ipc_half*sizeof(Real));
       (void)VETG(DeviceSynchronize)();

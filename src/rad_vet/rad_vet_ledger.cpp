@@ -442,6 +442,9 @@ void RadiationVet::VetRayReport() {
             << "), tables (rotation) " << vgd_ttab
             << "; in-solve rebuilds " << vgd_nrb << " ("
             << vgd_trb << " s)" << std::endl;
+  std::cout << "<rad_vet> vet_gd graph (rank 0): shell loops captured "
+            << vgd_graph[0].ncapture_ + vgd_graph[1].ncapture_ << ", replayed "
+            << vgd_graph[0].nreplay_ + vgd_graph[1].nreplay_ << std::endl;
   std::cout << "<rad_vet> vet_gd halo (rank 0): exchanges " << vgd_nexch
             << ", bytes sent "
             << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)

@@ -539,8 +539,9 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
   // mine, unpack: stream-ordered, no host wait, no MPI; bitwise the MPI result.
   // Parity buffers: a partner's flag of exchange s follows its unpack of s - 1.
   if (vgd_raw && !cb.empty() && vgd_ipc_state == 1 && lean) {
+    // the number of this exchange: (device) the last one's + 1 (VGD_IPC_SEQ)
     ++vgd_ipc_seq;
-    const long long seq = vgd_ipc_seq, par = seq & 1;
+    long long *dsq = vgd_ipc_sig + VGD_IPC_SEQ;
     const int np_ = np;
     auto pslot = vgd_ipc_pslot.d_view;
     ScIpcIdx b0{}, b1{};
@@ -555,6 +556,7 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
     auto ls_ = cf[0];
     Kokkos::parallel_for("vet_vgdgb_ipc_pack", lw(std::max(cb[4*np], 1)),
     KOKKOS_LAMBDA(const int o) {
+      const long long par = (*dsq + 1) & 1;
       int p = 0;
       while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
       if (p == np_) {return;}
@@ -563,7 +565,7 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
           a_(S_(e,0),ls_(o) - e*nv,S_(e,1),S_(e,2),i);
     });
     Kokkos::parallel_for("vet_vgdgb_ipc_set", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
-    KOKKOS_LAMBDA(const int) {ScIpcSetN(psig.data(), pslot.data(), np_, seq);});
+    KOKKOS_LAMBDA(const int) {ScIpcSetN(psig.data(), pslot.data(), np_, *dsq + 1);});
     for (int p = 0; p < np; ++p) {
       vgd_nbyte += static_cast<Real>(b1.v[p] - b0.v[p])*sizeof(Real);
       vgd_csvsent += static_cast<double>(b1.v[p] - b0.v[p]);
@@ -574,9 +576,14 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
     long long *sig = vgd_ipc_sig;
     int *err = vgd_ipc_err;
     Kokkos::parallel_for("vet_vgdgb_ipc_wait", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
-    KOKKOS_LAMBDA(const int) {ScIpcWaitN(sig, np_, seq, err);});
+    KOKKOS_LAMBDA(const int) {
+      const long long sq = *dsq + 1;
+      ScIpcWaitN(sig, np_, sq, err);
+      *dsq = sq;
+    });
     vgd_nexch += 1.0;
-    const Real *rb = vgd_ipc_rbuf + par*vgd_ipc_half;
+    const Real *rb0 = vgd_ipc_rbuf;
+    const long long hf = vgd_ipc_half;
     const size_t cs = vgd_ipc_cs;
     auto lr_ = cf[1];
     Kokkos::parallel_for("vet_vgdgb_ipc_unpack", lw(std::max(cb[4*np + 1], 1)),
@@ -585,11 +592,13 @@ bool RadiationVet::ScGbHaloC(V &a, const int i, const int ws) {
       while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
       if (p == np_) {return;}
       const int e = lr_(o)/nv;
+      const Real *rb = rb0 + ((*dsq) & 1)*hf;
       a_(R_(e,0),lr_(o) - e*nv,R_(e,1),R_(e,2),i) = rb[p*cs + o - b0.v[p]];
     });
     return false;
   }
 #endif
+  ScGraphGuard();
   // (4) compact pack (my kept values in list order)
   auto sb_ = vgd_sbuf;
   auto rb_ = vgd_rbuf;
@@ -758,7 +767,10 @@ bool RadiationVet::ScGbHaloX(const int i, const int ws) {
     long long *sig = vgd_ipc_sig;
     int *err = vgd_ipc_err;
     Kokkos::parallel_for("vet_vgdgb_ipc_wait", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
-    KOKKOS_LAMBDA(const int) {ScIpcWaitN(sig, npk, seq, err);});
+    KOKKOS_LAMBDA(const int) {
+      ScIpcWaitN(sig, npk, seq, err);
+      sig[VGD_IPC_SEQ] = seq;   // the exchange number (graphs read it)
+    });
     for (int p = 0; p < np; ++p) {
       vgd_nbyte += static_cast<Real>(sm.v[p+1] - sm.v[p])*sizeof(Real);
       vgd_csvsent += static_cast<double>(sm.v[p+1] - sm.v[p]);

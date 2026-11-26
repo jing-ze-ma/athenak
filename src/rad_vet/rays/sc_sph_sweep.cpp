@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <iostream>
 #include <type_traits>
 #include <vector>
 
@@ -608,6 +610,28 @@ void RadiationVet::ScSweep() {
       return true;
     };
     const bool hxm = vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0);
+    // vet_gd graph (rays/sc_graph.hpp): the shell loop of this pass as one GPU graph,
+    // replayed while its key (every launch input of the loop) is unchanged; the closures
+    // above are refreshed in device memory outside it (ScGraphStart)
+    std::vector<int64_t> gk;
+    {
+      auto ad = [](const void *p) {return static_cast<int64_t>(
+                                       reinterpret_cast<intptr_t>(p));};
+      gk.insert(gk.end(), {pass, thm, n1, lcut, is, n, nkj, nj, ks, js, vgd_gband,
+                           vgd_raw, vgd_shlv[pass][0], vgd_shlv[pass][1],
+                           ad(vgd_shl[pass].data()), ad(bdp), ad(bmp), ad(vgd_i.d.data()),
+                           ad(vgd_i.off.data()), ad(vgd_i.wi.data()),
+                           ad(vgd_i.sb.data()), ad(vgd_csloc.data()), vgd_csnloc});
+#if defined(KOKKOS_ENABLE_CUDA)
+      gk.insert(gk.end(), {ad(bgp), ad(bgq)});
+#endif
+      gk.insert(gk.end(), vgd_gdnl.begin(), vgd_gdnl.end());
+      gk.insert(gk.end(), vgd_wsi.begin(), vgd_wsi.end());
+      gk.insert(gk.end(), vgd_wso.begin(), vgd_wso.end());
+    }
+    const int gmode = ScGraphStart(pass, gk);
+    ScGraphHost(pass, gmode, false);
+    if (gmode != 2) {   // the loop (not re-indented)
     // several MeshBlocks along x1: levels in the pass's order, each from the boundary
     // shell handed on (wall maps couple all directions: no wavefront)
     const int nst = vgd_nb1;
@@ -720,6 +744,7 @@ void RadiationVet::ScSweep() {
       Kokkos::Timer th;
       vgd_hinw = inw;
       if (hxm && hx_mark(i, l, wsx)) {
+        ScGraphGuard();
         // vet_gd_halo_exact = 2: lists from the marks alone, before the exchange
         ScHxBuild2(pass*(indcs.nx1 + 2*indcs.ng) + i, i, wsx);
       }
@@ -781,8 +806,128 @@ void RadiationVet::ScSweep() {
       }
       ScRingFlush();
     }
+    if (gmode == 1) {
+      vgd_graph[pass].End(vgd_cur);
+      ScGraphHost(pass, gmode, true);
+    }
+    }  // gmode != 2
   }
   ScRingSweepEnd();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationVet::ScGraphStart
+//! \brief vet_gd graph: mode of a pass's shell loop (ScGraph::Start: 2 replayed, 1
+//! capture, 0 launch by launch). gk holds the loop's own launch inputs; added here those
+//! of its exchanges and band ring. Only a loop whose exchanges all run on the GPU (none,
+//! or the IPC exchange of a ready list) is captured; another reason is logged once.
+
+int RadiationVet::ScGraphStart(const int pass, std::vector<int64_t> &gk) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1c = indcs.nx1 + 2*indcs.ng, np = static_cast<int>(vgd_prk.size());
+  const bool ipc = vgd_hmpi && vgd_ipc_state == 1 &&
+                   (vgd_raw ? vgd_gbc : (vgd_hx_on && vgd_hcomp > 0 && !vgd_gband));
+  const int why = !VET_GRAPH_ON ? 5 : Kokkos::Tools::profileLibraryLoaded() ? 1 :
+                  (vgd_hmpi && !ipc) ? 2 : vgd_xff_now ? 3 : (vgd_nb1 > 1) ? 4 : 0;
+  if (global_variable::my_rank == 0 && !(vgd_graph_log & (1 << why))) {
+    vgd_graph_log |= (1 << why);
+    const char *txt[6] = {"captured as one GPU graph per pass (replayed while its "
+                          "launch inputs are unchanged)",
+                          "launch by launch: a Kokkos tool fences every kernel",
+                          "launch by launch: MPI halo (host wait per shell)",
+                          "launch by launch: the fused two-set sweep",
+                          "launch by launch: several MeshBlocks along x1",
+                          "launch by launch: no CUDA / HIP"};
+    std::cout << "<rad_vet> vet_gd graph: shell loop " << txt[why] << std::endl;
+  }
+  if (why != 0) {return 0;}
+  auto ad = [](const void *p) {return static_cast<int64_t>(
+                                   reinterpret_cast<intptr_t>(p));};
+  if (vgd_hmpi) {
+    // the IPC exchanges (rays/sc_sph_halo.cpp, sc_sph_globalband.cpp) and band ring
+    gk.insert(gk.end(), {np, vgd_ring, ad(vgd_ipc_rbuf), ad(vgd_ipc_sig),
+                         static_cast<int64_t>(vgd_ipc_half),
+                         static_cast<int64_t>(vgd_ipc_cs), ad(vgd_ipc_prb.d_view.data()),
+                         ad(vgd_ipc_psig.d_view.data()), ad(vgd_ipc_pslot.d_view.data()),
+                         ad(vgd_ipc_phalf.d_view.data()), ad(vgd_ipc_pcs.d_view.data()),
+                         ad(vgd_w3.data()), ad(vgd_hlp.cnt.data()), ad(vgd_edl.data()),
+                         ad(vgd_edn.data()), ad(vgd_rg_store.data()),
+                         ad(vgd_rg_dsoff.data()), ad(vgd_i.offc.data()), vgd_rg_k});
+    gk.insert(gk.end(), vgd_rg_wfull.begin(), vgd_rg_wfull.end());
+    const int c2 = indcs.nx2 + 2*vgd_w, c3 = indcs.nx3 + 2*vgd_w;
+    if (static_cast<int64_t>(pmy_pack->nmb_thispack)*vgd_n*c3*c2 >= INT32_MAX) {return 0;}
+    // every swept shell of both passes (the ring restores the inward pass's records)
+    for (int p = 0; p < 2; ++p) {
+      for (int i = indcs.is + vgd_scut; i <= indcs.ie; ++i) {
+        const int ws = (p == 0) ? vgd_wsi[i] : vgd_wso[i];
+        if (vgd_raw) {
+          // the kept lists of ScGbHaloC, made for this cut (else it remakes them)
+          const int key = ScRawKey(i, p == 0, ws);
+          auto c = vgd_gbcb.find(key);
+          if (c == vgd_gbcb.end() || c->second.empty()) {return 0;}
+          const int cut = c->second.back();
+          const int lc = indcs.is + cut, lv = indcs.is + vgd_scut;
+          if ((i > lc) - (i < lc) != (i > lv) - (i < lv)) {return 0;}
+          gk.insert(gk.end(), c->second.begin(), c->second.end());
+          gk.push_back(ad(vgd_gbcf[key][0].data()));
+          gk.push_back(ad(vgd_gbcf[key][1].data()));
+          if (vgd_ring && p == 0) {
+            auto r = vgd_gbrec.find(key);
+            if (r == vgd_gbrec.end()) {return 0;}
+            gk.insert(gk.end(), {ad(r->second.data()), r->second.extent_int(0)});
+          }
+          continue;
+        }
+        // the exact lists (ScHlBegin's IPC branch)
+        const int e = p*n1c + i;
+        if (!ScHxKey(e, ws)) {return 0;}
+        const ScHlEntry &X = vgd_hxe[e];
+        if (!X.exact || static_cast<int>(X.dsto.size()) != np) {return 0;}
+        gk.insert(gk.end(), {X.gen, X.ns, X.nr, X.nw, ad(X.sl.data()), ad(X.dl.data()),
+                             ad(X.sr.data()), ad(X.dw.data()), ad(X.sw.data())});
+        gk.insert(gk.end(), X.sp.begin(), X.sp.end());
+        gk.insert(gk.end(), X.dsto.begin(), X.dsto.end());
+      }
+    }
+  }
+  return vgd_graph[pass].Start(gk, vgd_cur);
+}
+
+void RadiationVet::ScGraphGuard() const {
+  if (ScGraphCap()) {
+    ScFatal("vet_gd graph: a host-synchronised step (MPI, list build) inside a captured "
+            "loop");
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScGraphHost
+//! \brief vet_gd graph: host counters of a pass's loop. Captured (mode 1): their
+//! increments kept with the key (before / after); replayed (mode 2): added.
+
+void RadiationVet::ScGraphHost(const int pass, const int mode, const bool after) {
+  if (mode == 0) {return;}
+  std::vector<double> &h = vgd_graph[pass].Host();
+  const std::vector<double> now = {static_cast<double>(vgd_ipc_seq), vgd_ipc_n,
+                                   vgd_nexch, vgd_nbyte, vgd_hl_nuse, vgd_csvsent,
+                                   vgd_csvdense, vgd_rg_ndense, vgd_hl_ndense};
+  if (mode == 1) {
+    if (!after) {
+      h = now;
+    } else {
+      for (size_t q = 0; q < now.size(); ++q) {h[q] = now[q] - h[q];}
+    }
+    return;
+  }
+  vgd_ipc_seq += static_cast<int64_t>(h[0]);
+  vgd_ipc_n += h[1];
+  vgd_nexch += h[2];
+  vgd_nbyte += h[3];
+  vgd_hl_nuse += h[4];
+  vgd_csvsent += h[5];
+  vgd_csvdense += h[6];
+  vgd_rg_ndense += h[7];
+  vgd_hl_ndense += h[8];
 }
 
 }  // namespace radvet

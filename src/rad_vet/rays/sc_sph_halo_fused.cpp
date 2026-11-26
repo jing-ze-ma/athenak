@@ -190,6 +190,7 @@ bool RadiationVet::ScHlXff(const int i, const int ws) {
       if (tm.team_rank() == 0) {
         if (Kokkos::atomic_fetch_add(&cnt_(), 1) == tm.league_size() - 1) {
           cnt_() = 0;
+          sig[VGD_IPC_SEQ] = seq;   // the exchange number (graphs read it)
           ScIpcSetN(psig.data(), pslot.data(), npk, seq);
         }
         ScIpcWaitN(sig, npk, seq, err);
