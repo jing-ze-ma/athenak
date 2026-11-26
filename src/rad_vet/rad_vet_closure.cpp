@@ -567,6 +567,7 @@ void RadiationVet::TraceRays() {
 //! hardly light does not count as much as a beam; the deeper layers hold no radiation
 
 void RadiationVet::ClosureFill() {
+  cln_sout = true;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;

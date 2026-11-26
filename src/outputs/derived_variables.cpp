@@ -1312,7 +1312,10 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto cs_ = prm->cln_s;
     auto gn_ = prm->cln_gn;
     // (closure_form = iterate: the closure in place, also one a restart file holds)
-    const bool have = (prm->cln_tc > -1.0e299 || (prm->cln_closit && prm->cln_cip)) &&
+    // (cln_sout: also after a restart, whose closures come from the restored ring
+    // without BuildClosure, so cln_tc stays unset)
+    const bool have = (prm->cln_tc > -1.0e299 || prm->cln_sout ||
+                       (prm->cln_closit && prm->cln_cip)) &&
                       (cs_.extent_int(0) >= nmb) &&
                       (cs_.extent_int(1) > radvet::CLN_D11 + 5);
     // (D = I/3 is the same in every frame)
