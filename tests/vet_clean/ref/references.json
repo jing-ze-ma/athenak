@@ -217,6 +217,54 @@
    ]
   }
  },
+ "order_mhd": {
+  "_about": "fast wave under <mhd>, dt T/64 ... T/512, finest pair; arms: '' thin (x = 1e-6, its own tolerances: E stays at the solve tolerance, err ~ 1e-9, reported only), _stiff (x = 100), _ni (x = 1, Ohm + ambipolar); sdirk2; hesdirk2 gives err_v 0.000515, err_E_stiff 3.43e-07, err_E_ni 2.33e-07, orders 1.98 - 2.04",
+  "last": true,
+  "min": {
+   "order_v": 1.7,
+   "order_B": 1.7,
+   "order_E_stiff": 1.7,
+   "order_v_stiff": 1.7,
+   "order_B_stiff": 1.7,
+   "order_E_ni": 1.7,
+   "order_v_ni": 1.7,
+   "order_B_ni": 1.7
+  },
+  "near": {
+   "err_v": [
+    0.000509,
+    0.05
+   ],
+   "err_B": [
+    5.43e-07,
+    0.05
+   ],
+   "err_E_stiff": [
+    3.73e-07,
+    0.05
+   ],
+   "err_v_stiff": [
+    0.00042,
+    0.05
+   ],
+   "err_B_stiff": [
+    3.95e-07,
+    0.05
+   ],
+   "err_E_ni": [
+    2.59e-07,
+    0.05
+   ],
+   "err_v_ni": [
+    0.000328,
+    0.05
+   ],
+   "err_B_ni": [
+    2.38e-07,
+    0.05
+   ]
+  }
+ },
  "order_space": {
   "last": true,
   "min": {
