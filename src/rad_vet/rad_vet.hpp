@@ -651,6 +651,19 @@ class RadiationVet {
   DvceArray4D<Real> vgd_rgs;
   void ScSlabFaceZero();
   void ScSlabFaceSum(const int i, const int l, const bool inw);
+  // spherical polar (VET_SP_FS): the r-face sums made in the sweep (ScSweepSpFs), per
+  // shell from the rays' scalars in vgd_rgs (2 nmb, VGD_SPFS_NS n, nx3, nx2) into the
+  // Cartesian sums of each cell's low r face (and the top face), vgd_cfs (nmb, 4, nx3,
+  // nx2, nx1 + 1); RayFaceSums projects them (vgd_spfs: made this sweep)
+  DvceArray5D<Real> vgd_cfs;
+  DvceArray4D<Real> vgd_rgs_xb;   // (the other cross-fade set's, swapped with it)
+  DvceArray5D<Real> vgd_cfs_xb;
+  DvceArray4D<Real> vgd_cfa;      // (nmb, 3, nx3, nx2): r-face vector areas / r_f^2
+  bool vgd_spfs = false;
+  bool ScSpFsOn() const;
+  void ScSpFaceZero();
+  void ScSpFacePass();
+  void ScSpFaceSum(const int i, const int l, const bool inw);
   Real ScX1Exit(const bool cmp, Real &amax);
   void ScX1Load();
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange
@@ -1746,6 +1759,7 @@ class RadiationVet {
   void ScSweep();
   void ScSweepSp();     // (sc_sph_sweep_shell.inc: spherical polar)
   void ScSweepSlab();   // (the Cartesian slab, ScSlabSelect)
+  void ScSweepSpFs();   // (spherical polar, closure_consistency: the face sums in it)
   // shell body closure in device memory, called through a pointer (ScClosureToDevice)
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)

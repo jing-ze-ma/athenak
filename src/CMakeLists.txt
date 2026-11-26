@@ -231,6 +231,7 @@ add_executable(
         rad_vet/rays/sc_sph_halo_exact.cpp
         rad_vet/rays/sc_sph_halo_fused.cpp
         rad_vet/rays/sc_sph_sweep.cpp
+        rad_vet/rays/sc_sph_facesum.cpp
         rad_vet/rays/sc_sph_walls.cpp
         rad_vet/rays/sc_tables.cpp
         radiation/radiation.cpp

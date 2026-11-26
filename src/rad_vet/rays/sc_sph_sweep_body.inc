@@ -10,7 +10,8 @@
 //! Returns true for an item deferred by dfr (bool or std::false_type): its stencil
 //! reaches the band, which an exchange still in flight fills (interior / edge split,
 //! RadiationVet::vgd_mid); the last argument is unused.  With VET_VGD_SWEEP_SLAB
-//! (sc_sph_sweep_shell.inc) the Cartesian slab's geometry, x1 ends and face scalars.
+//! (sc_sph_sweep_shell.inc) the Cartesian slab's geometry, x1 ends and face scalars;
+//! with VET_VGD_SWEEP_FS the spherical-polar rays' r-face intensities (ScSpFaceSum).
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA the arguments are plain bools
 #if defined(KOKKOS_ENABLE_CUDA) && defined(VET_VGD_BODY_GX0)
@@ -52,6 +53,11 @@
         // closure_consistency (sfs_): the ray's x1 face-sum scalars (entry, crossing,
         // exit; the x2 / x3 ones in ScSlabFaceSum), as the Cartesian sweep's
         Real gq[3] = {0.0, 0.0, 0.0};
+#endif
+#if VET_VGD_SWEEP_FS
+        // closure_consistency (ScSpFaceSum): the intensity through the ray's r face
+        // (ScSpFsSlot; the exit's is stored where it is made)
+        Real gq[1] = {0.0};
 #endif
         // the ray of direction d through cell (k, j, i) on source csx, intensities vix
         auto solve = [&](const DvceArray5D<Real> &csx, const ScIView &vix) -> Real {
@@ -167,8 +173,14 @@
             // (a mirrored face carries no entry, as the Cartesian sweep)
             if (sfs_ && !rfl) {gq[0] = dir_(d,3)*nx*((tbh || psrc) ? tin : 0.0);}
 #endif
+#if VET_VGD_SWEEP_FS
+            gq[SPFS_XV] = (tbh || rfl) ? tin : 0.0;   // (entry through the top face)
+#endif
           } else if (!VET_VGD_SWEEP_SLAB && !inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
+#if VET_VGD_SWEEP_FS
+            gq[SPFS_XV] = (l > lcut) ? vix(m,d,k,j,i-1) : (emi ? iemit : s0);
+#endif
           } else {
             // upwind shell, chord, own-cell part; typ 1 upwind, 2 inner face, 3 own shell
             int typ, iu;
@@ -353,6 +365,10 @@
 #endif
             if (bdone) {
               // segment from the theta wall
+#if VET_VGD_SWEEP_FS
+              gq[SPFS_XV] = (typ == 1) ? vix(m,d,k,j,iu)
+                                       : ((l > lcut) ? vix(m,d,k,j,i-1) : s0);
+#endif
             } else if (typ == 2 && (emi || psrc)) {
               // vet_gd_inner = emit: boundary emission at the inner-face point; x1
               // periodic first pass: the face S
@@ -366,7 +382,8 @@
               gq[0] = dir_(d,3)*nx*fc;
 #else
               iv = ScInnerFace(st4, fC, i, true, iemit, bfc, cx1f(m,i), cx1v(m,i),
-                               cx1v(m,i+1), p2, ch0, ds, s0);
+                               cx1v(m,i+1), p2, ch0, ds, s0, -1.0, 0.0,
+                               VET_VGD_FSP(SPFS_XV));
 #endif
             } else if (typ == 2 && imir) {
               // reflecting inner face: first-shell inward intensity in the nearest
@@ -392,7 +409,8 @@
                 return rdq(kk,jj,i,dm);
               }, ok, all);
               iv = ScInnerFace(st4, fC, i, true, (im < 0.0) ? s0 : isc_(m,k-ks,j-js)*im,
-                               bfc, cx1f(m,i), cx1v(m,i), cx1v(m,i+1), p2, ch0, ds, s0);
+                               bfc, cx1f(m,i), cx1v(m,i), cx1v(m,i+1), p2, ch0, ds, s0,
+                               -1.0, 0.0, VET_VGD_FSP(SPFS_XV));
             } else if (typ == 2) {
               // diffusion intensity S + mu (-dS/dtau_r) at the inner face; vet_bc_diff =
               // face: face S = 1.5 S_a - 0.5 S_b (cell S is O(dtau_cell) low)
@@ -404,7 +422,8 @@
               gq[0] = dir_(d,3)*nx*fc;
 #else
               iv = ScInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
-                               cx1v(m,i+1), p2, ch0, ds, s0);
+                               cx1v(m,i+1), p2, ch0, ds, s0, -1.0, 0.0,
+                               VET_VGD_FSP(SPFS_XV));
 #endif
             } else {
               // one intensity per (cell, direction), of the pass n_d . r_hat selects;
@@ -468,7 +487,14 @@
 #else
               iv = ScSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
                                s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
-                               idd);
+                               idd, VET_VGD_FSP(SPFS_XV));
+#endif
+#if VET_VGD_SWEEP_FS
+              // a turned ray crosses no r face of its own: its r face carries the cell
+              // below (the inner face's rule on the first shell)
+              if (typ == 3) {
+                gq[SPFS_XV] = (l > lcut) ? vix(m,d,k,j,i-1) : (emi ? iemit : s0);
+              }
 #endif
             }
           }
@@ -480,6 +506,21 @@
             gq[2] = dir_(d,3)*nx*(iv*ex + (1.0 - ex)*s0);
           }
 #endif
+#if VET_VGD_SWEEP_FS
+          // leaving through the inner (not past its tangent, else -1) or top face: the
+          // chord from the centre at chi_0, S_0
+          if (inw ? ((x1f_(m) & 1) && l == lcb) : ((x1f_(m) & 2) && l == n1 - 1)) {
+            const Real rb = cx1f(m,inw ? i : (i + 1));
+            Real xe = -1.0;
+            if (!inw || p2 < rb*rb) {
+              const Real t = inw ? (zr - sqrt(rb*rb - p2))
+                                 : (sqrt(fmax(rb*rb - p2, 0.0)) - zr);
+              const Real ex = exp(-ch0*fmax(t, 0.0));
+              xe = iv*ex + (1.0 - ex)*s0;
+            }
+            rgs_((l & 1)*nmbt_ + m,SPFS_XE*n + d,k-ks,j-js) = xe;
+          }
+#endif
           return iv;
         };
         const Real v = solve(cs_, vi_);
@@ -489,6 +530,9 @@
         for (int q = 0; q < 3 && sfs_; ++q) {
           rgs_((l & 1)*nmbt_ + m,q*n + d,k-ks,j-js) = gq[q];
         }
+#endif
+#if VET_VGD_SWEEP_FS
+        rgs_((l & 1)*nmbt_ + m,SPFS_XV*n + d,k-ks,j-js) = fmax(gq[SPFS_XV], 0.0);
 #endif
         return false;
       };

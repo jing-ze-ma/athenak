@@ -428,6 +428,9 @@ void RadiationVet::RayFaceSums() {
   // rr (spherical polar, Cartesian slab): r faces carry the rays' own upwind fluxes, not
   // the balance march, which loses the diffusion flux of thick cells in V chi (S - J)
   const bool rr = x.sph || (vgd_slab == 1);
+  // spherical polar, VET_SP_FS: the r faces' sums made in the sweep (vgd_cfs,
+  // rays/sc_sph_facesum.cpp) in place of the upwind cell's intensity
+  const bool isw = x.sph && vgd_spfs;
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
     const SolveArgs &x = *px;
@@ -482,7 +485,7 @@ void RadiationVet::RayFaceSums() {
     SolveForK<ATHENA_LB_GD_FS>("cln_gd_fs", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const SolveArgs &x = *px;
-      const bool rb = (i == is);
+      const bool rb = (i == is) || isw;
       Real a1[3], a2[3], a0[3] = {0.0}, e[3][3], q[4];
       Real s1[4] = {0.0}, s2[4] = {0.0}, s0[4] = {0.0};
       const bool b1 = bnd(1, m, k, j, i), b2 = bnd(2, m, k, j, i);
@@ -535,18 +538,31 @@ void RadiationVet::RayFaceSums() {
     }
     GhostFill(cln_s, CLN_F2, 4);
     GhostFill(cln_s, CLN_F3, 4);
-    par_for("cln_gd_rb", DevExeSpace(), 0, nmb1, i1, 1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int b, const int k, const int j) {
-      const int i = b ? ie + 1 : is;
-      Real q[4];
-      rflux(m, k, j, i, q);
-      for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
-    });
-  } else if (rf_on) {
+    if (!isw) {   // (the sweep made the boundary faces too)
+      par_for("cln_gd_rb", DevExeSpace(), 0, nmb1, i1, 1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int b, const int k, const int j) {
+        const int i = b ? ie + 1 : is;
+        Real q[4];
+        rflux(m, k, j, i, q);
+        for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
+      });
+    }
+  } else if (rf_on && !isw) {
     SolveForK("cln_gd_rf", nmb1, ks, ke, js, je, is + i1, ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
       rflux(m, k, j, i, q);
+      for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
+    });
+  }
+  if (isw) {   // (the r faces on their bases, as rflux: the face's sums, not per area)
+    auto cf_ = vgd_cfs;
+    SolveForK("cln_gd_sws", nmb1, ks, ke, js, je, is, ie + 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real a[3], e[3][3], s[4], q[4];
+      face(0, m, k, j, i, a, e);
+      for (int c = 0; c < 4; ++c) s[c] = cf_(m,c,k-ks,j-js,i-is);
+      proj(e, 1.0, s, q);
       for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
     });
   }

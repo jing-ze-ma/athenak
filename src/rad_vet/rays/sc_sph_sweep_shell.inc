@@ -6,8 +6,10 @@
 //! \file sc_sph_sweep_shell.inc
 //! \brief the shell sweep of RadiationVet::ScSweep, included twice by sc_sph_sweep.cpp:
 //! VET_VGD_SWEEP_SLAB 0 (ScSweepSp: spherical polar) and 1 (ScSweepSlab: the Cartesian
-//! slab, ScSlabSelect), so either kernel holds only its own geometry and captures.
-//! Needs VET_VGD_SWEEP_NAME and VET_VGD_SWEEP_SLAB.
+//! slab, ScSlabSelect), so either kernel holds only its own geometry and captures;
+//! VET_VGD_SWEEP_FS 1 (ScSweepSpFs): spherical polar with the closure_consistency face
+//! sums made in the sweep (ScSpFaceSum).  Needs VET_VGD_SWEEP_NAME, VET_VGD_SWEEP_SLAB
+//! and VET_VGD_SWEEP_FS.
 
 void RadiationVet::VET_VGD_SWEEP_NAME() {
   Mesh *pm = pmy_pack->pmesh;
@@ -93,6 +95,18 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
   const int nmbt_ = nmb1 + 1;
   if (sfs_ && !vgd_xff_prep) {ScSlabFaceZero();}
   auto rgs_ = vgd_rgs;
+#endif
+#if VET_VGD_SWEEP_FS
+  // closure_consistency: the face sums in the sweep (ScSpFaceSum), per shell from the
+  // rays' scalars in vgd_rgs (two shells, as the slab's)
+  const int nmbt_ = nmb1 + 1;
+  if (!vgd_xff_prep) {ScSpFaceZero();}
+  auto rgs_ = vgd_rgs;
+#define VET_VGD_FSP(q) (&gq[q])
+#define VET_VGD_XRG(a) , a   // (the fused sets: each its own scalars)
+#else
+#define VET_VGD_FSP(q) nullptr
+#define VET_VGD_XRG(a)
 #endif
   // the fused sweep counts as two sweeps, a list-only preparation as none
   if (!vgd_xff_prep) {vgd_hsweep += vgd_xff_now ? 2 : 1;}
@@ -199,6 +213,9 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     if (imir && !inw) {ScInnerMirror();}
+#if VET_VGD_SWEEP_FS
+    ScSpFacePass();
+#endif
     auto isc_ = vgd_isc;
 #define VET_VGD_BODY_NAME body
 #define VET_VGD_BODY_MIR 0
@@ -241,7 +258,7 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
     using ScIV = decltype(vgd_i);
     auto mkx0 = [&](const ScDirV dir_, const ScWallV wl_, const ScMapV mp_,
                     const ScMrV mr_, const ScM3V m3_, const ScW3V w3_,
-                    const ScIV vi_) {
+                    const ScIV vi_ VET_VGD_XRG(const DvceArray4D<Real> rgs_)) {
 #define VET_VGD_BODY_NAME bodyx
 #define VET_VGD_BODY_MIR 0
 #include "rad_vet/rays/sc_sph_sweep_body.inc"
@@ -251,7 +268,7 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
     };
     auto mkx1 = [&](const ScDirV dir_, const ScWallV wl_, const ScMapV mp_,
                     const ScMrV mr_, const ScM3V m3_, const ScW3V w3_,
-                    const ScIV vi_) {
+                    const ScIV vi_ VET_VGD_XRG(const DvceArray4D<Real> rgs_)) {
 #define VET_VGD_BODY_NAME bodyx
 #define VET_VGD_BODY_MIR 1
 #include "rad_vet/rays/sc_sph_sweep_body.inc"
@@ -283,9 +300,9 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
 #endif
     // both sets' gx-false closures in device memory (ScXffOk)
     using ScXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                 vgd_i));
+                                 vgd_i VET_VGD_XRG(vgd_rgs)));
     using ScXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                 vgd_i));
+                                 vgd_i VET_VGD_XRG(vgd_rgs)));
     const ScXb0T *xa0 = nullptr, *xq0 = nullptr;
     const ScXb1T *xa1 = nullptr, *xq1 = nullptr;
     if (xffs) {
@@ -297,16 +314,16 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
 #endif
       if (thm) {
         xa1 = ScClosureToDevice(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                     vgd_i), bba);
+                                     vgd_i VET_VGD_XRG(vgd_rgs)), bba);
         xq1 = ScClosureToDevice(mkx1(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
-                                     vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
-                                vgd_bbufx);
+                                     vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb
+                                     VET_VGD_XRG(vgd_rgs_xb)), vgd_bbufx);
       } else {
         xa0 = ScClosureToDevice(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
-                                     vgd_i), bba);
+                                     vgd_i VET_VGD_XRG(vgd_rgs)), bba);
         xq0 = ScClosureToDevice(mkx0(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
-                                     vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
-                                vgd_bbufx);
+                                     vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb
+                                     VET_VGD_XRG(vgd_rgs_xb)), vgd_bbufx);
       }
     }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
@@ -647,6 +664,14 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
 #if VET_VGD_SWEEP_SLAB
       if (sfs_) {ScSlabFaceSum(i, l, inw);}
 #endif
+#if VET_VGD_SWEEP_FS
+      ScSpFaceSum(i, l, inw);
+      if (xffs) {   // (the other set's, its context swapped in: handles only)
+        ScXffSwap();
+        ScSpFaceSum(i, l, inw);
+        ScXffSwap();
+      }
+#endif
       if (rga) {
         // the previous shell has been read (stream order): save its inward band
         // (inward pass), its interior back to the compact slab, lend the next shell a
@@ -761,3 +786,5 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
   }
   ScRingSweepEnd();
 }
+#undef VET_VGD_FSP
+#undef VET_VGD_XRG

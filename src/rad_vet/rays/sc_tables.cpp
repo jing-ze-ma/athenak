@@ -647,6 +647,8 @@ void RadiationVet::ScXfTables(const Real alpha) {
         std::swap(vgd_shn[p], vgd_shn_xb[p]);
       }
       std::swap(vgd_shl_alpha, vgd_shl_alpha_xb);
+      std::swap(vgd_rgs, vgd_rgs_xb);   // (sp face sums in the sweep)
+      std::swap(vgd_cfs, vgd_cfs_xb);
     }
   };
   Kokkos::fence();
@@ -686,6 +688,8 @@ void RadiationVet::ScXffSwap() {
     std::swap(vgd_shn[p], vgd_shn_xb[p]);
   }
   std::swap(vgd_shl_alpha, vgd_shl_alpha_xb);
+  std::swap(vgd_rgs, vgd_rgs_xb);
+  std::swap(vgd_cfs, vgd_cfs_xb);
   std::swap(vgd_alpha, vgd_xf_alt);
   g_vgd_tab_alpha = vgd_alpha;
 }

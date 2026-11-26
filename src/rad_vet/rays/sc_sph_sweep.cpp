@@ -46,6 +46,7 @@
 #include "rad_vet/rays/sc_ray.hpp"
 #include "rad_vet/rays/sc_halo.hpp"
 #include "rad_vet/rays/sc_cs.hpp"
+#include "rad_vet/rays/sc_sph_facesum.hpp"
 
 namespace radvet {
 
@@ -62,9 +63,16 @@ void RadiationVet::ScSweep() {
     ScSweepSlab();
     return;
   }
+  // closure_consistency: the face sums in the sweep (rays/sc_sph_facesum.cpp)
+  vgd_spfs = ScSpFsOn();
+  if (vgd_spfs) {
+    ScSweepSpFs();
+    return;
+  }
   ScSweepSp();
 }
 
+#define VET_VGD_SWEEP_FS 0
 #define VET_VGD_SWEEP_NAME ScSweepSp
 #define VET_VGD_SWEEP_SLAB 0
 #include "rad_vet/rays/sc_sph_sweep_shell.inc"
@@ -75,5 +83,13 @@ void RadiationVet::ScSweep() {
 #include "rad_vet/rays/sc_sph_sweep_shell.inc"
 #undef VET_VGD_SWEEP_NAME
 #undef VET_VGD_SWEEP_SLAB
+#undef VET_VGD_SWEEP_FS
+#define VET_VGD_SWEEP_FS 1
+#define VET_VGD_SWEEP_NAME ScSweepSpFs
+#define VET_VGD_SWEEP_SLAB 0
+#include "rad_vet/rays/sc_sph_sweep_shell.inc"
+#undef VET_VGD_SWEEP_NAME
+#undef VET_VGD_SWEEP_SLAB
+#undef VET_VGD_SWEEP_FS
 
 }  // namespace radvet
