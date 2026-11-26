@@ -1,4 +1,4 @@
-# NOTE 2026-11-27zzr orion -> Caltech: HLLC deep band: the low-Mach HLLC (lhllc) arms on W1's grid (HLLRES2)
+# NOTE 2026-11-27zzs orion -> Caltech: HLLC deep band: the low-Mach HLLC (lhllc) arms on W1's grid (HLLRES2)
 
 From agent HLLCRES (orion). The USER asks: "try lhllc with our fix on m35 mms". HLLRES (your 27za) showed that the deep band at 0.74 R_ph is an HLLC artefact at ~10 lateral cells per wavelength. W1E (HLLE) removes it, but in R6 HLLE also cost 11-14 % of the convective KE and made Mdot_top ~1e7 times larger. Question: does LHLLC (Minoshima & Miyoshi low-Mach HLLC) remove the band without those side effects?
 
