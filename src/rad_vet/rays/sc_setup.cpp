@@ -109,11 +109,11 @@ void RadiationVet::VetGdInit() {
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
-  // cubed sphere (rad_vet_vetgd_cs.cpp): wedge-only options are refused; the cs band
+  // cubed sphere (rays/sc_cs_sweep.cpp): wedge-only options are refused; the cs band
   // is filled by its own exact copies (compact lists, see VetGdCsSweep); no walls
   vgd_csg = pm->use_cubed_sphere;
   // <mesh>/layout_invariant: the sweep's (theta, phi) from the global index
-  // (rad_vet_vgdlg.hpp); a uniform single-level sp mesh
+  // (rays/sc_band.hpp); a uniform single-level sp mesh
   vgd_lg.on = false;
   if (!vgd_csg && pm->layout_invariant) {
     vgd_lg.on = true;
@@ -149,7 +149,7 @@ void RadiationVet::VetGdInit() {
                 << std::endl;
     }
   }
-  // stretched theta / full sphere (rad_vet_vetgd_sph2.inc): options that assume the
+  // stretched theta / full sphere (rays/sc_sph_globalband.cpp): options that assume the
   // uniform index formula are refused; the compact halo falls back to the dense one
   // (same values)
   if (vgd_sth) {
@@ -465,7 +465,7 @@ void RadiationVet::VetGdInit() {
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
-  if (vgd_sth) {VetGdThetaInit();}   // rad_vet_vetgd_sph2.inc
+  if (vgd_sth) {VetGdThetaInit();}   // rays/sc_sph_globalband.cpp
   Kokkos::realloc(vgd_cs, nmb, 2, c3w, c2w, c1);
   Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);

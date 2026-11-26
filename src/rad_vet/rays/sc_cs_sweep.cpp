@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file sc_cs_sweep.cpp
-//! \brief <rad_vet>/vet_gd on the cubed sphere: the sp sweep of rad_vet_vetgd.cpp
+//! \brief <rad_vet>/vet_gd on the cubed sphere: the sp sweep of sc_sph_sweep.cpp
 //! (shells, passes, segment and boundary rules) with the cs lateral stencil and band.
 //! Band: the own panel's index space extended by vgd_w cells; beyond a seam the
 //! neighbour's cells are stored unfolded (mirror image across the seam). No cell beyond

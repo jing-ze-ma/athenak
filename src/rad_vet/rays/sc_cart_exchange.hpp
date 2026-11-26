@@ -26,7 +26,7 @@
 namespace radvet {
 
 static inline void VetFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in rad_vet_vet.cpp" << std::endl << msg << std::endl;
+  std::cout << "### FATAL ERROR in rad_vet/rays/sc_cart" << std::endl << msg << std::endl;
   std::exit(EXIT_FAILURE);
 }
 

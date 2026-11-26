@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file sc_sph_globalband.cpp
 //! \brief vet_gd on a stretched theta and on the full sphere (use_polar_boundary);
-//! included at the end of rad_vet_vetgd.cpp (member definitions).
+//! the halo of all bands in one exchange (VetGdGbHaloC, VetGdGbHaloX).
 //! Stretched theta: band rows at the real face midpoints (node table vgd_thn), the
 //! fractional row linear in theta between nodes (VgdThFj); vgd_sth false if uniform.
 //! Full sphere: rows beyond a pole continue the extended chart (-theta north,

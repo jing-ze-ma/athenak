@@ -37,7 +37,7 @@ void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_vet>/vet_gd: "
 KOKKOS_INLINE_FUNCTION
 static Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
-// sp stencil accessor of the shared upwind core (rad_vet_vgdray.hpp): the four
+// sp stencil accessor of the shared upwind core (rays/sc_ray.hpp): the four
 // (theta, phi) corners q = 0..3: (k0,j0), (k0,j1), (k1,j0), (k1,j1); nested bilinear
 struct VgdSt4 {
   int k0, k1, j0, j1;
