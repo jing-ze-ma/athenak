@@ -765,3 +765,4 @@ Holder 7333037 is PENDING (not running). No RSG job or step.
 - 11-25 17:08 02-16: IDLE -> rr_next5_b5ade8753
 - 11-25 17:09 02-03: IDLE -> suiter80 suiter81 suiter82 suiter83
 - 11-25 17:09 02-16: rr_next5_b5ade8753 -> IDLE
+- 11-25 17:12 02-03: suiter80 suiter81 suiter82 suiter83 -> suiter80 suiter82 suiter83
