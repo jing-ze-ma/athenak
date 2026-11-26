@@ -112,9 +112,8 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
   (r F at x = 2-3.5 is 0.989 of exact). The face momentum F (`vet_f1`, `FH_out`) is 20 %
   above exact, a regression reference. The likely
   cause is the harmonic face opacity at the cylinder's sharp edge (not measured).
-- **Shocks.** The decks name the production `time2_tableau = sdirk2`, with its default
-  `time2_gtime_slope`: the L1 values are within 3 % of the method paper's bench table, which
-  ran `hesdirk2` (Mach 2 and 5); the shock stays at the semi-analytic position (no shift
+- **Shocks.** The SDIRK2 stages with the default `time2_gtime_slope`: the L1 values are within 3 % of the method paper's bench table, which
+  ran an earlier ESDIRK tableau (Mach 2 and 5); the shock stays at the semi-analytic position (no shift
   needed).
 
 ### Classic radiation tests
@@ -181,7 +180,7 @@ Notes on the results of this release:
   2 x 2 differs after 8 cycles by a few 1e-11 relative (maxrel_2x2 3.9e-11 on CPU and H200, bound 1e-8): splitting theta puts ray walls (mirror or vacuum) inside the mesh,
   which is outside the tile guarantee, so the test bounds that difference instead of
   requiring 0.
-  The `dfl` pair covers the stage-2 outflow limiter: under `time2_tableau = sdirk2` the u0
+  The `dfl` pair covers the stage-2 outflow limiter: under the SDIRK2 stages the u0
   ghosts held the stage-2 flux state while the interior held the gas state, so the two
   MeshBlocks of a face limited with different donors (before the fix: 1 x 2 differed by
   1.6e-2 of the largest value, dE 1e-8, dLz 3e-9).

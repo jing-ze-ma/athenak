@@ -235,9 +235,9 @@ void RadiationVet::SetX2FaceFlux(const DvceArray3D<Real> &flo,
 }
 
 bool RadiationVet::FrefWaccOn() const {
-  // also the backward-Euler steps of a hesdirk2 run (first step, a
+  // also the backward-Euler steps of a sdirk2 run (first step, a
   // redo; not a helper solve)
-  const bool t2be = (time_scheme == VET_TIME_HESDIRK2) &&
+  const bool t2be = (time_scheme == VET_TIME_SDIRK2) &&
                     (!t2_ok || FrefWaccStage()) && !t2_inprobe;
   return fref_wsplit && ((time_scheme == VET_TIME_BE) || t2be);
 }
@@ -306,7 +306,7 @@ RadiationVet::~RadiationVet() {
   VetRayReport();
   ReportCounters();
   ImplicitReport();
-  Time2Report();      // time_scheme = hesdirk2
+  Time2Report();      // time_scheme = sdirk2
   if (vet_sc) {ScCartReport();}
   ScCartFree();
   delete pbval_u;

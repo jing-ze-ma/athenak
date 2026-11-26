@@ -53,7 +53,7 @@ void Hydro::SplitBvalSnap(Driver *pdrive, int stage) {
 //! RTOpSplitBvals = exchange, BCs, ConToPrim over the whole mesh) -> ConToPrimSplit;
 //! the next "before_timeintegrator" = (RTStrangSplit returns at stage 0) ->
 //! ConToPrimSplit;
-//! - no split source at all (e.g. <problem>/ck_time_scheme = hesdirk2, ck inside the
+//! - no split source at all (e.g. <problem>/ck_time_scheme = sdirk2, ck inside the
 //! RK stages): both lists hold only the ConToPrimSplit after the last stage's own
 //! ConToPrim.
 //! Between those conversions and the next RK stage nothing writes u0 or w0 (NewTimeStep

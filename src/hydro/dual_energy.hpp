@@ -136,7 +136,7 @@ struct DualEnergy {
   // the step's line (and zero) / the job's totals
   void LedgerLine(const std::string &when);
   void LedgerTotal();
-  // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment and counts go
+  // a discarded attempt (dt_retry, the sdirk2 redo): its floors' payment and counts go
   // (Mark, at the step's start before the checkpoint, reports first: a report closes the
   // steps before, and a retried attempt, which does not mark, reports nothing again)
   void Mark(MeshBlockPack *pp) {

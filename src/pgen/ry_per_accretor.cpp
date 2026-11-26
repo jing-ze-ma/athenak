@@ -496,18 +496,18 @@ DvceArray4D<Real> spr_aref_;
 // (history only): rbk_ = the radiation leaving through r_out (comoving face flux
 // f0x1 + the bath's advective part ibadv_x1max + the theta-wall leak) is booked in Ebnd
 // (register 10, a plain sum) by the VET post hook from the face flux of the solve just
-// taken, with the weight that solve's slope has in the step (backward Euler: dt; hesdirk2
+// taken, with the weight that solve's slope has in the step (backward Euler: dt; sdirk2
 // stage 1: the K1 part (w0 a21 + c31) dt from the stage-start faces and the K2 part
 // (w0 g + c32) dt; stage 2: g dt), instead of the previous cycle's f0x1 read in the hydro
 // stages (one cycle late: the 2e4 start-up gap of the static runs).  (The held-cell
-// resets under hesdirk2 are still booked per stage in full: an open booking gap of the
-// hold with hesdirk2, not of backward Euler.)  Off (old booking) without the VET coupling
+// resets under sdirk2 are still booked per stage in full: an open booking gap of the
+// hold with sdirk2, not of backward Euler.)  Off (old booking) without the VET coupling
 // hook. they are now booked with their weight in
-// the step.  The radiation is not RK-combined by the hydro, but under hesdirk2
+// the step.  The radiation is not RK-combined by the hydro, but under sdirk2
 // Time2FormStage(2) makes the stage-2 start w1 u1 + w0 u0, where u1 (copied after the
 // Heun stage 1) carries the stage-1 reset and u0 = Y2 + the stage-2 reset: Y3 - U^n = D1
 // + w0 D2 + (slope parts), so the stage-2 resets (zs[3], zs[6]) count w0 (1/2 for
-// hesdirk2), the stage-1 ones in full.  A failed stage loop redone by backward Euler
+// sdirk2), the stage-1 ones in full.  A failed stage loop redone by backward Euler
 // (Time2Restore: u0 = u1, the stage-1 reset kept; PgenStageRestore drops its booking)
 // books the stage-1 reset again at the redo's first stage (t2s1_; t2nf_ = Time2Restore's
 // counter when it was taken).  With rbk_ only.
@@ -2012,7 +2012,7 @@ void RyPerVetPost(Mesh *pm) {
     sum += ke*volume(m,k,j,i);
   }, Kokkos::Sum<Real>(eke));
   // problem/sink_kick_book (see skb_): backward-Euler solves only (the
-  // hesdirk2 stage weights of a kick and of its slope are not booked); helper solves
+  // sdirk2 stage weights of a kick and of its slope are not booked); helper solves
   // skipped
   if (skb_) {
     auto *pvet = pmbp->pradvet;
@@ -3040,10 +3040,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     acc0_[3] += zs.the_array[5];
   }
   // (rbk_, see t2s1_): the weight of this stage's radiation resets, and the
-  // booking of the stage-1 reset of a failed hesdirk2 stage loop at its redo
+  // booking of the stage-1 reset of a failed sdirk2 stage loop at its redo
   Real rw = 1.0;
   bool t2rd = false;
-  if (rad && rbk_ && pmbp->pradvet->time_scheme == radvet::VET_TIME_HESDIRK2) {
+  if (rad && rbk_ && pmbp->pradvet->time_scheme == radvet::VET_TIME_SDIRK2) {
     auto *pvet = pmbp->pradvet;
     if (pvet->t2_ok) {
       if (s == 0) {

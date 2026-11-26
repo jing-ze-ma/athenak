@@ -12,7 +12,7 @@
 //! Driver checkpoints the evolving
 //! state of the Hydro and the RadiationVet modules (DtRetry::Save).  A cycle in which a
 //! module raises a failure (RadiationVet::dtr_fail: a Picard solve that ends DIVERGED, or
-//! NON-CONVERGED outside a hesdirk2 stage, whose own redo is the backward-Euler step) is
+//! NON-CONVERGED outside a sdirk2 stage, whose own redo is the backward-Euler step) is
 //! put back exactly (DtRetry::Restore) and taken again with dt x dt_retry_fac; the cut dt
 //! becomes a cap that, after dt_retry_ngood accepted cycles in a row, grows by
 //! dt_retry_grow per cycle and is dropped once the CFL dt is below it.  The cap and the
@@ -71,7 +71,7 @@ struct Entry {
 std::vector<std::unique_ptr<Entry>> &PgenEntries();
 // a second, independent copy of every registered pgen member (the dt_retry
 // checkpoint above takes the PgenEntries list over at its Build).  The driver saves it
-// at the start of the hesdirk2 stage loop and puts it back with the backward-Euler redo
+// at the start of the sdirk2 stage loop and puts it back with the backward-Euler redo
 // (Time2Restore): the redo reruns the hydro stages from U^n, so the pgen registers that
 // advance in every stage (ry_per_accretor acc0_/acc1_/stage_ctr_, tracer + L_z
 // registers) must restart from their stage-loop values too, else the failed attempt is
@@ -194,8 +194,8 @@ class DtRetry {
 // away with it, so the event log (and the m1 positivity totals) report what the state
 // kept.  Discarded attempts: a dt_retry cycle (DtRetry::Retry puts the state back, but
 // not Mesh::ecounter nor the <rad_vet> device counters pos_cnt_d / acl_cnt_d /
-// opn_nskip_d), a hesdirk2 step redone with backward Euler (Time2Restore: U^n back, the
-// hydro stages run again), and the hesdirk2 helper solves whose result is put back
+// opn_nskip_d), a sdirk2 step redone with backward Euler (Time2Restore: U^n back, the
+// hydro stages run again), and the sdirk2 helper solves whose result is put back
 // (Time2RotCorrect).  Counters only: nothing a kernel reads is touched,
 // so the evolution is bitwise the same with it on or off.  <time>/counters_rollback
 // (default true; read only when named, the parameter dump is unchanged).  Slot 0 = the

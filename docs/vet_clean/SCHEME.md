@@ -131,7 +131,7 @@ one normal component per face. The face flux of a stage is a blend of
 
 **Time integration.** The scheme is second-order accurate in time. The hydrodynamics is
 AthenaK's explicit two-stage integrator (`rk2`); the radiation and the gas-radiation exchange
-are implicit, with a two-stage implicit Runge-Kutta method (`time2_tableau = sdirk2`). The two
+are implicit, with a two-stage implicit Runge-Kutta method (Alexander's SDIRK2, the only tableau). The two
 parts are coupled so that the whole step stays second order, also where the gas-radiation
 exchange is stiff.
 
@@ -401,11 +401,11 @@ The face terms are second order in space by design. What the tests measure:
   2.12, 2.26 (E) and 1.48, 1.95 (v); the finest pair differs by 4.36e-3 (E) and 9.81e-3 (v).
 
 The exchange is not stiff in either deck. Where it is stiff, the production tableau
-(`time2_tableau = sdirk2`) is second order with `time2_gtime_slope` (the default on a fresh
+(SDIRK2) is second order with `time2_gtime_slope` (the default on a fresh
 run; `order_stiff`, a trapped radiation-acoustic wave) and first order without it: on a
 radiation-acoustic wave (64 cells, dt halved) the successive orders of E without it are 1.08,
-1.04 at x = 100 and fall 1.51, 1.34, 1.20 at x = 1 and at x = 10 (`time2_tableau = hesdirk2`:
-2.0 in all three; from a study on this release, not a suite test).
+1.04 at x = 100 and fall 1.51, 1.34, 1.20 at x = 1 and at x = 10 (an earlier
+ESDIRK tableau: 2.0 in all three; from a study on the release aa2646b92, not a suite test).
 
 Test: `order_time` (order of the finest pair >= 1.7), `order_space` (linear
 radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7), `order_mhd` (radiation-modified fast wave under `<mhd>`, non-stiff and stiff exchange and with Ohmic and ambipolar diffusion, time step halved, finest pair >= 1.7), `order_stiff` (trapped
@@ -591,7 +591,7 @@ following. The properties of this section are not verified there.
 | spherical polar with the poles (full sphere, `<mesh>/use_polar_boundary`) under `vet_gd` | accepted, not tested | wedges clear of the poles; the full sphere on the cubed sphere (`*_cs`) |
 | stretched theta (`<mesh>/use_grid_stretch_theta`, `theta_plateau`) under `vet_gd` | accepted, not tested | uniform theta; radial stretching in the star decks |
 | several MeshBlocks along x1 under `vet_gd` | the sweep has the code, but the start-up check stops with a FATAL error on spherical polar and the cubed sphere (`meshblock/nx1` must equal `mesh/nx1`), so it cannot be reached | one MeshBlock along x1; several on a Cartesian mesh with `closure = vet_sc` (`idort_beams_mb`) |
-| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with every `time2_tableau` (`sdirk2`, the default, as on the stars: the stage-1 solve takes the field B^n + g (B* - B^n) through \|B\|^2/2, B* and the flux state's EMFs take the stage-2 CT update with the Heun weights; second order also where the exchange is stiff and with Ohmic and ambipolar diffusion explicit in the stages, `order_mhd`), tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
+| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with the SDIRK2 stages of the stars (the stage-1 solve takes the field B^n + g (B* - B^n) through \|B\|^2/2, B* and the flux state's EMFs take the stage-2 CT update with the Heun weights; second order also where the exchange is stiff and with Ohmic and ambipolar diffusion explicit in the stages, `order_mhd`), tested on small boxes and shells of the three geometries with Ohmic and ambipolar diffusion, ideal and general EOS (`mhd_vet`, `mhd_geneos`, `mhd_equil`), linear waves (`mhd_radwave`) and well-balanced envelopes (`mhd_wb`: a field's own J x B truncation is not withheld), not on a star and not with super-time-stepping; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
 
 ## 3. Code map
 

@@ -540,7 +540,7 @@ bool RadiationVet::RotLastStep() const {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotNewBlock
 //! \brief (Driver, before Time2RotCorrect) on the first step of a new rotation block
-//! the stored hesdirk2 slope K1 belongs to the old set; be resets it (t2_ok = false).
+//! the stored sdirk2 slope K1 belongs to the old set; be resets it (t2_ok = false).
 //! The first call takes the block before t as the last one (restart on a boundary).
 
 void RadiationVet::RotNewBlock() {
@@ -557,7 +557,7 @@ void RadiationVet::RotNewBlock() {
     vgd_rot_lastblk = b;
     return;
   }
-  if (b != vgd_rot_lastblk && time_scheme == VET_TIME_HESDIRK2) {
+  if (b != vgd_rot_lastblk && time_scheme == VET_TIME_SDIRK2) {
     if (vet_sc && !cln_ring && Time2Active()) t2_rotcorr = true;
     if (cln_ring == 2) t2_ok = false;
   }

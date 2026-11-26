@@ -6,16 +6,13 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file imex_sdirk2.hpp
-//! \brief The tableau of the IMEX second-order step of <rad_vet>/time_scheme = hesdirk2
-//! (rad_vet_imex.cpp).  The explicit part is AthenaK's
-//! rk2 (Heun); the implicit part the stiffly accurate, L-stable ESDIRK
-//!   A = [[0,0,0],[1-g,g,0],[1/2,b2,g]],  g = 1 - 1/sqrt 2,  b2 = g/(2(1-g)),
-//! FSAL.  Each implicit stage is a backward-Euler solve with dt -> g dt on the old vector
-//!   (stage start) + c1 K1 + c2 K2,   stage 1: c1 = a21 dt,   stage 2: c1 = c31 dt,
-//! c2 = c32 dt (the Heun average w0 U^n + w1 Y2 of the explicit part supplies the rest of
-//! the row), and its slope is K = (Y - old vector)/(g dt).  trbdf2: the ESDIRK form of
-//! TR-BDF2 with the RK2 of c2 = 2 - sqrt 2 (VET only).  The expressions are those of
-//! rad_vet_imex.cpp before the factorisation (bitwise).
+//! \brief The tableau of the IMEX second-order step (rad_vet_imex.cpp): the explicit part
+//! is AthenaK's rk2 (Heun), the implicit part Alexander's two-stage L-stable SDIRK2,
+//! g = 1 - 1/sqrt 2.  Each implicit stage is a backward-Euler solve with dt -> g dt on
+//! the old vector (stage start) + c1 K1 + c2 K2: stage 1 c1 = a21 dt = 0 (no K1);
+//! stage 2 starts from the Heun average w0 U^n + w1 Y2 with c2 = c32 dt, c32 =
+//! (1 - g) - g/2.  Its slope is K = (Y - old vector)/(g dt).  The gas of the stage-1
+//! solve is at t^n + g dt (Time2GasTime).
 
 #include <cmath>
 
@@ -32,49 +29,16 @@ struct Tableau {
 
 inline Real Gamma() {return 1.0 - 1.0/std::sqrt(2.0);}
 
-// tab = 0: hesdirk2, 1: trbdf2, 2: sdirk2
-inline Tableau Make(const int tab) {
+inline Tableau Make() {
   Tableau t;
   const Real g = Gamma();
   t.g = g;
-  if (tab == 0) {
-    const Real b2 = g/(2.0*(1.0 - g));
-    t.a21 = 1.0 - g;
-    t.w0 = 0.5;
-    t.w1 = 0.5;
-    t.c31 = 0.5*g;
-    t.c32 = b2 - 0.5*g;
-  } else if (tab == 2) {
-    // sdirk2: Alexander's two-stage L-stable SDIRK (g = 1 - 1/sqrt 2): no K1 in
-    // either stage.  With the Heun average of the start state, stage 2's start is
-    // U^n + (1 - g) dt K2 + (the implicit g dt K3): c32 = (1 - g) - g/2.  The hydro keeps
-    // Heun (c2 = 1), so the implicit stage 1 at c = g is not the hydro's stage time.
-    t.a21 = 0.0;
-    t.w0 = 0.5;
-    t.w1 = 0.5;
-    t.c31 = 0.0;
-    t.c32 = (1.0 - g) - 0.5*g;
-  } else {
-    const Real w = 0.25*std::sqrt(2.0);
-    t.a21 = g;
-    t.w0 = 0.25;
-    t.w1 = 0.75;
-    t.c31 = w - 0.25*g;
-    t.c32 = w - 0.25*g;
-  }
+  t.a21 = 0.0;
+  t.w0 = 0.5;
+  t.w1 = 0.5;
+  t.c31 = 0.0;
+  t.c32 = (1.0 - g) - 0.5*g;
   return t;
-}
-
-// the increment coefficients of stage `stage` (1 or 2) for the step dt
-inline void IncCoeffs(const Tableau &t, const int stage, const Real dt, Real &c1,
-                      Real &c2) {
-  if (stage == 1) {
-    c1 = t.a21*dt;
-    c2 = 0.0;
-  } else {
-    c1 = t.c31*dt;
-    c2 = t.c32*dt;
-  }
 }
 
 }  // namespace imex_sdirk2

@@ -357,12 +357,6 @@ void RadiationVet::ReadMatterKeys(ParameterInput *pin) {
       fref_hnst = 2;
       fref_hgam0[0] = 0.0;  fref_hbeta[0] = 1.0;
       fref_hgam0[1] = 0.5;  fref_hbeta[1] = 0.5;
-      if (pin->DoesParameterExist("rad_vet", "time2_tableau") &&
-          pin->GetString("rad_vet", "time2_tableau").compare("trbdf2") == 0) {
-        const Real c2 = 2.0 - std::sqrt(2.0);
-        fref_hbeta[0] = c2;
-        fref_hgam0[1] = 0.25;  fref_hbeta[1] = 0.5/c2;
-      }
     } else if (hi.compare("rk3") == 0) {
       fref_hnst = 3;
       fref_hgam0[0] = 0.0;      fref_hbeta[0] = 1.0;

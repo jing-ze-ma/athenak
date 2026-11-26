@@ -76,7 +76,7 @@ void RadiationVet::ReportCounters() {
 
 void RadiationVet::LzBook(const Real s, const bool start, const Real sr) {
   if (t2_inprobe) return;   // a helper solve, put back (Time2RotCorrect)
-  const Real w = (t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0;
+  const Real w = 0.5;
   if (t2_solve == VET_T2S_STAGE1) {
     cln_lzp = (start ? 0.0 : cln_lzp) + w*s;
     cln_lzr[4] = (start ? 0.0 : cln_lzr[4]) + w*sr;
@@ -249,7 +249,7 @@ const Real kT2G = imex_sdirk2::Gamma();   // shared tableau
 //! \fn void RadiationVet::BoundaryEnergyAcc
 //! \brief the history's x1 boundary energy cln_lacc, booking the flux that moved E: stage
 //! 0 starts a backward-Euler step (its solves add h A Phi); stage 1 / 2 the old vector of
-//! a hesdirk2 stage, w x (energy of Y2) + A (c1 t2pf1 + c2 t2pf2) at the donors' limiter
+//! a sdirk2 stage, w x (energy of Y2) + A (c1 t2pf1 + c2 t2pf2) at the donors' limiter
 //! R; the stage solve adds g dt A Phi
 
 void RadiationVet::BoundaryEnergyAcc(int stage, Real c1, Real c2, Real w, Real dt) {
@@ -330,7 +330,7 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
   auto applied = [&](const Real l1, const Real l2, const Real l3) {
     if (t2step) {
       const Real g = kT2G;
-      const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
+      const Real wy = 0.5;   // weight of Y1 in the stage-2 start
       return dt*((wy*t2_a21 + t2_c31)*l1 + (wy*g + t2_c32)*l2 + g*l3);
     }
     return dt*l3;
@@ -373,12 +373,12 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2Report
-//! \brief end-of-run counters of the hesdirk2 steps (rank 0)
+//! \brief end-of-run counters of the sdirk2 steps (rank 0)
 
 void RadiationVet::Time2Report() {
-  if (time_scheme != VET_TIME_HESDIRK2) return;
+  if (time_scheme != VET_TIME_SDIRK2) return;
   if (global_variable::my_rank != 0) return;
-  std::cout << "<rad_vet> time_scheme=" << (t2_beonly ? "hesdirk2(be_only)" : "hesdirk2")
+  std::cout << "<rad_vet> time_scheme=" << (t2_beonly ? "sdirk2(be_only)" : "sdirk2")
             << ": stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
@@ -409,7 +409,7 @@ void RadiationVet::Time2Report() {
               << t2_abe_nok << ")" << std::endl;
   }
   // the wall-time split (rank 0, fenced; accepted cycles by kind)
-  std::cout << "<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps " << t2w_clean
+  std::cout << "<rad_vet> sdirk2 wall split (rank 0 s): clean stage steps " << t2w_clean
             << " | failed stage attempts " << t2w_fail << " | their BE redo " << t2w_redo
             << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
             << " | discarded dt_retry attempts " << t2w_retry << std::endl;

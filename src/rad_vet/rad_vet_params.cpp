@@ -75,7 +75,7 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/implicit_pos_floor_gas_keep", "+1"},
     {"rad_vet/implicit_am_cs", "=true"}, {"rad_vet/be_legacy", "=false"},
     {"rad_vet/implicit_*", ""},
-    // hesdirk2 stage formation (Time2FormStage / Time2Stash) and dt_retry: read;
+    // sdirk2 stage formation (Time2FormStage / Time2Stash) and dt_retry: read;
     // ImplicitSolve's acceptance, posfix and KE cap: none
     {"rad_vet/time2_k1_reset", "!"},   // K1 reset of held cells: removed
     {"rad_vet/time2_k1_redist", "=0"}, {"rad_vet/time2_k1_stiff", "=0"},
@@ -198,7 +198,7 @@ void RadiationVet::CheckKeys(ParameterInput *pin) {
     {"rad_vet/zalesak_colsweep", "!"},
     // old step history: never kept, its restart channels are skipped
     {"rad_vet/clean_skip_time2_hist", "=true"},
-    // hesdirk2 start probe: only be
+    // sdirk2 start probe: only be
     {"rad_vet/time2_start", "=be"},
     // extrapolated vet_sc builds: only 1
     {"rad_vet/vet_sc_every", "=1"},

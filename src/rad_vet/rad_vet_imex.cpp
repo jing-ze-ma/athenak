@@ -4,14 +4,13 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_imex.cpp
-//! \brief time_scheme = hesdirk2: the IMEX stages (Heun hydro, ESDIRK implicit
-//! radiation), their state and its restart channels.
-//! Implicit part: A = [[0,0,0],[1-g,g,0],[1/2,b2,g]], g = 1 - 1/sqrt 2, b2 = g/(2(1-g)),
-//! first slope FSAL.  A stage is the backward-Euler ImplicitSolve with dt -> g dt and the
-//! old vector rhs = (stage start) + t2inc, t2inc = (1-g) dt K1 (stage 1) or
-//! dt (g/2 K1 + (b2 - g/2) K2) (stage 2); its slope is K = (Y - rhs)/(g dt).  Without a
-//! valid K1 (first step, restart without the slope, failed stage) the step is backward
-//! Euler and stores K1 = (Y - rhs)/dt.
+//! \brief time_scheme = sdirk2: the IMEX stages (Heun hydro, SDIRK2 implicit
+//! radiation, utils/imex_sdirk2.hpp), their state and its restart channels.
+//! A stage is the backward-Euler ImplicitSolve with dt -> g dt, g = 1 - 1/sqrt 2, and the
+//! old vector rhs = (stage start) + t2inc, t2inc = 0 (stage 1, the gas at t^n + g dt:
+//! Time2GasTime) or dt c32 K2 (stage 2, from the Heun average); its slope is K = (Y -
+//! rhs)/(g dt).  Without a valid K1 (first step, restart without the slope, failed stage)
+//! the step is backward Euler and stores K1 = (Y - rhs)/dt.
 //!
 //!  called from: rad_vet_gas.cpp, rays/sc_cart_sweep.cpp, rays/sc_cart_sweep_mb.cpp,
 //!    rays/sc_directions.cpp, rays/sc_source.cpp, driver/driver.cpp
@@ -57,7 +56,7 @@ const Real kT2G = imex_sdirk2::Gamma();   // shared tableau
 //! \brief true when the next step runs the two stage solves
 
 bool RadiationVet::Time2Active() {
-  if (time_scheme != VET_TIME_HESDIRK2) return false;
+  if (time_scheme != VET_TIME_SDIRK2) return false;
   if (static_cast<int>(t2k1.extent(0)) < pmy_pack->nmb_thispack) {t2_ok = false;}
   return t2_ok;
 }
@@ -88,7 +87,7 @@ bool RadiationVet::Time2Active() {
 //----------------------------------------------------------------------------------------
 
 void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
-  if (t2_tab != 2 || !coupling || !fl_on || (which > 1 && t2_gt != which - 1)) return;
+  if (!coupling || !fl_on || (which > 1 && t2_gt != which - 1)) return;
   t2_gt = (which == 3) ? 0 : which;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto u0_ = fl.u0;
@@ -231,9 +230,6 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
 
 void RadiationVet::Time2FormStage(int stage, Real dt) {
   const Real g = kT2G;
-  const Real w0 = t2_w0, w1 = t2_w1;
-  // hesdirk2 and sdirk2 take the Heun stage start; trbdf2 the w0/w1 average
-  const bool heun = (t2_tab == 0 || t2_tab == 2);
   Real c1, c2;
   auto u0_ = u0;
   auto u1_ = u1;
@@ -254,8 +250,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     par_for("vet_t2_avg", DevExeSpace(), 0, nmb1, 0, VET_NVAR-1, 0, n3-1, 0, n2-1,
             0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      u0_(m,n,k,j,i) = heun ? 0.5*(u1_(m,n,k,j,i) + u0_(m,n,k,j,i))
-                            : (w1*u1_(m,n,k,j,i) + w0*u0_(m,n,k,j,i));
+      u0_(m,n,k,j,i) = 0.5*(u1_(m,n,k,j,i) + u0_(m,n,k,j,i));
     });
     auto avgf = [&](DvceArray4D<Real> &a, DvceArray4D<Real> &b) {
       auto a_ = a;
@@ -264,8 +259,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
               0, static_cast<int>(a.extent(1))-1, 0, static_cast<int>(a.extent(2))-1,
               0, static_cast<int>(a.extent(3))-1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        a_(m,k,j,i) = heun ? 0.5*(b_(m,k,j,i) + a_(m,k,j,i))
-                           : (w1*b_(m,k,j,i) + w0*a_(m,k,j,i));
+        a_(m,k,j,i) = 0.5*(b_(m,k,j,i) + a_(m,k,j,i));
       });
     };
     avgf(f0x1, t2f1);
@@ -293,9 +287,9 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
   cln_lzr[3] = c1*cln_lzr[1] + (two ? c2*cln_lzr[2] : 0.0);
   p_ledger::Inc(c1, two ? c2 : 0.0);
-  FluxMemoryInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
+  FluxMemoryInc(two, c1, c2, 0.5, 0.5);
   Time2FaceFct(stage, c1, c2);
-  BoundaryEnergyAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
+  BoundaryEnergyAcc(stage, c1, c2, (stage == 1) ? 0.0 : 0.5, dt);
   t2_solve = (stage == 1) ? VET_T2S_STAGE1 : VET_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
@@ -426,7 +420,7 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
 bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (!t2_rotcorr) return false;
   t2_rotcorr = false;
-  if (time_scheme != VET_TIME_HESDIRK2 || !Time2Active()) return false;
+  if (time_scheme != VET_TIME_SDIRK2 || !Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
   const Real dtc = (1.0 - 1.0/std::sqrt(2.0))*dt;
   // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
@@ -513,8 +507,8 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
 bool RadiationVet::Time2AutoBeBegin() {
   t2_abe_now = false;
   // t2_beonly: every step (the first too) is a skip step
-  const bool bo = t2_beonly && (time_scheme == VET_TIME_HESDIRK2);
-  if (!bo && (t2_abe <= 0 || time_scheme != VET_TIME_HESDIRK2 || t2_abe_left <= 0)) {
+  const bool bo = t2_beonly && (time_scheme == VET_TIME_SDIRK2);
+  if (!bo && (t2_abe <= 0 || time_scheme != VET_TIME_SDIRK2 || t2_abe_left <= 0)) {
     return false;
   }
   if (!bo && !Time2Active()) return false;   // no slope anyway (the BE path follows)
@@ -529,7 +523,7 @@ bool RadiationVet::Time2AutoBeBegin() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2AutoBeEnd
-//! \brief an accepted cycle of a hesdirk2 run.  kind 0 stage step, 1 stage fallback +
+//! \brief an accepted cycle of a sdirk2 run.  kind 0 stage step, 1 stage fallback +
 //! BE redo, 2 time2_auto_be step, 3 other BE step, 4 discarded dt_retry attempt (timing
 //! only); tw_a / tw_b: fenced wall seconds of the attempt or step, and of the redo
 
@@ -559,7 +553,7 @@ void RadiationVet::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b) {
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VsrcNoes
 //! \brief vet_source_noesrc in force for the current solve: every backward-Euler solve
-//! (under hesdirk2 too), never a stage solve
+//! (under sdirk2 too), never a stage solve
 
 bool RadiationVet::VsrcNoes() const {
   if (!vsrc_noes) return false;
@@ -600,7 +594,7 @@ bool RadiationVet::Time2Stage(Driver *pdrive, const int stage) {
 //! \brief both stages accepted: the end of the step's radiation
 
 void RadiationVet::Time2Accept(Driver *pdrive) {
-  // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
+  // sdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
   t2_solve = radvet::VET_T2S_NONE;
   t2_nstep += 1.0;
   (void) StageTimers(pdrive, 1);
@@ -611,11 +605,11 @@ void RadiationVet::Time2Accept(Driver *pdrive) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::BackwardEuler
 //! \brief the step's radiation by backward Euler after the hydro stages: no valid slope
-//! (first step), a failed stage, or no hesdirk2; under hesdirk2 it stores K1
+//! (first step), a failed stage, or no sdirk2; under sdirk2 it stores K1
 
 void RadiationVet::BackwardEuler(Driver *pdrive) {
-  // hesdirk2 without a valid slope: backward Euler, which stores K1
-  const bool vetbe2 = (time_scheme == VET_TIME_HESDIRK2);
+  // sdirk2 without a valid slope: backward Euler, which stores K1
+  const bool vetbe2 = (time_scheme == VET_TIME_SDIRK2);
   t2_solve = vetbe2 ? VET_T2S_BESTORE : VET_T2S_NONE;
   int nsub = SetSubsteps(pmy_pack->pmesh->dt);
   // (history: boundary energy)

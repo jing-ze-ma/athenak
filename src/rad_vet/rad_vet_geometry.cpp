@@ -343,7 +343,7 @@ void RadiationVet::SphericalCheck(ParameterInput *pin) {
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_vet> on the cubed sphere supports only "
-        << "time_scheme = be | hesdirk2 (and the spherical-polar list below); this "
+        << "time_scheme = be | sdirk2 (and the spherical-polar list below); this "
         << "input has:"
         << wcs << why << std::endl;
       std::exit(EXIT_FAILURE);
@@ -361,7 +361,7 @@ void RadiationVet::SphericalCheck(ParameterInput *pin) {
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> on a spherical-polar mesh supports "
-      << "only time_scheme = be | hesdirk2, one MeshBlock along x1, no SMR; this "
+      << "only time_scheme = be | sdirk2, one MeshBlock along x1, no SMR; this "
       << "input has:" << why
       << std::endl;
     std::exit(EXIT_FAILURE);

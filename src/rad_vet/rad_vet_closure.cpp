@@ -165,8 +165,8 @@ void RadiationVet::ClosureAfterSolve() {
   if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE2) return;
   if (cln_extrap == 3 && t2_solve == VET_T2S_STAGE1) {
     RayMoments(cln_mc, false);
-    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
-    cln_tm = time + ((t2_tab == 0) ? dt : (tb.a21 + tb.g)*dt);
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make();
+    cln_tm = time + (tb.a21 + tb.g)*dt;
     cln_have_c = true;
     cln_cand_be = false;
     RingJump();
@@ -174,7 +174,7 @@ void RadiationVet::ClosureAfterSolve() {
   }
   if (t2_solve == VET_T2S_STAGE1) {
     if (cln_extrap != 2) return;
-    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make();
     RayMoments(cln_m1);
     cln_t1 = time + (tb.a21 + tb.g)*dt;
     cln_have_1 = true;
@@ -220,7 +220,7 @@ void RadiationVet::RingJump() {
 //! t).  The line runs through t^{n-1} and t^n, or (stage 2, extrap2) t^n and stage 1.
 //! Cells whose extrapolate is not realisable keep the latest moments (counted); first
 //! step, restart and backward Euler use t^n alone (or build it).  extrap1 with stage 1
-//! before t^{n+1} (sdirk2, trbdf2): stage 1 uses the last step's moments, stage 2 the
+//! before t^{n+1} (sdirk2): stage 1 uses the last step's moments, stage 2 the
 //! line through the last and this step's stage-1 sets, weighted 1/(1 + z), z = c dt/dx
 //! (no over-relaxation where the field is quasi-static)
 
@@ -255,7 +255,7 @@ void RadiationVet::ClosureExtrap() {
   const bool stage = (t2_solve == VET_T2S_STAGE1 || t2_solve == VET_T2S_STAGE2);
   Real ts = time + dt;
   if (t2_solve == VET_T2S_STAGE1) {
-    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make();
     ts = time + (tb.a21 + tb.g)*dt;
   }
   const bool use1 = (cln_extrap == 2) && (t2_solve == VET_T2S_STAGE2) && cln_have_1 &&

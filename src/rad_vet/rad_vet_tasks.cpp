@@ -9,7 +9,7 @@
 //!
 //! One time step (Driver::Execute, driver.cpp):
 //!   dt_retry checkpoint
-//!   time_scheme = hesdirk2 with a valid slope K1 (Time2Active):
+//!   time_scheme = sdirk2 with a valid slope K1 (Time2Active):
 //!     stage 1, 2: hydro stage -> Time2Stage (rad_vet_imex.cpp): Time2FormStage, then the
 //!       implicit stage below with dt_sub = g dt; a failed one: Time2Restore, hydro again
 //!   else, or a failed stage: BackwardEuler (rad_vet_imex.cpp), dt_sub = dt

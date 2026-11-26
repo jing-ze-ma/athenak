@@ -207,7 +207,7 @@ void RadVetAtmGas(Mesh *pm, const Real bdt);
 void RadVetAmHistory(HistoryData *pdata, Mesh *pm);
 // problem/am_hist_ebnd (read only when named): RadVetAmHistory adds column 15
 // Eb = the accumulated radiation energy the scheme put in through the physical x1 faces
-// (Ebnd, the hesdirk2 stage weights); absent = the 14 columns as before
+// (Ebnd, the sdirk2 stage weights); absent = the 14 columns as before
 static bool vet_am_ebnd = false;
 
 //----------------------------------------------------------------------------------------

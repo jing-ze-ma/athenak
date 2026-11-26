@@ -629,7 +629,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     npred_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE <rad_vet> time_scheme = hesdirk2 HEADER (radvet::kVetTime2RstMagic), behind
+  // --- THE <rad_vet> time_scheme = sdirk2 HEADER (radvet::kVetTime2RstMagic), behind
   // the predictor one: nch slabs of the stored FSAL slope follow the predictor slabs.
   int nt2_file = 0, nt2_ver = 1;
   Real t2_hv[3] = {0.0, 0.0, 0.0};
@@ -659,7 +659,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (!ok || hdr[0] < 1 || hdr[0] > 7 || hdr[1] < 1 || hdr[1] > 65536) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_vet> hesdirk2 header of this restart file is "
+                << std::endl << "the <rad_vet> sdirk2 header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -668,7 +668,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   // --- THE <rad_vet> implicit_one_pass HEADER (radvet::kVetOnePassRstMagic), behind the
-  // hesdirk2 one: 9 Reals (18 with implicit_one_pass_auto), no slabs
+  // sdirk2 one: 9 Reals (18 with implicit_one_pass_auto), no slabs
   bool onep_file = false, onep_auto_file = false;
   Real onep_hv[18];
   if (std::memcmp(variabledata, &(radvet::kVetOnePassRstMagic[0]),
@@ -1006,7 +1006,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   // --- THE <hydro|mhd>/am_vector SPIN HEADER (hydro::kAmSpinRstMagic),
-  // behind the vet_rotate_avg one: nams_file slabs (am_spin, + the radiation's hesdirk2
+  // behind the vet_rotate_avg one: nams_file slabs (am_spin, + the radiation's sdirk2
   // spin slope amk1), the last of each record
   int nams_file = 0;
   if (std::memcmp(variabledata, &(hydro::kAmSpinRstMagic[0]),
@@ -1900,12 +1900,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "level and problem/rt_impl_warm = 2 wants two; the first column solve "
               << "does not extrapolate and this restart is not bitwise." << std::endl;
   }
-  // time_scheme = hesdirk2: the stored slope, when this run wants one of that size.  A
+  // time_scheme = sdirk2: the stored slope, when this run wants one of that size.  A
   // file without it leaves t2_ok = false: the first step is backward Euler.
   // a be_only run never uses the slope (each step is backward Euler); the same block
   // carries the clean scheme's state, with any time scheme
   const bool t2_h2 = (pradvet != nullptr) &&
-                     (pradvet->time_scheme == radvet::VET_TIME_HESDIRK2);
+                     (pradvet->time_scheme == radvet::VET_TIME_SDIRK2);
   const bool t2_want = t2_h2 && !pradvet->t2_beonly;
   const bool t2_acc = (pradvet != nullptr) && (nt2_file > 0) &&
                       pradvet->Time2RstAccept(nt2_file, nt2_ver);
@@ -1924,7 +1924,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool t2_k1 = t2_old && t2_want && nt2_file >= radvet::VET_T2_NK &&
                      static_cast<int>(pradvet->t2k1.extent(0)) >= nmb;
   if (t2_want && !t2_read && !t2_k1 && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_vet> hesdirk2 slope; the first "
+    std::cout << "### WARNING: restart file has no <rad_vet> sdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
   }
   if (t2_want && t2_read && pradvet->t2_rstd3 && global_variable::my_rank == 0) {
@@ -2109,7 +2109,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       for (int n=0; n<(t2_read ? nt2_file : radvet::VET_T2_NK); ++n) {
-        read_slab("rad_vet hesdirk2 slope");
+        read_slab("rad_vet sdirk2 slope");
         pradvet->Time2RstSet(n, wtin, nmb);
       }
       // (version 3: t2_ok and cln_k1ok as written, bits 2 and 4 of t2_hv[2]; before,

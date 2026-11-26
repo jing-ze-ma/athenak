@@ -72,7 +72,7 @@ void ImplFatal(const std::string &msg) {
 //! arrays.  Called at the end of the constructor.
 
 void RadiationVet::ImplicitInit(ParameterInput *pin) {
-  // time_scheme (read by Time2Init): hesdirk2 on a fresh run where accepted (no polar
+  // time_scheme (read by Time2Init): sdirk2 on a fresh run where accepted (no polar
   // boundary, integrator rk2), else be
   {auto *pmh = pmy_pack->pmesh;
   const std::string integ = pin->DoesParameterExist("time","integrator") ?
@@ -80,9 +80,15 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   const bool h2ok = !pmh->use_polar_boundary &&
                     (integ.compare("rk2") == 0);
   recipe::Old(pin, "rad_vet", "time_scheme", "be");
+  // the old name hesdirk2 of sdirk2 (removed): stored -> NOTE, named -> FATAL
+  if (pin->DoesParameterExist("rad_vet","time_scheme") &&
+      pin->GetString("rad_vet","time_scheme").compare("hesdirk2") == 0) {
+    recipe::Rule(pin, "rad_vet", "time_scheme", "sdirk2");
+    pin->SetString("rad_vet", "time_scheme", "sdirk2");
+  }
   (void) pin->GetOrAddString("rad_vet","time_scheme",
-                             (h2ok && !global_variable::restart_run) ? "hesdirk2" : "be");
-  // be runs the hesdirk2 backward-Euler path (t2_beonly) where hesdirk2 is accepted
+                             (h2ok && !global_variable::restart_run) ? "sdirk2" : "be");
+  // be runs the sdirk2 backward-Euler path (t2_beonly) where sdirk2 is accepted
   t2_beonly = h2ok && pin->GetString("rad_vet","time_scheme").compare("be") == 0;}
   trans_on = false;
   trans_x3 = false;
@@ -262,20 +268,20 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     std::string s = pin->GetString("rad_vet", "time_scheme");
     if (s.compare("be") == 0) {
       time_scheme = VET_TIME_BE;
-    } else if (s.compare("hesdirk2") == 0) {
-      time_scheme = VET_TIME_HESDIRK2;
+    } else if (s.compare("sdirk2") == 0) {
+      time_scheme = VET_TIME_SDIRK2;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/time_scheme = '" << s
-                << "' is not a choice (be | hesdirk2)" << std::endl;
+                << "' is not a choice (be | sdirk2)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
-  // be with t2_beonly runs as hesdirk2 with every step on the backward-Euler path
+  // be with t2_beonly runs as sdirk2 with every step on the backward-Euler path
   if (time_scheme == VET_TIME_BE && t2_beonly) {
-    time_scheme = VET_TIME_HESDIRK2;
+    time_scheme = VET_TIME_SDIRK2;
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> time_scheme = be: the hesdirk2 backward-Euler path on "
+      std::cout << "<rad_vet> time_scheme = be: the sdirk2 backward-Euler path on "
                    "every step" << std::endl;
     }
   }
@@ -284,48 +290,22 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   std::string integ = pin->GetString("time", "integrator");
   if (integ.compare("rk2") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/time_scheme = hesdirk2 needs <time>/integrator "
+              << std::endl << "<rad_vet>/time_scheme = sdirk2 needs <time>/integrator "
               << "= rk2 (its explicit part IS the Heun hydro)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // stage coefficients (t2_tab, utils/imex_sdirk2.hpp):
-  //   hesdirk2: a21 = 1-g, Heun average, then g/2 K1 + (b2 - g/2) K2
-  //   trbdf2 (c = (0, 2g, 1), w = sqrt(2)/4): a21 = g, hydro weights 1/4 (Y2) and
-  //     3/4 (U^n), then (w - g/4)(K1 + K2)
-  //   sdirk2: no explicit K1 (Time2GasTime)
+  // stage coefficients (utils/imex_sdirk2.hpp): SDIRK2, no explicit K1 (Time2GasTime).
+  // time2_tableau is removed (hesdirk2, trbdf2 retired): a stored other value runs sdirk2
+  // with a NOTE, a named one is FATAL
+  recipe::Rule(pin, "rad_vet", "time2_tableau", "sdirk2");
   {
-    const Real g = kT2G;
-    t2_tab = 0;
-    {
-      // default: sdirk2 (<hydro> and <mhd>)
-      const bool sd = recipe::Fix(pin, "rad_vet", "time2_tableau", "sdirk2", "hesdirk2");
-      std::string tb = pin->GetOrAddString("rad_vet", "time2_tableau",
-                                           sd ? "sdirk2" : "hesdirk2");
-      if (tb.compare("hesdirk2") == 0) {
-        t2_tab = 0;
-      } else if (tb.compare("trbdf2") == 0) {
-        t2_tab = 1;
-      } else if (tb.compare("sdirk2") == 0) {
-        t2_tab = 2;
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/time2_tableau = '" << tb
-                  << "' is not a choice (sdirk2 | hesdirk2 | trbdf2)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
-    (void) g;
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make();
     t2_a21 = tb.a21;
     t2_w0 = tb.w0;
     t2_w1 = tb.w1;
     t2_c31 = tb.c31;
     t2_c32 = tb.c32;
-    if (t2_tab == 2) {
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> time2_tableau = sdirk2: no explicit K1, Heun hydro"
-                  << std::endl;
-      }
+    {
       // time2_gtime_slope: Time2GasTime's slope-limited exchange.  Default true
       const bool nm = pin->DoesParameterExist("rad_vet", "time2_gtime_slope");
       t2_gts = pin->GetOrAddBoolean("rad_vet", "time2_gtime_slope",
@@ -350,12 +330,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> time2_gtime_pos = " << (t2_gtp ? "true" : "false")
                   << (np ? "" : " (default)") << std::endl;
-      }
-    }
-    if (t2_tab == 1) {
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> time2_tableau = trbdf2: TR-BDF2 implicit stages (stage "
-                  << "order 2), RK2 hydro with c2 = 2 - sqrt(2)" << std::endl;
       }
     }
   }
@@ -417,7 +391,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
+    std::cout << "<rad_vet> time_scheme=sdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
   }
 }

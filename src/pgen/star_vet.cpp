@@ -262,7 +262,7 @@ int star_ad_cyc_ = -1;
 DvceArray1D<Real> star_fsub_;
 // problem/mlt_src_time = stage (default; StarMltC) | start (the old form, 1st order in
 // time): the ramp w and the adaptive esrc at the time of each implicit stage, t + c dt,
-// c = a21 + g and 1 (hesdirk2 1, 1 with the FSAL slope K1 at 0; sdirk2 g, 1; the
+// c = a21 + g and 1 (sdirk2 1, 1 with the FSAL slope K1 at 0; sdirk2 g, 1; the
 // backward-Euler solves 1), 2nd order: sum b c = 1/2, and the stiffly accurate last stage
 // has the source of t + dt.  adaptive: F_sub^n = F^{n-1} + a(t^n - t^{n-1})
 // ((tgt^{n-1} + tgt^n)/2 - F^{n-1}) (exponential trapezoid; star_tgp_ = tgt^{n-1}, restart
@@ -307,7 +307,7 @@ Real StarMltW(const Real t) {
 Real StarMltC(const Mesh *pm, const Real bdt) {
   if (!star_mtc_) return 0.0;
   const auto *pvet = pm->pmb_pack->pradvet;
-  return (pvet->time_scheme == radvet::VET_TIME_HESDIRK2 && pvet->t2_tab != 0 &&
+  return (pvet->time_scheme == radvet::VET_TIME_SDIRK2 &&
           bdt == pvet->fref_hbeta[0]*pm->dt) ? pvet->t2_a21 + imex_sdirk2::Gamma() : 1.0;
 }
 
@@ -2507,7 +2507,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // restart applies them) and u0, the VET u0 and f0x1 of this mesh including ghosts.
   // <time>/start_time must equal the parent's time (bitwise; the generated deck sets it)
   // so that w_mlt(t), the vet_gd rotation clock (physical) and the outputs continue.  No
-  // ic_rad, no star_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
+  // ic_rad, no star_ic_equil, no seed; everything else is a fresh start (sdirk2 starts
   // with time2_start, the implicit F0 faces from implicit_f0_init, empty rotavg history).
   const bool star_rmp = !restart &&
                         pin->DoesParameterExist("problem","star_ic_remap_file");

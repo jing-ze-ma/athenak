@@ -25,7 +25,7 @@
 //!   - per cell, the specific heating d(e/rho), accumulated over the run;
 //!   - class 4: the cells of a polar region (any density), see reg_rmin below.
 //! A cycle's entries are committed only when the cycle is accepted (a dt_retry or a
-//! hesdirk2 backward-Euler redo discards the attempt and takes a new baseline).
+//! sdirk2 backward-Euler redo discards the attempt and takes a new baseline).
 //! Output (rank 0): per cycle, one ELEDGER line per operator with the cycle's class sums,
 //! and one ELHOT line: the hottest floor cell (max e/rho, r > eint_ledger_rmin) and its
 //! per-operator d(e/rho) in this cycle.  Every eint_ledger_dump cycles each rank writes

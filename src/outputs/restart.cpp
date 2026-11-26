@@ -297,7 +297,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
-    // time_scheme = hesdirk2: the FSAL slope and what goes with it
+    // time_scheme = sdirk2: the FSAL slope and what goes with it
     if (pradvet->Time2RstNch() > 0) {
       const int nct = pradvet->Time2RstNch();
       // one MeshBlock at a time (same bytes); the clean rays'
@@ -375,7 +375,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       pradvet->RotAvgRstPackHost(outarray_vetr, nmb, 4);
     }
   }
-  // <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's hesdirk2
+  // <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's sdirk2
   // spin slope amk1), kAmSpinRstMagic, the last slabs of each record
   {
     hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
@@ -491,10 +491,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(pred_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(pred_hdr[0]) + sizeof(hdr), &pdt, sizeof(pdt));
   }
-  // <rad_vet> time_scheme = hesdirk2: the slope block, behind the predictor one --
+  // <rad_vet> time_scheme = sdirk2: the slope block, behind the predictor one --
   // int32 have, int32 nch, Real pred2_dt, Real dt_prev, Real vprev
   const int nt2 = (pradvet != nullptr) ? pradvet->Time2RstNch() : 0;
-  // <rad_vet> implicit_one_pass: its state, behind the hesdirk2 header
+  // <rad_vet> implicit_one_pass: its state, behind the sdirk2 header
   // (9 Reals; 18 with implicit_one_pass_auto, whose switch-off state follows)
   const bool wonep = (pradvet != nullptr) && (pradvet->impl_onep > 0);
   Real onep_hdr[18];
@@ -785,7 +785,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(pred_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // the hesdirk2 slope header, same marked form, behind the predictor one
+    // the sdirk2 slope header, same marked form, behind the predictor one
     if (nt2 > 0) {
       IOWrapperSizeT nb = sizeof(t2_hdr);
       resfile.Write_any_type(&(radvet::kVetTime2RstMagic[0]),
@@ -946,7 +946,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += npred*cell_bytes;   // rad_vet ipred
   }
   if (nt2 > 0) {
-    data_size += nt2*cell_bytes;   // rad_vet hesdirk2 slope
+    data_size += nt2*cell_bytes;   // rad_vet sdirk2 slope
   }
   // hydro / mhd w0(IEN), + the hydro w0 density and velocities
   data_size += (neint + (we_hyd ? 4 : 0))*cell_bytes;
@@ -1546,8 +1546,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nwarm > 1) { write_wtemp(outarray_wm2, "rt warm start 2"); }
   // and the implicit_predictor increment behind that, one slab per channel
   write_group(outarray_vetp, npred, "rad_vet predictor");
-  // and the hesdirk2 slope behind that
-  write_group(outarray_vett, nt2, "rad_vet hesdirk2 slope",
+  // and the sdirk2 slope behind that
+  write_group(outarray_vett, nt2, "rad_vet sdirk2 slope",
               [&](DvceArray5D<Real> &t, int m, int w0) {
                 pradvet->Time2RstPack(t, 1, m, w0);});
   // and the internal energy last of all (kEintRstMagic)

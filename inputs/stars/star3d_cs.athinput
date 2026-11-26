@@ -124,7 +124,7 @@ solver_maxit       = 200
 opacity           = table
 vet_scatter       = true
 closure           = sc
-time_scheme       = hesdirk2
+time_scheme       = sdirk2
 
 <problem>
 star_ic_eint_from_t = true

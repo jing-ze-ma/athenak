@@ -53,7 +53,7 @@ void RadiationVet::FluxMemoryKeep(const bool save) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::FluxMemoryInc
-//! \brief clean_stag_fkin: d of a hesdirk2 stage's old vector: the stage start state
+//! \brief clean_stag_fkin: d of a sdirk2 stage's old vector: the stage start state
 //! (stage 2: w1 d^n + w0 Y1) plus the increment c1 K1 + c2 K2 of d's own slopes (CLF_KD,
 //! CLF_KD + 1), as every other component of the integrated state
 

@@ -95,7 +95,7 @@ vet_gd_gl_nphi        = 18
 vet_gd_wall_interp    = true
 vet_gd_wall_sym       = true
 vet_gd_theta_seam_sym = true
-time_scheme           = hesdirk2
+time_scheme           = sdirk2
 
 <problem>
 star_seed_band = old

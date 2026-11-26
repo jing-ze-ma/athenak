@@ -348,7 +348,7 @@ void RadiationVet::WriteBack() {
   auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
   const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
   const bool wex = wsp &&
-                   time_scheme == VET_TIME_HESDIRK2;   // no slope carries a payment
+                   time_scheme == VET_TIME_SDIRK2;   // no slope carries a payment
   const bool fm = icr_fmeas && cln_vzero;   // SteadyStart: icr_dm
   auto fmd = icr_dm;
   const bool eso = esrc_on;

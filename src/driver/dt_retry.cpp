@@ -64,7 +64,7 @@ const char *kDtrMinimal[] = {
   // (or after the RKG sub-steps) and read by the next cycle's stage 1
   "res.eta_b",
   // <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
-  // cycles) and the radiation's hesdirk2 FSAL spin slope; empty/absent unless am_vector
+  // cycles) and the radiation's sdirk2 FSAL spin slope; empty/absent unless am_vector
   "am.am_spin", "vet.amk1",
   // RadiationVet
   "vet.u0", "vet.f0x1", "vet.f0x2", "vet.f0x3", "vet.ipred", "vet.t2k1",
@@ -927,7 +927,7 @@ void CounterKeep::Report(Mesh *pm) {
   if (global_variable::my_rank != 0) return;
   std::cout << "<time> counters_rollback: event counters of discarded attempts dropped: "
             << "dt_retry " << nrb_[0] << ", backward-Euler redo " << nrb_[1]
-            << ", hesdirk2 helper solves " << nrb_[2] << "; E-floor created energy "
+            << ", sdirk2 helper solves " << nrb_[2] << "; E-floor created energy "
             << "dropped (vet_pos_un, x volume) " << a[0] << " / " << a[1] << " / " << a[2]
             << ", vceil_de dropped " << a[3] << " / " << a[4] << " / " << a[5]
             << std::endl;

@@ -257,7 +257,7 @@ class RadiationVet {
   int fref_hnst = 0;
   Real fref_hgam0[4] = {0.0, 0.0, 0.0, 0.0}, fref_hbeta[4] = {0.0, 0.0, 0.0, 0.0};
   bool FrefWaccOn() const;
-  // clean staggered hesdirk2 (time2_fref_wacc): each stage solve pays the reference work
+  // clean staggered sdirk2 (time2_fref_wacc): each stage solve pays the reference work
   // of the hydro stage before it (gam0 = 0); no slope carries a payment
   bool FrefWaccStage() const;
   // gam0 of the hydro stage whose beta dt is bdt (FATAL if none matches)
@@ -367,15 +367,15 @@ class RadiationVet {
   Real pred_dt{};               // dt of that step
   DvceArray5D<Real> ipred;      // (m,3,k,j,i): dE_prev, dT_prev, T^n of this step
 
-  // ---- time_scheme = hesdirk2: two implicit stage solves inside the Heun stages
-  int time_scheme{};            // VET_TIME_BE | VET_TIME_HESDIRK2
+  // ---- time_scheme = sdirk2: two implicit stage solves inside the Heun stages
+  int time_scheme{};            // VET_TIME_BE | VET_TIME_SDIRK2
   bool t2_ok{};                 // a valid FSAL slope K1 is stored
   int t2_solve{};               // what the next ImplicitSolve does (VET_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // debug time2_dbg_fail: fail stage 1 at this cycle
   void Time2Stash();
   // Ebnd (diagnostic, ebnd_on set by a pgen): radiation energy put in through the
-  // physical x1 faces (inner minus outer) over the accepted steps. A hesdirk2 step
+  // physical x1 faces (inner minus outer) over the accepted steps. A sdirk2 step
   // weights the face flux L = sum A F1 of K1, K2, K3 with the tableau weights of
   // U^{n+1}; a backward-Euler step uses L of its solve.
   bool ebnd_on = false;
@@ -409,7 +409,7 @@ class RadiationVet {
   int t2_abe_len = 0;           // current skip-run length (0 = stage mode)
   int t2_abe_left = 0;          // skipped steps left in the current run
   bool t2_abe_now = false;      // this cycle skips the stages
-  // time_scheme = be runs as hesdirk2 with every step a time2_auto_be skip step
+  // time_scheme = be runs as sdirk2 with every step a time2_auto_be skip step
   // (Time2AutoBeBegin)
   bool t2_beonly = false;
   // the next step's hydro CFL dt is taken again after the radiation
@@ -417,7 +417,7 @@ class RadiationVet {
   Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
   Real t2_abe_ntry = 0.0;       // stage retries after a skip run
   Real t2_abe_nok = 0.0;        // of which succeeded
-  // hesdirk2 wall-time split (rank 0, diagnostic): clean stage steps, failed attempts,
+  // sdirk2 wall-time split (rank 0, diagnostic): clean stage steps, failed attempts,
   // their redo, auto_be steps, other BE steps, discarded dt_retry attempts
   Real t2w_clean = 0.0, t2w_fail = 0.0, t2w_redo = 0.0;
   Real t2w_abe = 0.0, t2w_be = 0.0, t2w_retry = 0.0;
@@ -425,10 +425,9 @@ class RadiationVet {
   void Time2AutoBeEnd(int kind, Real tw_a, Real tw_b);
   Real t2_dtprev{};             // dt of the previous step (vet_sc extrapolation)
   bool t2_vprev{};              // vet_prev holds the tensor of the previous step
-  // time2_tableau: 0 hesdirk2 (Heun + H-ESDIRK2), 1 trbdf2 (TR-BDF2, RK2 hydro with
-  // c2 = 2 - sqrt 2). Time2FormStage: stage 1 t2inc = t2_a21 dt K1; stage 2 start =
-  // t2_w0 Y2 + t2_w1 U^n, t2inc = dt (t2_c31 K1 + t2_c32 K2); diagonal g = 1 - 1/sqrt 2.
-  int t2_tab = 0;
+  // the SDIRK2 tableau (utils/imex_sdirk2.hpp). Time2FormStage: stage 1 t2inc = t2_a21 dt
+  // K1; stage 2 start = t2_w0 Y2 + t2_w1 U^n, t2inc = dt (t2_c31 K1 + t2_c32 K2);
+  // diagonal g = 1 - 1/sqrt 2.
   Real t2_a21 = 0.0, t2_w0 = 0.5, t2_w1 = 0.5, t2_c31 = 0.0, t2_c32 = 0.0;
   Real t2_lin_save{};           // implicit_lin_tol put back after a stage solve
   Real t2_nclip{};              // vet_sc cells whose extrapolated tensor was clipped
@@ -465,7 +464,7 @@ class RadiationVet {
   // old files (version < 4) carry time2_vet_col = extrap2 channels: read past
   static constexpr int VET_X2_NCH = 24;
   void Time2Report();
-  int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
+  int Time2RstNchWant();        // restart channels this run keeps (0 unless sdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
   bool Time2RstAccept(const int nfile, const int ver);   // a file's channels fit (sets
                                                          // t2_nfv, t2_rstd3)
@@ -665,7 +664,7 @@ class RadiationVet {
   void PredictState(const bool use_k1);
   void RayMoments(DvceArray5D<Real> dst, const bool solve = true);
   void ClosureExtrap();
-  bool ExtrapSx() const {return cln_extrap == 3 && t2_tab != 0;}
+  bool ExtrapSx() const {return cln_extrap == 3;}
   void ClosureAfterSolve();
   void ClosureIterate();
   void StageOpacity();

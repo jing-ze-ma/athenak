@@ -326,7 +326,7 @@ class BaseTypeOutput {
   // the <rad_vet> implicit_predictor = step increment (RadiationVet::ipred, 3 channels);
   // empty unless one is stored.  See radvet::kVetPredRstMagic.
   HostArray5D<Real> outarray_vetp;
-  // <rad_vet> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
+  // <rad_vet> time_scheme = sdirk2: the stored slope K1, ipred2, vet_prev (channels of
   // RadiationVet::Time2RstPack); empty unless a slope is stored.
   // radvet::kVetTime2RstMagic.
   HostArray5D<Real> outarray_vett;

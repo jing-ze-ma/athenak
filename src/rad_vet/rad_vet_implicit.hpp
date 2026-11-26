@@ -23,7 +23,7 @@ constexpr char kVetPredRstMagic[8] = {'M', '1', 'P', 'R', 'E', 'D', '0', '1'};
 
 // time_scheme
 constexpr int VET_TIME_BE = 0;        // Lie splitting: Heun hydro, then one BE solve
-constexpr int VET_TIME_HESDIRK2 = 1;  // H-ESDIRK2: one stage solve inside each Heun stage
+constexpr int VET_TIME_SDIRK2 = 1;  // SDIRK2: one stage solve inside each Heun stage
 // t2_solve: what the next ImplicitSolve does
 constexpr int VET_T2S_NONE = 0;     // plain backward Euler
 constexpr int VET_T2S_BESTORE = 1;  // backward Euler, K1 = (Y - rhs)/dt stored
@@ -39,7 +39,7 @@ constexpr int VET_T2_F1 = 5;
 constexpr int VET_T2_NK = 8;
 // vet_sc: extrapolated components of vet_cell (VETRAY_CHI .. VETRAY_D11+5)
 constexpr int VET_T2_NVET = 10;
-// hesdirk2 slope: int32 have, int32 nch, Real pred2_dt, dt_prev, vprev; nch slabs
+// sdirk2 slope: int32 have, int32 nch, Real pred2_dt, dt_prev, vprev; nch slabs
 // (K1, ipred2, vet_prev) behind the predictor slabs
 constexpr char kVetTime2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
 // implicit_one_pass > 0: 9 Reals (last two contractions, solve counters)
@@ -54,7 +54,7 @@ constexpr char kVetCtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
 constexpr char kVetRssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
 // vet_gd_async pending source (ln chi, ln S): int32 have = 1, nch = 2, ncycle, 0
 constexpr char kVetVgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
-// conservative gas source with hesdirk2: int32 have = 1, nch (3 | 0), csk1_ok, 0; nch
+// conservative gas source with sdirk2: int32 have = 1, nch (3 | 0), csk1_ok, 0; nch
 // slabs of csk1
 constexpr char kVetCskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
 // time2_face_fct: face fluxes t2pf1 (FaxRst*)

@@ -55,7 +55,7 @@ Real led_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0}, ledn_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.
 int led_cyc_ = -1;
 Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
 // The radiation energy through the physical x1 faces AS THE SCHEME
-// APPLIES IT (RadiationVet Ebnd with ebnd_split: the hesdirk2 tableau weights of the
+// APPLIES IT (RadiationVet Ebnd with ebnd_split: the sdirk2 tableau weights of the
 // slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
 // x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
 bool ebd_ = false;
@@ -454,15 +454,6 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   } else if (ig == "rk2") {
     nst_ = 2; gam0_[0] = 0.0; gam1_[0] = 1.0; beta_[0] = 1.0;
     gam0_[1] = 0.5; gam1_[1] = 0.5; beta_[1] = 0.5;
-    if (pin->DoesBlockExist("rad_vet") &&
-        pin->DoesParameterExist("rad_vet", "time2_tableau") &&
-        pin->GetString("rad_vet", "time2_tableau").compare("trbdf2") == 0) {
-      const Real c2 = 2.0 - std::sqrt(2.0);
-      beta_[0] = c2;
-      gam0_[1] = 0.25;
-      gam1_[1] = 0.75;
-      beta_[1] = 0.5/c2;
-    }
   } else if (ig == "rk3") {
     nst_ = 3; gam0_[0] = 0.0; gam1_[0] = 1.0; beta_[0] = 1.0;
     gam0_[1] = 0.25; gam1_[1] = 0.75; beta_[1] = 0.25;

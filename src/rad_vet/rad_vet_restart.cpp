@@ -176,7 +176,7 @@ int RadiationVet::Time2RstNchWant() {
   // version >= 4: no ipred2 / extrap2 channels, ring offsets dense (RingRstCopy)
   const bool sk = t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
-  const int nt = (time_scheme != VET_TIME_HESDIRK2) ? 0 :
+  const int nt = (time_scheme != VET_TIME_SDIRK2) ? 0 :
          VET_T2_NK + (sk ? 0 : np) + (vet_sc ? VET_T2_NVET : 0)
          + ((t2_x2old && !sk) ? VET_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == VET_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
@@ -263,7 +263,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   auto mb = std::make_pair(0, nmb);
   auto ms = std::make_pair(m0, m0 + nmb);
   auto AL = Kokkos::ALL;
-  const bool h2 = (time_scheme == VET_TIME_HESDIRK2);
+  const bool h2 = (time_scheme == VET_TIME_SDIRK2);
   // a holds the record's channels w0 .. w1-1 (the writer streams the record in windows);
   // put copies the record channels c0 .. c0+n-1 = src's s0 .. s0+n-1 that fall inside,
   // one sets channel cc to v
@@ -404,7 +404,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
 void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
-  const bool h2 = (time_scheme == VET_TIME_HESDIRK2);
+  const bool h2 = (time_scheme == VET_TIME_SDIRK2);
   // a file's predictor / extrap2 channels are read past (a NOTE once if nonzero)
   auto skip = [&w]() {
     static bool said = false;

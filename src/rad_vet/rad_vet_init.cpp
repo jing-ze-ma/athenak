@@ -605,7 +605,7 @@ void RadiationVet::MemArenaBind() {
   }
   // K2 and its face fluxes: from the write-back of stage 1 to the end of the step; with
   // extrap1 no closure is built between them (sdirk2: the stage-2 solve writes K1)
-  if (cln_extrap == 3 && t2_tab == 2) {
+  if (cln_extrap == 3) {
     bind(t2k2);
     bind(t2pf2);
     marena_k2 = true;

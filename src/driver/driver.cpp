@@ -15,7 +15,7 @@
 #include <cmath>  // std::isfinite
 #include <cstdlib>  // std::_Exit
 #include <utility>  // std::pair
-#include <chrono>   // hesdirk2 wall split
+#include <chrono>   // sdirk2 wall split
 #include <memory>
 #include <csignal>  // graceful stop: SIGTERM, SIGUSR1
 #include <cstdio>   // std::remove
@@ -164,18 +164,6 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
       gam0[1] = 0.5;
       gam1[1] = 0.5;
       beta[1] = 0.5;
-      // <rad_vet>/time2_tableau = trbdf2 (rad_vet_imex.cpp): the explicit
-      // partner of TR-BDF2, the two-stage RK2 with c2 = 2 - sqrt(2) and
-      // b = (1 - 1/(2 c2), 1/(2 c2)): stage 2 = 3/4 U^n + 1/4 Y2 + dt/(2 c2) L(Y2)
-      if (pin->DoesBlockExist("rad_vet") &&
-          pin->DoesParameterExist("rad_vet", "time2_tableau") &&
-          pin->GetString("rad_vet", "time2_tableau").compare("trbdf2") == 0) {
-        const Real c2 = 2.0 - std::sqrt(2.0);
-        beta[0] = c2;
-        gam0[1] = 0.25;
-        gam1[1] = 0.75;
-        beta[1] = 0.5/c2;
-      }
     } else if (integrator == "rk3") {
       // SSPRK (3,3): Gottlieb (2009) equation 3.2
       // Optimal (in error bounds) explicit three-stage, third-order SSPRK
@@ -701,10 +689,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       }
       if (dtr_retrying) {rkg_pend = rkg_pend_ckpt;} else {rkg_pend_ckpt = rkg_pend;}
       dtr_retrying = false;
-      // the hesdirk2 wall split (rank 0, fenced; RadiationVet::Time2AutoBeEnd)
+      // the sdirk2 wall split (rank 0, fenced; RadiationVet::Time2AutoBeEnd)
       radvet::RadiationVet *pm1w = pmesh->pmb_pack->pradvet;
       const bool t2wall = (pm1w != nullptr) &&
-                          (pm1w->time_scheme == radvet::VET_TIME_HESDIRK2);
+                          (pm1w->time_scheme == radvet::VET_TIME_SDIRK2);
       auto t2clk = [&]() {
         if (t2wall) {Kokkos::fence();}
         return std::chrono::steady_clock::now();
@@ -767,7 +755,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(1);}
 
       // time-integrator tasks for each stage of integrator
-      // <rad_vet>/time_scheme = hesdirk2 (rad_vet_imex.cpp): the implicit radiation
+      // <rad_vet>/time_scheme = sdirk2 (rad_vet_imex.cpp): the implicit radiation
       // solve runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
       radvet::RadiationVet *pvet = pmesh->pmb_pack->pradvet;

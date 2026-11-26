@@ -21,7 +21,7 @@
 //! the tracer pass (TracerSource), a ConToPrim tracer rescale, the Alfven-speed density
 //! floor (not a constant), the no-infall momentum removal -- fails the bitwise test, and
 //! the refresh is then the full one;
-//! - hesdirk2 (no split source): RTOpSplitBvals is never called.
+//! - sdirk2 (no split source): RTOpSplitBvals is never called.
 
 #include <cstdint>
 #include <type_traits>

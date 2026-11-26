@@ -243,7 +243,7 @@ void RadiationVet::FirstIterate() {
   // sdirk2's stage 2 from (K1 + z K2^{n-1})/(1 + z), z = h (ch kE +
   // 4 c kP a T^4/e) the exchange stiffness: stiff cells follow the last step's stage-2
   // slope (the slow manifold's drift), slow ones the latest slope
-  const bool pxc = t2_tab == 2 && t2_solve == VET_T2S_STAGE2;
+  const bool pxc = t2_solve == VET_T2S_STAGE2;
   auto ks1 = t2k2, ks2 = t2k1;   // sdirk2 stage 2: K1 of this step, K2 of the last
   const Real ch = chat;
   const bool pred = (t2_ok || cln_k1ok) &&

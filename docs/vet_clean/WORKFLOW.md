@@ -43,7 +43,7 @@ other boxes are tasks of the same list (`AssembleRadVetTasks`).
 
 ![The closure and the rays](figures/flow/closure.svg)
 
-The chart is for the default `closure_form` = extrap1 with `time2_tableau` = sdirk2 (the default, with `<hydro>` and with `<mhd>`). A step then sweeps the
+The chart is for the default `closure_form` = extrap1 with the SDIRK2 stages (`<hydro>` and `<mhd>`). A step then sweeps the
 rays once.
 
 | when | sweeps |
