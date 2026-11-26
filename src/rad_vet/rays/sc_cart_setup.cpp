@@ -997,6 +997,11 @@ void RadiationVet::ScSlabSelect() {
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
     vgd_ipc_on = true;
 #endif
+    // passes (x1 periodic, a mirrored top) read the exit shells' band of the pass
+    // before, which the band ring would have handed back: no ring there
+    if (vet_x1per || (vet_bc_mirror_hi && ibc_x1max == VET_IBC_REFLECT)) {
+      vgd_ring_par = false;
+    }
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet> closure = sc on a Cartesian mesh: "
