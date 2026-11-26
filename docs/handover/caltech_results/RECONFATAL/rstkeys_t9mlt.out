@@ -1,0 +1,5 @@
+a_deck rc 0 CLEAN WARNING 1
+  stored  problem/star_sponge_form = lawson   (code default exp)
+b_named rc 0 CLEAN WARNING 0
+c_ronly rc 0 CLEAN WARNING 0
+ROW deck_t9mlt.athinput | warnings with DECK 1 | with DECK.named 0 | b_named vs c_ronly: 6 files, maxdiff 0

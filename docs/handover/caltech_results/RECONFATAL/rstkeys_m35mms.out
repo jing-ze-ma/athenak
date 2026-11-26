@@ -1,0 +1,6 @@
+a_deck rc 0 CLEAN WARNING 2
+  stored  problem/mlt_src_time = start   (code default stage)
+  stored  problem/star_sponge_form = lawson   (code default exp)
+b_named rc 0 CLEAN WARNING 0
+c_ronly rc 0 CLEAN WARNING 0
+ROW deck_m35mms.athinput | warnings with DECK 2 | with DECK.named 0 | b_named vs c_ronly: 6 files, maxdiff 0
