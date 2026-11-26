@@ -26,6 +26,12 @@
 
 namespace radvet {
 
+// cln_rhs's CUDA blocks of 256 per SM (build override, as ATHENA_LB_* in rad_vet_args.hpp;
+// a cap changes only register allocation and occupancy: bitwise)
+#ifndef ATHENA_LB_RHS
+#define ATHENA_LB_RHS 3
+#endif
+
 // 4-D par_for (same index flattening) at MB blocks of 256 per SM
 template <int MB, typename F>
 static void ParForLb(const char *name, const int nmb1, const int ks, const int ke,
@@ -170,7 +176,7 @@ void RadiationVet::RightHandSide(const bool beta, const bool lat) {
   // sdirk2's stage 2: the chord, CLW_RR holds the last pass's T
   const bool gsc = t2_solve == VET_T2S_STAGE2;
   const Real eps_ = std::numeric_limits<Real>::epsilon();
-  ParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
+  ParForLb<ATHENA_LB_RHS>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const SolveArgs &x = *px, &xh = *pxh;   // in device memory: no per-thread copy
     const auto &eos = *peos;
