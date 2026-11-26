@@ -335,7 +335,26 @@
               const bool want_in = inw || (typ == 3);
               bool ok[4];
               bool all = true;
-              for (int q = 0; q < 4; ++q) {
+              // active stencil far enough from this cell's tangent: every corner's
+              // branch is the cell's own (|n.r_hat' - n.r_hat| <= |dtheta| + |dphi| on
+              // a uniform grid; the slab's n.r_hat is the same everywhere), so the
+              // tests below would give exactly these values
+              bool sure = false;
+              if (!sth_ && !pol_ && k0 >= wb && k1 < wb + nx3b && j0 >= wb &&
+                  j1 < wb + nx2b) {
+                const Real mo = mr_(m,k,j,d);
+                const int djm = (j1 - j > j - j0) ? (j1 - j) : (j - j0);
+                const int dkm = (k1 - k > k - k0) ? (k1 - k) : (k - k0);
+                const Real bd = slb_ ? 0.0 : (fabs(djm*lg_.Dx2(mbsize, m)) +
+                                              fabs(dkm*lg_.Dx3(mbsize, m)))*(1.0 + 1.0e-9)
+                                             + 1.0e-12;
+                sure = fabs(mo) > bd;
+                if (sure) {
+                  all = want_in ? (mo < 0.0) : (mo >= 0.0);
+                  for (int q = 0; q < 4; ++q) {ok[q] = all;}
+                }
+              }
+              for (int q = 0; !sure && q < 4; ++q) {
                 const int kk = (q < 2) ? k0 : k1;
                 const int jj = (q % 2 == 0) ? j0 : j1;
                 const Real mq = mrq(kk,jj);
