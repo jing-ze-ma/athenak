@@ -302,3 +302,59 @@
 FAIL ray_cut_slab         86 s  warnings 0 maxdiff_nofuse 0 maxdiff_low 0 maxdiff_retry 2.39e+35 shared [low retry shared] said_low 1 said_shared 0 fallbacks [0 1] moves 2  <- maxdiff_retry 2.39e+35 != 0.0
 FAIL idort_beams          12 s  L1 0.177 lum_top 1.19 flux_err 5.97e-08 F_nocone 329  <- F_nocone 329 > 1
 ```
+
+## 3. Combined star check, REL f42d79032 vs NEXT b58f22fd0
+- Setup: fresh f42d79032 templates, 300 cycles, 4 ranks, on 02-16 (7333035) alone, order REL then NEXT per star.
+### SC-REL4-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 271 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6579
+- END-row residuals per cycle: Lz RMS 9.940e+29, sum -1.104e+32, max|.| 4.170e+30 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.124e+31, sum 3.699e+31, max|.| 1.157e+32 | M RMS 6.960e+16, sum 7.513e+16, max|.| 1.892e+17
+### SC-NEXT4-bsg
+- Terminating on cycle limit; rows 300 (cycles), wall 269 s, dt first/median/last 165.5 / 168.6 / 168.8 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.6490
+- END-row residuals per cycle: Lz RMS 2.555e+33, sum -5.518e+34, max|.| 4.310e+34 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.218e+31, sum 2.960e+31, max|.| 1.122e+32 | M RMS 7.363e+16, sum 1.081e+17, max|.| 2.297e+17
+### SC-REL4-m35
+- Terminating on cycle limit; rows 300 (cycles), wall 263 s, dt first/median/last 12.01 / 12.01 / 12.01 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.5669
+- END-row residuals per cycle: Lz RMS 9.832e+23, sum 9.195e+24, max|.| 9.572e+24 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.372e+29, sum 7.763e+29, max|.| 2.107e+30 | M RMS 1.047e+15, sum -2.744e+15, max|.| 3.448e+15
+### SC-NEXT4-m35
+- Terminating on cycle limit; rows 300 (cycles), wall 258 s, dt first/median/last 12.01 / 12.01 / 12.01 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 0.5571
+- END-row residuals per cycle: Lz RMS 8.679e+32, sum 2.771e+34, max|.| 2.020e+33 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 7.368e+29, sum 2.433e+29, max|.| 2.446e+30 | M RMS 9.483e+14, sum -9.852e+14, max|.| 2.885e+15
+### SC-REL4-t9
+- Terminating on cycle limit; rows 300 (cycles), wall 802 s, dt first/median/last 96.85 / 96.85 / 96.85 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 1.9671
+- END-row residuals per cycle: Lz RMS 2.546e+27, sum -5.581e+28, max|.| 1.248e+28 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 3.882e+32, sum 3.448e+32, max|.| 1.194e+33 | M RMS 7.037e+17, sum -8.719e+18, max|.| 9.367e+18
+### SC-NEXT4-t9
+- Terminating on cycle limit; rows 300 (cycles), wall 789 s, dt first/median/last 96.85 / 96.85 / 96.85 s; CW 0 FATAL 0 DT_RETRY 0
+- s/cycle median over the last 6 elapsed intervals 1.9302
+- END-row residuals per cycle: Lz RMS 8.990e+36, sum -3.506e+38, max|.| 1.499e+38 | E (dEtot + E_hflx dt - (L_in - L_top) dt) RMS 4.103e+32, sum 8.201e+32, max|.| 1.186e+33 | M RMS 6.767e+17, sum -8.899e+18, max|.| 9.367e+18
+- **L_z residual note:** NEXT's user.hst has the new column Lz_rflx [28] (the radiation's x1-face torque). With it in the budget, r = dLz_tot + (Lz_hflx + Lz_rflx) dt:
+  - NEXT bsg RMS 1.01e30 (REL 0.99e30);
+  - NEXT m35 RMS 2.4e24 (REL 9.8e23);
+  - NEXT t9 RMS 2.6e27 (REL 2.5e27).
+  - Without Lz_rflx, as in the rows above, NEXT shows the radiation torque as a residual.
+- **dt does not collapse:** bsg 165.5 / 168.6 / 168.8 s in both REL and NEXT. m35 and t9 dt are constant.
+- s/cycle NEXT/REL: bsg 0.986, m35 0.983, t9 0.981. All arms 0 CW / FATAL / DT_RETRY.
+- State difference NEXT vs REL at cycle 300:
+- SC-NEXT4-bsg vs SC-REL4-bsg (cycles (300, 300), dfloor 6.152e-14):
+  - rho: all cells max 1.124e-01 at (r 3.7883e+12, th 1.0901, ph 0.4152), mean 8.219e-04; rho>10 dfloor max 7.956e-02 at (r 3.7774e+12, th 1.7651, ph 0.3048), mean 6.831e-04
+  - T: all cells max 3.136e-03 at (r 3.7448e+12, th 1.3397, ph 1.0452), mean 4.364e-05; rho>10 dfloor max 3.136e-03 at (r 3.7448e+12, th 1.3397, ph 1.0452), mean 4.853e-05
+  - |v|: all cells max 2.363e-01 at (r 3.7883e+12, th 1.5851, ph 0.7138), mean 6.869e-03; rho>10 dfloor max 2.869e-02 at (r 3.7666e+12, th 1.3642, ph 0.7056), mean 3.155e-04
+- SC-NEXT4-m35 vs SC-REL4-m35 (cycles (300, 300), dfloor 1.000e-17):
+  - rho: all cells max 2.392e-01 at (r 9.6970e+11, th 1.7446, ph 0.3088), mean 1.582e-03; rho>10 dfloor max 2.382e-01 at (r 9.6839e+11, th 1.3969, ph 0.3116), mean 1.100e-03
+  - T: all cells max 4.015e-04 at (r 9.5534e+11, th 1.7446, ph 0.1493), mean 3.298e-06; rho>10 dfloor max 4.015e-04 at (r 9.5534e+11, th 1.7446, ph 0.1493), mean 3.077e-06
+  - |v|: all cells max 4.035e-01 at (r 9.7102e+11, th 1.7433, ph 0.3416), mean 1.162e-02; rho>10 dfloor max 1.253e-01 at (r 9.6708e+11, th 1.3969, ph 0.2734), mean 3.969e-04
+- SC-NEXT4-t9 vs SC-REL4-t9 (cycles (300, 300), dfloor 3.600e-19):
+  - rho: all cells max 1.611e-01 at (r 6.9870e+12, th 0.8621, ph 0.1749), mean 5.059e-04; rho>10 dfloor max 1.817e-02 at (r 6.8918e+12, th 2.3531, ph 0.1687), mean 6.817e-05
+  - T: all cells max 6.232e-03 at (r 4.4158e+13, th 1.2732, ph 2.9667), mean 6.461e-06; rho>10 dfloor max 1.406e-04 at (r 6.8918e+12, th 1.9911, ph 2.0954), mean 2.868e-07
+  - |v|: all cells max 7.418e-01 at (r 6.9870e+12, th 0.7946, ph 2.5311), mean 4.744e-03; rho>10 dfloor max 4.747e-02 at (r 6.8918e+12, th 2.3470, ph 2.6354), mean 1.473e-04
+  - Where rho > 10 dfloor: rho max 8e-2 (bsg) / 0.24 (m35) / 1.8e-2 (t9); T max 3e-3 / 4e-4 / 1.4e-4.
+  - The maxima sit in the outer shells (fwb_line, flux_cone_lz / lz_spin and the floor flux act there).
+
+## 4. Production restarts on NEXT (02-17; no workaround key; READ-ONLY hard links)
+- RST-N4-bsg: CW 0 FATAL 0; final rst bsg3d.00010.rst vs bsg3d.00011.rst identical: yes; hydro_w bsg3d.hydro_w.00117.bin vs bsg3d.hydro_w.00117.bin identical: yes
+- RST-N4-m35mms: CW 0 FATAL 0; final rst m35mms.00012.rst vs m35mms.00013.rst identical: yes; hydro_w m35mms.hydro_w.00483.bin vs m35mms.hydro_w.00483.bin identical: yes
+- RST-N4-m35zams: CW 0 FATAL 0; final rst m35zams.00012.rst vs m35zams.00013.rst identical: yes; hydro_w m35zams.hydro_w.00483.bin vs m35zams.hydro_w.00483.bin identical: yes
+- RST-N4-t9l62: CW 0 FATAL 0; final rst t9l62.00013.rst vs t9l62.00014.rst identical: yes; hydro_w t9l62.hydro_w.00252.bin vs t9l62.hydro_w.00252.bin identical: yes
+- All 4 stars: (a) == (b) for both the final rst and the last hydro_w. 0 FATAL, 0 CW.
