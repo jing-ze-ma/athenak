@@ -1164,7 +1164,7 @@ class RadiationVet {
   double vgd_xff_nfb = 0.0;        // builds that fell back to two sweeps (diagnostic)
   bool ScXffOk();
   void ScXffSwap();
-  void ScEs2Make();   // second stream of the cubed sphere's early send
+  void ScEs2Make();   // second stream (cs early send, sp interior with IPC)
   void ScGbSwap() {   // the compact global band's kept lists go with their set
     std::swap(vgd_gbcf, vgd_gbcf_xb);
     std::swap(vgd_gbcb, vgd_gbcb_xb);
