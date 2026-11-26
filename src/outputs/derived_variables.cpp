@@ -1434,6 +1434,11 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
                      (vc_.extent_int(1) > radvet::VETRAY_EPS);
     const bool hgd = !hsc && prm->vgd_on && (gh_.extent_int(0) >= nmb);
     const bool gx = hgd && (gh_.extent_int(1) >= radvet::VET_VGD_HRNX);
+    // curved rays without the extended half ranges: J of the formal solution from the
+    // closure moments (CLN_JR, J also below closure_ray_min E); output only
+    auto cs_ = prm->cln_s;
+    const bool hjr = hgd && !gx && (cs_.extent_int(0) >= nmb) &&
+                     (cs_.extent_int(1) > radvet::CLN_JR);
     const bool c1v = hsc && prm->thsw_c1;
     const int mode = prm->impl_thsw;
     const bool fs = (mode == radvet::VET_THSW_FS || mode == radvet::VET_THSW_FSKN ||
@@ -1466,6 +1471,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
           c1 = gh_(m,radvet::VET_VGD_HRC1,k,j,i);
           ep = gh_(m,radvet::VET_VGD_HREP,k,j,i);
           jj = gh_(m,radvet::VET_VGD_HRJ,k,j,i);
+        } else if (hjr) {
+          jj = cs_(m,radvet::CLN_JR,k,j,i);
         }
       }
       Real w = -1.0;
