@@ -40,6 +40,7 @@
 #include "utils/deep_copy_across.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/imex_sdirk2.hpp"
+#include "utils/p_ledger.hpp"
 
 namespace radvet {
 
@@ -274,6 +275,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     in_(m,n,k,j,i) = v;
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
+  p_ledger::Inc(c1, two ? c2 : 0.0);
   FluxMemoryInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
   Time2FaceFct(stage, c1, c2);
   BoundaryEnergyAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
@@ -437,6 +439,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
     cln_lzc = c*cln_lzs1;   // (clean_cs_lz_abs = 2)
+    p_ledger::Inc(c, 0.0);
   }
   Mesh *pmesh = pmy_pack->pmesh;
   t2_inprobe = true;
@@ -454,6 +457,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
     cln_lzs1 = cln_lzs2;   // (clean_cs_lz_abs = 2)
+    p_ledger::Inc(0.0, 0.0, 1);
     if (t2_pfst && t2pf1.extent_int(0) > 0) {
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;

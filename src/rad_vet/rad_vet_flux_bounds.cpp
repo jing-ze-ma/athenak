@@ -26,6 +26,7 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_momentum.hpp"
 #include "rad_vet/rad_vet_flux.hpp"
+#include "utils/p_ledger.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
 
@@ -154,9 +155,8 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
       // (clean_lz_spin: the arm faces' cut withheld from the gas per face, WriteBack)
       if (spn && !bd && !fa(d) && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
-      if (!bd && !(lz && !fa(d) && !(spn && !cub))) {
-        fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
-      }
+      const bool wh = !bd && !(lz && !fa(d) && !(spn && !cub));   // (withheld)
+      if (wh) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
@@ -167,8 +167,12 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       const Real dp = (f - fs)*it*0.5*(CellVolume(x, m, k, j, i) +
                       CellVolume(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
       SlotAdd(sl, 1, m, k, j, i, fabs(dp));
-      // (fcone_lz: the momentum removed along each face family, signed, the gas's not)
-      if (lz && !bd && fa(d)) SlotAdd(sl, 2 + d, m, k, j, i, dp);
+      // (the momentum withheld from the gas along each face family, signed, its own
+      // cells' halves: fcone_lz, p_ledger)
+      const bool rin = (d == 0) ? (i <= ie) : ((d == 1) ? (j <= je) : (k <= ke));
+      if (wh) SlotAdd(sl, 2 + d, m, k, j, i, (f - fs)*it*0.5*((rin ? CellVolume(x, m,
+                      k, j, i) : 0.0) + (lin ? CellVolume(x, m, k-dk, j-dj, i-di) :
+                      0.0))/(x.c*x.c));
     });
   }
   if (wbc) SlotSum(sl, fcc, 5);
@@ -179,9 +183,12 @@ void RadiationVet::FluxCone(const int e, const int kd) {
       std::printf("CLEAN FCONE cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
+    Real q[3];   // (every rank: the sums are collective)
+    for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h(2+d), false);
+    if (cln_feedback && !cln_vzero) {
+      p_ledger::Withheld(0, q, PSlope(t2_solve), dt_sub, !t2_inprobe);
+    }
     if (n > 0.0 && cln_fclz) {
-      Real q[3];   // (every rank: the sums are collective)
-      for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h(2+d), false);
       if (global_variable::my_rank == 0) {
         std::printf("CLEAN FCONE_LZ cycle %d t2s %d momentum removed (signed, V/c^2) x1 "
                     "%.6e x2 %.6e x3 %.6e\n", pmy_pack->pmesh->ncycle, t2_solve, q[0],
