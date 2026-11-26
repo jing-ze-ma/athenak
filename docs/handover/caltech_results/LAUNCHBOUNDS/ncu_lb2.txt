@@ -1,0 +1,7 @@
+| Kokkos label | % of cycle (nsys, 1 GPU) | dur us (1 launch, rank 0 of 4) | DRAM % peak | FP64 pipe % | FLOP/B (DRAM) | GFLOP/s | L1 / L2 hit % | sectors/req (global ld) | regs/thr | local ld+st B (spills) | occupancy achieved / theor. % | active threads/warp % |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| cln_drag | 5.7 | 4590.7 | 8.2 | 7.3 | 2.736 | 1096.4 | 76 / 53 | 2.9 | 128 | 3.22e+08 | 25 / 25 | 98 |
+| cln_facecoef | 3.9 | 520.4 | 23.9 | 17.8 | 2.522 | 2966.3 | 74 / 56 | 7.3 | 100 | 1.69e+08 | 24 / 25 | 100 |
+| cln_fs0 | 4.5 | 1020.6 | 15.9 | 6.0 | 1.046 | 820.1 | 64 / 47 | 2.7 | 128 | 0 | 25 / 25 | 100 |
+| cln_gd_fs | 3.1 | 14286.2 | 11.7 | 14.6 | 3.157 | 1812.0 | 80 / 53 | 5.4 | 128 | 0 | 25 / 25 | 100 |
+| cln_rhsaf | 10.7 | 1664.0 | 12.7 | 4.9 | 0.949 | 593.8 | 68 / 69 | 2.5 | 128 | 2.01e+09 | 24 / 25 | 94 |

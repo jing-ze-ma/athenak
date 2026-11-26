@@ -395,3 +395,42 @@ void Kokkos::Impl::cuda_parallel_launch_constant_memory<Kokkos::Impl::ParallelFo
   - FluxSolve SolveFor<4,.>#1: 80 / 40 -> 128 / 0 -> see lb1 rows
   - FaceCoefficients: plain launch, 56 / 776 -> 100 / 40 (SolveFor<0,2>) -> 100 / 40
 - Kernels outside the five keep their REG/STACK in all three builds.
+
+## 2-3. Timing and bitwise (bsg rst 00009, 4 GPUs, 01-17 alone; 20 cycles; ndiag 1; outputs off)
+- Each binary had one run under the fenced kernel timer (kp_ktime) and two plain runs (order lb0 lb2 lb1, twice).
+- All runs: rc 0, 0 FATAL. The 47 CLEAN WARNING per run are the 3c681d9d1-era restart-key warnings of my small -i deck (final_restart=false); results unchanged.
+| arm | s/cycle 6-20 (kp) | plain run 1 | plain run 2 | Krylov it/cycle | cln_gd_fs ms/cycle (launches) | cln_drag ms/cycle (launches) | cln_rhsaf ms/cycle (launches) | cln_fs0 ms/cycle (launches) | cln_facecoef ms/cycle (launches) |
+|---|---|---|---|---|---|---|---|---|---|
+| lb0 | 0.9001 | 0.8514 | 0.8539 | 33.5 | 15.84 (1.0) | 29.76 (12.5) | 55.38 (26.7) | 24.04 (26.7) | 21.00 (16.8) |
+| lb2 | 0.8999 | 0.8559 | 0.8484 | 33.5 | 11.12 (1.0) | 32.99 (12.5) | 58.45 (26.7) | 28.88 (26.7) | 7.80 (16.8) |
+| lb1 | 0.9698 | 0.9361 | 0.9488 | 33.5 | 12.64 (1.0) | 61.53 (12.5) | 88.87 (26.7) | 49.98 (26.7) | 7.47 (16.8) |
+- kp ms/cycle = total/20 cycles (rank 0, fenced, warm-up included).
+- CLEAN lines lb0 vs lb2 (kp runs, 20 cycles): 40 vs 40 lines, identical yes
+- CLEAN lines lb0 vs lb1 (kp runs, 20 cycles): 40 vs 40 lines, identical yes
+- 10-cycle final hydro_w lb0 vs lb2 (bsg3d.hydro_w.00116.bin): data identical yes, whole file yes
+- 10-cycle final hydro_w lb0 vs lb1 (bsg3d.hydro_w.00116.bin): data identical yes, whole file yes
+- The 10-cycle pair was rerun on 02-09: my first d10 runs passed output2/dcycle to env instead of to athena, so they wrote no final dump. Compared: bsg3d.hydro_w.00116.bin.
+
+### Reading
+- **LB2** (128-register cap):
+  - s/cycle is unchanged: plain 0.856 / 0.848 against lb0 0.851 / 0.854.
+  - cln_facecoef 21.0 -> 7.8 ms/cycle (2.7x faster; spills 3.1 GB -> 0.17 GB per launch).
+  - cln_gd_fs 15.8 -> 11.1 ms.
+  - But cln_drag 29.8 -> 33.0, cln_rhsaf 55.4 -> 58.5 and cln_fs0 24.0 -> 28.9 get slower: occupancy falls from 37 % to 25 %.
+  - The net change in the five kernels is -10 ms/cycle, inside the run noise.
+- **LB1** (255-register cap): 10 % slower overall. cln_drag 2.1x and cln_rhsaf 1.6x slower (220 / 240 registers, about 12 % occupancy).
+- **Bitwise: yes for both.** The CLEAN lines are identical across lb0 / lb2 / lb1, and the final hydro_w is byte-identical.
+- Suggestion from these numbers: cap only cln_facecoef (and maybe cln_gd_fs) at <256,2> and keep the other three at <256,3>. That is about -15 ms/cycle (about 2 %).
+
+## 4. ncu, the five kernels in LB2 (one launch each, rank 0 of 4, --set full; same method as 27zn)
+| Kokkos label | % of cycle (nsys, 1 GPU) | dur us (1 launch, rank 0 of 4) | DRAM % peak | FP64 pipe % | FLOP/B (DRAM) | GFLOP/s | L1 / L2 hit % | sectors/req (global ld) | regs/thr | local ld+st B (spills) | occupancy achieved / theor. % | active threads/warp % |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| cln_drag | 5.7 | 4590.7 | 8.2 | 7.3 | 2.736 | 1096.4 | 76 / 53 | 2.9 | 128 | 3.22e+08 | 25 / 25 | 98 |
+| cln_facecoef | 3.9 | 520.4 | 23.9 | 17.8 | 2.522 | 2966.3 | 74 / 56 | 7.3 | 100 | 1.69e+08 | 24 / 25 | 100 |
+| cln_fs0 | 4.5 | 1020.6 | 15.9 | 6.0 | 1.046 | 820.1 | 64 / 47 | 2.7 | 128 | 0 | 25 / 25 | 100 |
+| cln_gd_fs | 3.1 | 14286.2 | 11.7 | 14.6 | 3.157 | 1812.0 | 80 / 53 | 5.4 | 128 | 0 | 25 / 25 | 100 |
+| cln_rhsaf | 10.7 | 1664.0 | 12.7 | 4.9 | 0.949 | 593.8 | 68 / 69 | 2.5 | 128 | 2.01e+09 | 24 / 25 | 94 |
+- Compare the 27zn rows (LB0):
+  - spills: cln_gd_fs 55 GB -> 0; cln_fs0 0.34 GB -> 0; cln_drag 6.4 -> 0.32 GB; cln_rhsaf 2.7 -> 2.0 GB; cln_facecoef 3.1 -> 0.17 GB;
+  - occupancy 37-52 % -> 24-25 %.
+- Files: docs/handover/caltech_results/LAUNCHBOUNDS/kp0_<binary>.txt and ncu_lb2.txt.
