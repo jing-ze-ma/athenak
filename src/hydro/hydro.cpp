@@ -641,6 +641,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     // <hydro>/p_ledger (read only when named): the momentum ledger, utils/p_ledger.hpp
     if (pin->DoesParameterExist("hydro", "p_ledger")) {
       p_ledger::on = pin->GetBoolean("hydro", "p_ledger");
+      if (p_ledger::on || pin->DoesParameterExist("hydro", "p_ledger_k1")) {
+        p_ledger::Init(pin);
+      }
     }
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
