@@ -690,11 +690,10 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
                 << std::endl << "<rad_vet>/solver_mg_levels N >= 0" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // solver_sweep = sym (the default, recorded) | rb | rbr | rbrsym: the mg's
+    // solver_sweep = rb (the default, recorded) | rbr | sym | rbrsym: the mg's
     // smoothing on each level, a forward red-black sweep, + a second red pass (rbr), + a
     // black-red post-sweep after the coarse correction (sym) (VCycle)
-    const std::string sw = pin->GetOrAddString("rad_vet","solver_sweep",
-        fix("solver_sweep", "sym", "rb") ? "sym" : "rb");
+    const std::string sw = pin->GetOrAddString("rad_vet","solver_sweep","rb");
     cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
     if (!cln_pcsweep && sw != "rb") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

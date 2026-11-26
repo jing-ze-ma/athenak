@@ -81,7 +81,6 @@ temp_unit_kelvin = 8.1063567271e-09
 e_floor = 1.0e-4
 implicit_flux_x1min = 6.9466003350e+13
 verbose = 1                   # the per-solve CLEAN diagnostic lines (scorers, reports)
-solver_sweep = rb
 # the values the start-up decides (a restart with -i takes them from the deck)
 force_reference       = wb_arad
 steady_init            = steady

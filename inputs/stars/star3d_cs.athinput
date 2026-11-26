@@ -116,7 +116,6 @@ vet_gd_wall_interp = true
 temp_unit_kelvin = 1.202724e-8
 e_floor = 1.0e-4
 implicit_flux_x1min = 1.754459175000e+13
-solver_sweep = rb
 # the values the start-up decides (a restart with -i takes them from the deck)
 force_reference   = wb_arad
 steady_init        = steady

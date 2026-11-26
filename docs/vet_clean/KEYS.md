@@ -100,7 +100,7 @@ athena -r old.rst -i $ATHENAK/inputs/stars/restart_old_files.txt mesh/layout_til
 | `<rad_vet>/clean_stag_fwb_stage`, `clean_stag_fwb_t2` | `false` | removed keys; early files of this scheme store true (FATAL) |
 | `<rad_vet>/clean_w_fse_tau`, `time2_gtime_mom` | `true` | removed keys; early files may store false (FATAL) |
 | `<rad_vet>/solver_mg_levels` | `2` | early files may store 4 |
-| `<rad_vet>/solver_maxit`, `solver_sweep` | `200`, `rb` | not stored; a restart keeps 800, and `sym` is the default |
+| `<rad_vet>/solver_maxit` | `200` | not stored; a restart keeps 800 |
 | `<rad_vet>/vet_gd_wall_interp`, `vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | spherical-polar wedges with fixed rays (commented out in the file); a theta-periodic wedge without them is FATAL |
 | `<hydro>/fofc` | `true` | older star files may store false (HG, RSG, R136 store true) |
 | `<hydro>/merge_lat_mom`, `merge_lat_blockend` | `radial`, `exchange` | commented out, a choice of physics: a stored `rigid` (RSG) or `flat` stays (NOTE) |
@@ -339,7 +339,7 @@ Scheme options (in brackets the templates' values):
 
 Solver internals (in brackets the templates' values): `newton_conv` (`budget`), `newton_conv_max`
 (1e-5), `newton_conv_kappa`, `solver_tol`, `newton_tol`, `solver_maxit` (200), `newton_maxit` (200),
-`solver_sweep` (`rb`; default `sym`), `solver_mg_levels` (default 2, the levels of the
+`solver_sweep` (default `rb`; `sym` adds a post-sweep), `solver_mg_levels` (default 2, the levels of the
 staggered multigrid preconditioner), `newton_closure_budget` (true), `newton_maxnorm` (true)
 (false: the closure pass solved in the strict norm; the budget test in the L2 norm),
 `implicit_resid_fatal`, `time/dt_retry_views`, `time/dt_retry_host`, `time/restart_refill_ghosts`

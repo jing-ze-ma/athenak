@@ -22,7 +22,6 @@ time2_gtime_mom = true
 solver_mg_levels = 2
 # not stored in old files, and the value a restart takes is not the stars'
 solver_maxit = 200
-solver_sweep = rb
 # a star with rotating rays: the average of the rotated sets.  All continuation runs
 # (RSG, HG, R136) name ema, _wb and the ring; R136 and RSG files store no ema (the restart
 # default is none: the stored vet_rotate_avg sets), HG stores 128 in the form step.  xfade
