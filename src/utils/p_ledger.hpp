@@ -182,6 +182,16 @@ inline void Withheld(const int b, const Real a[3], const int k, const Real h,
   }
 }
 
+//! the momentum a that dfloor_flux_limit's held cells send out by physical faces
+//! (DflMomentum): out of flr, a boundary flux (hflx, outward +)
+inline void Outflow(const Real a[3]) {
+  if (!on) return;
+  for (int q = 0; q < 3; ++q) {
+    bg[6][q] += a[q];
+    bg[0][q] += a[q];
+  }
+}
+
 //! the stage start's increment c1 K1 + c2 K2 of the withheld slopes (Time2FormStage),
 //! k1 = 1: K1 <- K2 (an accepted probe); Start books it as the stage start adds it
 inline void Inc(const Real c1, const Real c2, const int k1 = 0) {

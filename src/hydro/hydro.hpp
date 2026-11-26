@@ -460,6 +460,8 @@ class Hydro {
   MeshBoundaryValuesCC *pbval_dfl = nullptr, *pbval_dfs = nullptr;
   DvceArray5D<Real> dfl_th, dfl_thc;
   DvceFaceFld5D<Real> *pdfl_fs = nullptr;   // cubed sphere: the seam record
+  DvceFaceFld4D<Real> *pdfl_f0 = nullptr;   // the mass fluxes before the limiter
+  DvceArray5D<Real> dfl_g[3];               // DflMomentum: the removed P per outflow
   DvceArray1D<int> dfl_sm;                  // cubed sphere: the seam faces of each block
   void DfloorFluxInit();
   void DfloorFluxLimit(Driver *d, int stage);

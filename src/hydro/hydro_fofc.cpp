@@ -7,6 +7,9 @@
 //! \brief Implements functions for first-order flux correction (FOFC) algorithm.
 
 #include <cfloat>
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -23,6 +26,7 @@
 #include "hydro/fofc_etotgrav.hpp"
 #include "bvals/bvals.hpp"
 #include "utils/fofc_flags.hpp"
+#include "utils/p_ledger.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -847,11 +851,20 @@ void Hydro::DfloorFluxInit() {
   }
   Kokkos::realloc(dfl_th, nmb, 1, n3, n2, n1);
   Kokkos::realloc(dfl_thc, nmb, 1, 1, 1, 1);
+  pdfl_f0 = new DvceFaceFld4D<Real>("dfl_f0", 1, 1, 1, 1);   // (uflx's shape)
+  for (int d = 0; d < 3; ++d) {
+    auto &q = (d == 0) ? pdfl_f0->x1f : ((d == 1) ? pdfl_f0->x2f : pdfl_f0->x3f);
+    const auto &f = (d == 0) ? uflx.x1f : ((d == 1) ? uflx.x2f : uflx.x3f);
+    Kokkos::realloc(q, nmb, f.extent_int(2), f.extent_int(3), f.extent_int(4));
+  }
+  for (int c = 0; c < ((cs || pm->use_spherical_polar) ? 1 : 3); ++c) {
+    Kokkos::realloc(dfl_g[c], nmb, 1, n3, n2, n1);
+  }
   pbval_dfl->InitializeBuffers(1);
-  if (cs) {   // the panel-seam faces (bits: x2 lo / hi, x3 lo / hi)
-    pbval_dfs->InitializeBuffers(5);
-    pdfl_fs = new DvceFaceFld5D<Real>("dfl_fs", nmb, 5, n3, n2, n1);
-    Kokkos::realloc(pdfl_fs->x1f, nmb, 5, 1, 1, 1);
+  if (cs) {   // the panel-seam faces (bits: x2 lo / hi, x3 lo / hi); 5: DflMomentum's g
+    pbval_dfs->InitializeBuffers(6);
+    pdfl_fs = new DvceFaceFld5D<Real>("dfl_fs", nmb, 6, n3, n2, n1);
+    Kokkos::realloc(pdfl_fs->x1f, nmb, 6, 1, 1, 1);
     Kokkos::realloc(dfl_sm, nmb);
     auto hm = Kokkos::create_mirror_view(dfl_sm);
     const int nb_[4] = {8, 12, 24, 28};
@@ -956,12 +969,21 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
         r3(m,q,kf,j,i) = DflSpec(q, u0_, w0_, wd, th, gen, gm1, m, kc, j, i);
       }
     });
-    pbval_dfs->InitFluxSeamRecv(5);
+    pbval_dfs->InitFluxSeamRecv(6);
     pbval_dfs->PackAndSendFluxSeamCC(*pdfl_fs);
     while (pbval_dfs->RecvAndUnpackFluxSeamCC(*pdfl_fs) != TaskStatus::complete) {}
     pbval_dfs->ClearFluxSend();
     pbval_dfs->ClearFluxRecv();
   }
+  // (the mass fluxes before the limiter: DflMomentum's outflow weights)
+  const int idn = IDN;
+  auto all = Kokkos::ALL;
+  Kokkos::deep_copy(DevExeSpace(), pdfl_f0->x1f, Kokkos::subview(f1, all, idn, all, all,
+                                                                 all));
+  if (md) Kokkos::deep_copy(DevExeSpace(), pdfl_f0->x2f, Kokkos::subview(f2, all, idn, all,
+                                                                         all, all));
+  if (td) Kokkos::deep_copy(DevExeSpace(), pdfl_f0->x3f, Kokkos::subview(f3, all, idn, all,
+                                                                         all, all));
   // dr = 1, 2, 3: the face's direction; the donor is (kd, jd, id); a seam face's outer
   // donor (the ghost side) comes from the record
   auto face = [=] KOKKOS_FUNCTION (const DvceArray5D<Real> &f, const DvceArray5D<Real> &r,
@@ -1008,23 +1030,56 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
 //! (the kinetic energy taken becomes heat).  Otherwise gravity and pressure keep
 //! accelerating held gas whose work (the potential and the enthalpy its mass flux
 //! carries, etotgrav) never arrives: KE > E, floors, infall to the velocity ceiling.
-//! After every momentum source of the stage; the x1 momentum and the heat are booked.
+//! The momentum taken leaves by a face floor flux: its part along P (Cartesian: all;
+//! spherical polar, cubed sphere: m_r) goes to the cells its outflow went to, shared by
+//! the outflows A F before the limiter (pdfl_f0; g = P taken / sum, one exchange and on
+//! the cubed sphere the seam record, so both sides of a face move the same P), E fixed;
+//! a physical boundary face's share leaves the mesh (p_ledger: hflx).  After every
+//! momentum source of the stage; the x1 momentum and the heat are booked.
 
 void Hydro::DflMomentum() {
   auto *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks, nx1 = indcs.nx1;
+  const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, nmb = pmy_pack->nmb_thispack;
-  const bool cs = pm->use_cubed_sphere, sp = pm->use_spherical_polar;
+  const bool cs = pm->use_cubed_sphere, sp = pm->use_spherical_polar, curv = cs || sp;
+  const bool md = pm->multi_d, td = pm->three_d;
+  const int nc = curv ? 1 : 3;
   auto &vol = pmy_pack->pcoord->volume;
+  auto a1 = pmy_pack->pcoord->area.x1f, a2 = pmy_pack->pcoord->area.x2f;
+  auto a3 = pmy_pack->pcoord->area.x3f;
   auto cosc = cs ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("dfl_c", 1, 1, 1);
   auto &size = pmy_pack->pmb->mb_size;
   auto pnl = pmy_pack->pmb->mb_panel.d_view;
+  auto bcs = pmy_pack->pmb->mb_bcs;
   auto u0_ = u0, th = dfl_th;
-  Real dp = 0.0, dk = 0.0;
+  auto q1 = pdfl_f0->x1f, q2 = pdfl_f0->x2f, q3 = pdfl_f0->x3f;
+  for (int c = 0; c < nc; ++c) Kokkos::deep_copy(DevExeSpace(), dfl_g[c], 0.0);
+  auto g0 = dfl_g[0], g1 = curv ? g0 : dfl_g[1], g2 = curv ? g0 : dfl_g[2];
+  // the outflow weight of the face of cell (k,j,i) along d (0..2), side s (0 lo, 1 hi):
+  // A F before the limiter out of the cell (Cartesian per volume); bd: physical face
+  auto wout = [=] KOKKOS_FUNCTION (const int m, const int d, const int s, const int k,
+                                   const int j, const int i, bool &bd) {
+    const int kf = k + s*(d == 2), jf = j + s*(d == 1), iff = i + s*(d == 0);
+    const auto &sz = size.d_view(m);
+    const Real f = (d == 0) ? q1(m,kf,jf,iff) : ((d == 1) ? q2(m,kf,jf,iff)
+                                                          : q3(m,kf,jf,iff));
+    const Real a = curv ? ((d == 0) ? a1(m,kf,jf,iff) : ((d == 1) ? a2(m,kf,jf,iff)
+                                                                 : a3(m,kf,jf,iff)))
+                        : 1.0/((d == 0) ? sz.dx1 : ((d == 1) ? sz.dx2 : sz.dx3));
+    const int e = (d == 0) ? (s ? ie : is) : ((d == 1) ? (s ? je : js) : (s ? ke : ks));
+    const int x = (d == 0) ? i : ((d == 1) ? j : k);
+    const BoundaryFlag fl = bcs.d_view(m, 2*d + s);
+    bd = x == e && fl != BoundaryFlag::block && fl != BoundaryFlag::periodic &&
+         fl != BoundaryFlag::panel && fl != BoundaryFlag::polar;
+    return fmax(s ? f : -f, 0.0)*a;
+  };
+  const int nd = td ? 3 : (md ? 2 : 1);
+  Real dp = 0.0, dk = 0.0, ob[3] = {0.0, 0.0, 0.0};
   Kokkos::parallel_reduce("dfl_mom", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nx3*nx2*nx1),
-  KOKKOS_LAMBDA(const int n, Real &sdp, Real &sk) {
+  KOKKOS_LAMBDA(const int n, Real &sdp, Real &sk, Real &b0, Real &b1, Real &b2) {
     const int m = n/(nx3*nx2*nx1), k = (n/(nx2*nx1))%nx3 + ks;
     const int j = (n/nx1)%nx2 + js, i = n%nx1 + is;
     const Real t = th(m,0,k,j,i);
@@ -1051,12 +1106,88 @@ void Hydro::DflMomentum() {
     u0_(m,IM1,k,j,i) = t*(m1 - pf*f[0]) + pf*f[0];
     u0_(m,IM2,k,j,i) = t*(m2 - pf*f[1]) + pf*f[1];
     u0_(m,IM3,k,j,i) = t*(m3 - pf*f[2]) + pf*f[2];
-    const Real v = (cs || sp) ? vol(m,k,j,i) : sz.dx1*sz.dx2*sz.dx3;
-    sdp += (m1 - u0_(m,IM1,k,j,i))*v;
-    sk += 0.5*(1.0 - t*t)*fmax(msq - pf*pf, 0.0)/u0_(m,IDN,k,j,i)*v;
-  }, Kokkos::Sum<Real>(dp), Kokkos::Sum<Real>(dk));
+    const Real v = curv ? vol(m,k,j,i) : 1.0;
+    sdp += (m1 - u0_(m,IM1,k,j,i))*v*(curv ? 1.0 : sz.dx1*sz.dx2*sz.dx3);
+    sk += 0.5*(1.0 - t*t)*fmax(msq - pf*pf, 0.0)/u0_(m,IDN,k,j,i)*
+          (curv ? v : sz.dx1*sz.dx2*sz.dx3);
+    // (the P taken per outflow weight; the physical faces' share leaves)
+    Real qa = 0.0, qb = 0.0;
+    for (int d = 0; d < nd; ++d) {
+      for (int s = 0; s < 2; ++s) {
+        bool bd;
+        const Real w = wout(m, d, s, k, j, i, bd);
+        qa += w;
+        if (bd) qb += w;
+      }
+    }
+    if (!(qa > 0.0)) return;
+    const Real dm[3] = {m1 - u0_(m,IM1,k,j,i), m2 - u0_(m,IM2,k,j,i),
+                        m3 - u0_(m,IM3,k,j,i)};
+    g0(m,0,k,j,i) = dm[0]*v/qa;
+    if (!curv) {g1(m,0,k,j,i) = dm[1]/qa; g2(m,0,k,j,i) = dm[2]/qa;}
+    const Real bw = qb/qa*(curv ? v : sz.dx1*sz.dx2*sz.dx3);
+    b0 += dm[0]*bw;
+    if (!curv) {b1 += dm[1]*bw; b2 += dm[2]*bw;}
+  }, Kokkos::Sum<Real>(dp), Kokkos::Sum<Real>(dk), Kokkos::Sum<Real>(ob[0]),
+     Kokkos::Sum<Real>(ob[1]), Kokkos::Sum<Real>(ob[2]));
   dfl_dp[0] += dp;
   dfl_dp[1] += dk;
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, ob, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  p_ledger::Outflow(ob);
+  for (int c = 0; c < nc; ++c) {   // (g of the donors into the ghosts)
+    while (pbval_dfl->InitRecv(1) == TaskStatus::incomplete) {}
+    while (pbval_dfl->PackAndSendCC(dfl_g[c], dfl_thc) == TaskStatus::incomplete) {}
+    while (pbval_dfl->RecvAndUnpackCC(dfl_g[c], dfl_thc) == TaskStatus::incomplete) {}
+    while (pbval_dfl->ClearSend() == TaskStatus::incomplete) {}
+    while (pbval_dfl->ClearRecv() == TaskStatus::incomplete) {}
+  }
+  DvceArray5D<Real> r2 = g0, r3 = g0;
+  DvceArray1D<int> sm;
+  if (cs) {   // (a seam face's donor across the panel seam: its g by the seam record)
+    r2 = pdfl_fs->x2f;
+    r3 = pdfl_fs->x3f;
+    sm = dfl_sm;
+    par_for("dfl_grec2", DevExeSpace(), 0, nmb - 1, ks, ke, 0, 1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
+      r2(m,5,k,sd ? je + 1 : js,i) = g0(m,0,k,sd ? je : js,i);
+    });
+    par_for("dfl_grec3", DevExeSpace(), 0, nmb - 1, 0, 1, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int sd, const int j, const int i) {
+      r3(m,5,sd ? ke + 1 : ks,j,i) = g0(m,0,sd ? ke : ks,j,i);
+    });
+    pbval_dfs->InitFluxSeamRecv(6);
+    pbval_dfs->PackAndSendFluxSeamCC(*pdfl_fs);
+    while (pbval_dfs->RecvAndUnpackFluxSeamCC(*pdfl_fs) != TaskStatus::complete) {}
+    pbval_dfs->ClearFluxSend();
+    pbval_dfs->ClearFluxRecv();
+  }
+  // every cell takes g of each donor whose outflow came in, times that weight
+  par_for("dfl_gin", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real in[3] = {0.0, 0.0, 0.0};
+    for (int d = 0; d < nd; ++d) {
+      for (int s = 0; s < 2; ++s) {
+        const int o = 2*s - 1;   // the neighbour across the face
+        const int kn = k + o*(d == 2), jn = j + o*(d == 1), in_ = i + o*(d == 0);
+        bool bd, bn;   // (its outflow into this cell: the face seen from the neighbour)
+        (void) wout(m, d, s, k, j, i, bd);
+        const Real w = wout(m, d, 1 - s, kn, jn, in_, bn);
+        if (bd || !(w > 0.0)) continue;
+        const int bit = (d == 1) ? ((j == js && !s) ? 1 : ((j == je && s) ? 2 : 0)) :
+                        ((d == 2) ? ((k == ks && !s) ? 4 : ((k == ke && s) ? 8 : 0)) : 0);
+        const bool srec = cs && bit != 0 && (sm(m) & bit);
+        const int kf = k + s*(d == 2), jf = j + s*(d == 1), iff = i + s*(d == 0);
+        in[0] += w*(srec ? ((d == 1) ? r2(m,5,kf,jf,iff) : r3(m,5,kf,jf,iff))
+                         : g0(m,0,kn,jn,in_));
+        if (!curv) {in[1] += w*g1(m,0,kn,jn,in_); in[2] += w*g2(m,0,kn,jn,in_);}
+      }
+    }
+    const Real iv = curv ? 1.0/vol(m,k,j,i) : 1.0;
+    u0_(m,IM1,k,j,i) += in[0]*iv;
+    if (!curv) {u0_(m,IM2,k,j,i) += in[1]; u0_(m,IM3,k,j,i) += in[2];}
+  });
 }
 
 } // namespace hydro
