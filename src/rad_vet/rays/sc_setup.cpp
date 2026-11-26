@@ -92,7 +92,7 @@ void RadiationVet::ScInit() {
   // nx3 = 1: axisymmetric; the phi band columns are the cell's own column with the
   // directions rotated by their phi offset (must map the set onto itself)
   if (!pm->multi_d) {ScFatal("needs a 3-D wedge or a 2-D axisymmetric mesh");}
-  if (!pm->three_d && (impl_beam_hr || impl_beam_fs)) {
+  if (!pm->three_d && vgd_slab != 1 && (impl_beam_hr || impl_beam_fs)) {
     ScFatal("2-D axisymmetric: no implicit_flux_beam");
   }
   if (ibc_x1max != VET_IBC_MARSHAK &&
@@ -109,6 +109,9 @@ void RadiationVet::ScInit() {
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
+  if (vgd_slab == 1) {ScSlabGeom();}   // (the Cartesian mesh keeps no x1 arrays)
+  auto cx1v = (vgd_slab == 1) ? vgd_sx1v : pmy_pack->pcoord->x1v;
+  auto cx1f = (vgd_slab == 1) ? vgd_sx1f : pmy_pack->pcoord->xx1f;
   // cubed sphere (rays/sc_cs_sweep.cpp): wedge-only options are refused; the cs band
   // is filled by its own exact copies (compact lists, see ScCsSweep); no walls
   vgd_csg = pm->use_cubed_sphere;
@@ -235,7 +238,7 @@ void RadiationVet::ScInit() {
             pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic;
   // the direction set: any table of unit vectors + weights with sum w = 1,
   // sum w nn = I/3
-  if (vgd_gl_nmu > 0) {
+  if (vgd_gl_nmu > 0 && vgd_slab != 1) {
     // product set: the azimuth step must divide the phi period (exact walls);
     // nphi >= 4 on the cubed sphere
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
@@ -246,7 +249,14 @@ void RadiationVet::ScInit() {
               "the wedge (exact wall maps), or vet_gd_wall_sym = true");
     }
   }
-  ScBuildSet(vgd_base);
+  if (vgd_slab == 1) {
+    // Cartesian slab: the vet_sc set (mu1, mu2, mu3, w), x1 in the role of r
+    auto ah = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vet_ang);
+    vgd_base.resize(4*vet_nray);
+    for (int q = 0; q < 4*vet_nray; ++q) {vgd_base[q] = ah(q/4, q%4);}
+  } else {
+    ScBuildSet(vgd_base);
+  }
   // the set's image under (x, y, z) -> (c x - t s y, s x + t c y, tz z): a turn about z
   // (t = 1), a meridian mirror (t = -1) or the equatorial mirror (tz = -1); -1 where
   // the image is not in the set
@@ -353,7 +363,7 @@ void RadiationVet::ScInit() {
   vgd_n = static_cast<int>(vgd_base.size()/4);
   // the set's z-rotation period: product 2 pi/nphi, geodesic pi, HEALPix / LQ_N pi/2
   vgd_zper = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : ((vgd_ls < 0) ? M_PI : 0.5*M_PI);
-  if (!pm->three_d) {
+  if (!pm->three_d && vgd_slab != 1) {
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double c = std::cos(per), s = std::sin(per);
     for (int q = 0; q < vgd_n; ++q) {
@@ -379,8 +389,7 @@ void RadiationVet::ScInit() {
   if (vgd_csg) {
     ScCsInit();
   } else {
-    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                     pmy_pack->pcoord->x1v);
+    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cx1v);
     auto &mbs = pmy_pack->pmb->mb_size;
     const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
     const double smin = std::min(std::sin(t0), std::sin(t1));
@@ -392,8 +401,15 @@ void RadiationVet::ScInit() {
     // shell s is read (a) by s-1 inward, chord <= sqrt(r_s^2 - r_{s-1}^2), (b) by s+1
     // outward, chord <= sqrt(r_{s+1}^2 - r_s^2), (c) by s itself (turn / inner face),
     // chord <= 2 sqrt(r_s^2 - r_lo^2); angular offset <= chord / r_lo; + 2 cells
-    auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                     pmy_pack->pcoord->xx1f);
+    auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cx1f);
+    // Cartesian slab: lateral cells per unit x1 chord, max over the set (constant feet)
+    const bool slb = (vgd_slab == 1);
+    double tsl = 0.0;
+    for (size_t q = 0; slb && q < vgd_base.size()/4; ++q) {
+      const double *u = &vgd_base[4*q];
+      tsl = std::max(tsl, std::max(std::fabs(u[1])/vgd_lg.Dx2H(mbs, 0), pm->three_d ?
+                     std::fabs(u[2])/vgd_lg.Dx3H(mbs, 0) : 0.0)/std::fabs(u[0]));
+    }
     // pass 1: the raw band, where pass 0's exact lists would clamp
     for (int pass = 0; pass < 2; ++pass) {
       int nmax = vgd_raw ? std::numeric_limits<int>::max()
@@ -417,18 +433,20 @@ void RadiationVet::ScInit() {
           const double r = x1v_h(m,l);
           const double rlo = (l > indcs.is || !lo) ? x1v_h(m,l-1) : x1f_h(m,l);
           const bool up = (l < indcs.ie || !hi);
-          double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-          if (up) {
-            a = std::max(a, std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r));
-          }
-          const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
+          // inward-pass halo of shell s serves (a) and (c), the outward-pass halo (b);
+          // slab: the x1 chords to the shells below and above
+          const double ain = slb ? (r - rlo)
+                                 : 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+          const double aout = !up ? 0.0 : slb ? (x1v_h(m,l+1) - r)
+                                      : std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r);
+          auto cells = [&](const double a) {
+            return static_cast<int>(std::ceil(slb ? a*tsl : a/(rlo*dmin))) + 2;
+          };
+          const int wl = cells(std::max(ain, aout));
           wneed = std::max(wneed, wl);
           vgd_wsh[l] = std::min(wl, nmax);
-          // inward-pass halo of shell s serves (a) and (c), the outward-pass halo (b)
-          const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-          const double aout = up ? std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r) : 0.0;
-          vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
-          vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
+          vgd_wsi[l] = std::min(cells(ain), nmax);
+          vgd_wso[l] = std::min(cells(aout), nmax);
         }
       }
   #if MPI_PARALLEL_ENABLED

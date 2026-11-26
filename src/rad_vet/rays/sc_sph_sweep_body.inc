@@ -124,33 +124,53 @@
             // top face: extrapolated S (vacuum), or the bath / mirrored (ScTopMirror)
             // inflow attenuated
             const Real rtop = cx1f(m,ie+1);
-            const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
+            const Real ds = slb_ ? (rtop - r)/fabs(mr)
+                                 : (sqrt(fmax(rtop*rtop - p2, 0.0)) - zr);
             const bool rfl = (x1f_(m) & 4);
             iv = ScTopInflow(ch0, ds, s0, exp(csx(m,1,k,j,i-1)), tbh || rfl,
                              rfl ? vix(m,d,k,j,i+1) : itop);
-          } else if (!inw && zr < 1.0e-12*r) {
+          } else if (!slb_ && !inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
             // upwind shell, chord, own-cell part; typ 1 upwind, 2 inner face, 3 own shell
             int typ, iu;
             Real ds, dso;
-            ScRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
-            // upwind point, its lateral cell and bilinear fractions (index space)
-            const Real xu = r*st*cp - ds*nx;
-            const Real yu = r*st*sp - ds*ny;
-            const Real zu = r*ct - ds*nz;
-            const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
-            Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
-            Real dph = atan2(yu, xu) - ph;
-            dph -= twopi*floor((dph + M_PI)/twopi);
-            // behind the pole -> extended chart; fractional row from the node table
-            ScPoleChart(pol_, th, thu, dph);
+            if (slb_) {
+              // slab: the upwind cell-centre plane, or the inner face from the first
+              // shell; chords dx1/|n_1|
+              typ = (!inw && l == lcb) ? 2 : 1;
+              iu = inw ? (i + 1) : ((typ == 2) ? i : (i - 1));
+              const Real amr = fabs(mr);
+              ds = fabs(((typ == 2) ? cx1f(m,i) : cx1v(m,iu)) - r)/amr;
+              dso = (typ == 2) ? 0.5*ds
+                               : fmin(fabs(cx1f(m,inw ? (i + 1) : i) - r)/amr, ds);
+            } else {
+              ScRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
+            }
+            // upwind point, its lateral cell and bilinear fractions (index space);
             // fractional upwind index at its global magnitude (sj_ = sk_ = 0 without
             // layout_invariant): stencil base and fractions are layout independent
+            Real xu = 0.0, yu = 0.0, zu = 0.0, ru = 1.0, thu = th;
             const int sj_ = lg_.Sj(m, js), sk_ = lg_.Sk(m, ks);
-            const Real fjg = sth_ ? ScThFj(thn_, m, j, thu, c2w_, sj_)
-                                  : (j + sj_) + (thu - th)/lg_.Dx2(mbsize, m);
-            const Real fkg = (k + sk_) + dph/lg_.Dx3(mbsize, m);
+            Real fjg, fkg;
+            if (slb_) {
+              // slab: a constant offset per direction (2-D: none in x3)
+              fjg = (j + sj_) - ds*ny/lg_.Dx2(mbsize, m);
+              fkg = (k + sk_) - ((nx3b > 1) ? ds*nz/lg_.Dx3(mbsize, m) : 0.0);
+            } else {
+              xu = r*st*cp - ds*nx;
+              yu = r*st*sp - ds*ny;
+              zu = r*ct - ds*nz;
+              ru = sqrt(xu*xu + yu*yu + zu*zu);
+              thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
+              Real dph = atan2(yu, xu) - ph;
+              dph -= twopi*floor((dph + M_PI)/twopi);
+              // behind the pole -> extended chart; fractional row from the node table
+              ScPoleChart(pol_, th, thu, dph);
+              fjg = sth_ ? ScThFj(thn_, m, j, thu, c2w_, sj_)
+                         : (j + sj_) + (thu - th)/lg_.Dx2(mbsize, m);
+              fkg = (k + sk_) + dph/lg_.Dx3(mbsize, m);
+            }
             const Real fj = fjg - sj_, fk = fkg - sk_;
             int j0 = static_cast<int>(floor(fjg)) - sj_;
             int k0 = static_cast<int>(floor(fkg)) - sk_;
@@ -180,7 +200,7 @@
             if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
             if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
-            int j1 = j0 + 1, k1 = k0 + 1;
+            int j1 = j0 + 1, k1 = (slb_ && nx3b == 1) ? k0 : (k0 + 1);
             // interior launch: an item whose stencil reaches the band waits for it
             if (dfr && (k0 < wb || k1 >= wb + nx3b || j0 < wb || j1 >= wb + nx2b)) {
               dfd = true;
@@ -299,7 +319,7 @@
               // diffusion intensity S + mu (-dS/dtau_r) at the inner face; vet_bc_diff =
               // face: face S = 1.5 S_a - 0.5 S_b (cell S is O(dtau_cell) low)
               iv = ScInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
-                               cx1v(m,i+1), p2, ch0, ds, s0);
+                               cx1v(m,i+1), p2, ch0, ds, s0, slb_ ? fabs(mr) : -1.0);
             } else {
               // one intensity per (cell, direction), of the pass n_d . r_hat selects;
               // stencil cells of the other pass are dropped, weights renormalised

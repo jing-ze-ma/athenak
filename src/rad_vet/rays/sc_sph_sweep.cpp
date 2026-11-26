@@ -102,8 +102,8 @@ void RadiationVet::ScSweep() {
   const bool tbh = vgd_tbath && (ibc_x1max == VET_IBC_MARSHAK) && (iebath_x1max != 0.0);
   const Real itop = tbh ? iebath_x1max : 0.0;
   const Real mt0 = pm->mesh_size.x2min, mtl = pm->mesh_size.x2max - mt0;
-  auto cx1v = pmy_pack->pcoord->x1v;
-  auto cx1f = pmy_pack->pcoord->xx1f;
+  auto cx1v = (vgd_slab == 1) ? vgd_sx1v : pmy_pack->pcoord->x1v;
+  auto cx1f = (vgd_slab == 1) ? vgd_sx1f : pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const ScLG lg_ = vgd_lg;
   const int jlo = 0, jhi = je + wb - 1;
@@ -118,6 +118,8 @@ void RadiationVet::ScSweep() {
   auto hp_ = vgd_hpol;
   auto wsd_ = vgd_wsd;
   const int c2w_ = indcs.nx2 + 2*wb;
+  // Cartesian slab (ScSlabSelect): x1 plays r, constant foot offsets per direction
+  const bool slb_ = (vgd_slab == 1);
   // the fused sweep counts as two sweeps, a list-only preparation as none
   if (!vgd_xff_prep) {vgd_hsweep += vgd_xff_now ? 2 : 1;}
   // vet_gd_shell_list: per pass the (m, k, j, d) whose n . r_hat (face midpoints) lies
@@ -149,7 +151,7 @@ void RadiationVet::ScSweep() {
                              : lg_.Th(mbsize, m, j, js);
         const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-        const Real mr = nx*st*cp + ny*st*sp + nz*ct;
+        const Real mr = slb_ ? nx : (nx*st*cp + ny*st*sp + nz*ct);
         const bool keep = inw ? (mr < 1.0e-12) : (mr >= -1.0e-12);
         if (keep) {
           if (fin) {L_(acc) = (m*nkj + t)*n + d;}
@@ -181,10 +183,11 @@ void RadiationVet::ScSweep() {
       const Real th = sth_ ? thn_(m,j)
                            : lg_.Th(mbsize, m, j, js);
       const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
-      tw_(m,k-ks,j-js,0) = sin(th);
-      tw_(m,k-ks,j-js,1) = cos(th);
-      tw_(m,k-ks,j-js,2) = sin(ph);
-      tw_(m,k-ks,j-js,3) = cos(ph);
+      // Cartesian slab: r_hat = x1_hat (theta = pi/2, phi = 0 exactly)
+      tw_(m,k-ks,j-js,0) = slb_ ? 1.0 : sin(th);
+      tw_(m,k-ks,j-js,1) = slb_ ? 0.0 : cos(th);
+      tw_(m,k-ks,j-js,2) = slb_ ? 0.0 : sin(ph);
+      tw_(m,k-ks,j-js,3) = slb_ ? 1.0 : cos(ph);
     });
   }
   auto tg_ = vgd_trig;

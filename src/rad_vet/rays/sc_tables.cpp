@@ -158,6 +158,24 @@ void RadiationVet::ScTabCompute(const Real alpha, const int nthr) {
     H.alpha = alpha;
     return;
   }
+  if (vgd_slab == 1) {
+    // Cartesian slab: a periodic image is a translation (no wall, identity map) and the
+    // branch n . r_hat is n_1 everywhere
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = 0; k < c3; ++k) {
+        for (int j = 0; j < c2; ++j) {
+          H.w(m,k,j) = 0;
+          for (int q = 0; q < n; ++q) {
+            H.mp(m,k,j,q) = q;
+            H.mr(m,k,j,q) = d[4*q];
+          }
+        }
+      }
+    }
+    H.alpha = alpha;
+    H.nwall = H.nexact = H.nmap = H.nphx = H.nthx = 0;
+    return;
+  }
   // wall maps: lateral ghost cells outside the mesh in theta or phi hold the other
   // side's intensities; new(d) = old(map(d)), map = nearest set direction to M n_d
   auto &w_h = H.w;
@@ -573,7 +591,8 @@ void RadiationVet::ScTables(const Real alpha) {
   g_vgd_tab_alpha = alpha;
   if (first && global_variable::my_rank == 0) {
     std::cout << "<rad_vet> vet_gd: global-direction SC closure on the "
-              << (vgd_csg ? "cubed sphere" : "sp wedge") << ", "
+              << (vgd_csg ? "cubed sphere"
+                          : ((vgd_slab == 1) ? "Cartesian slab" : "sp wedge")) << ", "
               << ((vgd_gl_nmu > 0) ? ("product GL" + std::to_string(vgd_gl_nmu) + "x"
                                       + std::to_string(vgd_gl_nphi)
                                       + (vgd_gl_stag ? " staggered" : ""))

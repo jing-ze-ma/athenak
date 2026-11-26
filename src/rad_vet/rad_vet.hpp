@@ -630,6 +630,16 @@ class RadiationVet {
   void ScCartReport();
   //! VET, several MeshBlocks: allocate the banded buffers and neighbour tables
   void ScCartInitMB(ParameterInput *pin);
+  // Cartesian sc rays on the curved shell sweep as a slab (x1 plays r), where it has
+  // every feature of the run; decided at the first build (ScSlabSelect)
+  int vgd_slab = -1;         // -1 undecided, 0 the Cartesian sweep, 1 the slab
+  void ScSlabSelect();
+  // its geometry (the Cartesian mesh keeps none): x1 centres / faces as r, r_f, cell
+  // volumes and face areas for ClosureFromSc and RayFaceSums (ScSlabArgs)
+  DvceArray2D<Real> vgd_sx1v, vgd_sx1f;
+  DvceArray4D<Real> vgd_svol, vgd_sar[3];
+  void ScSlabGeom();
+  void ScSlabArgs(SolveArgs &x) const;
   //! VET, several MeshBlocks: exact sweep with per-layer band exchange
   void ScCartSweepMB();
   //! VET: free the multi-block state

@@ -115,7 +115,11 @@ void RadiationVet::ClosureFromSc() {
   const bool hf = cln_rfh;   // (CLN_HO)
   const bool kp = cs.extent_int(1) > CLN_KP + 8;   // (k+, not CLN_HO)
   auto gn = cln_gn;
+  // Cartesian slab: the raw moments J, K, H also into vet_cell (the vet_sc outputs)
+  const bool slb = (vgd_slab == 1);
+  auto vc_ = vet_cell;
   SolveArgs x = MakeArgs();
+  ScSlabArgs(x);
   // (in device memory, RayFaceSums)
   cln_gdx = DevArgs(x, 3);
   const SolveArgs *px = cln_gdx;
@@ -146,8 +150,9 @@ void RadiationVet::ClosureFromSc() {
   SolveForK("cln_gd", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const SolveArgs &x = *px;
-    const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
-    const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
+    // (spherical polar only: other meshes hold no angle arrays)
+    const Real st = x.sph ? sin(x2v(m,j)) : 0.0, ct = x.sph ? cos(x2v(m,j)) : 0.0;
+    const Real sp = x.sph ? sin(x3v(m,k)) : 0.0, cp = x.sph ? cos(x3v(m,k)) : 0.0;
     const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
     // cubed sphere: Cartesian D, half ranges about the families n_d
     Real nd[3][3];
@@ -199,6 +204,10 @@ void RadiationVet::ClosureFromSc() {
       q[CLN_HM+b] = hm[b];
     }
     q[CLN_JR] = q[CLN_J];
+    for (int c = 0; c < 10 && slb; ++c) {
+      vc_(m,VETRAY_J+c,k,j,i) = (c == 0) ? q[CLN_J] : ((c < 7) ? q[CLN_D11+c-1]
+                                                              : hp[c-7] + hm[c-7]);
+    }
     if (q[CLN_J] < ray_min*iw_(m,VET_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     StoreMoments(cs, valid, q, m, k, j, i);
     // vet_rotate_avg_ema_wb on the cubed sphere: FaceHalf's half ranges per cell,

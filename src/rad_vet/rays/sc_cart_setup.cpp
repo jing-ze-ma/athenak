@@ -28,7 +28,9 @@
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_args.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rays/sc_cart_exchange.hpp"
 #include "utils/recipe.hpp"
@@ -958,6 +960,91 @@ void RadiationVet::ImplBeamInit(ParameterInput *pin) {
   Kokkos::deep_copy(ibm_i, hi);
   Kokkos::deep_copy(ibm_f, hf);
   Kokkos::deep_copy(ibm_s, hs);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScSlabSelect
+//! \brief the kernel of the Cartesian sc rays, once at the first build: the curved shell
+//! sweep as a slab (x1 plays r, rays/sc_sph_sweep.cpp) where it has every feature the
+//! run uses, else the Cartesian sweep ScCartSweep, logged with what the slab lacks
+
+void RadiationVet::ScSlabSelect() {
+  Mesh *pm = pmy_pack->pmesh;
+  int nb1 = 1;
+  for (int g = 0; g < pm->nmb_total; ++g) {
+    nb1 = std::max(nb1, pm->lloc_eachmb[g].lx1 + 1);
+  }
+  std::string lack;
+  auto need = [&](const bool ok, const char *what) {if (!ok) {lack += what;}};
+  need(!vet_x1per && ibc_x1min != VET_IBC_PERIODIC, " x1 periodic;");
+  need(!vet_x2open && !vet_x3open, " vacuum x2/x3 faces;");
+  need(ibm_nr == 0 && !impl_beam_fs, " boundary beams / implicit_flux_beam = fs;");
+  need(ibc_x1min != VET_IBC_REFLECT && ibc_x1max != VET_IBC_REFLECT, " reflecting x1;");
+  need(!vsc_rot && !ScRotOn() && !vra_on && !cln_ring, " rotating set;");
+  need(nb1 == 1, " several MeshBlocks along x1;");
+  need(!pm->multilevel && pm->multi_d && pm->mb_indcs.nx1 >= 3, " mesh;");
+  vgd_slab = lack.empty() ? 1 : 0;
+  if (vgd_slab) {
+    // the curved sweep's defaults that hold on a slab: the dense per-shell halo (the
+    // compact and exact lists test the sp geometry), the top bath of vet_bc_bath
+    vgd_hcomp = 0;
+    vgd_hx_on = false;
+    vgd_ipc_on = false;
+    vgd_ring_par = false;
+    vgd_tbath = vet_bc_bath;
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_vet> closure = sc on a Cartesian mesh: "
+              << (vgd_slab ? std::string("the curved shell sweep as a slab (x1 = r)")
+                           : "the OLD Cartesian sweep ScCartSweep (the slab lacks:" +
+                             lack + ")") << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScSlabGeom
+//! \brief the slab's x1 centres and faces (in the role of r, r_f) and the cell volumes
+//! and face areas, with ghosts (ScInit)
+
+void RadiationVet::ScSlabGeom() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack, is = indcs.is, nx1 = indcs.nx1;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  Kokkos::realloc(vgd_sx1v, nmb, c1);
+  Kokkos::realloc(vgd_sx1f, nmb, c1 + 1);
+  Kokkos::realloc(vgd_svol, nmb, c3, c2, c1);
+  for (int d = 0; d < 3; ++d) {Kokkos::realloc(vgd_sar[d], nmb, c3 + 1, c2 + 1, c1 + 1);}
+  auto v_ = vgd_sx1v, f_ = vgd_sx1f;
+  auto vl_ = vgd_svol;
+  auto a0 = vgd_sar[0], a1 = vgd_sar[1], a2 = vgd_sar[2];
+  auto &mbs = pmy_pack->pmb->mb_size;
+  par_for("vet_vgd_slab_geom", DevExeSpace(), 0, nmb - 1, 0, c3, 0, c2, 0, c1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real x0 = mbs.d_view(m).x1min, x1 = mbs.d_view(m).x1max;
+    const Real d1 = mbs.d_view(m).dx1, d2 = mbs.d_view(m).dx2, d3 = mbs.d_view(m).dx3;
+    if (k == 0 && j == 0) {
+      f_(m,i) = LeftEdgeX(i - is, nx1, x0, x1);
+      if (i < c1) {v_(m,i) = CellCenterX(i - is, nx1, x0, x1);}
+    }
+    if (k < c3 && j < c2 && i < c1) {vl_(m,k,j,i) = d1*d2*d3;}
+    a0(m,k,j,i) = d2*d3;
+    a1(m,k,j,i) = d1*d3;
+    a2(m,k,j,i) = d1*d2;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScSlabArgs
+//! \brief the slab's geometry in the arguments of ClosureFromSc and RayFaceSums
+
+void RadiationVet::ScSlabArgs(SolveArgs &x) const {
+  if (vgd_slab != 1) {return;}
+  x.vol = vgd_svol;
+  for (int d = 0; d < 3; ++d) {x.area[d] = vgd_sar[d];}
+  x.x1v = vgd_sx1v;
+  x.x1f = vgd_sx1f;
 }
 
 }  // namespace radvet
