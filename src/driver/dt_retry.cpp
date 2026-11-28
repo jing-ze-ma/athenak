@@ -957,7 +957,8 @@ void CounterKeep::Cycle(Mesh *pm) {
     auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.fcp);
     for (int n = 0; n < 2; ++n) {d[5+n] = h(n) - h0(n);}
   }
-  if (ph != nullptr && ph->use_dfl) {   // (active cells, the mass x vol they took)
+  auto *pmh = pm->pmb_pack->pmhd;
+  if ((ph != nullptr && ph->use_dfl) || (pmh != nullptr && pmh->use_dfl)) {   // (active)
     d[7] = pm->ecounter.flr_dn - s.ec[5];
     d[8] = pm->ecounter.flr_dm_v - s.ec[3];
   }

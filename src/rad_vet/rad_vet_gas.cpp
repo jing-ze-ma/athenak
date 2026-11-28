@@ -127,8 +127,7 @@ void FloorCapMomentum(const bool sph, const bool cub, const bool lz, const int p
 //! SumCells), its kinetic energy paid from the cell's E_rad: L_z and E exact.
 
 void RadiationVet::FloorGasCap() {
-  hydro::Hydro *ph = pmy_pack->phydro;
-  if (ph == nullptr) return;
+  if (!fl_on) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -138,8 +137,9 @@ void RadiationVet::FloorGasCap() {
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
-  const bool etg = fl.use_etotgrav;
+  const bool etg = fl.use_etotgrav, mh = fl.mhd;
   auto phicc = fl.phicc0;
+  auto em_ = emag0;   // (<mhd>: |B|^2/2 of the field of this gas, EmagBuild)
   auto cnt_ = fcap_cnt;
   const Real rc = fcap_rho, vc = fcap_v;
   const Real ar = arad;
@@ -244,7 +244,7 @@ void RadiationVet::FloorGasCap() {
       SlotAdd(sl, 0, m, k, j, i, 1.0);
       SlotAdd(sl, 2, m, k, j, i, dke*wv);
     }
-    const Real eg = etot - ekin - egrv;
+    const Real eg = etot - ekin - egrv - (mh ? em_(m,k,j,i) : 0.0);
     if (eg > 0.0) {
       const Real tg = eos.Temperature(dd, eg);
       const Real trad = sqrt(sqrt(fmax(erad, 0.0)/ar));

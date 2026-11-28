@@ -614,7 +614,18 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     // <mhd>/tracer_strang: the tracer pass in halves, inside the RKG halves
     const bool trc_s = (pmesh->pmb_pack->pmhd != nullptr) &&
                        pmesh->pmb_pack->pmhd->trc_strang;
-    const bool rkg_late = rkg_fuse || trc_s;
+    // <rad_vet>: the RKG halves wrap the whole step (the radiation stages, the backward-
+    // Euler fallback): the closing half runs after the radiation (rkg_late).  The Lie
+    // split (rkg_strang = false) would be first order: FATAL
+    const bool rkg_rad = (prs0 != nullptr) && prs0->use_rkg_sts &&
+                         pmesh->pmb_pack->pradvet != nullptr;
+    if (rkg_rad && !prs0->rkg_strang) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/use_rkg_sts with <rad_vet> needs rkg_strang = true "
+                << "(the Lie split is first order)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const bool rkg_late = rkg_fuse || trc_s || rkg_rad;
     if (rkg_fuse && pmesh->adaptive) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_strang_fuse is not supported with AMR"
@@ -735,12 +746,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         prs->rkg_dtfac = 1.0;
       };
       if (rkg_on && prs->rkg_strang) {
-        if (pmesh->pmb_pack->pradvet != nullptr) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<mhd>/rkg_strang is not supported with <rad_vet>"
-                    << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
         if (rkg_fuse) {
           // the carried closing half of the previous cycle + this cycle's
           // opening half (rkg_pend = 0: the opening half alone, fac exactly 0.5)
@@ -1278,14 +1283,17 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                 << "created x vol=" << fl[0] << " energy created x vol=" << fl[1]
                 << " | FOFC first-order cell-stages=" << fl[2] << std::endl;
     }
-    if (pmesh->pmb_pack->phydro != nullptr && pmesh->pmb_pack->phydro->use_dfl) {
-      auto *ph = pmesh->pmb_pack->phydro;
-      Real dn[4] = {ph->dfl_n, ph->dfl_dp[0], ph->dfl_dp[1], ph->dfl_dp[2]};
+    auto *pdh = pmesh->pmb_pack->phydro;
+    auto *pdm = pmesh->pmb_pack->pmhd;
+    if ((pdh != nullptr && pdh->use_dfl) || (pdm != nullptr && pdm->use_dfl)) {
+      const Real *q = (pdh != nullptr) ? pdh->dfl_dp : pdm->dfl_dp;
+      Real dn[4] = {(pdh != nullptr) ? pdh->dfl_n : pdm->dfl_n, q[0], q[1], q[2]};
 #if MPI_PARALLEL_ENABLED
       MPI_Allreduce(MPI_IN_PLACE, dn, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
       if (global_variable::my_rank == 0) {
-        std::cout << "<hydro> dfloor_flux_limit: outflow-limited cell-stages (all "
+        std::cout << ((pdh != nullptr) ? "<hydro>" : "<mhd>")
+                  << " dfloor_flux_limit: outflow-limited cell-stages (all "
                   << "attempts)=" << dn[0] << ", their x1 momentum x vol removed="
                   << dn[1] << ", kinetic energy x vol made heat=" << dn[2]
                   << ", momentum a lighter cell did not take (not moved) |dp| x vol="

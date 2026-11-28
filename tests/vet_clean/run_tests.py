@@ -717,8 +717,8 @@ def t_thermal_eq(c):
 def t_mhd_equil(c):
     """the relaxing uniform box with <mhd>, eos = general and a uniform field, every other
     <mhd> key at its fresh default, 10 cycles: it starts, gas + radiation energy (dEtot)
-    and the field (dB) stay.  Keys of <hydro> only are FATAL (fatal: merge_lat_rc,
-    dfloor_flux_limit named under <mhd>, floorcap_rho)."""
+    and the field (dB) stay.  merge_lat_rc (hydro only) is FATAL under <mhd>; named:
+    dfloor_flux_limit, floorcap_rho and dt_floor_courant run (rc 0)."""
     d = c.run('mhd_equil.athinput', 'run')
     dE = dB = 0.0
     e0 = 101.5   # e_rad + gas_eint
@@ -730,14 +730,16 @@ def t_mhd_equil(c):
     out = dict(dEtot=float(dE), dB=float(dB), fatal=0,
                moved=float(abs(m['vet_e'].mean()/100.0 - 1.0)),
                warnings=vett.warnings(open(os.path.join(d, 'run.log')).read()))
-    for k, v in (('mhd/merge_lat_rc', '0.5'), ('mhd/dfloor_flux_limit', 'true'),
-                 ('rad_vet/floorcap_rho', 1e-3)):
-        s = k.split('/')[1]
-        try:
-            c.run('mhd_equil.athinput', s, {k: v})
-        except RuntimeError:
-            log = open(os.path.join(c.dir, s, 'run.log')).read()
-            out['fatal'] += int(s in log and 'hydro only' in log)
+    try:
+        c.run('mhd_equil.athinput', 'merge_lat_rc', {'mhd/merge_lat_rc': '0.5'})
+    except RuntimeError:
+        log = open(os.path.join(c.dir, 'merge_lat_rc', 'run.log')).read()
+        out['fatal'] += int('merge_lat_rc' in log and 'hydro only' in log)
+    out['named'] = 0
+    for s, o in (('dfl', {'mhd/dfloor_flux_limit': 'true'}),
+                 ('fcap', {'rad_vet/floorcap_rho': 1e-3, 'mhd/dt_floor_courant': 0.6})):
+        c.run('mhd_equil.athinput', s, o)
+        out['named'] += 1
     return out
 
 
@@ -856,6 +858,14 @@ def t_mhd_vet(c):
     return mhd_cases(c, {})
 
 
+def t_mhd_rkg(c):
+    """mhd_vet with the Ohmic and ambipolar terms by the Strang RKG super-steps
+    (use_rkg_sts, rkg_strang; around the radiation stages): the same budgets, layout, ranks,
+    restart and forced dt_retry."""
+    k = {'mhd/use_rkg_sts': 'true', 'mhd/rkg_strang': 'true'}
+    return mhd_cases(c, {g: k for g, _ in MHD_CASES})
+
+
 def t_mhd_geneos(c):
     """mhd_vet with eos = general and the ionizing table (general_eos = table, the
     composition of star3d_cs; built at start-up), with absorption: the gas and the radiation
@@ -970,18 +980,21 @@ def t_order_mhd(c):
     """the fast magnetosonic wave of mhd_radwave (P_rad/P_gas 1, along x1, 32 cells, one
     period, strict solves), time step T/64 ... T/512: x = 1e-6 (exchange stiffness z = dt
     (c kappa + 4 c kappa a T^3/(rho c_v)) 2.9 ... 0.36), x = 100 (stiff, z ~ 1e8) and x = 1
-    (z ~ 1e6) with Ohmic and ambipolar diffusion (explicit in the stages); successive
+    (z ~ 1e6) with Ohmic and ambipolar diffusion (explicit in the stages; _rkg: by the
+    Strang RKG super-steps around the step); successive
     orders of E, v_x and the transverse field.  Strict solves where the exchange is stiff
     (the thin wave does not reach them: its own tolerances)."""
     out = {}
     strict = {'rad_vet/newton_conv': 'strict', 'rad_vet/solver_tol': 1e-14,
               'rad_vet/newton_tol': 1e-13}
     for tag, x, eta, ead in (('', 1.0e-6, 0.0, 0.0), ('_stiff', 100.0, 0.0, 0.0),
-                             ('_ni', 1.0, 0.02, 0.005)):
+                             ('_ni', 1.0, 0.02, 0.005), ('_rkg', 1.0, 0.02, 0.005)):
         o = mhd_wave_keys('fast', 1.0, x, 'x1', 32, eta, ead)[0]
         tl = o['time/tlim']
         o.update({'time/cfl_number': 10.0, 'output1/dt': tl, 'output2/dt': tl})
         o.update(strict if x > 1.0e-3 else {})
+        if tag == '_rkg':   # (the Strang RKG super-steps wrap the step)
+            o.update({'mhd/use_rkg_sts': 'true', 'mhd/rkg_strang': 'true'})
         S = {'E': [], 'v': [], 'B': []}
         for m in (64, 128, 256, 512):
             d = c.run('mhd_wave.athinput', 'T%d%s' % (m, tag),
@@ -992,6 +1005,26 @@ def t_order_mhd(c):
             S['B'].append(u['bcc2'])
         for k, v in S.items():
             out['err_' + k + tag], out['order_' + k + tag] = succ_orders(v)
+    return out
+
+
+MHDWAVE_SC = (('fast', 1.0, 100.0), ('alfven', 1.0, 1.0), ('fast', 10.0, 0.01),
+              ('slow', 10.0, 0.01))
+
+
+def t_mhd_radwave_sc(c):
+    """mhd_radwave's waves along x1 with the RAY closure (closure_form = extrap1, the
+    short-characteristics Eddington tensor) in place of D = I/3: a trapped fast wave
+    (P_rad/P_gas 1, x = 100), an Alfven wave (x = 1) and fast and slow waves in thin-ish
+    gas (P_rad/P_gas 10, x = 0.01), 32 and 64 cells, against the eigenmode of the
+    Eddington moment system (vett.radmhd_root): phase speed and damping errors."""
+    out = {'err_cph': [], 'err_damp': [], 'warnings': 0}
+    for i, (mode, p, x) in enumerate(MHDWAVE_SC):
+        r = [mhd_wave(c, 'sc%d_%s_%d' % (i, mode, n), mode, p, x, 'x1', n,
+                      over={'rad_vet/closure_form': 'extrap1'}) for n in (32, 64)]
+        out['err_cph'].append(abs(r[1][0]))
+        out['err_damp'].append(abs(r[1][1]))
+        out['warnings'] += r[0][3] + r[1][3]
     return out
 
 
@@ -2278,8 +2311,10 @@ TESTS = [  # name, function, in --quick
     ('mhd_layout', t_mhd_layout, True),
     ('mhd_geneos', t_mhd_geneos, False),
     ('mhd_radwave', t_mhd_radwave, False),
+    ('mhd_radwave_sc', t_mhd_radwave_sc, False),
     ('mhd_wb', t_mhd_wb, False),
     ('mhd_vet', t_mhd_vet, False),
+    ('mhd_rkg', t_mhd_rkg, False),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
     ('shell_force_cs', t_shell_force_cs, False),
