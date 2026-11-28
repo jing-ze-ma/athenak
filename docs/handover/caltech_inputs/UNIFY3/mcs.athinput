@@ -1,0 +1,221 @@
+# 3-D star test, cubed sphere: a small red-supergiant envelope (docs/vet_clean/STARS.md).
+# The production RSG deck (20.5 Msun, MESA profile) on the full sphere at N = 32 cells per
+# cube face (2.8 deg) instead of 128: 548 radial cells (stretched, 25-2530 Rsun; photosphere 834 Rsun; incl. the
+# atmosphere), 6 faces x 32 x 32, 24 MeshBlocks of 548 x 16 x 16 (tile 16).  Scheme: the
+# code defaults, as the production runs.  Fresh start from the 1-D profile.
+# Data (inputs/stars/star3d_data, linked into the run directory as star3d_data):
+#   rsg_ic.txt (1-D IC profile), rsg_rosseland.txt, rsg_planck.txt (opacity tables).
+#   The gas EOS table is built at start-up from the <hydro> eos_* keys (no file).
+# Needs a binary built with -D PROBLEM=star_vet (docs/vet_clean/BUILD.md).
+
+<job>
+basename = rsg
+
+<mesh>
+nx1 = 548
+x1min = 1.7610000000e+12
+x1max = 1.7610893676e+14
+ix1_bc = user
+ox1_bc = user
+nx2 = 32
+x2min = -1.0
+x2max = 1.0
+ix2_bc = panel
+ox2_bc = panel
+nx3 = 32
+x3min = -1.0
+x3max = 1.0
+ix3_bc = panel
+ox3_bc = panel
+use_grid_stretch_r_poly = true
+use_cubed_sphere = true
+f_stretch_r_c1 = -2.379490646660e+00
+f_stretch_r_c2 = -2.403770168268e+00
+f_stretch_r_c3 = 1.415809802100e+01
+f_stretch_r_c4 = -1.665097461225e+02
+f_stretch_r_c5 = 7.761436787675e+02
+f_stretch_r_c6 = -1.408755411672e+03
+f_stretch_r_c7 = 1.104383252310e+03
+f_stretch_r_c8 = -3.198432990306e+02
+f_stretch_r_b1_amp = -8.280819766661e-01
+f_stretch_r_b1_x = 3.341904986084e-01
+f_stretch_r_b1_w = 8.434333965941e-02
+f_stretch_r_b2_amp = -2.863911494909e+00
+f_stretch_r_b2_x = 5.304082849728e-01
+f_stretch_r_b2_w = 1.571731948484e-01
+f_stretch_r_p_amp = -9.989999521912e-01
+f_stretch_r_p_xa = 4.731830055582e-01
+f_stretch_r_p_xb = 8.875035394912e-01
+f_stretch_r_p_w = 9.865863707866e-03
+f_stretch_r_p2_amp = -9.197856064985e-01
+f_stretch_r_p2_xa = 9.762679326491e-01
+f_stretch_r_p2_xb = 9.999727563837e-01
+f_stretch_r_p2_w = 1.970196534328e-02
+f_stretch_r_head_nin = 591
+f_stretch_r_head_ij = 110
+cs_seam_blockend = extend
+layout_tile = 16
+# the values the start-up decides (a restart with -i takes them from the deck)
+nghost                = 3
+layout_invariant_mode = tile
+
+<meshblock>
+nx1 = 548
+nx2 = 16
+nx3 = 16
+
+<time>
+nlim = 1200
+tlim = 1.0e30
+ndiag = 10
+# the values the start-up decides (a restart with -i takes them from the deck)
+dt_retry_grow  = 1.1
+dt_retry_ngood = 20
+
+<units>
+length_cgs = 1.0
+mass_cgs = 1.0
+time_cgs = 1.0
+mu = 1.0
+
+<mhd>
+rsolver = hlld
+reconstruct = plm
+eos = general
+general_eos = table
+gamma = 1.6666666667
+eos_h2 = false
+eos_xh = 0.653848
+eos_yhe = 0.326395
+eos_logd_min = -21.0
+eos_logd_max = -1.0
+eos_logt_min = 2.9
+eos_logt_max = 6.8
+eos_dlog = 0.02
+dfloor = 1.0e-20
+tfloor_kelvin = 1000.0
+pfloor = 1.0e-13
+vceil = 3.0e8
+fofc_report = 512
+fofc_report_dt = 3.6e3
+wb_rmax = 6.3933004762e+13
+# the values the start-up decides (a restart with -i takes them from the deck)
+wellbalance_dynamic = true
+wb_x1               = true
+etotgrav            = true
+
+<rad_vet>
+steady_tol = 2.0e-7
+vet_gd_rotate_dt = 2.2e4
+c_light = 2.99792458e10
+arad = 1.583122e-46
+vet_gd_gl_nmu = 10
+vet_gd_rotate_every = 10
+vet_gd_wall_interp = true
+temp_unit_kelvin = 1.202724e-8
+e_floor = 1.0e-4
+implicit_flux_x1min = 1.754459175000e+13
+# the values the start-up decides (a restart with -i takes them from the deck)
+force_reference   = wb_arad
+steady_init        = steady
+implicit_bc_x1min = flux
+solver_maxit       = 200
+opacity           = table
+vet_scatter       = true
+closure           = sc
+time_scheme       = sdirk2
+
+<problem>
+star_mhd_beta = 1e5
+star_ic_eint_from_t = true
+star_seed = 1.0e-3
+star_seed_nk = 16
+star_seed_kmin = 1
+star_seed_kmax = 2
+star_seed_signs = random
+star_seed_rad = true
+star_seed_rlo = 5.6261843000e+13
+star_seed_rhi = 5.7943898100e+13
+user_srcs = true
+user_hist = true
+star_gm = 1.4842265008e+27
+star_gm_column = true
+star_ic_file = star3d_data/rsg_ic.txt
+star_opac_table = star3d_data/rsg_rosseland.txt
+star_planck_table = star3d_data/rsg_planck.txt
+star_opac_logd_min = -21.0
+star_nfine = 262144
+star_ic_cols = 5
+star_ic_balance = true
+star_ic_balance_rmax = 5.1192900541e+13
+mlt_flux_frozen = true
+star_bc_outer = outflow
+star_sponge_rate = 1.0e-04
+star_sponge_r0 = 1.5849804309e+14
+star_sponge_mode = radial
+star_sponge_dmax = 2.0e-17
+star_ic_rad = sph1d
+star_ic_rad_atm_post = false
+star_ic_equil = false
+star_ic_equil_dtfac = 1.0
+star_ic_equil_relax_n = 40
+star_ic_equil_relax_tol = 1.0e-4
+star_ic_equil_maxit = 1
+star_ic_equil_tol = 1.0e-9
+star_ic_equil_last_march = true
+mlt_closure = adaptive
+mlt_closure_taper = 0.01
+star_seed_k = 4
+star_seed_rng = 1234
+star_seed_kdist = box
+star_seed_lmin = 16
+star_seed_lmax = 32
+star_ic_rad_hse = true
+star_ic_rad_gas = re_atm
+star_ic_rad_atm_force = module
+star_ic_rad_taua = 1
+star_ic_rad_taub = 3
+star_ic_rad_dtau = 0.05
+star_ic_rad_dlnr = 0.002
+star_ic_rad_ncore = 64
+star_ic_rad_tol = 1e-08
+star_ic_rad_hse_tol = 1e-06
+star_ic_rad_thin = 0
+mlt_relax_time = 1.5e4
+# the values the start-up decides (a restart with -i takes them from the deck)
+star_sponge_form      = lawson
+star_ic_rad_atm_maxit = 1000
+star_ic_rad_atm_relax = 0.5
+
+<coord>
+<output1>
+file_type = hst
+dt = 0
+dcycle = 1
+data_format = %24.16e
+
+<output2>
+bin_double = true
+file_type = bin
+variable = mhd_w_bcc
+dt = 0
+dcycle = 300
+
+<output3>
+bin_double = true
+file_type = bin
+variable = vet
+dt = 0
+dcycle = 300
+
+<output4>
+file_type = log
+dt = 0
+dcycle = 10
+
+<output8>
+bin_double = true
+file_type = bin
+variable = mhd_divb
+dt = 0
+dcycle = 10

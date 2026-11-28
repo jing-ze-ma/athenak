@@ -1,0 +1,113 @@
+# The reduced star deck of star_smoke and wb_star: inputs/stars/star3d_sp.athinput (the
+# production BSG envelope) on 256 x 8 x 8 cells (one MeshBlock, tile 8), with the settings
+# decided for the stars (face_thin, lat_sums, tie_gid, opac_drag true). Needs a
+# binary built with -D PROBLEM=star_vet and star3d_data (inputs/stars) linked into the run
+# directory (run_tests.py does it).
+
+<job>
+basename = bsg3d
+
+<mesh>
+nx1 = 256
+x1min = 1.391400e12
+x1max = 5.565600e12
+ix1_bc = user
+ox1_bc = user
+nx2 = 8
+x2min = 1.0471975511965976
+x2max = 2.0943951023931953
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 8
+x3min = 0.0
+x3max = 1.0471975511965976
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_p_amp = -0.66666666666666667
+f_stretch_r_p_xa = 0.1875
+f_stretch_r_p_xb = 0.6875
+f_stretch_r_p_w = 1.0e-12
+layout_invariant_mode = tile
+layout_tile = 8
+
+<meshblock>
+nx1 = 256
+nx2 = 8
+nx3 = 8
+
+<time>
+nlim = 20
+tlim = 1.0e30
+ndiag = 100
+
+<units>
+length_cgs = 1.0
+mass_cgs = 1.0
+time_cgs = 1.0
+mu = 0.62
+
+<hydro>
+eos = general
+gamma = 1.6666666666666667
+dfloor = 6.15245e-14
+pfloor = 8.9014e-3
+vceil = 3.0e8
+tfloor = 134104228155.32465
+wb_rmax = 4.231839e+12
+
+<rad_vet>
+floorcap_v = 3e7
+floorcap_rho = 1e-14
+c_light = 2.99792458e10
+arad = 2.3392742567e-47
+temp_unit_kelvin = 7.4568864364e-9
+e_floor = 1.0e-4
+implicit_flux_x1min = 2.2942145641e+13
+
+<problem>
+star_seed_band = old
+star_seed = 0.0
+star_ic_profile = true
+star_ic_profile_file = star3d_data/bsg_profile.txt
+star_ic_profile_rho_thr = 6.15245e-7
+star_ic_profile_seed_group = false
+star_ic_profile_gext = invsq
+star_ic_rad = file
+star_ic_eint_from_t = false
+user_srcs = true
+user_hist = true
+star_gm = 2.62502e27
+star_ic_file = star3d_data/bsg_ic.txt
+star_opac_table = star3d_data/bsg_rosseland.txt
+star_planck_table = star3d_data/bsg_planck.txt
+star_nfine = 262144
+star_ic_cols = 5
+star_bc_outer = copy
+star_bc_outer_r2 = true
+
+<output1>
+file_type = hst
+dt = 0
+dcycle = 1
+data_format = %24.16e
+
+<output2>
+bin_double = true
+file_type = bin
+variable = hydro_w
+dt = 0
+dcycle = 20
+
+<output3>
+bin_double = true
+file_type = bin
+variable = vet
+dt = 0
+dcycle = 20
+
+<output4>
+file_type = log
+dt = 0
+dcycle = 10
