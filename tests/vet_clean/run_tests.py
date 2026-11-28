@@ -1882,10 +1882,10 @@ def t_idort_beams(c):
 
 def t_idort_beams_mb(c):
     """the beams on 4 MeshBlocks against 1 MeshBlock: along x2 in tile mode (identical),
-    along x1 in block mode (tile mode needs one MeshBlock along x1; the result depends on
-    the MeshBlock size at the solver tolerance)."""
+    along x1 in block mode with <mesh>/layout_tile_x1 64 in both runs (identical: the
+    solve's x1 tiles do not depend on the split)."""
     t = {'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 16}
-    bl = {'mesh/layout_invariant_mode': 'block'}
+    bl = {'mesh/layout_invariant_mode': 'block', 'mesh/layout_tile_x1': 64}
     a, b = c.run('idort_beams.athinput', 'tile1', t), c.run('idort_beams.athinput', 'block1', bl)
     x2 = c.run('idort_beams.athinput', 'tile4x2', dict(t, **{'meshblock/nx2': 16}))
     x1 = c.run('idort_beams.athinput', 'block4x1', dict(bl, **{'meshblock/nx1': 64}))
@@ -1916,32 +1916,21 @@ def t_x1_blocks_sp(c):
 
 
 def t_x1_blocks_cart(c):
-    """several MeshBlocks along x1 on a Cartesian mesh, <mesh>/layout_tile_x1: the periodic
-    radwave (128 x 4, L 32; its periodic x1 ray sweep at a fixed vet_x1_npass 16, as several
-    MeshBlocks need) on 1, 2, 4 MeshBlocks along x1, 4 cycles, bitwise (maxdiff_x1); 2
-    MeshBlocks on 2 ranks bitwise (maxdiff_ranks); an unset layout_tile_x1 with 2
-    MeshBlocks along x1 is FATAL (fatal_unset); no CLEAN WARNING.  The open shadow (140 x 80,
-    16 x 16 lateral tiles, L 35) on 1, 2, 4 MeshBlocks along x1 bitwise too (maxdiff_x1), its
-    2 MeshBlocks on 2 ranks bitwise (maxdiff_ranks)."""
-    o = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 32,
-         'rad_vet/vet_x1_npass': 16, 'rad_vet/vet_x1_ptol': 0.0}
-    r = [c.run('wave_cart.athinput', 'r%d' % k, dict(o, **{'meshblock/nx1': 128//k}))
+    """several MeshBlocks along x1 on a Cartesian mesh, <mesh>/layout_tile_x1: the open
+    shadow (140 x 80, 16 x 16 lateral tiles, L 35) on 1, 2, 4 MeshBlocks along x1, 4 cycles,
+    bitwise (maxdiff_x1); its 2 MeshBlocks on 2 ranks bitwise (maxdiff_ranks); an unset
+    layout_tile_x1 with 2 MeshBlocks along x1 is FATAL (fatal_unset); no CLEAN WARNING.
+    (The slab sweep does not cover several MeshBlocks along an x1-periodic mesh: FATAL.)"""
+    o = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 35}
+    r = [c.run('rad_shadow.athinput', 'sh%d' % k, dict(o, **{'meshblock/nx1': 140//k}))
          for k in (1, 2, 4)]
     out = {'maxdiff_x1': max(vett.compare_dirs(r[0], r[1])[1],
                              vett.compare_dirs(r[0], r[2])[1])}
-    s2 = c.run('wave_cart.athinput', 'r2_np2', dict(o, **{'meshblock/nx1': 64}), ranks=2)
+    s2 = c.run('rad_shadow.athinput', 'sh2_np2', dict(o, **{'meshblock/nx1': 70}), ranks=2)
     out['maxdiff_ranks'] = vett.compare_dirs(r[1], s2)[1]
-    so = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 35}
-    h = [c.run('rad_shadow.athinput', 'sh%d' % k, dict(so, **{'meshblock/nx1': 140//k}))
-         for k in (1, 2, 4)]
-    h2 = c.run('rad_shadow.athinput', 'sh2_np2', dict(so, **{'meshblock/nx1': 70}), ranks=2)
-    out['maxdiff_x1'] = max(out['maxdiff_x1'], vett.compare_dirs(h[0], h[1])[1],
-                            vett.compare_dirs(h[0], h[2])[1])
-    out['maxdiff_ranks'] = max(out['maxdiff_ranks'], vett.compare_dirs(h[1], h2)[1])
-    r += h + [h2]
     u = {k: v for k, v in o.items() if k != 'mesh/layout_tile_x1'}
     try:
-        c.run('wave_cart.athinput', 'unset', dict(u, **{'time/nlim': 1, 'meshblock/nx1': 64}))
+        c.run('rad_shadow.athinput', 'unset', dict(u, **{'time/nlim': 1, 'meshblock/nx1': 70}))
         out['fatal_unset'] = 0
     except RuntimeError:
         log = open(os.path.join(c.dir, 'unset', 'run.log')).read()
@@ -1949,7 +1938,6 @@ def t_x1_blocks_cart(c):
     out['warnings'] = sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
                           for d in r + [s2])
     return out
-
 
 def shadow_exact(d, nsub=4096):
     """E of the beams attenuated along straight rays back to x1min through the ellipse
