@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -104,6 +106,8 @@ void RadiationVet::ScX1Hand(const bool up) {
   auto vi_ = vgd_i;
   auto b_ = vgd_x1b;
   auto r_ = vgd_x1r;
+  auto xf_ = vgd_x1f;
+  const int nsd = up ? 1 : 2;   // (no level on that side: the ghost shell is kept)
   par_for("vet_vgd_x1pack", vgd_cur, 0, nmb1, 0, n - 1, 0, nk - 1,
   KOKKOS_LAMBDA(const int m, const int d, const int t) {
     b_(m,d*nk + t) = vi_(m,d,w + t/nx2,w + t % nx2,isrc);
@@ -111,7 +115,7 @@ void RadiationVet::ScX1Hand(const bool up) {
   ScX1Pass(up);
   par_for("vet_vgd_x1unpack", vgd_cur, 0, nmb1, 0, n - 1, 0, nk - 1,
   KOKKOS_LAMBDA(const int m, const int d, const int t) {
-    vi_(m,d,w + t/nx2,w + t % nx2,idst) = r_(m,d*nk + t);
+    if (!(xf_(m) & nsd)) {vi_(m,d,w + t/nx2,w + t % nx2,idst) = r_(m,d*nk + t);}
   });
   ScHalo(vgd_i, n, idst, idst, w, true);
 }
@@ -289,6 +293,93 @@ void RadiationVet::ScX1Pass(const bool up) {
   MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
 #endif
   Kokkos::deep_copy(vgd_x1r, rh);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::ScKbaGroups
+//! \brief several MeshBlocks along x1: the direction groups vgd_kgd the levels are
+//! pipelined over, unions of the connected components of the in-pass direction
+//! couplings, the wall maps vgd_map and vgd_m3 (the inner mirror and the turned rays
+//! read the finished inward pass), joined over the ranks.  vet_gd_kba_groups auto:
+//! components merged in order until a group's launch holds >= 32k items on every rank;
+//! N: about n/N directions per group
+
+void RadiationVet::ScKbaGroups() {
+  const int n = vgd_n;
+  const std::vector<int> old = vgd_kgd;   // (logged when the groups change)
+  vgd_kgd.assign(n, 0);
+  vgd_kg = 1;
+  if (vgd_nb1 == 1 || vgd_kgk == 1) {return;}
+  std::vector<int> p(n);
+  std::iota(p.begin(), p.end(), 0);
+  auto root = [&](int a) {
+    while (p[a] != a) {a = p[a] = p[p[a]];}
+    return a;
+  };
+  auto join = [&](const int a, const int b) {
+    const int ra = root(a), rb = root(b);
+    p[std::max(ra, rb)] = std::min(ra, rb);
+  };
+  // (a vacuum ghost, wall flag 3 or >= 8, is never read through a map)
+  auto wl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_wall);
+  auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_map);
+  auto rd = [&](const size_t c) {return wl.data()[c] != 3 && wl.data()[c] < 8;};
+  for (size_t c = 0; c < wl.size(); ++c) {
+    for (int d = 0; d < n && rd(c); ++d) {join(d, mp.data()[c*n + d]);}
+  }
+  if (vgd_wint) {
+    auto m3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_m3);
+    auto w3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_w3);
+    for (size_t c = 0; c < m3.size(); ++c) {
+      if (rd(c/(3*n)) && (c % 3 == 0 || w3.data()[c] != 0.0)) {
+        join(static_cast<int>((c/3) % n), m3.data()[c]);
+      }
+    }
+  }
+  // cells of one level's launch: the fewest on any rank holding the level
+  std::vector<int> nl(vgd_nb1, 0);
+  for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {nl[vgd_x1lv[m]] += 1;}
+  int cmin = std::numeric_limits<int>::max();
+  for (const int q : nl) {if (q > 0) {cmin = std::min(cmin, q);}}
+#if MPI_PARALLEL_ENABLED
+  std::vector<int> all(static_cast<size_t>(n)*global_variable::nranks);
+  for (int d = 0; d < n; ++d) {p[d] = root(d);}
+  MPI_Allgather(p.data(), n, MPI_INT, all.data(), n, MPI_INT, vgd_comm);
+  for (size_t q = 0; q < all.size(); ++q) {join(static_cast<int>(q % n), all[q]);}
+  MPI_Allreduce(MPI_IN_PLACE, &cmin, 1, MPI_INT, MPI_MIN, vgd_comm);
+#endif
+  cmin *= pmy_pack->pmesh->mb_indcs.nx2*pmy_pack->pmesh->mb_indcs.nx3;
+  // components (by their first direction), then groups of consecutive components
+  std::vector<int> cid(n, -1), csz;
+  for (int d = 0; d < n; ++d) {
+    if (cid[root(d)] < 0) {
+      cid[root(d)] = static_cast<int>(csz.size());
+      csz.push_back(0);
+    }
+    csz[cid[root(d)]] += 1;
+  }
+  // (a pass launches about half the directions of a group)
+  const int need = (vgd_kgk > 0) ? (n + vgd_kgk - 1)/vgd_kgk
+                                 : (2*32768 + cmin - 1)/cmin;
+  std::vector<int> gof(csz.size());
+  int g = 0, acc = 0;
+  for (size_t c = 0; c < csz.size(); ++c) {
+    if (acc >= need) {
+      g += 1;
+      acc = 0;
+    }
+    gof[c] = g;
+    acc += csz[c];
+  }
+  vgd_kg = g + 1;
+  for (int d = 0; d < n; ++d) {vgd_kgd[d] = gof[cid[root(d)]];}
+  if (global_variable::my_rank == 0 && vgd_kgd != old) {
+    std::cout << "<rad_vet> vet_gd_kba_groups: " << csz.size() << " closed direction "
+              << "component(s), " << vgd_kg << " group(s) over " << vgd_nb1
+              << " MeshBlock levels along x1"
+              << ((csz.size() == 1) ? " (one component: level by level)" : "")
+              << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------

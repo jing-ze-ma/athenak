@@ -1866,17 +1866,29 @@ def t_x1_blocks_sp(c):
     on 1 and 2 ranks bitwise (maxdiff_ranks); 4 along x1 straight vs a restart after 2
     of 4 cycles bitwise (maxdiff_restart); the largest relative difference to one
     MeshBlock (maxrel_x1, the solve's tolerance: multigrid tiles, line solves and Krylov
-    partials per MeshBlock); no CLEAN WARNING."""
+    partials per MeshBlock); no CLEAN WARNING.  kba: vacuum theta walls without
+    wall_interp (21 direction components, the GL rings' orbits of the phi-wall map), 4
+    along x1 on 4 ranks, vet_gd_kba_groups 7 (kba_groups, from the log) vs 1 bitwise
+    (maxdiff_kba); the restart with 7 groups."""
     o = {'time/nlim': 4, 'mesh/layout_tile': None, 'meshblock/nx1': 16}
     a = c.run('shell_sp.athinput', 'r1', dict(o, **{'meshblock/nx1': 32}))
     b = c.run('shell_sp.athinput', 'r2', o)
     b2 = c.run('shell_sp.athinput', 'r2_np2', o, ranks=2)
     out = {'maxdiff_ranks': vett.compare_dirs(b, b2)[1],
            'maxrel_x1': vett.compare_dirs(a, b)[2]}
-    out['maxdiff_restart'] = restart_pair(c, 'shell_sp.athinput', 4, 2,
-                                          dict(o, **{'meshblock/nx1': 8}))['maxdiff']
+    k = dict(o, **{'meshblock/nx1': 8, 'rad_vet/vet_gd_theta_wall': 'vacuum',
+                   'rad_vet/vet_gd_wall_interp': 'false',
+                   'rad_vet/vet_gd_wall_sym': 'false'})
+    g1 = c.run('shell_sp.athinput', 'kba1', dict(k, **{'rad_vet/vet_gd_kba_groups': 1}),
+               ranks=4)
+    k['rad_vet/vet_gd_kba_groups'] = 7
+    g7 = c.run('shell_sp.athinput', 'kba7', k, ranks=4)
+    out['maxdiff_kba'] = vett.compare_dirs(g1, g7)[1]
+    lg = open(os.path.join(g7, 'run.log')).read()
+    out['kba_groups'] = int(re.findall(r'(\d+) group\(s\) over', lg)[-1])
+    out['maxdiff_restart'] = restart_pair(c, 'shell_sp.athinput', 4, 2, k)['maxdiff']
     out['warnings'] = sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
-                          for d in (b, b2))
+                          for d in (b, b2, g7))
     return out
 
 

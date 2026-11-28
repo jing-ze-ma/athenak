@@ -433,6 +433,18 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
       vgd_ring_par = pin->GetBoolean("rad_vet","vet_gd_band_ring");
     }
     vgd_hcomp = vgd_on ? 2 : 0;   // (ScInit switches it off where it does not apply)
+    // vet_gd_kba_groups: several MeshBlocks along x1, the levels pipelined over this
+    // many direction groups at most (auto: as the GPU launches fill; 1: level by level)
+    if (vgd_on) {
+      const std::string kg = pin->GetOrAddString("rad_vet", "vet_gd_kba_groups", "auto");
+      vgd_kgk = (kg == "auto") ? 0 : std::atoi(kg.c_str());
+      if (vgd_kgk < 1 && kg != "auto") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_vet>/vet_gd_kba_groups = auto | N >= 1"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // defaults of a fresh 3-D spherical-polar run: wall_interp; with a fixed product set
     // wall_sym, and theta_seam_sym on a theta-periodic wedge centred on the equator with
     // a set that is its equatorial mirror (odd nmu, or no stagger)

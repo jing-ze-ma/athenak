@@ -102,6 +102,14 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
   if (vgd_shl_alpha != vgd_alpha) {
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
     const int ntot = (nmb1 + 1)*nkj*n;
+    // several MeshBlocks along x1: the direction groups of the pipeline (not the slab)
+    if (VET_VGD_SWEEP_SLAB) {
+      vgd_kg = 1;
+      vgd_kgd.assign(n, 0);
+    } else {
+      ScKbaGroups();
+    }
+    const int nkg = vgd_kg;
     for (int p = 0; p < 2; ++p) {
       const bool inw = (p == 0);
       if (static_cast<int>(vgd_shl[p].extent(0)) < ntot) {
@@ -133,14 +141,18 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
         }
       }, cnt);
       vgd_shn[p] = cnt;
-      // several MeshBlocks along x1: the code range of each level
-      vgd_shlv[p].assign(vgd_nb1 + 1, cnt);
+      // several MeshBlocks along x1: the codes by (level, group), the range of each
+      vgd_shlv[p].assign(vgd_nb1*nkg + 1, cnt);
       vgd_shlv[p][0] = 0;
       if (vgd_nb1 > 1) {
         auto lh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), L_);
-        for (int q = cnt - 1; q >= 0; --q) {vgd_shlv[p][vgd_x1lv[lh(q)/(n*nkj)]] = q;}
-        for (int lv = vgd_nb1 - 1; lv > 0; --lv) {
-          vgd_shlv[p][lv] = std::min(vgd_shlv[p][lv], vgd_shlv[p][lv + 1]);
+        auto key = [&](const int t) {return vgd_x1lv[t/(n*nkj)]*nkg + vgd_kgd[t % n];};
+        std::stable_sort(lh.data(), lh.data() + cnt,
+                         [&](const int a, const int b) {return key(a) < key(b);});
+        Kokkos::deep_copy(L_, lh);
+        for (int q = cnt - 1; q >= 0; --q) {vgd_shlv[p][key(lh(q))] = q;}
+        for (int c = vgd_nb1*nkg - 1; c > 0; --c) {
+          vgd_shlv[p][c] = std::min(vgd_shlv[p][c], vgd_shlv[p][c + 1]);
         }
       }
     }
@@ -582,8 +594,10 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
     };
     const bool hxm = vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0);
     // several MeshBlocks along x1: levels in the pass's order, each from the boundary
-    // shell handed on (wall maps couple all directions: no wavefront)
-    const int nst = vgd_nb1;
+    // shell handed on, pipelined over the direction groups (KBA): at stage s the level
+    // at place p of the pass's order sweeps group s - p.  Every direction has the reads
+    // of the level-by-level sweep (a group is closed under the in-pass couplings)
+    const int nst = vgd_nb1, nkg = vgd_kg;
     // remote partners over MPI: the interior / edge split (vgd_mid), so the next shell's
     // interior runs while this shell's messages travel
     // IPC (CUDA): the interior runs on the second stream vgd_es2, concurrent with the
@@ -596,8 +610,9 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
     const bool ppl = vgd_hmpi && (vgd_ipc_state != 1 || pipc) && !xffs && nst == 1;
     if (pipc) {ScEs2Make();}
     ScCsEv ego, eint;   // interior may start (sweep stream) / interior done (vgd_es2)
-    for (int qq = 0; qq < nst*nsh; ++qq) {
-      const int q = qq % nsh, lv = inw ? (nst - 1 - qq/nsh) : qq/nsh;
+    const int lv = 0;   // (ppl: one level)
+    for (int qq = 0; qq < (nst + nkg - 1)*nsh; ++qq) {
+      const int q = qq % nsh, sg = qq/nsh;
       if (nst > 1 && q == 0 && qq > 0) {ScX1Hand(!inw);}
       const int l = inw ? (n1 - 1 - q) : (lcut + q);
       const int i = is + l;
@@ -639,9 +654,14 @@ void RadiationVet::VET_VGD_SWEEP_NAME() {
         run_split(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l, true,
                   vgd_cur);
       } else {
-        // shell list: only this pass's (and level's) (m, k, j, d)
-        run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
-                 "vet_vgd_shell");
+        // shell list: only this pass's (m, k, j, d) of each level's group at this stage
+        for (int lw = 0; lw < nst; ++lw) {
+          const int g = sg - (inw ? (nst - 1 - lw) : lw), c = lw*nkg + g;
+          if (g >= 0 && g < nkg) {
+            run_list(vgd_shl[pass], vgd_shlv[pass][c], vgd_shlv[pass][c + 1], i, l,
+                     "vet_vgd_shell");
+          }
+        }
       }
       // slab: the shell's face sums, after its interior and edge items (ScSlabFaceSum)
 #if VET_VGD_SWEEP_SLAB

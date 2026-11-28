@@ -112,8 +112,10 @@
   }
  },
  "x1_blocks_sp": {
-  "_about": "shell_sp with 2 and 4 MeshBlocks along x1: ranks and restart bitwise; maxrel_x1: the difference to one MeshBlock at the solve's tolerance (2e-3 after 4 cycles, CPU)",
+  "_about": "shell_sp with 2 and 4 MeshBlocks along x1: ranks, KBA groups (7 vs 1) and restart bitwise; maxrel_x1: the difference to one MeshBlock at the solve's tolerance (4e-3 after 4 cycles, CPU)",
   "equal": {
+   "kba_groups": 7,
+   "maxdiff_kba": 0.0,
    "maxdiff_ranks": 0.0,
    "maxdiff_restart": 0.0
   },

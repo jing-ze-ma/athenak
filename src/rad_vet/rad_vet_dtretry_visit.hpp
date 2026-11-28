@@ -728,6 +728,9 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vgd_x1f", vgd_x1f);
   v.view("vgd_x1mo", vgd_x1mo);
   v.value("vgd_shlv", vgd_shlv);
+  v.value("vgd_kgk", vgd_kgk);
+  v.value("vgd_kg", vgd_kg);
+  v.value("vgd_kgd", vgd_kgd);
   v.view("vgd_x1b", vgd_x1b);
   v.view("vgd_x1r", vgd_x1r);
   v.view("vgd_rmap", vgd_rmap);

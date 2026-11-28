@@ -1511,7 +1511,11 @@ class RadiationVet {
   DvceArray1D<int> vgd_x1f;   // (m): 1 innermost, 2 outermost level, 4 reflecting top,
                               // + 8 lx1
   DvceArray1D<int> vgd_x1mo;  // blocks by level (the shell list order)
-  std::vector<int> vgd_shlv[2];   // (level): first code of the level in vgd_shl[pass]
+  std::vector<int> vgd_shlv[2];   // (level, group): first code in vgd_shl[pass]
+  // vet_gd_kba_groups (0 = auto): the levels pipelined over direction groups
+  int vgd_kgk = 0, vgd_kg = 1;
+  std::vector<int> vgd_kgd;   // (d): group of direction d (ScKbaGroups)
+  void ScKbaGroups();
   DvceArray2D<Real> vgd_x1b, vgd_x1r;    // (m, v): one shell to / from the x1 neighbour
   void ScX1Hand(const bool up);
   void ScX1Pass(const bool up);
