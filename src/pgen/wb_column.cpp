@@ -180,7 +180,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   lnp_d_ = lnp.d_view; tfine_d_ = tfine.d_view; zlo_ = zlo; dzf_ = dzf; zmin_ = zmin;
   t0_ = t0c; tgrad_ = tgrad;
   gm1_ = gm1; b0_ = b0; nfine_ = nfine; etotgrav_ = etotgrav;
-  if (restart) return;
+  // (a restart sets the potentials only: the state comes from the file)
+  const bool rst = restart;
 
   // the state and the potentials, every cell and every face, ghosts included
   DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
@@ -207,6 +208,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real p = exp(lnp_d(ii)*(1.0 - f) + lnp_d(ii+1)*f);
     const Real t = tfine_d(ii)*(1.0 - f) + tfine_d(ii+1)*f;
     const Real d = p/t;
+    if (have_phi) {
+      const Real phi_c = PotAt(g0, ap, z - zmin);
+      phicc(m,k,j,i) = phi_c;
+      if (axis == 1) {
+        ph1(m,k,j,i) = PotAt(g0, ap, x1l - zmin);
+        if (i == n1m1) ph1(m,k,j,i+1) = PotAt(g0, ap, x1r - zmin);
+        ph2(m,k,j,i) = phi_c; ph3(m,k,j,i) = phi_c;
+        if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
+        if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
+      } else {
+        ph3(m,k,j,i) = PotAt(g0, ap, x3l - zmin);
+        if (k == n3m1) ph3(m,k+1,j,i) = PotAt(g0, ap, x3r - zmin);
+        ph1(m,k,j,i) = phi_c; ph2(m,k,j,i) = phi_c;
+        if (i == n1m1) ph1(m,k,j,i+1) = phi_c;
+        if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
+      }
+    }
+    if (rst) return;
     u0(m,IDN,k,j,i) = d;
     u0(m,IM1,k,j,i) = 0.0;
     u0(m,IM2,k,j,i) = 0.0;
@@ -226,26 +245,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0(m,IM3,k,j,i) = d*v3;
       u0(m,IEN,k,j,i) += 0.5*d*(v1*v1 + v2*v2 + v3*v3);
     }
-    if (have_phi) {
-      const Real phi_c = PotAt(g0, ap, z - zmin);
-      phicc(m,k,j,i) = phi_c;
-      if (etotgrav) u0(m,IEN,k,j,i) += d*phi_c;
-      if (axis == 1) {
-        ph1(m,k,j,i) = PotAt(g0, ap, x1l - zmin);
-        if (i == n1m1) ph1(m,k,j,i+1) = PotAt(g0, ap, x1r - zmin);
-        ph2(m,k,j,i) = phi_c; ph3(m,k,j,i) = phi_c;
-        if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
-        if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
-      } else {
-        ph3(m,k,j,i) = PotAt(g0, ap, x3l - zmin);
-        if (k == n3m1) ph3(m,k+1,j,i) = PotAt(g0, ap, x3r - zmin);
-        ph1(m,k,j,i) = phi_c; ph2(m,k,j,i) = phi_c;
-        if (i == n1m1) ph1(m,k,j,i+1) = phi_c;
-        if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
-      }
-    }
+    if (have_phi && etotgrav) u0(m,IEN,k,j,i) += d*phicc(m,k,j,i);
   });
-  if (is_mhd) {
+  if (is_mhd && !restart) {
     auto &b = pmbp->pmhd->b0;
     par_for("wbcol_b", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -286,14 +288,13 @@ void WBColumnGravity(Mesh *pm, Real bdt) {
   DvceArray4D<Real> ph3 = is_mhd ? pmbp->pmhd->phi0.x3f : pmbp->phydro->phi0.x3f;
   DvceArray5D<Real> wbq0 = is_mhd ? pmbp->pmhd->wbq0 : pmbp->phydro->wbq0;
   const int axis = axis_;
-  const Real g0 = g0_, ap = ap_, gfac = gsrc_fac_;
+  const Real g0 = g0_, ap = ap_, gfac = gsrc_fac_, zmin = zmin_;
   const bool use_cache = (axis == 1) && wbx1;
 
   par_for("wbcol_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
     const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
-    const Real zmin = (axis == 1) ? x1min : x3min;   // NOTE: mesh xmin == block xmin here
     const Real z = (axis == 1) ? CellCenterX(i-is, indcs.nx1, x1min, x1max)
                                : CellCenterX(k-ks, indcs.nx3, x3min, x3max);
     const Real dzc = (axis == 1) ? (x1max - x1min)/indcs.nx1 : (x3max - x3min)/indcs.nx3;
