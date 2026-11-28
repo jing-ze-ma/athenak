@@ -199,13 +199,6 @@ void RadiationVet::ReadClosureKeys(ParameterInput *pin) {
   // closure
   vet_sc = false;
   vet_full = false;
-  vet_mbs = nullptr;
-  vet_nguard = 0.0;
-  vet_ncell = 0.0;
-  vet_guard_max = 0.0;
-  vet_d11_min = 1.0;
-  vet_time = 0.0;
-  vet_itime = 0.0;
   vet_ncall = 0.0;
   vray_ready = false;
   // sc: short characteristics, on a Cartesian mesh and (vgd_on) on spherical polar and

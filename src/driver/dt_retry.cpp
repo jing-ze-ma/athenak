@@ -69,7 +69,7 @@ const char *kDtrMinimal[] = {
   // RadiationVet
   "vet.u0", "vet.f0x1", "vet.f0x2", "vet.f0x3", "vet.ipred", "vet.t2k1",
   "vet.vet_prev",
-  "vet.vra_d", "vet.opac", "vet.vet_cell",
+  "vet.opac", "vet.vet_cell",
   "vet.vray_cs",
   // step 1 time2_face_fct: the face E flux of K1 (rotated with it)
   "vet.t2pf1",
@@ -84,9 +84,8 @@ const char *kDtrMinimal[] = {
   // flux through the outer face of the last solve, read by the pgen's hydro-stage budget
   // accumulator like f0x1; absent (empty) elsewhere
   "vet.ibadv_x1max",
-  // vet_gd's half-range ratios (vgd_hr; the rotation average's field
-  // array vra_a1 is this View): the closure of a cycle that does not rebuild them
-  // reads the last build's.  Without
+  // vet_gd's half-range ratios (vgd_hr): the closure of a cycle that does not rebuild
+  // them reads the last build's.  Without
   // them a forced retry at fac 1 is not bitwise the straight run
   "vet.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the face
@@ -591,12 +590,10 @@ void DtRetry::Build(Mesh *pm) {
     Binder b{&ent_, "am.", &sel, all_views_, host_};
     pam->DtRetryVisit(b);
   }
-  // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
-  // while it is clean (written only at rotation-block boundaries; RadiationVet::vra_gen)
-  // (and of ring's offsets cln_rr, written only at block boundaries, a fill
-  // or a restart: their writers bump vra_gen too)
+  // dt_retry_host skips the host copy of the ring's offsets cln_rr while they are clean
+  // (written only at block boundaries, a fill or a restart: their writers bump vra_gen)
   for (auto &e : ent_) {
-    if (((host_ || hvet_) && e->name == "vet.vra_d") || e->name == "vet.cln_rr") {
+    if (e->name == "vet.cln_rr") {
       e->SetGen(&(pk->pradvet->vra_gen));
     }
     // (and both, with the pending Delta, while no build of the cycle shifts the ring:

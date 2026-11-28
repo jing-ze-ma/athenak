@@ -181,10 +181,7 @@ constexpr int VETRAY_HP1 = 23;  // sum w I max(mu_a, 0), a = 1 2 3 (half-range)
 constexpr int VETRAY_NL  = 26;  // sum w |I - S| (C1 non-locality), fs only
 constexpr int VETRAY_EPS = 27;  // thermal fraction min(kappa_P/chi, 1) (fs)
 constexpr int VETRAY_NC  = 28;
-// scheme = clean: K+^d_bd = sum w I Omega_b mu_d over mu_d > 0 (slot KP + 3 d + b)
-constexpr int VETRAY_KP  = 28;
-constexpr int VETRAY_NKP = 9;
-// closure_consistency (ScSlabFaceSum, the slots of VetScSumGroup): ray fluxes sum w g
+// closure_consistency (ScSlabFaceSum, the slots of VetScFaceSum): ray fluxes sum w g
 // Phi, sum w g Phi Omega_b (g = |mu_1| dx2/dx1) through the low x2 face; sum w mu_1 I,
 // sum w mu_1 I Omega_b through the x1 boundary face and the low x1 face; x3 as x2
 constexpr int VETRAY_F2  = 37;
@@ -292,8 +289,6 @@ struct RingMates {
   std::vector<std::array<int, 3>> snd, rcv;   // (block or slot, rank, source gid)
 };
 
-// multi-block state of the retired Cartesian sweep (an unused member)
-struct ScCartMBState;
 
 struct RadiationVetTaskIDs {
   TaskID irecv;

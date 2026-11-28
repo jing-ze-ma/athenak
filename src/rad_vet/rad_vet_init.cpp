@@ -232,9 +232,8 @@ void RadiationVet::InitArrays() {
     RadVetFatal("<rad_vet>/scheme = clean on a Cartesian mesh needs "
                 "vet_tensor = full (closure_form = sphere is for spherical polar)");
   }
-  // the formal solution provides the half-range sums and C1
+  // the formal solution provides the half-range sums (not C1: vet_thsw writes -1)
   impl_beam_hr = true;
-  thsw_c1 = true;
   cln_init = true;
 }
 

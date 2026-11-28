@@ -121,8 +121,6 @@ class RadiationVet {
   // formal solution, once per hydro step from the start-of-step state
   bool vet_sc{};             // closure = sc on a Cartesian mesh
   int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
-  bool vsc_rayk = false;     // vet_sc_kernel = ray: ray-parallel layer launch
-  DvceArray4D<Real> vet_rayg;   // its per-ray face sums (block, 5 nray, k, j)
   bool vet_bc_bath = false;  // a Marshak x1 end gives the rays its bath
   // x1 boundary intensity of vet_sc and vet_gd (VetBcInit). vet_bc_inner: entering
   // intensity at a Marshak / flux inner face, 0 diff, 1 emit, 2 auto (emit at Marshak,
@@ -168,17 +166,9 @@ class RadiationVet {
   Real VetRotBeta(const int64_t blk) const;   // rotation of block blk
   void VetRotSet(const Real beta);
   bool vet_full = false;     // vet_tensor = full: the solve reads all six D_ab = K_ab/J
-  static constexpr Real vet_eig_min = 0.0;   // full: eigenvalue floor of D
-  Real vet_nguard{}, vet_ncell{}; // full: cell-calls the guard changed D / all cell-calls
-  Real vet_guard_max{};      // full: largest |D_guarded - D_raw| (max norm)
-  Real vet_d11_min{};        // full: smallest guarded D_11
-  Real vet_time{}, vet_itime{}, vet_ncall{}; // SC seconds, implicit-solve seconds, calls
+  Real vet_ncall{};           // formal solutions (the steady start's report)
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
   DvceArray5D<Real> vet_cell;  // (nmb, VETRAY_NC, k, j, i), VETRAY_*
-  DvceArray5D<Real> vet_ipl;   // (nmb, 2, nray, k, j): intensity of the last two layers
-  // multi-block sweep state (plane buffers, neighbour tables, exchange); null on one
-  // MeshBlock
-  ScCartMBState *vet_mbs;
 
   // fold dtnew into Mesh::NewTimeStep (no sub-cycling, or no other module sets dt)
   bool sets_mesh_dt{};
@@ -1135,14 +1125,6 @@ class RadiationVet {
   // mean is kept as offsets d_j = g_{b-j} - g_b, each from two sweeps of the same state:
   // used = g_b(now) + sum_j d_j / K. Needs a rotating closure.
   static constexpr int VET_RA_NF = 16;
-  struct RotAvgTab {           // registered fields (POD: captured by the kernels)
-    int nf = 0;
-    int arr[VET_RA_NF]{}, comp[VET_RA_NF]{}, kind[VET_RA_NF]{};
-    Real lo[VET_RA_NF]{}, hi[VET_RA_NF]{};
-    int farr = -1, fcomp = 0;  // validity flag field: invalid where < 0 (-1: none)
-    int jf = -1;               // J field (index into the table) of kind-3 fields
-    int jw = -1;               // the ratio field weighting the sets (-1: equal)
-  };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
   // vet_rotate_avg_ema = N: the K-window mean replaced by an exponential moving average
   // over the rotated sets, weight a = 1/N per block, in the same offset form (one slot
@@ -1192,28 +1174,12 @@ class RadiationVet {
   Real vgd_xf_alt = -9.0;        // angle of the tables in the second device set
   void ScXfTables(const Real alpha);
   bool vra_on = false;
-  RotAvgTab vra_tab;
-  DvceArray5D<Real> vra_a0, vra_a1;   // closure's field arrays (set per call)
-  DvceArray3D<Real> vra_c;     // column field (m, k, j) at the top cell (arr 2)
-  DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
-  int64_t vra_gen = 0;        // bumped by every writer of vra_d
-  int vra_head = 0;            // ring slot of d_1 (the previous set)
-  int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready
-  int vra_pend = 0;            // 1: init slots raw, 3: Delta of the coming boundary held
-  bool vra_raw = false;        // a snapshot sweep: the closure leaves its fields raw
-  double vra_nsweep = 0.0, vra_nrot = 0.0, vra_ninit = 0.0;
-  Real vra_time = 0.0;
+  int64_t vra_gen = 0;        // bumped by every writer of the ring's offsets (cln_rr)
   void RotAvgParse(ParameterInput *pin);
   bool RotLastStep() const;    // the step is the last of its rotation block
   // history in the restart file (kVetRaRstMagic, rad_vet_restart.cpp: not written)
   static constexpr int VET_RA_RST_NH = 11;   // int64 header entries (10)
-  void RotAvgRstHdr(int64_t *h) const;
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
-  int vra_rst_nf = -1;         // nf of a history loaded from the file (-1: none/checked)
-  int64_t vra_blk = INT64_MIN; // block of the last build
-  bool vra_last = false;       // this build is on the last step of its block
-  DvceArray5D<Real> vra_bk_vc;              // vet_sc: vet_cell kept over the next-set
-                                            // sweep of a last build
   void ScSweepPost();       // sweep, moments, ScPost
   bool vgd_tbath = false;   // the top (x1max Marshak) bath enters the sweep
   std::vector<double> vgd_base;   // unrotated set (x, y, z, w)

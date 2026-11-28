@@ -59,7 +59,7 @@ constexpr char kVetVgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
 constexpr char kVetCskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
 // time2_face_fct: face fluxes t2pf1 (FaxRst*)
 constexpr char kVetFaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
-// vet_rotate_avg history: VET_RA_RST_NH int64 words (RotAvgRstHdr), then nslab slabs
+// vet_rotate_avg history: VET_RA_RST_NH int64 words (older files), then nslab slabs
 constexpr char kVetRaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 // old files: stage-2 drop slabs (skipped)
 constexpr char kVetThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};

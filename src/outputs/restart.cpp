@@ -551,12 +551,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                  static_cast<std::int32_t>(rss_mode), 0};
     std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <rad_vet>/vet_rotate_avg: the averaging history, nra slabs behind
-  // even the csk ones (radvet::kVetRaRstMagic; RadiationVet::RotAvgRstHdr)
-  std::int64_t ra_hdr[radvet::RadiationVet::VET_RA_RST_NH] = {0};
-  if (pradvet != nullptr) {pradvet->RotAvgRstHdr(&(ra_hdr[0]));}
-  const int nra = static_cast<int>(ra_hdr[1]);
-  // am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the nra ones
+  // (the vet_rotate_avg history of older files, kVetRaRstMagic, is no longer written)
+  // am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the csk ones
   int nams = 0;
   {
     hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
@@ -828,15 +824,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // the vet_rotate_avg header, same marked form, behind the csk one
-    if (nra > 0) {
-      IOWrapperSizeT nb = sizeof(ra_hdr);
-      resfile.Write_any_type(&(radvet::kVetRaRstMagic[0]), sizeof(radvet::kVetRaRstMagic),
-                             "byte", single_file_per_rank);
-      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
-      resfile.Write_any_type(&(ra_hdr[0]), nb, "byte", single_file_per_rank);
-    }
-    // the am_vector spin header, same marked form, behind the vet_rotate_avg one
+    // the am_vector spin header, same marked form, behind the csk one
     if (nams > 0) {
       IOWrapperSizeT nb = sizeof(ams_hdr);
       resfile.Write_any_type(&(hydro::kAmSpinRstMagic[0]), sizeof(hydro::kAmSpinRstMagic),
@@ -944,7 +932,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += (neint + (we_hyd ? 4 : 0))*cell_bytes;
   data_size += nck*cell_bytes;   // implicit-ck state
   data_size += nrss*cell_bytes;   // rad_signal_speed inputs
-  data_size += nra*cell_bytes;   // vet_rotate_avg history
   data_size += nams*cell_bytes;   // am_vector spin (+ amk1)
   data_size += npgs*cell_bytes;   // per-cell pgen slabs
   data_size += nfax*cell_bytes;   // fax*
@@ -995,9 +982,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nrss > 0) {
     step3size += sizeof(radvet::kVetRssRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(rss_hdr);
-  }
-  if (nra > 0) {
-    step3size += sizeof(radvet::kVetRaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
   }
   if (nams > 0) {
     step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) +
@@ -1558,8 +1542,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
               [&](DvceArray5D<Real> &t, int m, int) {
                 pradvet->RssRstPack(t, 1, pradvet->RssRstMode(), m);});
   // and the vet_gd_async pending source behind it (kVetVgdRstMagic)
-  // and the vet_rotate_avg history behind it (kVetRaRstMagic)
-  write_group(outarray_vetr, nra, "vet_rotate_avg history");
   // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
   write_group(outarray_ams, nams, "am_vector spin");
   // and the per-cell pgen slabs behind it (kPgenSlabRstMagic)
@@ -1583,7 +1565,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   outarray = HostArray5D<Real>();
   outarray_hyd = outarray_mhd = outarray_rad = outarray_vet = outarray_force =
       outarray_z4c = outarray_adm = outarray_ck = outarray_vetp = outarray_vett =
-      outarray_vets = outarray_vetr =
+      outarray_vets =
       outarray_ams = outarray_pgs = outarray_fax = outarray_x1e = outarray_wpv =
       HostArray5D<Real>();
   outarray_vett_d = DvceArray5D<Real>();

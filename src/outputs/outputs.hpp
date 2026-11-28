@@ -337,9 +337,6 @@ class BaseTypeOutput {
   // <hydro>/rad_signal_speed: the VET inputs of the signal speed (RadiationVet::RssSlot);
   // empty unless the signal speed is on.  radvet::kVetRssRstMagic.
   HostArray5D<Real> outarray_vets;
-  // <rad_vet>/vet_rotate_avg: the averaging history, densely packed
-  // slabs; empty without a complete history.  radvet::kVetRaRstMagic.
-  HostArray5D<Real> outarray_vetr;
   HostArray5D<Real> outarray_ams;   // am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // per-cell pgen slabs
   HostArray5D<Real> outarray_fax;   // rad_vet applied face fluxes

@@ -972,7 +972,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 
   // --- THE <rad_vet>/vet_rotate_avg HEADER (radvet::kVetRaRstMagic),
   // behind the vet_gd_async one: nra_file slabs of the averaging history (densely
-  // packed), the LAST of each record, and the scalars (RadiationVet::RotAvgRstHdr)
+  // packed), the LAST of each record (older files: RadiationVet::RotAvgRstLoad skips it)
   int nra_file = 0;
   std::int64_t ra_hdr[radvet::RadiationVet::VET_RA_RST_NH] = {0};
   if (std::memcmp(variabledata, &(radvet::kVetRaRstMagic[0]),

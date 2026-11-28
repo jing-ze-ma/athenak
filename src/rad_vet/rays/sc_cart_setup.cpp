@@ -268,7 +268,7 @@ void RadiationVet::ScCartInit(ParameterInput *pin) {
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   // the slab's raw moments J, K, H for the vet_sc outputs (ClosureFromSc)
-  Kokkos::realloc(vet_cell, nmb, VETRAY_NC + VETRAY_NKP, ncells3, ncells2, ncells1);
+  Kokkos::realloc(vet_cell, nmb, VETRAY_NC, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   // the adaptive x1-periodic sweep's exit planes (ScSweepX1, restart files)
   if (vet_x1per && vet_x1ptol > 0.0) {
@@ -912,22 +912,21 @@ void RadiationVet::ScSlabFaceSum(const int i, const int l, const int lv, const b
     rg_(ib*nmb + m,3*n + r,kc-ks,jc-js) = g12[0];
     rg_(ib*nmb + m,4*n + r,kc-ks,jc-js) = g12[1];
   });
-  // (2) the sums per (cell, component), groups 3..6 of VetScSum; its scalars q = 0..4
+  // (2) the sums per (cell, component c), VetScFaceSum; its scalars q = 0..4
   // (entry, x2, x3, crossing, exit) at the slots 0, 3, 4, 1, 2 of vgd_rgs
-  par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 3, 6, indcs.ks, indcs.ke, indcs.js,
+  par_for("vet_vgd_slab_fs", vgd_cur, 0, nmb - 1, 0, 3, indcs.ks, indcs.ke, indcs.js,
           indcs.je,
-  KOKKOS_LAMBDA(const int m, const int grp, const int kc, const int jc) {
+  KOKKOS_LAMBDA(const int m, const int c, const int kc, const int jc) {
     if ((x1f_(m) >> 3) != lv) {return;}
-    VetScSum(grp, dir_, n, [&](const int r) {return (dir_(r,0) < 0.0) == inw;},
-             [](const int) {return 0.0;}, [](const int) {return 0.0;},
-             [&](const int q, const int r) {
-               const int sq = (q == 0) ? 0 : ((q == 1) ? 3 : ((q == 2) ? 4
-                            : ((q == 3) ? 1 : 2)));
-               return rg_(ib*nmb + m,sq*n + r,kc-ks,jc-js);
-             },
-             ScSlabFaceW{cs, m, kc, jc, i, (upi >= 0) ? upi
-                         : ((x1f_(m) & (inw ? 2 : 1)) ? i : (inw ? (ie + 1) : (is - 1)))},
-             false, false, false, true);
+    VetScFaceSum(c, dir_, n, [&](const int r) {return (dir_(r,0) < 0.0) == inw;},
+                 [&](const int q, const int r) {
+                   const int sq = (q == 0) ? 0 : ((q == 1) ? 3 : ((q == 2) ? 4
+                                : ((q == 3) ? 1 : 2)));
+                   return rg_(ib*nmb + m,sq*n + r,kc-ks,jc-js);
+                 },
+                 ScSlabFaceW{cs, m, kc, jc, i, (upi >= 0) ? upi
+                             : ((x1f_(m) & (inw ? 2 : 1)) ? i
+                                : (inw ? (ie + 1) : (is - 1)))});
   });
 }
 
