@@ -1042,7 +1042,14 @@ class RadiationVet {
     std::map<std::array<uint32_t, 5>, Mask> mask;
 #if MPI_PARALLEL_ENABLED
     MPI_Comm comm = MPI_COMM_NULL;
-    std::vector<MPI_Request> rq, sq;
+    // persistent requests per exchange (buffer half, mask key incl. nc, depth): the
+    // receives (first nr), then the sends; one wait for both
+    struct Req {
+      std::vector<MPI_Request> q;
+      int nr = 0;
+    };
+    std::map<std::array<uint32_t, 7>, Req> req;
+    Req *cur = nullptr;
 #endif
   };
   SolveHaloList cln_hdl;

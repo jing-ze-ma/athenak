@@ -522,18 +522,33 @@ void RadiationVet::HaloPost(const std::vector<GSeg<T>> &sg) {
   const bool msk = (k0 & k1 & k2 & k3) != all;
   SolveHaloList::Mask *mh = msk ? &HaloMask(ky) : nullptr;
   const int nseg = static_cast<int>(q.rank.size());
-  q.rq.assign(nseg, MPI_REQUEST_NULL);
-  q.sq.assign(nseg, MPI_REQUEST_NULL);
   Real *rb = q.rbuf.data() + static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
-  for (int s = 0; s < nseg; ++s) {
-    // (the entries of depth <= dcur)
-    const int nrs = msk ? mh->rlm[s*q.ng + q.dcur - 1] : q.rlend[s*q.ng + q.dcur - 1]*nc;
-    if (nrs > 0) {
-      MPI_Irecv(rb + static_cast<size_t>(q.roff[s])*nc, nrs, MPI_ATHENA_REAL,
-                q.rank[s], 4245, q.comm, &q.rq[s]);
+  auto sb = q.sbuf;
+  const auto pi = q.req.try_emplace({static_cast<uint32_t>(q.par), k0, k1, k2, k3, ky[4],
+                                     static_cast<uint32_t>(q.dcur)});
+  SolveHaloList::Req &pr = pi.first->second;
+  q.cur = &pr;
+  if (pi.second) {   // (first exchange of this shape: its requests; the entries of
+    // depth <= dcur)
+    for (int s = 0; s < nseg; ++s) {
+      const int nrs = msk ? mh->rlm[s*q.ng + q.dcur - 1] : q.rlend[s*q.ng + q.dcur - 1]*nc;
+      if (nrs > 0) {
+        pr.q.emplace_back();
+        MPI_Recv_init(rb + static_cast<size_t>(q.roff[s])*nc, nrs, MPI_ATHENA_REAL,
+                      q.rank[s], 4245, q.comm, &pr.q.back());
+      }
+    }
+    pr.nr = static_cast<int>(pr.q.size());
+    for (int s = 0; s < nseg; ++s) {
+      const int nss = msk ? mh->slm[s*q.ng + q.dcur - 1] : q.slend[s*q.ng + q.dcur - 1]*nc;
+      if (nss > 0) {
+        pr.q.emplace_back();
+        MPI_Send_init(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss, MPI_ATHENA_REAL,
+                      q.rank[s], 4245, q.comm, &pr.q.back());
+      }
     }
   }
-  auto sb = q.sbuf;
+  if (pr.nr > 0) MPI_Startall(pr.nr, pr.q.data());
   auto so = msk ? mh->so : q.sc, sf = q.sf, sdp = q.sdp;
   const int dsd = q.dcur;   // (entries deeper than the exchange are not sent: not packed)
   int o = 0;
@@ -581,13 +596,8 @@ void RadiationVet::HaloPost(const std::vector<GSeg<T>> &sg) {
     });
   }
 #if MPI_PARALLEL_ENABLED
-  for (int s = 0; s < nseg; ++s) {
-    const int nss = msk ? mh->slm[s*q.ng + q.dcur - 1] : q.slend[s*q.ng + q.dcur - 1]*nc;
-    if (nss > 0) {
-      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss,
-                MPI_ATHENA_REAL, q.rank[s], 4245, q.comm, &q.sq[s]);
-    }
-  }
+  const int nq = static_cast<int>(pr.q.size());
+  if (nq > pr.nr) MPI_Startall(nq - pr.nr, pr.q.data() + pr.nr);
 #endif
 }
 
@@ -602,8 +612,10 @@ void RadiationVet::HaloFinish(const std::vector<GSeg<T>> &sg) {
   int nc = 0;
   for (auto &s : sg) nc += s.nc;
   const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
-  const int nseg = static_cast<int>(q.rank.size());
-  MPI_Waitall(nseg, q.rq.data(), MPI_STATUSES_IGNORE);
+  // (the sends too: they finish with the receives)
+  if (!q.cur->q.empty()) {
+    MPI_Waitall(static_cast<int>(q.cur->q.size()), q.cur->q.data(), MPI_STATUSES_IGNORE);
+  }
   const std::array<uint32_t, 5> ky = HaloKey(sg);
   const uint32_t all = (nc < 32) ? (1u << nc) - 1 : ~0u;
   const bool msk = (ky[0] & ky[1] & ky[2] & ky[3]) != all;
@@ -634,7 +646,6 @@ void RadiationVet::HaloFinish(const std::vector<GSeg<T>> &sg) {
     }
     o += s.nc;
   }
-  MPI_Waitall(nseg, q.sq.data(), MPI_STATUSES_IGNORE);
 #else
   (void)sg;
 #endif
