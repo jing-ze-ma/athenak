@@ -766,6 +766,7 @@ class RadiationVet {
   SolveArgs MakeArgs();
   Real MeshBlock0Dx(const int d) const;
   const void *DevCopy(const void *p, const size_t n, const int s);
+  const Real *HostRead(const DvceArray1D<Real> &d);
   template <class T> const T *SolveDev(const T &x, const int s) {
     return static_cast<const T *>(DevCopy(&x, sizeof(T), s));
   }
@@ -1011,6 +1012,7 @@ class RadiationVet {
   std::map<int, SolveHalo> cln_halo;   // by nc
   DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (DevCopy)
   std::array<std::string, 8> cln_xdev_h;   // their bytes last copied (DevCopy)
+  HostArray1D<Real> cln_hrd;   // host copies of small device arrays (HostRead)
   // exchange object of every clean ghost fill (a fill sends only its own variables);
   // fills deferred to the next exchange (GhostDefer)
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;

@@ -60,7 +60,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
   const FluxLine ln{cln_vf, x.cub};
   const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
   const bool rms = cln_rstold && !cln_rmdone && fk && e == CLW_X && dok;
-  DvceArray1D<Real> rmc("cln_rmc", 1);
+  DvceArray1D<Real> rmc = rms ? DvceArray1D<Real>("cln_rmc", 1) : DvceArray1D<Real>();
   const bool fwb = cln_fwb;
   if (fwb && cln_fwbc.extent_int(0) != 6) Kokkos::realloc(cln_fwbc, 6);
   if (fwb) Kokkos::deep_copy(DevExeSpace(), cln_fwbc, 0.0);
@@ -545,24 +545,23 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
   if (cln_fcone) FluxCone(e, kd);
   if (tie_now) FluxTie(e, kd);
   if (fwb && e == CLW_X) {   // clean_stag_fwb: radiation momentum of the residuals
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fwbc);
-    const Real n = GlobalReduce(h(0), false), p = GlobalReduce(h(1), false);
-    const Real p1 = GlobalReduce(h(2), false);
+    const Real *h = HostRead(cln_fwbc);
+    const Real n = GlobalReduce(h[0], false), p = GlobalReduce(h[1], false);
+    const Real p1 = GlobalReduce(h[2], false);
     if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(p + p1))) {
       std::printf("CLEAN %sFWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
                   "%.6e x1 faces sum dp %.6e\n", std::isfinite(p + p1) ? "" : "WARNING ",
                   pmy_pack->pmesh->ncycle, t2_solve, n, p, p1);
     }
     if (p_ledger::on && cln_feedback && !cln_vzero) {   // (the gas's s, unprojected)
-      const Real a[3] = {GlobalReduce(h(3), false), GlobalReduce(h(4), false),
-                         GlobalReduce(h(5), false)};
+      const Real a[3] = {GlobalReduce(h[3], false), GlobalReduce(h[4], false),
+                         GlobalReduce(h[5], false)};
       p_ledger::Withheld(1, a, PSlope(t2_solve), dt_sub, !t2_inprobe);
     }
   }
   if (rms) {   // clean_rst_mshare: once, at the old file's first solution
     cln_rmdone = true;
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rmc);
-    const Real n = GlobalReduce(h(0), false);
+    const Real n = GlobalReduce(HostRead(rmc)[0], false);
     if (global_variable::my_rank == 0) {
       std::printf(
           "<rad_vet> clean_rst_mshare RESTART CONVERSION (one time): the VET share's "

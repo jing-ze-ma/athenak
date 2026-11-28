@@ -895,6 +895,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_halo : std::map<int, SolveHalo> (views over cln_hbuf, kept)
 //   cln_xdev : DvceArray1D<char> (kernel-argument copies, a cache kept with cln_xdev_h)
 //   cln_xdev_h : std::array<std::string, 8> (bytes of the cln_xdev slots, kept with them)
+//   cln_hrd : HostArray1D<Real> (HostRead scratch, written before read)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
 //   cln_hdl : SolveHaloList (cell lists made at first use, kept)

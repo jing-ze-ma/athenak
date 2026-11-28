@@ -414,6 +414,19 @@ const void *RadiationVet::DevCopy(const void *p, const size_t n, const int s) {
   return cln_xdev.data() + s*slot;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn const Real *RadiationVet::HostRead
+//! \brief the values of a small device array on the host, valid until the next call:
+//! a stream-ordered copy into a kept buffer and one fence (no allocation, no global fence)
+
+const Real *RadiationVet::HostRead(const DvceArray1D<Real> &d) {
+  const int n = d.extent_int(0);
+  if (cln_hrd.extent_int(0) < n) cln_hrd = HostArray1D<Real>("cln_hrd", n);
+  Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(cln_hrd, std::make_pair(0, n)), d);
+  DevExeSpace().fence();
+  return cln_hrd.data();
+}
+
 const SolveArgs *RadiationVet::DevArgs(const SolveArgs &x, const int s) {
   return SolveDev(x, s);
 }

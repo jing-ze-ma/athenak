@@ -380,7 +380,10 @@ void RadiationVet::WriteBack() {
   // the E floor's raise neither gas nor column covered (created, VET_POS_FLR_UN): its
   // change in this write-back, CLEAN WARNING below
   Real un0 = 0.0;
-  if (pflr) Kokkos::deep_copy(un0, Kokkos::subview(pc_, VET_POS_FLR_UN));
+  if (pflr) {   // (stream order + one fence: no global fence)
+    Kokkos::deep_copy(DevExeSpace(), un0, Kokkos::subview(pc_, VET_POS_FLR_UN));
+    DevExeSpace().fence();
+  }
   if (pfc && pfc_def.extent_int(0) != nmb1 + 1) {
     auto &icp = pmy_pack->pmesh->mb_indcs;
     Kokkos::realloc(pfc_def, nmb1 + 1, icp.nx3 + 2*icp.ng, icp.nx2 + 2*icp.ng,
@@ -702,9 +705,9 @@ void RadiationVet::WriteBack() {
     wbc(m, k, j, i, false);
   });
   if (wmc) {
-    auto hm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), xh.mclc);
+    const Real *hm = HostRead(xh.mclc);
     Real r[4];
-    for (int n = 0; n < 4; ++n) r[n] = GlobalReduce(hm(n), false);
+    for (int n = 0; n < 4; ++n) r[n] = GlobalReduce(hm[n], false);
     if (global_variable::my_rank == 0 && r[0] > 0.0) {
       std::printf("CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap in the "
                   "write-back, gas momentum withheld sum dp V (x1 x2 x3) %.6e %.6e %.6e\n",
@@ -827,7 +830,8 @@ void RadiationVet::WriteBack() {
   }
   if (pflr) {
     Real un = 0.0;
-    Kokkos::deep_copy(un, Kokkos::subview(pc_, VET_POS_FLR_UN));
+    Kokkos::deep_copy(DevExeSpace(), un, Kokkos::subview(pc_, VET_POS_FLR_UN));
+    DevExeSpace().fence();
     un = GlobalReduce(un - un0, false);
     cln_flrun = un;
     cln_flrid = 4*pmy_pack->pmesh->ncycle + t2_solve;

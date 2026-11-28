@@ -68,7 +68,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
                     cln_w.s.extent_int(3) + 1, cln_w.s.extent_int(4) + 1);
   }
   auto fcx = cln_fcx;
-  Kokkos::deep_copy(cln_fconc, 0.0);
+  Kokkos::deep_copy(DevExeSpace(), cln_fconc, 0.0);   // (stream order: no fence)
   auto fcc = cln_fconc;
   SolveFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -136,7 +136,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
     FluxCsShared();
   }
   auto sl = ScratchView<DvceArray1D<Real>>("cln_csl", 6*CLN_NSL);
-  if (wbc) Kokkos::deep_copy(sl, 0.0);
+  if (wbc) Kokkos::deep_copy(DevExeSpace(), sl, 0.0);
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
@@ -177,14 +177,14 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   }
   if (wbc) SlotSum(sl, fcc, 5);
   if (e == CLW_X) {
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fconc);
-    const Real n = GlobalReduce(h(0), false), p = GlobalReduce(h(1), false);
+    const Real *h = HostRead(cln_fconc);
+    const Real n = GlobalReduce(h[0], false), p = GlobalReduce(h[1], false);
     if (global_variable::my_rank == 0 && cln_verbose > 0 && n > 0.0) {
       std::printf("CLEAN FCONE cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
     Real q[3];   // (every rank: the sums are collective)
-    for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h(2+d), false);
+    for (int d = 0; d < 3; ++d) q[d] = GlobalReduce(h[2+d], false);
     if (cln_feedback && !cln_vzero) {
       p_ledger::Withheld(0, q, PSlope(t2_solve), dt_sub, !t2_inprobe);
     }

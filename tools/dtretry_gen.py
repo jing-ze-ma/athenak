@@ -44,10 +44,12 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # DevCopy rewrites a slot whose bytes differ; kept together, a rolled-back tag would skip a needed copy)
 # vgd_csmw_h / vgd_csmw_r: the read-mark exchange's persistent host buffers (scratch: every build writes them before it
 # reads them; their copy was ~55 ms of host time per checkpoint on the A100 RSG / HG decks)
+# cln_hrd: HostRead's host buffer (scratch: every read writes it before it is read)
 SKIP_NAMES = {'hi_seq', 'cln_pcrl', 'cln_fwr', 'cln_sgv', 'cln_sga0', 'cln_sga1', 'cln_sgd1', 'cln_sgd2', 'cln_sgx',
               'cln_sgtg', 'cln_wci', 'cln_pdh', 'cln_fpv', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb',
-              'vgd_csmw_h', 'vgd_csmw_r', 'cln_dbginf', 'cln_xdev', 'cln_xdev_h'}
+              'vgd_csmw_h', 'vgd_csmw_r', 'cln_dbginf', 'cln_xdev', 'cln_xdev_h',
+              'cln_hrd'}
 NESTED = ['ScTabHost', 'ScTabDev', 'VetOpacTab', 'WorkVec', 'FaceVars', 'CsGeoArrays']   # structs holding Views
 
 def ast(header, name):
@@ -95,7 +97,8 @@ def emit(fields, pre, out, skipped):
                    'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)',
                    'cln_dbginf': ' (one-shot test injection, kept)',
                    'cln_xdev': ' (kernel-argument copies, a cache kept with cln_xdev_h)',
-                   'cln_xdev_h': ' (bytes of the cln_xdev slots, kept with them)'}
+                   'cln_xdev_h': ' (bytes of the cln_xdev slots, kept with them)',
+                   'cln_hrd': ' (HostRead scratch, written before read)'}
             skipped.append(nm + ' : ' + t + why.get(n, ' (protocol counter, kept monotonic)')); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):
             skipped.append(nm + ' : ' + t); continue

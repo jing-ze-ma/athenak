@@ -958,8 +958,7 @@ void RadiationVet::VerdictSolve(const SolvePass &p) {
                 cln_nr2, p.nfirst[0], p.nfirst[1], cln_nguard, p.nsolve);
   }
   if (cln_mclc.extent_int(0) == 1) {   // last pass's face momentum terms at the cap
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_mclc);
-    const Real n = GlobalReduce(h(0), false);
+    const Real n = GlobalReduce(HostRead(cln_mclc)[0], false);
     if (global_variable::my_rank == 0 && cln_verbose > 0 && n > 0.0) {
       std::printf(
           "CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap h chi_f "
