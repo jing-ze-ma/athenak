@@ -324,7 +324,7 @@ slopes' increments). The books close the step's change of P to round-off by cons
 the exactness statements are that `ntel`, `mrg` and `gap` are round-off (1e-16
 of the gross sum per step on the sp and cs shells and the periodic box; `ntel` includes the
 cubed-sphere seams), and in the periodic box `rad` too (no wall, no geometric term: 2e-17
-per step at amplitude 0.1, where the cut and the residual move P by 2.5e-2 and 1.8e-5 of
+per step at amplitude 0.1, where the cut and the residual move P by 2.26e-2 and 9.0e-6 of
 the gross sum per step, booked; on the sp shell 5.2e-2 and 3.6e-2). Test `p_ledger`. On
 the tiny BSG star the release's books per step were cut 6e-6, fwb 1.2e-4, flr 3e-6, mrg
 3.9e-4 (the gate deck names `merge_lat_mom = rigid`) of the gross sum; with
