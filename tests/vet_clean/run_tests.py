@@ -1920,8 +1920,9 @@ def t_x1_blocks_cart(c):
     radwave (128 x 4, L 32; its periodic x1 ray sweep at a fixed vet_x1_npass 16, as several
     MeshBlocks need) on 1, 2, 4 MeshBlocks along x1, 4 cycles, bitwise (maxdiff_x1); 2
     MeshBlocks on 2 ranks bitwise (maxdiff_ranks); an unset layout_tile_x1 with 2
-    MeshBlocks along x1 is FATAL (fatal_unset); no CLEAN WARNING.  (The open shadow needs
-    the Cartesian shell sweep for several MeshBlocks: added with it.)"""
+    MeshBlocks along x1 is FATAL (fatal_unset); no CLEAN WARNING.  The open shadow (140 x 80,
+    16 x 16 lateral tiles, L 35) on 1, 2, 4 MeshBlocks along x1 bitwise too (maxdiff_x1), its
+    2 MeshBlocks on 2 ranks bitwise (maxdiff_ranks)."""
     o = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 32,
          'rad_vet/vet_x1_npass': 16, 'rad_vet/vet_x1_ptol': 0.0}
     r = [c.run('wave_cart.athinput', 'r%d' % k, dict(o, **{'meshblock/nx1': 128//k}))
@@ -1930,6 +1931,14 @@ def t_x1_blocks_cart(c):
                              vett.compare_dirs(r[0], r[2])[1])}
     s2 = c.run('wave_cart.athinput', 'r2_np2', dict(o, **{'meshblock/nx1': 64}), ranks=2)
     out['maxdiff_ranks'] = vett.compare_dirs(r[1], s2)[1]
+    so = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 35}
+    h = [c.run('rad_shadow.athinput', 'sh%d' % k, dict(so, **{'meshblock/nx1': 140//k}))
+         for k in (1, 2, 4)]
+    h2 = c.run('rad_shadow.athinput', 'sh2_np2', dict(so, **{'meshblock/nx1': 70}), ranks=2)
+    out['maxdiff_x1'] = max(out['maxdiff_x1'], vett.compare_dirs(h[0], h[1])[1],
+                            vett.compare_dirs(h[0], h[2])[1])
+    out['maxdiff_ranks'] = max(out['maxdiff_ranks'], vett.compare_dirs(h[1], h2)[1])
+    r += h + [h2]
     u = {k: v for k, v in o.items() if k != 'mesh/layout_tile_x1'}
     try:
         c.run('wave_cart.athinput', 'unset', dict(u, **{'time/nlim': 1, 'meshblock/nx1': 64}))
