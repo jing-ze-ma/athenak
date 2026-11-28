@@ -922,6 +922,20 @@ Mesh::Mesh(ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     repro::tile_n = (nt == b2 && nt == b3) ? 0 : nt;
+    // <mesh>/layout_tile_x1 L: x1 segments of L cells in the tiles (repro::tile_n1), so
+    // every split along x1 into whole segments gives the same answer (rad_vet: FATAL
+    // when unset with several MeshBlocks along x1); 0 or the single MeshBlock's nx1:
+    // the MeshBlock's x1 extent
+    if (pin->DoesParameterExist("mesh", "layout_tile_x1")) {
+      const int l1 = pin->GetInteger("mesh", "layout_tile_x1");
+      if (l1 < 0 || (l1 > 0 && mb_indcs.nx1 % l1 != 0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mesh>/layout_tile_x1 " << l1 << " must divide "
+                  << "meshblock nx1 (" << mb_indcs.nx1 << ")" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      repro::tile_n1 = (l1 == mesh_indcs.nx1) ? 0 : l1;
+    }
   }
 
   // error check consistency of the block and mesh

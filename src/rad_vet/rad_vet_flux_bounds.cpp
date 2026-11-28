@@ -278,7 +278,8 @@ void RadiationVet::FluxBalanceProject(const int d, const int slot,
   SolveArgs x = MakeArgs();
   auto fc = x.fc[d];
   auto fwc = cln_fwbc;
-  const int tn = (d > 0 && repro::tile_n > 0) ? repro::tile_n : n, nc = n/tn;
+  const int td = (d > 0) ? repro::tile_n : repro::tile_n1;   // (x1: layout_tile_x1)
+  const int tn = (td > 0) ? td : n, nc = n/tn;
   auto mu = ScratchView<DvceArray4D<Real>>("cln_fwmu" + std::to_string(d), nmb, nb, na,
                                            2*nc);
   auto face = KOKKOS_LAMBDA(const int t, const int a, const int b, int &k, int &j,

@@ -52,6 +52,10 @@ inline bool block_mode = true;
 //! of the MeshBlock's size is the MeshBlock (block mode, bitwise); tile_nx2: the
 //! MeshBlock's nx2 (the Mesh constructor)
 inline int tile_n = 0, tile_nx2 = 0;
+//! <mesh>/layout_tile_x1 L: the tiles cut into x1 segments of L cells (VetLayReduce,
+//! the mg's x1 lines, the F lines' FluxSchurTile), so several MeshBlocks along x1 give
+//! the answer of one; 0: the MeshBlock's x1 extent
+inline int tile_n1 = 0;
 //! <mesh>/layout_invariant: the history sums (HistSums) deposit their per-MeshBlock
 //! partials exactly and merge them over the ranks, so the history does not change with
 //! the rank count either (rank 0 holds the global value, the others 0: the history
@@ -383,27 +387,31 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
     for (int q = 0; q < nq; ++q) {out.the_array[q] = r0 ? v[q].Value() : 0.0;}
     return;
   }
-  // (tile mode: the units are the tiles, their rows in increasing order)
+  // (tile mode: the units are the tiles, their rows in increasing order; layout_tile_x1:
+  // each row cut into x1 segments, one unit per tile and segment)
   const int n2 = (tile_n > 0) ? tile_nx2 : nr, n3 = nr/n2;
   const int t2 = (tile_n > 0 && n2 > 1) ? tile_n : n2;
   const int t3 = (tile_n > 0 && n3 > 1) ? tile_n : n3, nt2 = n2/t2, ntb = nt2*(n3/t3);
-  auto rp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_row", nmb*nr, nq);
-  auto bp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_blk", nq, nmb*ntb);
+  const int ns1 = (tile_n1 > 0) ? nx1/tile_n1 : 1, l1 = nx1/ns1, nu = ntb*ns1;
+  auto rp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_row", nmb*nr*ns1, nq);
+  auto bp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_blk", nq, nmb*nu);
   Kokkos::parallel_for(std::string(name) + "_row",
-                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nr),
-  KOKKOS_LAMBDA(const int r) {
+                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nr*ns1),
+  KOKKOS_LAMBDA(const int idx) {
+    const int r = idx/ns1, i0 = (idx - r*ns1)*l1;
     array_sum::GlobalSum a;
-    for (int i = 0; i < nx1; ++i) {fn(r*nx1 + i, a);}
-    for (int q = 0; q < nq; ++q) {rp(r, q) = a.the_array[q];}
+    for (int i = i0; i < i0 + l1; ++i) {fn(r*nx1 + i, a);}
+    for (int q = 0; q < nq; ++q) {rp(idx, q) = a.the_array[q];}
   });
   Kokkos::parallel_for(std::string(name) + "_blk",
-                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*nmb*ntb),
+                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*nmb*nu),
   KOKKOS_LAMBDA(const int idx) {
-    const int q = idx/(nmb*ntb), mu = idx - q*nmb*ntb, m = mu/ntb, u = mu - m*ntb;
+    const int q = idx/(nmb*nu), mu = idx - q*nmb*nu, m = mu/nu, w = mu - m*nu;
+    const int u = w/ns1, sg = w - u*ns1;
     const int r0 = m*nr + (u/nt2)*t3*n2 + (u%nt2)*t2;
     Real a = 0.0;
     for (int k = 0; k < t3; ++k) {
-      for (int j = 0; j < t2; ++j) {a += rp(r0 + k*n2 + j, q);}
+      for (int j = 0; j < t2; ++j) {a += rp((r0 + k*n2 + j)*ns1 + sg, q);}
     }
     bp(q, mu) = a;
   });
@@ -412,7 +420,7 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
     ReproSum v[nq];
     for (int q = 0; q < nq; ++q) {
       v[q].Init();
-      for (int m = 0; m < nmb*ntb; ++m) {v[q].Add(h(q, m));}
+      for (int m = 0; m < nmb*nu; ++m) {v[q].Add(h(q, m));}
     }
     AllMerge(v, nq);
     const bool r0 = (global_variable::my_rank == 0);
@@ -421,7 +429,7 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
   }
   for (int q = 0; q < nq; ++q) {
     out.the_array[q] = 0.0;
-    for (int m = 0; m < nmb*ntb; ++m) {out.the_array[q] += h(q, m);}
+    for (int m = 0; m < nmb*nu; ++m) {out.the_array[q] += h(q, m);}
   }
 }
 

@@ -61,12 +61,14 @@ void VetLayReduce(const char *name, const int n, const int nkji, DvceArray1D<Rea
   if (repro::block_mode) {
     // level 1: slot s of VET_LB_NS sums q = s, s + VET_LB_NS, ...; level 2: one team per
     // unit sums slots t, t + VET_DR_NT, ..., then the pairwise tree.  Tile mode (nxb):
-    // the units are N x N (x2, x3) tiles (a MeshBlock-sized tile is bitwise the block)
-    const bool tl = repro::tile_n > 0 && nxb != nullptr;
-    const int t2 = (tl && nxb[1] > 1) ? repro::tile_n : 1;
-    const int t3 = (tl && nxb[2] > 1) ? repro::tile_n : 1;
-    const int n1 = tl ? nxb[0] : 1, n2 = tl ? nxb[1] : 1, nt2 = n2/t2;
-    const int ntb = tl ? nt2*(nxb[2]/t3) : 1;
+    // the units are N x N (x2, x3) tiles (a MeshBlock-sized tile is bitwise the block),
+    // with layout_tile_x1 L each cut into x1 segments of L cells
+    const bool tl = (repro::tile_n > 0 || repro::tile_n1 > 0) && nxb != nullptr;
+    const int t2 = (tl && nxb[1] > 1) ? (repro::tile_n > 0 ? repro::tile_n : nxb[1]) : 1;
+    const int t3 = (tl && nxb[2] > 1) ? (repro::tile_n > 0 ? repro::tile_n : nxb[2]) : 1;
+    const int nx = tl ? nxb[0] : 1, n1 = (tl && repro::tile_n1 > 0) ? repro::tile_n1 : nx;
+    const int n2 = tl ? nxb[1] : 1, nt2 = n2/t2, nt1 = nx/n1;
+    const int ntb = tl ? nt1*nt2*(nxb[2]/t3) : 1;
     const int nmb = (n/nkji)*ntb;   // (the units)
     const int ntc = n1*t2*t3;   // (tile mode: the tile's cells)
     const int ns = (tl && ntc < VET_LB_NS) ? ntc : VET_LB_NS;
@@ -85,11 +87,12 @@ void VetLayReduce(const char *name, const int n, const int nkji, DvceArray1D<Rea
       VetBcgVal v;
       v.s0 = v.s1 = v.s2 = v.mx = 0.0;
       if (tl) {
-        const int b = m/ntb, u = m - b*ntb, k0 = (u/nt2)*t3, j0 = (u%nt2)*t2;
+        const int b = m/ntb, u = (m - b*ntb)/nt1, i0 = (m - b*ntb - u*nt1)*n1;
+        const int k0 = (u/nt2)*t3, j0 = (u%nt2)*t2;
 #pragma unroll 4
         for (int q = sl; q < ntc; q += ns) {
           const int r = q/n1, k = k0 + r/t2, j = j0 + r%t2;
-          fn(b*nkji + (k*n2 + j)*n1 + q - r*n1, v);
+          fn(b*nkji + (k*n2 + j)*nx + i0 + q - r*n1, v);
         }
       } else {
 #pragma unroll 4

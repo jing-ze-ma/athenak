@@ -1895,21 +1895,50 @@ def t_idort_beams_mb(c):
 
 def t_x1_blocks_sp(c):
     """several MeshBlocks along x1 on the spherical-polar shell (the ray sweep level by
-    level, ScX1Hand; the reflecting top's remainder handed down): 2 MeshBlocks along x1
-    on 1 and 2 ranks bitwise (maxdiff_ranks); 4 along x1 straight vs a restart after 2
-    of 4 cycles bitwise (maxdiff_restart); the largest relative difference to one
-    MeshBlock (maxrel_x1, the solve's tolerance: multigrid tiles, line solves and Krylov
-    partials per MeshBlock); no CLEAN WARNING."""
-    o = {'time/nlim': 4, 'mesh/layout_tile': None, 'meshblock/nx1': 16}
+    level, ScX1Hand; the reflecting top's remainder handed down), <mesh>/layout_tile_x1
+    8: 1, 2 and 4 MeshBlocks along x1 bitwise (maxdiff_x1: the solve's x1 tiles, their
+    F-line joins and sums do not depend on the split); 2 along x1 on 1 and 2 ranks
+    bitwise (maxdiff_ranks); 4 along x1 straight vs a restart after 2 of 4 cycles
+    bitwise (maxdiff_restart); no CLEAN WARNING."""
+    o = {'time/nlim': 4, 'mesh/layout_tile': None, 'mesh/layout_tile_x1': 8,
+         'meshblock/nx1': 16}
     a = c.run('shell_sp.athinput', 'r1', dict(o, **{'meshblock/nx1': 32}))
     b = c.run('shell_sp.athinput', 'r2', o)
     b2 = c.run('shell_sp.athinput', 'r2_np2', o, ranks=2)
+    b4 = c.run('shell_sp.athinput', 'r4', dict(o, **{'meshblock/nx1': 8}))
     out = {'maxdiff_ranks': vett.compare_dirs(b, b2)[1],
-           'maxrel_x1': vett.compare_dirs(a, b)[2]}
+           'maxdiff_x1': max(vett.compare_dirs(a, b)[1], vett.compare_dirs(a, b4)[1])}
     out['maxdiff_restart'] = restart_pair(c, 'shell_sp.athinput', 4, 2,
                                           dict(o, **{'meshblock/nx1': 8}))['maxdiff']
     out['warnings'] = sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
-                          for d in (b, b2))
+                          for d in (b, b2, b4))
+    return out
+
+
+def t_x1_blocks_cart(c):
+    """several MeshBlocks along x1 on a Cartesian mesh, <mesh>/layout_tile_x1: the periodic
+    radwave (128 x 4, L 32; its periodic x1 ray sweep at a fixed vet_x1_npass 16, as several
+    MeshBlocks need) on 1, 2, 4 MeshBlocks along x1, 4 cycles, bitwise (maxdiff_x1); 2
+    MeshBlocks on 2 ranks bitwise (maxdiff_ranks); an unset layout_tile_x1 with 2
+    MeshBlocks along x1 is FATAL (fatal_unset); no CLEAN WARNING.  (The open shadow needs
+    the Cartesian shell sweep for several MeshBlocks: added with it.)"""
+    o = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 32,
+         'rad_vet/vet_x1_npass': 16, 'rad_vet/vet_x1_ptol': 0.0}
+    r = [c.run('wave_cart.athinput', 'r%d' % k, dict(o, **{'meshblock/nx1': 128//k}))
+         for k in (1, 2, 4)]
+    out = {'maxdiff_x1': max(vett.compare_dirs(r[0], r[1])[1],
+                             vett.compare_dirs(r[0], r[2])[1])}
+    s2 = c.run('wave_cart.athinput', 'r2_np2', dict(o, **{'meshblock/nx1': 64}), ranks=2)
+    out['maxdiff_ranks'] = vett.compare_dirs(r[1], s2)[1]
+    u = {k: v for k, v in o.items() if k != 'mesh/layout_tile_x1'}
+    try:
+        c.run('wave_cart.athinput', 'unset', dict(u, **{'time/nlim': 1, 'meshblock/nx1': 64}))
+        out['fatal_unset'] = 0
+    except RuntimeError:
+        log = open(os.path.join(c.dir, 'unset', 'run.log')).read()
+        out['fatal_unset'] = int('layout_tile_x1' in log and 'FATAL' in log)
+    out['warnings'] = sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
+                          for d in r + [s2])
     return out
 
 
@@ -2318,6 +2347,7 @@ TESTS = [  # name, function, in --quick
     ('dt_retry', t_dt_retry, True),
     ('layout_tile', t_layout_tile, True),
     ('x1_blocks_sp', t_x1_blocks_sp, False),
+    ('x1_blocks_cart', t_x1_blocks_cart, False),
     ('hst_ranks', t_hst_ranks, False),
     ('layout_cs', t_layout_cs, True),
     ('fofc_layout_cs', t_fofc_layout_cs, True),

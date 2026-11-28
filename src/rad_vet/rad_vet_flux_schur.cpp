@@ -97,7 +97,7 @@ void RadiationVet::FluxSchur() {
   }
   // layout_invariant_mode = tile, a lateral line of more than one tile
   const int tn = repro::tile_n;
-  if (tn > 0 && (nn[1] > tn || (x.nf == 3 && nn[2] > tn))) {
+  if ((tn > 0 && (nn[1] > tn || (x.nf == 3 && nn[2] > tn))) || repro::tile_n1 > 0) {
     FluxSchurTile(gr, gs, per, ngd);
     return;
   }
@@ -268,7 +268,8 @@ void RadiationVet::FluxSchurTile(const int gr[3], const int gs[3],
   const int g1 = gs[1], g2 = gs[2];
   int nk[3] = {1, 1, 1}, nbk[3] = {1, 1, 1};
   for (int d = 0; d < x.nf; ++d) {
-    if (d > 0) nk[d] = nn[d]/repro::tile_n;
+    const int td = (d > 0) ? repro::tile_n : repro::tile_n1;   // (x1: layout_tile_x1)
+    if (td > 0) nk[d] = nn[d]/td;
     nbk[d] = ((cub && d > 0) ? 4 : 1)*nm[d]/nn[d];
   }
   // the tiles' segments

@@ -559,6 +559,7 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
   const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
   auto w = l.u;
   const int n1 = l.t[1], n2 = l.t[2];   // (positions in the line's tile)
+  const int t0 = l.t[0];   // (layout_tile_x1: the line's x1 segments, uncoupled)
   const int c0 = col;
   auto cl = KOKKOS_LAMBDA(int pj, int pk) {   // (the line's colour)
     pj %= n1;
@@ -622,9 +623,9 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
           if (pk%t2 > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
           if (pk%t2 < t2 - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
-        sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
+        sw(q) = (q%t0 > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
-        sw(2*nx + q) = (q < nx - 1) ? w(m,l.sp[0],k,j,i) : 0.0;
+        sw(2*nx + q) = (q%t0 < t0 - 1) ? w(m,l.sp[0],k,j,i) : 0.0;
         sw(3*nx + q) = r;
       });
       tm.team_barrier();
@@ -672,8 +673,8 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
     if (col >= 0 && cl(pj, pk) != c0) return;
     Real cprev = 0.0, dprev = 0.0;
     for (int i = is; i <= ie; ++i) {
-      const Real am = (i > is) ? w(m,l.sm[0],k,j,i) : 0.0;
-      const Real ap = (i < ie) ? w(m,l.sp[0],k,j,i) : 0.0;
+      const Real am = ((i - is)%t0 > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
+      const Real ap = ((i - is)%t0 < t0 - 1) ? w(m,l.sp[0],k,j,i) : 0.0;
       Real r = w(m,src,k,j,i);
       if (lim >= 0) {
         if (pj%n1 > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
@@ -720,7 +721,7 @@ void RadiationVet::VCycle(const int l, const int src, const int dst) {
       for (int a1 = 0; a1 < r[1]; ++a1) {
         const int k = f.o[2] + r[2]*kc + a2, j = f.o[1] + r[1]*jc + a1;
         const int i = f.o[0] + ic;
-        const int pos[3] = {ic, (j - f.o[1])%f.t[1], (k - f.o[2])%f.t[2]};
+        const int pos[3] = {ic%f.t[0], (j - f.o[1])%f.t[1], (k - f.o[2])%f.t[2]};
         Real y = f.u(m,f.a0,k,j,i)*f.u(m,dst,k,j,i);
         for (int d = 0; d < 3; ++d) {
           const int dk = (d == 2), dj = (d == 1), di = (d == 0);

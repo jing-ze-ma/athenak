@@ -69,8 +69,9 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
   const int kd = (t2_solve == VET_T2S_NONE) ? 0 :
                  ((t2_solve == VET_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
-  // the x1 lines by PCR on a GPU; on the cubed sphere with fschur, in panel
-  const bool fpcr = (!cub || cln_fschur) &&
+  // the x1 lines by PCR on a GPU; on the cubed sphere with fschur, in panel;
+  // layout_tile_x1: the Thomas lines of x1 tiles (FluxSchurTile)
+  const bool fpcr = (!cub || cln_fschur) && repro::tile_n1 == 0 &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
   // the F of every direction (CLW_Y, CLW_Z, CLW_S or cln_vf) in one exchange, started
   // after the last direction.  Cubed sphere, one MeshBlock along x1: the x1 family's
@@ -383,7 +384,8 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       // solved as a MeshBlock line, its inner ends from cln_fsjt, joined
       // (FluxSchurTile) or the last sweep's; a face two tiles share is its
       // non-owner's identity row
-      const int nk = (dir > 0 && repro::tile_n > 0) ? n/repro::tile_n : 1, nt = n/nk;
+      const int tnd = (dir > 0) ? repro::tile_n : repro::tile_n1;   // (x1: tile_x1)
+      const int nk = (tnd > 0) ? n/tnd : 1, nt = n/nk;
       if (nk > 1) FluxTileArray(cln_fsjt[dir], nmb1 + 1, na*nb, nk);
       auto jt = cln_fsjt[dir];
       const bool fsc = cln_fschur, olo = !(cub && tie), ohi = cub || !tie;

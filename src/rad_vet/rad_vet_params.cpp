@@ -476,7 +476,7 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     for (int d = 0; d < 3; ++d) {
       // (layout_invariant_mode = tile: tiles as MeshBlocks, FluxSchurTile)
       const int n = (d > 0 && repro::tile_n > 0) ? repro::tile_n :
-          ((d == 0) ? pm->mb_indcs.nx1 :
+          ((d == 0) ? ((repro::tile_n1 > 0) ? repro::tile_n1 : pm->mb_indcs.nx1) :
                       ((d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3));
       const int nb = ((cs && d > 0) ? 4 : 1)*((d == 0) ? pm->mesh_indcs.nx1 :
                      ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3))/n;
@@ -497,10 +497,13 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
                 << std::endl;
     }
     // layout_tile: a periodic line joins whole MeshBlocks (FluxSchurTile)
-    for (int d = 1; d < 3 && cln_fschur && repro::tile_n > 0 && !cs; ++d) {
-      const int nx = (d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3;
-      const int nbm = ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3)/nx;
-      if (nx > repro::tile_n && nbm%2 == 1 && nbm > 1 &&
+    for (int d = 0; d < 3 && cln_fschur && !cs; ++d) {
+      const int td = (d > 0) ? repro::tile_n : repro::tile_n1;   // (x1: layout_tile_x1)
+      const int nx = (d == 0) ? pm->mb_indcs.nx1 :
+                     ((d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3);
+      const int nbm = ((d == 0) ? pm->mesh_indcs.nx1 :
+                       ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3))/nx;
+      if (td > 0 && nx > td && nbm%2 == 1 && nbm > 1 &&
           pm->mesh_bcs[2*d] == BoundaryFlag::periodic) {
         std::cout << "### FATAL ERROR: <mesh>/layout_tile: a "
                   << "periodic line of MeshBlocks of more than one tile needs an even "
@@ -679,18 +682,30 @@ void RadiationVet::ReadSchemeKeys(ParameterInput *pin) {
     {
     // layout_tile N: the mg acts on fixed N x N (x2, x3) tiles as on MeshBlocks, so the
     // solve is the same for every layout of whole tiles (one MeshBlock along x1)
-    if (repro::tile_n > 0) {
-      const int nt = repro::tile_n;
-      const auto &mi = pmy_pack->pmesh->mb_indcs;
-      const bool d3 = pmy_pack->pmesh->three_d;
-      if (nt < 1 || mi.nx2 % nt != 0 || (d3 && mi.nx3 % nt != 0) ||
-          pmy_pack->pmesh->nmb_rootx1 != 1) {
+    // (layout_tile_x1 L: and on x1 segments of L cells, block-Jacobi at their ends)
+    Mesh *pmt = pmy_pack->pmesh;
+    if (pmt->layout_invariant && repro::block_mode && pmt->nmb_rootx1 > 1 &&
+        !pin->DoesParameterExist("mesh", "layout_tile_x1")) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "several MeshBlocks along x1 need <mesh>/layout_tile_x1 "
+                << "L (dividing meshblock nx1; the same in every layout), else the solve "
+                << "depends on the x1 split (0: accept that)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (repro::tile_n > 0 || repro::tile_n1 > 0) {
+      const auto &mi = pmt->mb_indcs;
+      const bool d3 = pmt->three_d;
+      const int nt = (repro::tile_n > 0) ? repro::tile_n : mi.nx2;
+      const int nt3 = (repro::tile_n > 0) ? repro::tile_n : mi.nx3;
+      if (nt < 1 || mi.nx2 % nt != 0 || (d3 && mi.nx3 % nt3 != 0) ||
+          (pmt->nmb_rootx1 != 1 && repro::tile_n1 == 0)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<mesh>/layout_tile N needs N dividing meshblock nx2 "
-                  << "(and nx3) and one MeshBlock along x1" << std::endl;
+                  << "(and nx3) and one MeshBlock along x1 or <mesh>/layout_tile_x1"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
+      cln_mgt = {(repro::tile_n1 > 0) ? repro::tile_n1 : mi.nx1, nt, d3 ? nt3 : 1};
     }
     // solver_mg_levels N (default 2): the mg's coarse levels at
     // most, each halving the tile's x2 and x3 where even (>= 4); 0: the sweep alone

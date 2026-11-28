@@ -112,13 +112,24 @@
   }
  },
  "x1_blocks_sp": {
-  "_about": "shell_sp with 2 and 4 MeshBlocks along x1: ranks and restart bitwise; maxrel_x1: the difference to one MeshBlock at the solve's tolerance (2e-3 after 4 cycles, CPU)",
+  "_about": "shell_sp, layout_tile_x1 8: 1 / 2 / 4 MeshBlocks along x1 bitwise, 2 on 1 and 2 ranks bitwise, restart bitwise",
   "equal": {
    "maxdiff_ranks": 0.0,
-   "maxdiff_restart": 0.0
+   "maxdiff_restart": 0.0,
+   "maxdiff_x1": 0.0
   },
   "max": {
-   "maxrel_x1": 0.02,
+   "warnings": 0
+  }
+ },
+ "x1_blocks_cart": {
+  "_about": "Cartesian radwave (periodic) and shadow (open, lateral tiles), layout_tile_x1: 1 / 2 / 4 MeshBlocks along x1 bitwise, 2 ranks bitwise, unset key FATAL",
+  "equal": {
+   "maxdiff_ranks": 0.0,
+   "maxdiff_x1": 0.0,
+   "fatal_unset": 1
+  },
+  "max": {
    "warnings": 0
   }
  },
