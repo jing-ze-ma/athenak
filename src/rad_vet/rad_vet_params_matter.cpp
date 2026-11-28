@@ -268,12 +268,6 @@ void RadiationVet::ReadMatterKeys(ParameterInput *pin) {
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (fcap_rho > 0.0 && fl_mhd) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/floorcap_rho is not implemented for <mhd> "
-                << "(hydro only)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     Kokkos::realloc(fcap_cnt, 6);
     if (global_variable::my_rank == 0 && fcap_rho > 0.0) {
       std::cout << "<rad_vet> floorcap: rho < " << fcap_rho << ": |v| <= " << fcap_v

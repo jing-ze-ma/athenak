@@ -86,11 +86,12 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
     }
-    // Strang-split super-step: with use_rkg_sts on any single-level mesh without
-    // <rad_vet> and the key absent, a fresh start takes rkg_strang = true,
+    // Strang-split super-step: with use_rkg_sts on any single-level mesh (with <rad_vet>
+    // too: the halves wrap the radiation, driver.cpp) and the key absent, a fresh start
+    // takes rkg_strang = true,
     // rkg_strang_fuse = true and rkg_fuse_sync = none (recorded for the run's restarts);
     // a restart whose input lacks a key keeps the old default (off / outputs)
-    const bool strang_ok = !pp->pmesh->multilevel && !pin->DoesBlockExist("rad_vet");
+    const bool strang_ok = !pp->pmesh->multilevel;
     if (use_rkg_sts && strang_ok) {
       const char *ks[3] = {"rkg_strang", "rkg_strang_fuse", "rkg_fuse_sync"};
       for (int q = 0; q < 3; ++q) {

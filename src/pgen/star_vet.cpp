@@ -13,10 +13,9 @@
 //! gas and radiation in the column's balance, gravity (star_gravity, star_gm*), walls
 //! (star_bc_inner, star_bc_outer, star_wall_*), seeds (star_seed*, star_ic_profile*),
 //! a top sponge (star_sponge_*), a frozen or adaptive MLT++ scaffold (mlt_*) and an
-//! optional time-dependent base (star_drive.hpp).  <hydro>, or <mhd> on spherical polar
-//! with a weak seed field (problem/star_mhd_beta; StarSeedField) and without the
-//! features that rebalance the gas energy (MLT, ic_equil, the atmosphere post-balance,
-//! remap, drive, zerocontact):
+//! optional time-dependent base (star_drive.hpp).  <hydro>, or <mhd> with a weak seed
+//! field (problem/star_mhd_beta = its smallest beta; StarSeedField, both meshes); every
+//! rebalance of the gas energy keeps |B|^2/2 (zerocontact: <hydro> only):
 //!   * the gas-only tabulated EOS (<hydro>/eos_radiation = false, enforced by the module)
 //!     or an ideal gas (eos = ideal; <units>/mu sets its kelvin scale, which
 //!     <rad_vet>/temp_unit_kelvin must equal; no EOS range check then)
@@ -577,6 +576,37 @@ Real StarKeCs(const Real m1, const Real m2, const Real m3, const Real d, const R
 }
 void StarGravity(Mesh *pm, const Real bdt);
 void StarWallFlux(Mesh *pm);
+//! |B|^2/2 of the cell field as the MHD C2P forms it: spherical polar the x_v-weighted
+//! face means (VetEmagCell), the cubed sphere the orthonormal triple of
+//! RadiationVet::EmagBuild (bx = B.rhat, by = (b_xi + c b_eta)/s, bz = b_eta)
+KOKKOS_INLINE_FUNCTION
+Real StarEmagCell(const DvceArray4D<Real> &b1, const DvceArray4D<Real> &b2,
+                  const DvceArray4D<Real> &b3, const bool cs, const DvceArray3D<Real> &cc,
+                  const DvceArray3D<Real> &sn, const DvceArray2D<Real> &x1v,
+                  const DvceArray2D<Real> &x1f, const DvceArray2D<Real> &x2v,
+                  const DvceArray2D<Real> &x2f, const DvceArray2D<Real> &x3v,
+                  const DvceArray2D<Real> &x3f, const int m, const int k, const int j,
+                  const int i) {
+  if (!cs) {
+    return radvet::VetEmagCell(b1, b2, b3, true, false, x1v, x1f, x2v, x2f, x3v, x3f, m,
+                               k, j, i);
+  }
+  const Real bx = CellCenteredRadialFld(b1(m,k,j,i), b1(m,k,j,i+1), x1f(m,i),
+                                        x1f(m,i+1), x1v(m,i));
+  const Real bz = 0.5*(b3(m,k,j,i) + b3(m,k+1,j,i));
+  const Real by = (0.5*(b2(m,k,j,i) + b2(m,k,j+1,i)) + cc(m,k,j)*bz)/sn(m,k,j);
+  return 0.5*(bx*bx + by*by + bz*bz);
+}
+//! the host copy of |B|^2/2 per cell (all cells) for the host-side rebalances
+//! (StarIcPost, StarIcEquil): 0 without <mhd>
+struct StarEmagH {
+  bool on = false;
+  DvceArray4D<Real>::HostMirror h;
+  Real operator()(const int m, const int k, const int j, const int i) const {
+    return on ? h(m,k,j,i) : 0.0;
+  }
+};
+StarEmagH StarEmagHost(MeshBlockPack *pmbp);
 void StarBC(Mesh *pm);
 void StarSeedField(ParameterInput *pin, Mesh *pm);
 void StarHist(HistoryData *pdata, Mesh *pm);
@@ -630,9 +660,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       !(pmy_mesh_->use_spherical_polar || hcs)) {
     StarFatal("needs <hydro> or <mhd>, <rad_vet> and mesh/use_spherical_polar or "
               "use_cubed_sphere", __LINE__);
-  }
-  if (smhd && hcs) {
-    StarFatal("<mhd> needs spherical polar (the seed field, StarSeedField)", __LINE__);
   }
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto *ph = &fl;
@@ -1681,10 +1708,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   {
     const Real tk = pvet->otab.tunit, dk = pvet->otab.dunit;
     const bool etab = eos.tbl.active;
-    const Real elo_d = etab ? pin->GetReal("hydro","eos_logd_min") : -1.0e300;
-    const Real ehi_d = etab ? pin->GetReal("hydro","eos_logd_max") : 1.0e300;
-    const Real elo_t = etab ? pin->GetReal("hydro","eos_logt_min") : -1.0e300;
-    const Real ehi_t = etab ? pin->GetReal("hydro","eos_logt_max") : 1.0e300;
+    const char *fb = smhd ? "mhd" : "hydro";
+    const Real elo_d = etab ? pin->GetReal(fb,"eos_logd_min") : -1.0e300;
+    const Real ehi_d = etab ? pin->GetReal(fb,"eos_logd_max") : 1.0e300;
+    const Real elo_t = etab ? pin->GetReal(fb,"eos_logt_min") : -1.0e300;
+    const Real ehi_t = etab ? pin->GetReal(fb,"eos_logt_max") : 1.0e300;
     Real ldmin = 1.0e300, ldmax = -1.0e300, ltmin = 1.0e300, ltmax = -1.0e300;
     for (int n=0; n<nf; ++n) {
       const Real ld = log10(hd[n]*dk), lt = log10(hT(n)*tk);
@@ -2923,7 +2951,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the root find replays the plain (non-WB) spherical-polar
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
       auto *phy = pmbp->phydro;
-      if (smhd || phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
+      if (smhd || phy->use_wellbalance_dynamic ||
+          phy->rsolver_method != Hydro_RSolver::hllc ||
           !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || star_bal_ ||
           indcs.nx1 < 2 || ng < 2) {
         StarFatal("problem/star_bc_inner = zerocontact needs spherical polar, an ideal "
@@ -3139,12 +3168,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     stardrive::Setup(pin, pmy_mesh_, restart, da);
     if (stardrive::On()) {user_cycle_func = stardrive::Cycle;}
   }
-  if (smhd && (star_mlt_ || star_ad_ || star_eq_ || star_atp_ || star_rmp ||
-               stardrive::On())) {
-    StarFatal("<mhd>: MLT (mlt_*), star_ic_equil, star_ic_rad_atm_post, "
-              "star_ic_remap_file and star_drive* rebalance the gas energy without "
-              "|B|^2/2 (hydro only)", __LINE__);
-  }
   // (star_strip_bg.cpp): one-shot restart-time background strip, off unless
   // problem/strip_bg_on_restart = true (absent: bitwise)
   if (restart) {
@@ -3166,6 +3189,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // no <rad_vet>/ic_rad (the state is an evolved one), then the arrays
     pvet->icr_mode = 0;
     StarRemapLoad(pmy_mesh_, star_rmp_fn, star_rmp_data, star_rmp_n);
+    if (smhd) StarSeedField(pin, pmy_mesh_);   // (the remapped gas: no field)
     return;
   }
 
@@ -3478,7 +3502,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       ff0(m,k,j,i) = StarLinInterp(cF, rlo, dr, nf, x1f(m,i));
     });
   }
-  if (!hlin) return;
+  if (!hlin) {
+    if (smhd) StarSeedField(pin, pmy_mesh_);
+    return;
+  }
 
   // ---- problem/star_ic_profile = true.  The initial state of the BSG reference
   // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (star_ic_profile_file = its
@@ -3991,6 +4018,7 @@ void StarBC(Mesh *pm) {
   auto &x1fb = pmbp->pcoord->xx1f;
   const bool hcsb = pm->use_cubed_sphere;   // metric KE (StarKeCs)
   auto hcclb = pmbp->pcoord->cos_cell;
+  auto hsnb = pmbp->pcoord->sin_cell;
   // problem/star_bc_inner_table (star_bc_inner = inflow): the table's rho,
   // T (code units) and v_r at r_in at the BC time
   const bool itab = stardrive::InflowOn();
@@ -4030,8 +4058,8 @@ void StarBC(Mesh *pm) {
   par_for("star_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     auto emc = [&](const int ii) {
-      return mh ? radvet::VetEmagCell(bb1, bb2, bb3, true, false, x1v, x1fb, x2v, x2fb,
-                                      x3v, x3fb, m, k, j, ii) : 0.0;
+      return mh ? StarEmagCell(bb1, bb2, bb3, hcsb, hcclb, hsnb, x1v, x1fb, x2v, x2fb,
+                               x3v, x3fb, m, k, j, ii) : 0.0;
     };
     for (int side=0; side<2; ++side) {
       const bool lo = (side == 0);
@@ -4157,7 +4185,8 @@ void StarBC(Mesh *pm) {
           uh(m,IM1,k,j,ig) = dg*v1;
           uh(m,IM2,k,j,ig) = dg*v2;
           uh(m,IM3,k,j,ig) = dg*v3;
-          uh(m,IEN,k,j,ig) = ea + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig) + emc(ig);
+          uh(m,IEN,k,j,ig) = ea + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig) +
+                             emc(ig);
           radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
         }
         continue;
@@ -4236,7 +4265,8 @@ void StarBC(Mesh *pm) {
           uh(m,IM1,k,j,ig) = dg*v1;
           uh(m,IM2,k,j,ig) = dg*v2;
           uh(m,IM3,k,j,ig) = dg*v3;
-          uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig) + emc(ig);
+          uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig) +
+                             emc(ig);
           radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
         }
         continue;
@@ -4285,7 +4315,8 @@ void StarBC(Mesh *pm) {
         uh(m,IM1,k,j,ig) = dg*v1;
         uh(m,IM2,k,j,ig) = dg*v2;
         uh(m,IM3,k,j,ig) = dg*v3;
-        uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig) + emc(ig);
+        uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig) +
+                           emc(ig);
         radvet::VetFillGhost(ur, m, k, j, ig, k, j, ia, 1, lo ? 0 : 2,
                             lo ? -1.0 : 1.0, cl, efl);
       }
@@ -4295,12 +4326,15 @@ void StarBC(Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void StarSeedField()
-//! \brief <mhd>, fresh start: the weak seed field B = curl A, A_phi = r sin(theta)
-//! sqrt(2 P(r)/beta)/2 at the x3 edges (P of the initial column at the edge radius,
-//! beta = problem/star_mhd_beta, default 1e5): about an axial field of plasma beta beta,
-//! falling with the column's pressure.  The faces are the CT curl of the edge A (the
-//! signs of MHD::CT), so div B = 0 to round-off; |B|^2/2 is added to the total energy of
-//! every cell.  Logs the smallest and the median beta of the active cells.
+//! \brief <mhd>, fresh start (and after a remap): the weak seed field B = curl A,
+//! A = a r sqrt(2 P(r)) (-y, x, 0)/2 (Cartesian, unit radius: the axial field's
+//! potential, A_phi = a r sin(theta) sqrt(2 P)/2), P of the initial column at the edge
+//! radius: about an axial field of a plasma beta that falls with the column's pressure.
+//! The faces are the circulation of A around their edges (dxedge, area: the CT of
+//! MHD::CT; spherical polar the x3 edges only, the cubed sphere both tangential edges,
+//! A on each edge's unit tangent), so div B = 0 to round-off; the amplitude a is set so
+//! that the SMALLEST beta of the active cells (all ranks) is problem/star_mhd_beta
+//! (default 1e5).  |B|^2/2 is added to the total energy of every cell.
 
 void StarSeedField(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -4312,6 +4346,7 @@ void StarSeedField(ParameterInput *pin, Mesh *pm) {
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   const int nmb1 = pmbp->nmb_thispack - 1;
+  const bool cs = pm->use_cubed_sphere;
   auto crho = star_rho_, ceint = star_eint_;
   const Real rlo = star_rlo_, dr = star_dr_;
   const int nf = star_nf_;
@@ -4322,55 +4357,134 @@ void StarSeedField(ParameterInput *pin, Mesh *pm) {
   auto &x2v = pmbp->pcoord->x2v;
   auto &x3v = pmbp->pcoord->x3v;
   auto &x3f = pmbp->pcoord->xx3f;
+  auto cc = pmbp->pcoord->cos_cell, sn = pmbp->pcoord->sin_cell;
   auto a1 = pmbp->pcoord->area.x1f, a2 = pmbp->pcoord->area.x2f;
-  auto dxe3 = pmbp->pcoord->dxedge.x3e;
+  auto a3 = pmbp->pcoord->area.x3f;
+  auto dxe2 = pmbp->pcoord->dxedge.x2e, dxe3 = pmbp->pcoord->dxedge.x3e;
+  auto &size = pmbp->pmb->mb_size;
+  auto pnl = pmbp->pmb->mb_panel.d_view;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   auto b1 = pmh->b0.x1f, b2 = pmh->b0.x2f, b3 = pmh->b0.x3f;
-  auto aph = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real r = x1f(m,i);
-    const Real p = eos.Pressure(StarLogInterp(crho, rlo, dr, nf, r),
-                                StarLogInterp(ceint, rlo, dr, nf, r));
-    return dxe3(m,k,j,i)*0.5*r*sin(x2f(m,j))*sqrt(2.0*p/beta);
-  };
-  par_for("star_b1", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    b1(m,k,j,i) = (aph(m,k,j+1,i) - aph(m,k,j,i))/a1(m,k,j,i);
-  });
-  par_for("star_b2", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real a = a2(m,k,j,i);
-    b2(m,k,j,i) = (a > 0.0) ? -(aph(m,k,j,i+1) - aph(m,k,j,i))/a : 0.0;
-  });
-  Kokkos::deep_copy(DevExeSpace(), b3, 0.0);
   auto u0 = pmh->u0;
   auto phi = pmh->phicc0;
   const bool etg = pmh->use_etotgrav;
+  DvceArray1D<Real> bt("star_beta", (nmb1 + 1)*nx3*nx2*nx1);
+  // the field of amplitude 1/sqrt(beta), then scaled by sqrt(beta_min/beta) (beta goes
+  // as 1/B^2): the smallest beta of the active cells is beta.  beta of a cell: the gas
+  // energy without |B|^2/2 (added below)
+  const Real a = 1.0/sqrt(beta);
+  // dxedge x A on the x2 (along = 2) or x3 (along = 3) edge at x1 face i, x2 index j,
+  // x3 index k (the face of the other tangential direction, the centre of its own)
+  auto aedge = KOKKOS_LAMBDA(const int along, const int m, const int k, const int j,
+                             const int i) {
+    const Real r = x1f(m,i);
+    const Real p = eos.Pressure(StarLogInterp(crho, rlo, dr, nf, r),
+                                StarLogInterp(ceint, rlo, dr, nf, r));
+    const Real w = 0.5*a*r*sqrt(2.0*p);
+    if (!cs) {   // A_phi on the x3 edges at theta = x2f
+      return (along == 3) ? dxe3(m,k,j,i)*w*sin(x2f(m,j)) : 0.0;
+    }
+    const auto &sz = size.d_view(m);
+    const bool a2e = (along == 2);
+    const Real xi = 0.25*M_PI*(a2e ? CellCenterX(j - js, nx2, sz.x2min, sz.x2max)
+                                   : LeftEdgeX(j - js, nx2, sz.x2min, sz.x2max));
+    const Real et = 0.25*M_PI*(a2e ? LeftEdgeX(k - ks, nx3, sz.x3min, sz.x3max)
+                                   : CellCenterX(k - ks, nx3, sz.x3min, sz.x3max));
+    Real q[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(pnl(m), xi, et, q);
+    cubed_sphere::PanelTangents(pnl(m), xi, et, e1, e2);
+    const Real *t = (along == 2) ? e1 : e2;
+    const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+    return ((along == 2) ? dxe2(m,k,j,i) : dxe3(m,k,j,i))*w*(t[1]*q[0] - t[0]*q[1])/tn;
+  };
+  par_for("star_bfaces", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (k < n3 && j < n2) {
+      b1(m,k,j,i) = (aedge(3, m, k, j+1, i) - aedge(3, m, k, j, i) -
+                     aedge(2, m, k+1, j, i) + aedge(2, m, k, j, i))/a1(m,k,j,i);
+    }
+    if (k < n3 && i < n1) {
+      const Real ar = a2(m,k,j,i);
+      b2(m,k,j,i) = (ar > 0.0) ? -(aedge(3, m, k, j, i+1) - aedge(3, m, k, j, i))/ar
+                               : 0.0;
+    }
+    if (j < n2 && i < n1) {
+      b3(m,k,j,i) = (aedge(2, m, k, j, i+1) - aedge(2, m, k, j, i))/a3(m,k,j,i);
+    }
+  });
+  Real bmin = 1.0e300;
+  for (int pass = 0; pass < 2; ++pass) {
+    bmin = 1.0e300;
+    Kokkos::parallel_reduce("star_beta", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+                            DevExeSpace(), {0, 0, 0, 0}, {nmb1 + 1, nx3, nx2, nx1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mn) {
+      const int kk = k + ks, jj = j + js, ii = i + is;
+      const Real em = StarEmagCell(b1, b2, b3, cs, cc, sn, x1v, x1f, x2v, x2f, x3v, x3f,
+                                   m, kk, jj, ii);
+      const Real d = u0(m,IDN,kk,jj,ii);
+      const Real ke = cs ? StarKeCs(u0(m,IM1,kk,jj,ii), u0(m,IM2,kk,jj,ii),
+                                    u0(m,IM3,kk,jj,ii), d, cc(m,kk,jj))
+                         : 0.5*(SQR(u0(m,IM1,kk,jj,ii)) + SQR(u0(m,IM2,kk,jj,ii)) +
+                                SQR(u0(m,IM3,kk,jj,ii)))/d;
+      const Real e = u0(m,IEN,kk,jj,ii) - ke - (etg ? d*phi(m,kk,jj,ii) : 0.0);
+      const Real b = (em > 0.0) ? eos.Pressure(d, e)/em : 1.0e300;
+      bt(((m*nx3 + k)*nx2 + j)*nx1 + i) = b;
+      mn = fmin(mn, b);
+    }, Kokkos::Min<Real>(bmin));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &bmin, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+#endif
+    if (pass == 1 || !(bmin < 1.0e300)) break;
+    const Real sc = sqrt(bmin/beta);
+    par_for("star_bsc", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (k < n3 && j < n2) b1(m,k,j,i) *= sc;
+      if (k < n3 && i < n1) b2(m,k,j,i) *= sc;
+      if (j < n2 && i < n1) b3(m,k,j,i) *= sc;
+    });
+  }
   par_for("star_bemag", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    u0(m,IEN,k,j,i) += radvet::VetEmagCell(b1, b2, b3, true, false, x1v, x1f, x2v, x2f,
-                                           x3v, x3f, m, k, j, i);
-  });
-  // the seed's beta over the active cells (log only)
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  DvceArray1D<Real> bt("star_beta", (nmb1 + 1)*nx3*nx2*nx1);
-  par_for("star_beta", DevExeSpace(), 0, nmb1, 0, nx3-1, 0, nx2-1, 0, nx1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real em = radvet::VetEmagCell(b1, b2, b3, true, false, x1v, x1f, x2v, x2f, x3v,
-                                        x3f, m, k+ks, j+js, i+is);
-    const Real d = u0(m,IDN,k+ks,j+js,i+is);
-    const Real e = u0(m,IEN,k+ks,j+js,i+is) - em - 0.5*(SQR(u0(m,IM1,k+ks,j+js,i+is)) +
-                   SQR(u0(m,IM2,k+ks,j+js,i+is)) + SQR(u0(m,IM3,k+ks,j+js,i+is)))/d -
-                   (etg ? d*phi(m,k+ks,j+js,i+is) : 0.0);
-    bt(((m*nx3 + k)*nx2 + j)*nx1 + i) = (em > 0.0) ? eos.Pressure(d, e)/em : 1.0e300;
+    u0(m,IEN,k,j,i) += StarEmagCell(b1, b2, b3, cs, cc, sn, x1v, x1f, x2v, x2f, x3v, x3f,
+                                    m, k, j, i);
   });
   auto hb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), bt);
   std::vector<Real> v(hb.data(), hb.data() + hb.extent(0));
   std::sort(v.begin(), v.end());
   if (global_variable::my_rank == 0 && !v.empty()) {
     std::cout << "star_vet: <mhd> seed field, star_mhd_beta " << beta << ": beta of the "
-              << "active cells (rank 0) min " << v.front() << ", median "
-              << v[v.size()/2] << std::endl;
+              << "active cells min " << bmin << ", median (rank 0) " << v[v.size()/2]
+              << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn StarEmagH StarEmagHost()
+//! \brief |B|^2/2 of every cell of the current field b0 (StarEmagCell), on the host
+
+StarEmagH StarEmagHost(MeshBlockPack *pmbp) {
+  StarEmagH r;
+  mhd::MHD *pmh = pmbp->pmhd;
+  if (pmh == nullptr) return r;
+  auto &c = pmbp->pcoord;
+  const bool cs = pmbp->pmesh->use_cubed_sphere;
+  auto b1 = pmh->b0.x1f, b2 = pmh->b0.x2f, b3 = pmh->b0.x3f;
+  auto cc = c->cos_cell, sn = c->sin_cell;
+  auto x1v = c->x1v, x1f = c->xx1f, x2v = c->x2v, x2f = c->xx2f, x3v = c->x3v;
+  auto x3f = c->xx3f;
+  const auto &u0 = pmh->u0;
+  DvceArray4D<Real> em("star_emag", u0.extent_int(0), u0.extent_int(2), u0.extent_int(3),
+                       u0.extent_int(4));
+  par_for("star_emagh", DevExeSpace(), 0, u0.extent_int(0) - 1, 0, u0.extent_int(2) - 1,
+          0, u0.extent_int(3) - 1, 0, u0.extent_int(4) - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    em(m,k,j,i) = StarEmagCell(b1, b2, b3, cs, cc, sn, x1v, x1f, x2v, x2f, x3v, x3f, m,
+                               k, j, i);
+  });
+  r.on = true;
+  r.h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), em);
+  return r;
 }
 
 //----------------------------------------------------------------------------------------
@@ -5038,6 +5152,7 @@ void StarIcPost(Mesh *pm) {
   StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
   auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
   auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
+  const StarEmagH emh = StarEmagHost(pmbp);   // (<mhd>: |B|^2/2, the field kept)
   auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->f0x1);
   // the cell T (host, the code's EOS) of every cell i >= ia - 2, its shell sums
   const int i0 = ia - 2;
@@ -5060,7 +5175,7 @@ void StarIcPost(Mesh *pm) {
           const Real d = hu(m,IDN,k,j,i);
           const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
                                SQR(hu(m,IM3,k,j,i)))/d;
-          const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
+          const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i) - emh(m,k,j,i);
           const Real t = eos.Temperature(d, e);
           tcell[cid(m,k,j,i)] = t;
           if (lay) {
@@ -5227,7 +5342,8 @@ void StarIcPost(Mesh *pm) {
           hu(m,IM1,k,j,i) = d*v1;
           hu(m,IM2,k,j,i) = d*v2;
           hu(m,IM3,k,j,i) = d*v3;
-          hu(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + d*hp0(m,k,j,i);
+          hu(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + d*hp0(m,k,j,i) +
+                            emh(m,k,j,i);
         }
       }
     }
@@ -5289,6 +5405,7 @@ void StarIcEquil(Mesh *pm) {
   StarAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
   auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
   auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
+  const StarEmagH emh = StarEmagHost(pmbp);   // (<mhd>: |B|^2/2, the field kept)
   auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pvet->f0x1);
   auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
   const bool hdm = (pvet->icr_dm.extent_int(0) == nmb);
@@ -5311,7 +5428,7 @@ void StarIcEquil(Mesh *pm) {
           const Real d = hu(m,IDN,k,j,i);
           const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
                                SQR(hu(m,IM3,k,j,i)))/d;
-          const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
+          const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i) - emh(m,k,j,i);
           if (lay) {
             rv.Add(4*i, d);
             rv.Add(4*i + 1, eos.Temperature(d, e));
@@ -5486,8 +5603,8 @@ void StarIcEquil(Mesh *pm) {
               const Real d = hu(m,IDN,k,j,i);
               const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
                                    SQR(hu(m,IM3,k,j,i)))/d;
-              const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
-              hu(m,IEN,k,j,i) = e*fac + ek + d*hp0(m,k,j,i);
+              const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i) - emh(m,k,j,i);
+              hu(m,IEN,k,j,i) = e*fac + ek + d*hp0(m,k,j,i) + emh(m,k,j,i);
               if (star_eq_srad_) hr(m,radvet::VET_E,k,j,i) *= SQR(SQR(fac));
             }
           }
@@ -5622,7 +5739,7 @@ void StarIcEquil(Mesh *pm) {
           const Real v1 = hu(m,IM1,k,j,i)/dold, v2 = hu(m,IM2,k,j,i)/dold;
           const Real v3 = hu(m,IM3,k,j,i)/dold;
           const Real eo = hu(m,IEN,k,j,i) - 0.5*dold*(v1*v1 + v2*v2 + v3*v3)
-                          - dold*hp0(m,k,j,i);
+                          - dold*hp0(m,k,j,i) - emh(m,k,j,i);
           const Real t = eos.Temperature(dold, eo);
           const Real d = dold*q;
           Real e, p, cr, ct, cv;
@@ -5631,7 +5748,8 @@ void StarIcEquil(Mesh *pm) {
           hu(m,IM1,k,j,i) = d*v1;
           hu(m,IM2,k,j,i) = d*v2;
           hu(m,IM3,k,j,i) = d*v3;
-          hu(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + d*hp0(m,k,j,i);
+          hu(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + d*hp0(m,k,j,i) +
+                            emh(m,k,j,i);
         }
       }
     }
@@ -5680,7 +5798,7 @@ void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
   const std::int64_t cc = c1*c2*c3;
   std::ifstream rf(fn, std::ios::binary);
   if (!rf) StarFatal("cannot open problem/star_ic_remap_file " + fn, __LINE__);
-  auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
+  auto uh = Kokkos::create_mirror_view(radvet::FluidRef::Get(pmbp).u0);
   auto ur = Kokkos::create_mirror_view(pvet->u0);
   const bool hf0 = (pvet->f0x1.extent_int(0) >= pmbp->nmb_thispack);
   auto uf = Kokkos::create_mirror_view(pvet->f0x1);
@@ -5718,7 +5836,7 @@ void StarRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
       }
     }
   }
-  Kokkos::deep_copy(pmbp->phydro->u0, uh);
+  Kokkos::deep_copy(radvet::FluidRef::Get(pmbp).u0, uh);
   Kokkos::deep_copy(pvet->u0, ur);
   if (hf0) Kokkos::deep_copy(pvet->f0x1, uf);
   if (global_variable::my_rank == 0) {

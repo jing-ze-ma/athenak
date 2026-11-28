@@ -229,7 +229,10 @@
    "order_B_stiff": 1.7,
    "order_E_ni": 1.7,
    "order_v_ni": 1.7,
-   "order_B_ni": 1.7
+   "order_B_ni": 1.7,
+   "order_E_rkg": 1.7,
+   "order_v_rkg": 1.7,
+   "order_B_rkg": 1.7
   },
   "near": {
    "err_v": [
@@ -262,6 +265,18 @@
    ],
    "err_B_ni": [
     2.38e-07,
+    0.05
+   ],
+   "err_E_rkg": [
+    2.72e-07,
+    0.05
+   ],
+   "err_v_rkg": [
+    0.000333,
+    0.05
+   ],
+   "err_B_rkg": [
+    2.3e-07,
     0.05
    ]
   }
@@ -311,7 +326,8 @@
  },
  "mhd_equil": {
   "equal": {
-   "fatal": 3,
+   "fatal": 1,
+   "named": 2,
    "warnings": 0
   },
   "min": {
@@ -389,6 +405,41 @@
    "sp_dLz": 1e-13
   }
  },
+ "mhd_rkg": {
+  "equal": {
+   "cs_ranks": 0.0,
+   "cs_restart": 0.0,
+   "cs_retry": 0.0,
+   "sp_ranks": 0.0,
+   "sp_restart": 0.0,
+   "sp_retry": 0.0,
+   "ct_ranks": 0.0,
+   "ct_restart": 0.0,
+   "ct_retry": 0.0,
+   "warnings": 0
+  },
+  "min": {
+   "cs_moved": 1e-06,
+   "sp_moved": 1e-06,
+   "ct_moved": 1e-06
+  },
+  "max": {
+   "cs_layout": 1e-12,
+   "cs_dE": 1e-12,
+   "cs_dM": 1e-13,
+   "cs_divb": 1e-13,
+   "sp_layout": 1e-12,
+   "sp_dE": 1e-12,
+   "sp_dM": 1e-13,
+   "sp_divb": 1e-13,
+   "ct_layout": 1e-12,
+   "ct_dE": 1e-12,
+   "ct_dM": 1e-13,
+   "ct_divb": 1e-13,
+   "cs_dLz": 1e-13,
+   "sp_dLz": 1e-13
+  }
+ },
  "mhd_geneos": {
   "equal": {
    "cs_ranks": 0.0,
@@ -432,6 +483,16 @@
    "nonideal_cph": 0.001,
    "nonideal_damp": 0.0005,
    "geneos": 0.0005
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "mhd_radwave_sc": {
+  "_about": "4 waves of MHDWAVE_SC with the ray closure (closure_form = extrap1) at 64 cells against the Eddington eigenmode: |c_ph/c_ph,exact - 1| and |d(damping)|/omega; measured 2.1e-4 .. 9.7e-4 and 5.8e-5 .. 4.9e-4 (Orion CPU)",
+  "max": {
+   "err_cph": 0.002,
+   "err_damp": 0.001
   },
   "equal": {
    "warnings": 0

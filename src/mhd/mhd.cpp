@@ -228,9 +228,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  for (const char *k : {"dfloor_flux_limit", "dt_floor_courant",
-                        "rad_signal_speed_diff", "rad_signal_speed_phase",
-                        "rad_signal_speed_inertia", "merge_lat_rc"}) {
+  for (const char *k : {"merge_lat_rc"}) {
     if (!pin->DoesParameterExist("mhd", k)) continue;
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<mhd>/" << k << " is not implemented (hydro only)"
@@ -554,6 +552,24 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("mhd","rad_signal_speed")) {
       rad_signal_speed = pin->GetBoolean("mhd","rad_signal_speed");
     }
+    // dt_floor_courant (default 0.6 with floorcap_rho), rad_signal_speed_inertia, _diff,
+    // _phase: as <hydro>'s (hydro.cpp, hydro_newdt.cpp)
+    if (pin->DoesBlockExist("rad_vet") ||
+        pin->DoesParameterExist("mhd","dt_floor_courant")) {
+      const bool fcap = pin->DoesParameterExist("rad_vet","floorcap_rho") &&
+          pin->GetReal("rad_vet","floorcap_rho") > 0.0 &&
+          recipe::Fix(pin, "mhd", "dt_floor_courant", "0.6", "0");
+      dfc_key = pin->GetOrAddReal("mhd","dt_floor_courant", fcap ? 0.6 : 0.0);
+    }
+    if (pin->DoesParameterExist("mhd","rad_signal_speed_inertia")) {
+      rss_inertia = pin->GetBoolean("mhd","rad_signal_speed_inertia");
+    }
+    if (rad_signal_speed && pin->DoesBlockExist("rad_vet")) {
+      rss_diff = pin->GetOrAddBoolean("mhd", "rad_signal_speed_diff",
+          recipe::Fix(pin, "mhd", "rad_signal_speed_diff", "true", "false"));
+      rss_phase = rss_diff && pin->GetOrAddBoolean("mhd", "rad_signal_speed_phase",
+          recipe::Fix(pin, "mhd", "rad_signal_speed_phase", "true", "false"));
+    }
     // <mhd>/dt_report (mhd_dtreport.cpp); read only when named
     DtReportInit(pin, ppack, rad_signal_speed);
     // allocate array of flags used with etotgrav
@@ -719,6 +735,22 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     use_fofc = pin->GetOrAddBoolean("mhd","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "mhd");}
     if (use_fofc) {pbval_fofc = fofc_flags::Init(ppack, pin, "mhd");}
+    // <mhd>/dfloor_flux_limit, dfloor_flux_pass: as <hydro>'s (hydro/dfloor_flux.cpp)
+    use_dfl = pin->DoesBlockExist("rad_vet") && nmhd == 5 &&
+              !pmy_pack->pmesh->multilevel &&
+              recipe::Fix(pin, "mhd", "dfloor_flux_limit", "true", "false");
+    if (pin->DoesBlockExist("rad_vet")) {   // (recorded, as <hydro>'s)
+      use_dfl = pin->GetOrAddBoolean("mhd", "dfloor_flux_limit", use_dfl);
+    }
+    if (use_dfl) {
+      dfl_pass = pin->GetOrAddBoolean("mhd", "dfloor_flux_pass", true);
+      pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
+      pbval_dfl->SetVectorPairs(1, {});   // (the factor is a scalar)
+      if (ppack->pmesh->use_cubed_sphere) {
+        pbval_dfs = new MeshBoundaryValuesCC(ppack, pin, false);
+        pbval_dfs->seam_raw = true;
+      }
+    }
     // <mhd>/fofc_rsolver: see the note in mhd.hpp. Default llf keeps every existing
     // run bit-for-bit unchanged.
     {

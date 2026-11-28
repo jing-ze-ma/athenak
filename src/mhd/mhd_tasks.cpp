@@ -298,6 +298,10 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
   if (use_wellbalance_static) {
     RemoveWbFlux(pfacewb,uflx);
   }
+  // the problem generator's flux hook (as Hydro::Fluxes; e.g. star_vet's StarWallFlux)
+  if (pmy_pack->pmesh->pgen->user_hydro_flux_func != nullptr) {
+    (pmy_pack->pmesh->pgen->user_hydro_flux_func)(pmy_pack->pmesh);
+  }
 
   return TaskStatus::complete;
 }
@@ -388,6 +392,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_srcs) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
+  if (use_dfl) DflMomentum();   // (after every momentum source of the stage)
 
   return TaskStatus::complete;
 }

@@ -67,6 +67,10 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("dt_diag_valid", dt_diag_valid);
   v.value("dtnew_prev", dtnew_prev);
   v.value("rad_signal_speed", rad_signal_speed);
+  v.value("rss_inertia", rss_inertia);
+  v.value("rss_diff", rss_diff);
+  v.value("rss_phase", rss_phase);
+  v.value("dfc_key", dfc_key);
   v.value("wbcc_saved", wbcc_saved);
   v.view("wsaved", wsaved);
   v.view("bccsaved", bccsaved);
@@ -132,6 +136,14 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("use_wellbalance_dynamic", use_wellbalance_dynamic);
   v.value("use_wb_x1", use_wb_x1);
   v.value("wall_closed_ix1", wall_closed_ix1);
+  v.value("use_dfl", use_dfl);
+  v.value("dfl_pass", dfl_pass);
+  v.value("dfl_n", dfl_n);
+  v.value("dfl_dp", dfl_dp);
+  v.view("dfl_th", dfl_th);
+  v.view("dfl_thc", dfl_thc);
+  for (int q0_ = 0; q0_ < 4; ++q0_) {v.view("dfl_g[]", dfl_g[q0_]);}
+  v.view("dfl_sm", dfl_sm);
   v.value("wall_wb_onesided", wall_wb_onesided);
   v.value("diode_ox1", diode_ox1);
   v.value("diode_ox1_btodd", diode_ox1_btodd);
@@ -187,6 +199,10 @@ void mhd::MHD::DtRetryVisit(V &v) {
 //   pusnbr : DvceFaceFld5D<Real> *
 //   wbam_f : DvceFaceFld5D<Real> *
 //   pam : hydro::AmModule *
+//   pbval_dfl : MeshBoundaryValuesCC *
+//   pbval_dfs : MeshBoundaryValuesCC *
+//   pdfl_fs : DvceFaceFld5D<Real> *
+//   pdfl_f0 : DvceFaceFld4D<Real> *
 //   id : MHDTaskIDs
 //   pmy_pack : MeshBlockPack *
 

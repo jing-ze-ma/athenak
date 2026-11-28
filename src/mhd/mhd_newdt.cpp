@@ -101,7 +101,21 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   // Gamma_1 p/rho; isothermal: iso_cs^2).  cf_d grows monotonically with c_d^2, so this
   // is >= the gas fast speed and -> it in thin cells (tau_d -> 0); at B = 0 it is the
   // hydro signal speed.  Off: no change (the gas fast speed, bitwise).
-  const bool rss_ = rad_signal_speed;
+  // <mhd>/dt_floor_courant = C (0 = off): floor gas takes dt <= C/sum_d (|v_d| + c_d)/h_d
+  const Real dfc_ = (dfc_key > 0.0) ? dfc_key/pmy_pack->pmesh->cfl_no : 0.0;
+  Real fcr_ = 0.0;
+  if (dfc_ > 0.0) {
+    if (pmy_pack->pradvet == nullptr || pmy_pack->pradvet->fcap_rho <= 0.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/dt_floor_courant needs <rad_vet>/floorcap_rho > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    fcr_ = pmy_pack->pradvet->fcap_rho;
+  }
+  const bool rss_ = rad_signal_speed, rsi_ = rss_inertia, rsd_ = rss_diff;
+  const bool rsp_ = rss_phase;
+  Real rss_cl = 1.0, rss_ch = 1.0;
   DvceArray5D<Real> erad_, kopc_, vcel_;
   radvet::CsGeoArrays gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 4 vet_sc, 5 clean
@@ -115,6 +129,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
     }
     erad_ = prm->u0;
     kopc_ = prm->opac;
+    rss_cl = prm->c_light;
+    rss_ch = prm->chat;
     // the same selection decides what a restart file carries (RadiationVet::RssPrime)
     rss_mode = prm->RssMode();
     if (rss_mode >= 4) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
@@ -300,8 +316,11 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
             } else {
               ceq2 = cg2 + (4.0/3.0)*pr/d;
             }
+            if (rsi_) ceq2 /= 1.0 + (er + pr)/(d*rss_cl*rss_cl);
             const Real dc2 = fmax(ceq2 - cg2, 0.0);
-            const Real asq = d*(cg2 + dc2*(1.0 - exp(-kt*h[a])));   // rho c_d^2
+            const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
+            // rho c_d^2
+            const Real asq = d*(cg2 + dc2*(1.0 - exp(-(rsp_ ? tw*tw : tw))));
             const Real bn2 = bb[a]*bb[a];
             const Real ct2 = bb[(a+1)%3]*bb[(a+1)%3] + bb[(a+2)%3]*bb[(a+2)%3];
             const Real qsq = bn2 + ct2 + asq;
@@ -327,22 +346,30 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         mres.loc = idx;
         return;
       }
-      Real cell_dt;
+      Real q1, q2, q3;
       if (use_cubed_sphere || use_spherical_polar) {
-        min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
-        min_dt2 = fmin((dx2_(m,k,j,i)/max_dv2), min_dt2);
-        min_dt3 = fmin((dx3_(m,k,j,i)/max_dv3), min_dt3);
-        cell_dt = dx1_(m,k,j,i)/max_dv1;
-        if (multi_d_) cell_dt = fmin(cell_dt, dx2_(m,k,j,i)/max_dv2);
-        if (three_d_) cell_dt = fmin(cell_dt, dx3_(m,k,j,i)/max_dv3);
+        q1 = dx1_(m,k,j,i)/max_dv1;
+        q2 = dx2_(m,k,j,i)/max_dv2;
+        q3 = dx3_(m,k,j,i)/max_dv3;
       } else {
-      min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);
-      min_dt2 = fmin((mbsize.d_view(m).dx2/max_dv2), min_dt2);
-      min_dt3 = fmin((mbsize.d_view(m).dx3/max_dv3), min_dt3);
-      cell_dt = mbsize.d_view(m).dx1/max_dv1;
-      if (multi_d_) cell_dt = fmin(cell_dt, mbsize.d_view(m).dx2/max_dv2);
-      if (three_d_) cell_dt = fmin(cell_dt, mbsize.d_view(m).dx3/max_dv3);
+        q1 = mbsize.d_view(m).dx1/max_dv1;
+        q2 = mbsize.d_view(m).dx2/max_dv2;
+        q3 = mbsize.d_view(m).dx3/max_dv3;
       }
+      // <mhd>/dt_floor_courant: floor gas (rho < floorcap_rho) bound on the SUM of the
+      // directions' Courant numbers (hydro_newdt.cpp)
+      if (dfc_ > 0.0 && w0_(m,IDN,k,j,i) < fcr_) {
+        Real s = 1.0/q1;
+        if (multi_d_) s += 1.0/q2;
+        if (three_d_) s += 1.0/q3;
+        q1 = q2 = q3 = dfc_/s;
+      }
+      min_dt1 = fmin(q1, min_dt1);
+      min_dt2 = fmin(q2, min_dt2);
+      min_dt3 = fmin(q3, min_dt3);
+      Real cell_dt = q1;
+      if (multi_d_) cell_dt = fmin(cell_dt, q2);
+      if (three_d_) cell_dt = fmin(cell_dt, q3);
       if (cell_dt < mres.val) { mres.val = cell_dt; mres.loc = idx; }
     }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3),
        Kokkos::MinLoc<Real, int>(mloc));

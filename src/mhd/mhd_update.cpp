@@ -24,6 +24,7 @@ namespace mhd {
 //  update itself is fluid::RKUpdateCore, shared with Hydro::RKUpdate)
 
 TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
+  if (use_dfl) {DfloorFluxLimit(pdriver, stage);}   // (on the final fluxes)
   fluid::RKUpdateCore(pmy_pack, pdriver, stage, nmhd + nscalars, uflx, u0, u1);
   return TaskStatus::complete;
 }

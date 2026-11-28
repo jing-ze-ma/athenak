@@ -219,6 +219,8 @@ class MHD {
   // of the VET field in optically thick cells (mhd_newdt.cpp; the MHD form of
   // <hydro>/rad_signal_speed). Default on with an implicit VET transport.
   bool rad_signal_speed = false;
+  bool rss_inertia = false, rss_diff = false, rss_phase = false;   // (hydro.hpp)
+  Real dfc_key = 0.0;   // <mhd>/dt_floor_courant (hydro_newdt.cpp)
 
   // following used for time derivatives in computation of jcon
   bool wbcc_saved = false;
@@ -388,6 +390,19 @@ class MHD {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // <mhd>/dfloor_flux_limit: the outflow limiter of <hydro> (hydro.hpp, dfloor_flux.cpp)
+  bool use_dfl = false;
+  bool dfl_pass = true;
+  Real dfl_n = 0.0, dfl_dp[3] = {0.0, 0.0, 0.0};
+  MeshBoundaryValuesCC *pbval_dfl = nullptr, *pbval_dfs = nullptr;
+  DvceArray5D<Real> dfl_th, dfl_thc;
+  DvceFaceFld5D<Real> *pdfl_fs = nullptr;
+  DvceFaceFld4D<Real> *pdfl_f0 = nullptr;
+  DvceArray5D<Real> dfl_g[4];
+  DvceArray1D<int> dfl_sm;
+  void DfloorFluxInit();
+  void DfloorFluxLimit(Driver *d, int stage);
+  void DflMomentum();
   // <mhd>/wall_wb_onesided: as <hydro>/wall_wb_onesided (hydro.hpp,
   // reconstruct/wb_wall.hpp), the same helper; default true on a FRESH start with WB x1
   bool wall_wb_onesided = false;
