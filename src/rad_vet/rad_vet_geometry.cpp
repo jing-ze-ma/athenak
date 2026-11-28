@@ -324,9 +324,6 @@ void RadiationVet::SphericalCheck(ParameterInput *pin) {
   std::string why;
   auto *pm = pmy_pack->pmesh;
   if (pm->multilevel) {why += " SMR/AMR;";}
-  if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
-    why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
-  }
   // cubed sphere
   if (cs_geom) {
     std::string wcs;
@@ -339,6 +336,10 @@ void RadiationVet::SphericalCheck(ParameterInput *pin) {
     }
     if (pm->mb_indcs.nx2 < 3 || pm->mb_indcs.nx3 < 3) {
       wcs += " meshblock nx2 or nx3 < 3;";
+    }
+    // (the cubed-sphere sweep has no x1 levels, ScX1Hand)
+    if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
+      wcs += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
     }
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -361,7 +362,7 @@ void RadiationVet::SphericalCheck(ParameterInput *pin) {
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> on a spherical-polar mesh supports "
-      << "only time_scheme = be | sdirk2, one MeshBlock along x1, no SMR; this "
+      << "only time_scheme = be | sdirk2, no SMR; this "
       << "input has:" << why
       << std::endl;
     std::exit(EXIT_FAILURE);

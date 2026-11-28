@@ -1893,6 +1893,26 @@ def t_idort_beams_mb(c):
                 maxdiff_block_x1=vett.compare_dirs(b, x1)[1])
 
 
+def t_x1_blocks_sp(c):
+    """several MeshBlocks along x1 on the spherical-polar shell (the ray sweep level by
+    level, ScX1Hand; the reflecting top's remainder handed down): 2 MeshBlocks along x1
+    on 1 and 2 ranks bitwise (maxdiff_ranks); 4 along x1 straight vs a restart after 2
+    of 4 cycles bitwise (maxdiff_restart); the largest relative difference to one
+    MeshBlock (maxrel_x1, the solve's tolerance: multigrid tiles, line solves and Krylov
+    partials per MeshBlock); no CLEAN WARNING."""
+    o = {'time/nlim': 4, 'mesh/layout_tile': None, 'meshblock/nx1': 16}
+    a = c.run('shell_sp.athinput', 'r1', dict(o, **{'meshblock/nx1': 32}))
+    b = c.run('shell_sp.athinput', 'r2', o)
+    b2 = c.run('shell_sp.athinput', 'r2_np2', o, ranks=2)
+    out = {'maxdiff_ranks': vett.compare_dirs(b, b2)[1],
+           'maxrel_x1': vett.compare_dirs(a, b)[2]}
+    out['maxdiff_restart'] = restart_pair(c, 'shell_sp.athinput', 4, 2,
+                                          dict(o, **{'meshblock/nx1': 8}))['maxdiff']
+    out['warnings'] = sum(vett.warnings(open(os.path.join(d, 'run.log')).read())
+                          for d in (b, b2))
+    return out
+
+
 def shadow_exact(d, nsub=4096):
     """E of the beams attenuated along straight rays back to x1min through the ellipse
     rho = rho0 (1 + (ratio - 1)/(1 + exp(delta (r^2 - 1)))), r^2 = (x/ax)^2 + (y/ay)^2,
@@ -2297,6 +2317,7 @@ TESTS = [  # name, function, in --quick
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),
     ('layout_tile', t_layout_tile, True),
+    ('x1_blocks_sp', t_x1_blocks_sp, False),
     ('hst_ranks', t_hst_ranks, False),
     ('layout_cs', t_layout_cs, True),
     ('fofc_layout_cs', t_fofc_layout_cs, True),

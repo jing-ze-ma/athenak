@@ -666,6 +666,7 @@ void RadiationVet::RayFaceSums() {
         Real v = vb;
         for (int i = is; i <= ie; ++i) v += x.vol(m,k,j,i);
         qb_(m,4*nkj + kj) = v;
+        qb_(m,5*nkj + kj) = vb;
       }
     });
   }
@@ -678,18 +679,20 @@ void RadiationVet::RayFaceSums() {
       const SolveArgs &x = *px;
       if ((xf_(m) >> 3) != lev) return;
       const int kj = (k - ks)*nj + j - js;
+      // (the level's own volume below, slot 5 of its up march: the sums of one
+      // MeshBlock along x1, bitwise)
       const Real vt = qr_(m,4*nkj + kj);
-      Real vc = qr_(m,5*nkj + kj);
-      for (int i = is; i <= ie; ++i) vc -= x.vol(m,k,j,i);
-      for (int c = 0; c < 6; ++c) qb_(m,c*nkj + kj) = qr_(m,c*nkj + kj);
-      qb_(m,5*nkj + kj) = vc;
+      Real vc = qb_(m,5*nkj + kj);
+      for (int c = 0; c < 5; ++c) qb_(m,c*nkj + kj) = qr_(m,c*nkj + kj);
       for (int i = is; i <= ie + 1; ++i) {
         if (i > is) vc += x.vol(m,k,j,i-1);
         for (int c = 0; c < 4; ++c) {
-          const Real dq = qr_(m,c*nkj + kj)*vc/vt;
-          if (i <= ie) cs(m,CLN_FX+c,k,j,i) -= dq/x.area[0](m,k,j,i);
+          const Real qc = qr_(m,c*nkj + kj);
+          if (i <= ie) cs(m,CLN_FX+c,k,j,i) -= qc*vc/(vt*x.area[0](m,k,j,i));
           if (i == is && f1) cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
-          if (i == ie + 1 && f1) cs(m,CLN_F1+c,k,j,ie) -= dq/x.area[0](m,k,j,ie+1);
+          if (i == ie + 1 && f1) {
+            cs(m,CLN_F1+c,k,j,ie) -= qc*vc/(vt*x.area[0](m,k,j,ie+1));
+          }
         }
       }
     });
