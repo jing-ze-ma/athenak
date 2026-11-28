@@ -425,10 +425,11 @@ void HcTauW(const SolveArgs &x, const int dir, const int m, const int k, const i
 //! \fn void OverlapFor
 //! \brief f over the inner cells (inset by ng) while a ghost exchange is in flight, then
 //! fin(), then the shell; ov = false: fin() then all (same values).  fd >= 0: over faces
-//! normal to fd.  post: shell first, post(), inner, fin() (the sending side)
+//! normal to fd.  post: shell first, post(), inner, fin() (the sending side).  kLw: the
+//! CUDA launches through AthForLw (SolveFor)
 
 // (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
-template <typename F>
+template <bool kLw = false, typename F>
 void OverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F &f,
                 const std::function<void()> &fin, const int fd = -1,
                 const std::function<void()> &post = nullptr) {
@@ -447,18 +448,18 @@ void OverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F
                      true, true);
   if (!ov || sh.Empty()) {
     if (!post) fin();
-    par_for(nm, DevExeSpace(), 0, nmb1, ks, id.ke + (fd == 2), js, id.je + (fd == 1), is,
-            id.ie + (fd == 0), f);
+    SolveFor<0, 0, kLw>(nm.c_str(), nmb1, ks, id.ke + (fd == 2), js, id.je + (fd == 1),
+                        is, id.ie + (fd == 0), f);
     if (post) post(), fin();
     return;
   }
   auto inner = [&]() {
-    par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
-            is + sh.i0, is + sh.i1, f);
+    SolveFor<0, 0, kLw>(nm.c_str(), nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
+                        is + sh.i0, is + sh.i1, f);
   };
   if (!post) inner(), fin();
-  par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
-  KOKKOS_LAMBDA(const int m, const int q) {
+  SolveFor<0, 0, kLw>((nm + "_sh").c_str(), nmb1, 0, 0, 0, 0, 0, sh.ncell-1,
+  KOKKOS_LAMBDA(const int m, const int, const int, const int q) {
     int k, j, i;
     HaloShellCell(sh, q, k, j, i);
     f(m, ks + k, js + j, is + i);

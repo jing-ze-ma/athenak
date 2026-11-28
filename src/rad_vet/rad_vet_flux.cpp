@@ -184,9 +184,9 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       };
       const std::function<void()> fin = [&]() {GhostFill(cln_vf, 16, 2, true, 2, 1);};
       if (pv) {
-        OverlapFor("cln_fs1", pmy_pack, true, f1, fin, -1, post);
+        OverlapFor<true>("cln_fs1", pmy_pack, true, f1, fin, -1, post);
       } else {
-        SolveFor("cln_fs1", nmb1, ks, ke, js, je, is, ie, f1);
+        SolveFor<0, kSolveForMb, true>("cln_fs1", nmb1, ks, ke, js, je, is, ie, f1);
       }
       if (dir == x.nf - 1 && !pv) {
         if (cub) {
@@ -300,7 +300,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       // per face (coalesced): lo (CLW_AM), hi (CLW_AP), dg (CLW_A0, then the Thomas den),
       // r (CLW_R0), faces with an equation (CLW_P), and in the sweep c' (CLW_CP); E-solve
       // scratch slots shared by the directions (the x1 PCR reads them too)
-      SolveFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      SolveFor<0, kSolveForMb, true>("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
         // face tie: a line's high face shared with another MeshBlock or the periodic
@@ -324,7 +324,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       const size_t scr = ScrArray1D<Real>::shmem_size(8*nx);
       Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), (nmb1 + 1)*na*nb, 256);
       const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
-      AthFor("cln_fs2p", pol.set_scratch_size(lv0, Kokkos::PerTeam(scr)),
+      AthForLw("cln_fs2p", pol.set_scratch_size(lv0, Kokkos::PerTeam(scr)),
       KOKKOS_LAMBDA(TeamMember_t tm) {
         const int m = tm.league_rank()/(na*nb), a = tm.league_rank()%na;
         const int k = ks + (tm.league_rank()/na)%nb, j = js + a;
@@ -459,7 +459,7 @@ void RadiationVet::FluxSolve(const int e, const bool tie_now, const bool lat) {
       if (cub && nsw > 1) {
         AthReduce("cln_fs2", pol, line, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(fmx));
       } else {
-        AthFor("cln_fs2", pol, KOKKOS_LAMBDA(const int idx) {
+        AthForLw("cln_fs2", pol, KOKKOS_LAMBDA(const int idx) {
           Real d_max = 0.0, f_max = 0.0;
           line(idx, d_max, f_max);
         });

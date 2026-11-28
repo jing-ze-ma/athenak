@@ -103,7 +103,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
-    SolveFor("cln_fcone_f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<0, kSolveForMb, true>("cln_fcone_f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // a physical boundary face: its inner cell's l, after the cubed sphere's tie; an
       // opaque face (tau_f = chi_f dx_f) keeps its share tau/(1 + tau) of F (a diffusion
@@ -140,7 +140,7 @@ void RadiationVet::FluxCone(const int e, const int kd) {
   for (int d = 0; d < x.nf; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     auto fc = x.fc[d];
-    SolveFor("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<0, kSolveForMb, true>("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // a physical boundary face has no F equation: the gas takes its half cell's
       // absorption of fs (FaceMomentumChange)

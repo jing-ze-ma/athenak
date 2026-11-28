@@ -85,25 +85,34 @@ constexpr int kSolveForMb = 3;
 #else
 constexpr int kSolveForMb = 2;
 #endif
-template <int kHipMb = 0, int kCudaMb = kSolveForMb, typename F>
+// kLw: CUDA launch through AthForLw (at mb 0 too: no launch bound)
+template <int kHipMb = 0, int kCudaMb = kSolveForMb, bool kLw = false, typename F>
 inline void SolveFor(const char *name, const int nmb1, const int ks, const int ke,
                      const int js, const int je, const int is, const int ie,
                      const F &f) {
 #if defined(KOKKOS_ENABLE_HIP)
   constexpr int mb = kHipMb;
+  constexpr bool lw = false;
 #elif defined(KOKKOS_ENABLE_CUDA)
   constexpr int mb = kCudaMb;
+  constexpr bool lw = kLw;
 #else
   constexpr int mb = 0;
+  constexpr bool lw = false;
 #endif
-  if constexpr (mb > 0) {
+  if constexpr (mb > 0 || lw) {
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-    AthFor(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, mb>>(
-           DevExeSpace(), 0, (nmb1 + 1)*nkji),
-    KOKKOS_LAMBDA(const int idx) {
+    using Pol = std::conditional_t<(mb > 0), Kokkos::RangePolicy<DevExeSpace,
+                Kokkos::LaunchBounds<256, mb>>, Kokkos::RangePolicy<DevExeSpace>>;
+    auto body = KOKKOS_LAMBDA(const int idx) {
       const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
       f(m, ks + k, js + j, is + idx - m*nkji - k*nji - j*ni);
-    });
+    };
+    if constexpr (lw) {
+      AthForLw(name, Pol(DevExeSpace(), 0, (nmb1 + 1)*nkji), body);
+    } else {
+      AthFor(name, Pol(DevExeSpace(), 0, (nmb1 + 1)*nkji), body);
+    }
   } else {
     par_for(name, DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie, f);
   }

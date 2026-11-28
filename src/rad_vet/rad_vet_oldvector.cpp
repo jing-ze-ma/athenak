@@ -129,7 +129,7 @@ void RadiationVet::FaceDonor(const bool first, const bool lat, const bool hold) 
     // active ones
     const int n4 = fc.extent_int(4), n34 = fc.extent_int(3)*n4;
     const int n234 = fc.extent_int(2)*n34;
-    AthFor("cln_xdonor", Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0,
+    AthForLw("cln_xdonor", Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0,
                          (nmb1 + 1)*n234),
     KOKKOS_LAMBDA(const int idx) {
       const int m = idx/n234, k = (idx - m*n234)/n34;

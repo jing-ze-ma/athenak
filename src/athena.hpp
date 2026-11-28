@@ -346,6 +346,30 @@ inline void AthReduce(const std::string &name, const Policy &policy, const F &bo
   Kokkos::parallel_reduce(name, policy, body, std::forward<R>(r)...);
 }
 #endif
+// AthForLw(name, policy, body): AthFor, except that on CUDA a body of 512 ..
+// ATHENA_CUDA_LIGHT bytes takes Kokkos' light-weight launch (the body as the kernel
+// argument, read from the parameter bank) instead of its constant-memory launch, which
+// waits on the host for the previous such kernel before each launch (Caltech 27zz: 835
+// host waits per bsg cycle on 1 H200, 389 of them cln_pcr2).  Opt-in per call site: a
+// body whose address escapes is copied into every thread's local memory (sm_90 ptxas:
+// cln_facecoef 40 -> 776 B stack, two WriteBack passes 900 -> 4000 B), so only the sites
+// checked to keep their stack use it.  parallel_for only, same body: bitwise.  0 = off
+#ifndef ATHENA_CUDA_LIGHT
+#define ATHENA_CUDA_LIGHT 3584
+#endif
+template <typename Policy, typename F>
+inline void AthForLw(const std::string &name, const Policy &policy, const F &body) {
+#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_LIGHT > 0)
+  static_assert(ATHENA_CUDA_LIGHT <= 3584, "ATHENA_CUDA_LIGHT: at most 3584 bytes");
+  if constexpr (std::is_same_v<typename Policy::execution_space, Kokkos::Cuda> &&
+                sizeof(F) >= 512 && sizeof(F) <= ATHENA_CUDA_LIGHT) {
+    Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
+                         Kokkos::Experimental::WorkItemProperty::HintLightWeight), body);
+    return;
+  }
+#endif
+  AthFor(name, policy, body);
+}
 
 //------------------------------
 // 1D loop using Kokkos 1D Range
