@@ -41,16 +41,20 @@ bool OneSided(const Real bw, const Real bo, const Real q1c, const Real q1n, cons
 //! ic = ie, wall face ic+1, neighbour ic-1).  wl(n,i)/wr(n,i) = left/right states of face
 //! i (the sweep's convention: cell i writes wr(n,i) and wl(n,i+1)); dl/dr the same for
 //! the derived variables.  Called from ONE thread of the team (Kokkos::single).
+//! xv/xf: x1v/xx1f of the curved meshes; a Cartesian mesh does not allocate them (1 x 1)
+//! and its uniform cells of width dx1 are used.
 template <typename ScrT>
 KOKKOS_INLINE_FUNCTION
 void WallCellX1(const bool inner, const int m, const int k, const int j, const int ic,
                 const DvceArray5D<Real> &w, const DvceArray5D<Real> &wd,
                 const DvceArray5D<Real> &wbq, const DvceArray2D<Real> &xv,
-                const DvceArray2D<Real> &xf, const bool wb_rho, const int nder,
-                ScrT &wl, ScrT &wr, ScrT &dl, ScrT &dr) {
+                const DvceArray2D<Real> &xf, const Real dx1, const bool wb_rho,
+                const int nder, ScrT &wl, ScrT &wr, ScrT &dl, ScrT &dr) {
   const int in = inner ? ic + 1 : ic - 1;
-  const Real hl = xv(m,ic) - xf(m,ic), hr = xf(m,ic+1) - xv(m,ic);
-  const Real dn = inner ? (xv(m,in) - xv(m,ic)) : (xv(m,ic) - xv(m,in));
+  const bool cv = (xv.extent_int(1) > 1);
+  const Real hl = cv ? (xv(m,ic) - xf(m,ic)) : 0.5*dx1;
+  const Real hr = cv ? (xf(m,ic+1) - xv(m,ic)) : 0.5*dx1;
+  const Real dn = !cv ? dx1 : (inner ? (xv(m,in) - xv(m,ic)) : (xv(m,ic) - xv(m,in)));
   for (int c=0; c<3; ++c) {
     if (c == 0 && !wb_rho) continue;
     if (c == 2 && nder == 0) continue;

@@ -440,11 +440,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
               && inr(is)) {
             wbwall::WallCellX1(true, m, k, j, is, w0_, wder_, wbq0_, x1v_, x1f_,
-                               use_wb_rho_, nder, wl, wr, dl, dr);
+                               size_.d_view(m).dx1, use_wb_rho_, nder, wl, wr, dl, dr);
           }
           if (box1 == BoundaryFlag::reflect && inr(ie)) {
             wbwall::WallCellX1(false, m, k, j, ie, w0_, wder_, wbq0_, x1v_, x1f_,
-                               use_wb_rho_, nder, wl, wr, dl, dr);
+                               size_.d_view(m).dx1, use_wb_rho_, nder, wl, wr, dl, dr);
           }
         }
         if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
