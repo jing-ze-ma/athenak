@@ -38,7 +38,7 @@ class Driver;
 
 // constants that enumerate Hydro Riemann Solver options
 // non-relativistic
-enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, hllclm, ausmpup, roe,
+enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, ausmpup, roe,
                           llf_sr, hlle_sr, hllc_sr,        // SR
                           llf_gr, hlle_gr};                // GR
 

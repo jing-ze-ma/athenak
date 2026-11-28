@@ -315,7 +315,7 @@ clamp is not reached.
 ## What is supported, and what is refused
 
 **Supported:** all reconstruction methods (`dc`/`plm`/`ppm4`/`ppmx`/`wenoz`); the
-`llf`, `hlle`, `hllc`, `hllclm`, `lhllc` and `ausmpup` hydro solvers and the `llf`,
+`llf`, `hlle`, `hllc`, `lhllc` and `ausmpup` hydro solvers and the `llf`,
 `hlle` and `hlld` MHD solvers; the CFL timestep; first-order flux correction (FOFC);
 static and adaptive mesh refinement; the well-balanced (Kappeli & Mishra) scheme in all
 its options; thermal conduction; and the gravity and cooling source terms.

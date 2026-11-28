@@ -796,16 +796,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                     << "isothermal EOS" << std::endl;
           std::exit(EXIT_FAILURE);
         }
-      // HLLCLM solver
-      } else if (rsolver.compare("hllclm") == 0) {
-        if (peos->eos_data.is_ideal) {
-          rsolver_method = Hydro_RSolver::hllclm;
-        } else {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<hydro>/rsolver = hllclm cannot be used with "
-                    << "isothermal EOS" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
       // AUSMPUP solver
       } else if (rsolver.compare("ausmpup") == 0) {
         if (peos->eos_data.is_ideal) {
@@ -831,7 +821,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<hydro>/rsolver = roe is not supported with "
                     << "<hydro>/eos = general: the Roe average is only defined for an "
-                    << "ideal gas. Use llf, hlle, hllc, hllclm, lhllc or ausmpup."
+                    << "ideal gas. Use llf, hlle, hllc, lhllc or ausmpup."
                     << std::endl;
           std::exit(EXIT_FAILURE);
         }
@@ -840,7 +830,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<hydro> rsolver = '" << rsolver << "' not implemented"
-                  << " for dynamic problems" << std::endl;
+                  << " for dynamic problems (use llf, hlle, hllc, lhllc, ausmpup or roe)"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
 
