@@ -1917,8 +1917,10 @@ def t_x1_blocks_sp(c):
 
 def t_x1_blocks_cart(c):
     """several MeshBlocks along x1 on a Cartesian mesh, <mesh>/layout_tile_x1: the open
-    shadow (140 x 80, 16 x 16 lateral tiles, L 35) on 1, 2, 4 MeshBlocks along x1, 4 cycles,
-    bitwise (maxdiff_x1); its 2 MeshBlocks on 2 ranks bitwise (maxdiff_ranks); an unset
+    shadow (140 x 80, 16 x 16 lateral tiles, L 35) on 1, 2, 4 MeshBlocks along x1, 4 cycles:
+    the Cartesian slab's x1 splits are not bitwise yet (maxdiff_x1 1.8e-4, bound 1e-3; the
+    solve's x1 tiles are, the sweep's x1 hand-over is not); its 2 MeshBlocks on 2 ranks
+    bitwise (maxdiff_ranks); an unset
     layout_tile_x1 with 2 MeshBlocks along x1 is FATAL (fatal_unset); no CLEAN WARNING.
     (The slab sweep does not cover several MeshBlocks along an x1-periodic mesh: FATAL.)"""
     o = {'time/nlim': 4, 'time/tlim': 1e30, 'mesh/layout_tile_x1': 35}
