@@ -116,7 +116,7 @@ void RadiationVet::RightHandSide(const bool beta, const bool lat) {
   if (x.feedback) {
     const bool rx = x.cub;
     CLEAN_HIPX(const SolveArgs *pxb = DevArgs(x, 0);)
-    SolveFor<0, 3>("cln_beta", nmb1, ks, ke, js, je, is, ie,
+    SolveFor<0, 3, true>("cln_beta", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const SolveArgs &x = *pxb;)   // in device memory: no per-thread copy
       Real p[3];

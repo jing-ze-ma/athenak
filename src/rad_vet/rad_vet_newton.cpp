@@ -609,7 +609,7 @@ void RadiationVet::FaceBracket() {
   CLEAN_HIPX(const SolveArgs *px = DevArgs(x, 0);)
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    SolveFor("cln_sbracket", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<0, kSolveForMb, true>("cln_sbracket", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const SolveArgs &x = *px;)   // in device memory: no per-thread copy
       // Phi(J) at its steady value, -(c/chi_f) div(D J), in the share 1 - w, so the

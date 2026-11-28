@@ -143,7 +143,7 @@ void RadiationVet::CsFaceTie(const int nc, const int c0, const int c1,
   for (int dir = 0; dir < nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    SolveFor("cln_cstie2", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<0, kSolveForMb, true>("cln_cstie2", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const bool lin = (dir == 0) ? (i > is) : ((dir == 1) ? (j > js) : (k > ks));
       const bool rin = (dir == 0) ? (i <= ie) : ((dir == 1) ? (j <= je) : (k <= ke));
@@ -262,7 +262,7 @@ void RadiationVet::CsLateralStress(const int e, const bool st, const int part) {
   const std::function<void()> fin = [&]() {
     if (ov) GhostFill(ya, y0, 9, true, 2, 1);
   };
-  OverlapFor("cln_cslat", pmy_pack, ov, f, fin, -1, post);
+  OverlapFor<true>("cln_cslat", pmy_pack, ov, f, fin, -1, post);
 }
 
 //----------------------------------------------------------------------------------------

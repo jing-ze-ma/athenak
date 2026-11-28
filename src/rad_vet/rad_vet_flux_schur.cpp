@@ -118,7 +118,7 @@ void RadiationVet::FluxSchur() {
         const int g1 = gs[1], g2 = gs[2];
         const bool pd = per[dir];
         const int rs = cub ? rl : rr;   // rounds the low end sends
-        AthFor("cln_fsch", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        AthForLw("cln_fsch", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                              (nmb1 + 1)*na*nb),
         KOKKOS_LAMBDA(const int idx) {
           const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;

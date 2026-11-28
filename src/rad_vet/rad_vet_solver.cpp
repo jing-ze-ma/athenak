@@ -342,7 +342,7 @@ void RadiationVet::PreconditionerSetup() {
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    SolveFor<0, 3>("cln_fwc", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    SolveFor<0, 3, true>("cln_fwc", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const SolveArgs &x = *pxw;)   // (in device memory: no per-thread copy)
       FaceWeights(x, dir, m, k, j, i, fc(m,CLF_QL,k,j,i), fc(m,CLF_QL+1,k,j,i));
@@ -630,7 +630,7 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
       tm.team_barrier();
       return true;
     };
-    AthFor("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
+    AthForLw("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
       ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
       int m, k, j;
       if (!ld(tm, sw, m, k, j)) return;
