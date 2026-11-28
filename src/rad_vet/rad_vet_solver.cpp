@@ -578,7 +578,7 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
     while ((1 << nround) < nx) ++nround;
     // (one row per lane: a team of nx rounded to a warp, double-buffered in scratch, one
     // barrier per round; the rows' arithmetic is that of the host's PCR, so bitwise)
-    const int ts = std::min(1024, (nx + 31)/32*32);
+    int ts = std::min(1024, (nx + 31)/32*32);
     // (a colour: one team per line of that colour, from a list built once per level)
     int nt = (nmb1 + 1)*n32;
     DvceArray1D<int> ll;
@@ -602,9 +602,6 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
     }
     const bool lst = (col >= 0);
     const size_t scr = ScrArray1D<Real>::shmem_size(8*nx);
-    Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nt, ts);
-    const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
-    pol.set_scratch_size(lv0, Kokkos::PerTeam(scr));
     // (the line of team r: m, j, k, and its rows loaded into the team's scratch sw)
     auto ld = KOKKOS_LAMBDA(const TeamMember_t &tm, const ScrArray1D<Real> &sw, int &m,
                             int &k, int &j) {
@@ -631,39 +628,58 @@ void RadiationVet::LineSolve(const MgLevel &lv, const int src, const int dst,
       tm.team_barrier();
       return true;
     };
-    AthFor("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
-      ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
-      int m, k, j;
-      if (!ld(tm, sw, m, k, j)) return;
-      int o = 0;
-      for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
-        const int d = 4*nx - o;
+    // (a team no larger than this kernel launches with: sm_80 cannot take 1024 here,
+    // its registers; each row's arithmetic is the same at any team size)
+    static std::map<std::pair<size_t, int>, int> tcap;
+    for (;;) {
+      Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nt, ts);
+      const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
+      pol.set_scratch_size(lv0, Kokkos::PerTeam(scr));
+      auto body = KOKKOS_LAMBDA(TeamMember_t tm) {
+        ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
+        int m, k, j;
+        if (!ld(tm, sw, m, k, j)) return;
+        int o = 0;
+        for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
+          const int d = 4*nx - o;
+          Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+            Real a = 0.0, b = sw(o + nx + q), c = 0.0, r = sw(o + 3*nx + q);
+            if (q >= s) {
+              const Real f = -sw(o + q)/sw(o + nx + q - s);
+              a = f*sw(o + q - s);
+              b += f*sw(o + 2*nx + q - s);
+              r += f*sw(o + 3*nx + q - s);
+            }
+            if (q + s < nx) {
+              const Real g = -sw(o + 2*nx + q)/sw(o + nx + q + s);
+              c = g*sw(o + 2*nx + q + s);
+              b += g*sw(o + q + s);
+              r += g*sw(o + 3*nx + q + s);
+            }
+            sw(d + q) = a;
+            sw(d + nx + q) = b;
+            sw(d + 2*nx + q) = c;
+            sw(d + 3*nx + q) = r;
+          });
+          tm.team_barrier();
+          o = d;
+        }
         Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
-          Real a = 0.0, b = sw(o + nx + q), c = 0.0, r = sw(o + 3*nx + q);
-          if (q >= s) {
-            const Real f = -sw(o + q)/sw(o + nx + q - s);
-            a = f*sw(o + q - s);
-            b += f*sw(o + 2*nx + q - s);
-            r += f*sw(o + 3*nx + q - s);
-          }
-          if (q + s < nx) {
-            const Real g = -sw(o + 2*nx + q)/sw(o + nx + q + s);
-            c = g*sw(o + 2*nx + q + s);
-            b += g*sw(o + q + s);
-            r += g*sw(o + 3*nx + q + s);
-          }
-          sw(d + q) = a;
-          sw(d + nx + q) = b;
-          sw(d + 2*nx + q) = c;
-          sw(d + 3*nx + q) = r;
+          w(m,dst,k,j,is+q) = sw(o + 3*nx + q)/sw(o + nx + q);
         });
-        tm.team_barrier();
-        o = d;
+      };
+      auto it = tcap.find(std::make_pair(scr, ts));
+      if (it == tcap.end()) {
+        it = tcap.emplace(std::make_pair(scr, ts),
+                          pol.team_size_max(body, Kokkos::ParallelForTag())).first;
       }
-      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
-        w(m,dst,k,j,is+q) = sw(o + 3*nx + q)/sw(o + nx + q);
-      });
-    });
+      if (ts > 32 && it->second < ts) {
+        ts = std::max(32, it->second/32*32);
+        continue;
+      }
+      AthFor("cln_pcr2", pol, body);
+      break;
+    }
     return;
   }
   par_for("cln_thomas", DevExeSpace(), 0, nmb1, l.o[2], l.o[2]+l.n[2]-1,
