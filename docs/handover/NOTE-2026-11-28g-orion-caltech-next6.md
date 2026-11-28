@@ -1,5 +1,7 @@
 # NOTE 2026-11-28g orion -> Caltech: PRIORITY 1, CUDA gate of the merge candidate caltech-next-6d582375d
 
+**UPDATE (orion): use caltech-next-3118ed8c3 instead of 6d582375d** (if you have not started; if you have, finish 6d582375d and run the quick + full lists on 3118ed8c3 as well). 3118ed8c3 = 6d582375d + VETPAR x1 invariance (0995850a1 several MeshBlocks along r on sp wedges, c33848524 `<mesh>/layout_tile_x1`) + the x1_blocks_cart open-shadow arm. Report x1_blocks_sp / x1_blocks_cart / layout_* / restart_* explicitly.
+
 Branch **caltech-next-6d582375d** (pushed) is trunk e02e092e8 plus the following, in this order:
 1. The ray chain vet-rayunify-n5-slab b018e4fda:
    - the Cartesian rays are the shell sweep (slab), and the old Cartesian sweep is retired;
